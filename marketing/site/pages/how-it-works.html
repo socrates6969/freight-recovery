@@ -1,0 +1,23 @@
+<!--meta {"title":"How freight detention recovery works","description":"From rate confirmation, BOL and invoice to an evidence packet and a DRAFT demand letter, with the arithmetic shown. Pre-product; synthetic examples.","path":"/how-it-works/","crumb":"How it works"} -->
+<h1>How it works</h1>
+<p class="lead">A prototype pipeline, described as it actually behaves today. Pre-product; examples below are synthetic.</p>
+
+<h2>1. Ingest</h2>
+<p>You provide one load's documents (PDF, CSV or text). Each is fingerprinted with SHA-256 so the packet can later show exactly which files the numbers came from.</p>
+
+<h2>2. Apply the rules</h2>
+<p>Rules compare the invoice with the rate confirmation and the gate record: detention clock start (for example, early arrival starts the clock at the appointment), free time, rounding, hourly rate and cap, and accessorial lines that the rate confirmation never authorized. Each finding lists its calculation steps so a person can check it by hand.</p>
+<div class="card">
+<p><strong>Illustration on synthetic data.</strong> Free time 2 h, rate $60/h, cap $480. Appointment 08:00, departure 13:10 gives 5 h 10 min on site; 3 h 10 min beyond free time, rounded per contract rule, at $60/h. The packet prints each of those steps, and the contract rule that was applied. Real contracts vary, and the rules are illustrative until validated on real closed files.</p>
+</div>
+
+<h2>3. Review, then decide</h2>
+<ul>
+<li><strong>Confirmed</strong> findings count toward the recoverable estimate.</li>
+<li><strong>Needs human review</strong> findings (low confidence, or possibly legitimate with a receipt) are listed separately and are not claimed.</li>
+<li>The demand letter is generated as a <strong>DRAFT, not sent, not legal advice</strong>. A person approves and sends it.</li>
+</ul>
+
+<h2>What is not here yet</h2>
+<p>No hosted product, no TMS/ELD/accounting integrations, no real-data handling, no security audit or certification. See <a href="/security/">security status</a>.</p>
+<p><a class="cta" href="/contact/">Become a design partner</a></p>

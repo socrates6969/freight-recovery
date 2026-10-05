@@ -1,0 +1,22 @@
+<!--meta {"title":"Security status: what exists and what does not","description":"An honest list of the security controls built into the pre-product prototype and the ones still required before any real customer data.","path":"/security/","crumb":"Security status"} -->
+<h1>Security status</h1>
+<p class="lead">We would rather tell you what is missing than imply a posture we do not have.</p>
+<p class="draft">Real customer data is not accepted until the items under "Not yet" are done.</p>
+
+<h2>Built into the prototype</h2>
+<ul>
+<li>Per-tenant API keys (hashed at rest, shown once at issue), with tenant isolation on every request.</li>
+<li>Bounded request and upload sizes; parsing runs in a separate, resource-limited worker process.</li>
+<li>Hash-locked dependency pins and dependency/security scanning in CI.</li>
+<li>The demo UI keeps keys in memory only and sets a strict content security policy.</li>
+</ul>
+
+<h2>Not yet</h2>
+<ul>
+<li>Independent third-party security assessment or penetration test.</li>
+<li>Any compliance certification or attestation.</li>
+<li>Malware scanning of uploads; rate limiting / WAF.</li>
+<li>A data retention and deletion policy; production hosting.</li>
+<li>Reviewed legal terms (our <a href="/privacy/">privacy</a>, <a href="/terms/">terms</a> and <a href="/cookies/">cookie</a> pages are drafts).</li>
+</ul>
+<p>Found a vulnerability? Please use the contact address on the <a href="/contact/">contact page</a>.</p>

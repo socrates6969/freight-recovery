@@ -1,0 +1,19 @@
+:root { --fg:#1b1f24; --bg:#fff; --muted:#4a525a; --accent:#0b5cad; --warn:#7a4200; --warnbg:#fff4e0; --line:#d5d9dd; color-scheme: light dark; }
+@media (prefers-color-scheme: dark) { :root { --fg:#e6e8ea; --bg:#14171a; --muted:#aab2ba; --accent:#7ab8ff; --warn:#ffcf99; --warnbg:#2b2113; --line:#3a4046; } }
+* { box-sizing: border-box; }
+body { margin:0; font:17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; color:var(--fg); background:var(--bg); }
+main, header.site, footer.site { max-width:46rem; margin:0 auto; padding:0 1rem; }
+a { color:var(--accent); }
+.status { margin:0; padding:.5rem 1rem; text-align:center; background:var(--warnbg); color:var(--warn); font-size:.9rem; }
+header.site { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.5rem 1rem; align-items:baseline; padding-top:1rem; padding-bottom:1rem; }
+.brand { font-weight:700; font-size:1.15rem; text-decoration:none; color:var(--fg); }
+nav a { margin-left:1rem; } nav a[aria-current="page"] { font-weight:700; }
+h1 { font-size:2rem; line-height:1.2; margin:1.5rem 0 .5rem; } h2 { font-size:1.35rem; margin:2rem 0 .5rem; }
+.lead { font-size:1.15rem; color:var(--muted); }
+.cta { display:inline-block; padding:.6rem 1.1rem; border-radius:6px; background:var(--accent); color:var(--bg); text-decoration:none; font-weight:600; margin:.5rem .5rem .5rem 0; }
+.cta.secondary { background:transparent; color:var(--accent); border:2px solid var(--accent); }
+.draft { border:2px solid var(--warn); background:var(--warnbg); color:var(--warn); padding:.7rem 1rem; border-radius:6px; font-weight:600; }
+.card { border:1px solid var(--line); border-radius:8px; padding:.1rem 1rem; margin:1rem 0; }
+table { border-collapse:collapse; width:100%; } th, td { border:1px solid var(--line); padding:.4rem .6rem; text-align:left; vertical-align:top; }
+details { margin:.6rem 0; } summary { cursor:pointer; font-weight:600; }
+footer.site { margin-top:3rem; padding-top:1rem; padding-bottom:2rem; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem; }
