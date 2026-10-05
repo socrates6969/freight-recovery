@@ -157,3 +157,6 @@ class AnalysisResponse(BaseModel):
     """API/CLI output of a full pipeline run."""
 
     packet: EvidencePacket
+    analysis_id: str | None = Field(
+        default=None, description="Id of the persisted analysis (retrieve with GET /v1/analyses/{id})."
+    )
