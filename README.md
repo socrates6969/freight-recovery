@@ -59,7 +59,7 @@ Perspective: **shipper** recovers overcharges; **carrier** recovers detention/ac
 Detention (clock starts at later of appointment/arrival, free time and rate from the rate con, rounded down to the configured increment using exact integer-minute arithmetic, capped at contract max), linehaul above rate con, fuel surcharge above rate con, accessorials not authorized on the rate con (flagged for human review), repeated identical lines (also flagged for human review: could be legitimate), invoice total above sum of lines. **Only confirmed findings count toward `recoverable_total` and the demand letter; `needs_human_review` items are listed and summed separately as `pending_review_total`.** Rule keyword tables and thresholds are illustrative and unmeasured. Conventions are explicit in `src/freight_recovery/rules/`; real contracts/tariffs vary and will need per-customer configuration.
 
 ## What was actually run vs left for CI
-- **Run locally (Windows, Python 3.14.7, fresh venv): `pytest` -> see the count in the latest commit message**, including the hand-built PDF ingest test and the FastAPI TestClient tests; plus a CLI smoke run.
+- **Run locally (Windows, Python 3.14.7, fresh venv): `pytest` -> 261 passed**, including the hand-built PDF ingest test and the FastAPI TestClient tests; plus a CLI smoke run.
 - **Not run:** `docker build` / `docker compose up` (Docker not exercised on this busy box) - the Dockerfile and compose file are unverified; `.github/workflows/ci.yml` builds the image and runs pytest on Python 3.12, so that run is left for CI. Terraform was never validated or applied.
 
 ## Stubbed / TODO (real work still needed)
