@@ -58,9 +58,18 @@ from freight_recovery.config import Settings
 from freight_recovery.db import AnalysisRepository, build_engine, build_sessionmaker, session_scope
 from freight_recovery.db.repository import DocumentMeta
 from freight_recovery.db.tables import Analysis
-from freight_recovery.errors import UNPROCESSABLE_EXCEPTIONS, InputError
+from freight_recovery.errors import UNPROCESSABLE_EXCEPTIONS, InputError, UnprocessableError
 from freight_recovery.models import AnalysisResponse, EvidencePacket, Perspective
 from freight_recovery.pipeline import run_pipeline
+from freight_recovery.sandbox import (
+    SandboxBusy,
+    SandboxFailed,
+    SandboxRunner,
+    SandboxTimeout,
+    SandboxTooLarge,
+    SandboxUnavailable,
+    analyze_in_worker,
+)
 from freight_recovery.storage import StorageError, StorageProvider, build_storage
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -212,22 +221,47 @@ def _summary(a: Analysis) -> dict:
 
 
 class PipelineFailure(Exception):
-    """A pipeline run failed for a reason attributable to the input or limits."""
+    """A pipeline run failed for a reason attributable to the input or to limits."""
 
-    def __init__(self, status: int, detail: str, code: str) -> None:
+    def __init__(
+        self, status: int, detail: str, code: str, headers: dict[str, str] | None = None
+    ) -> None:
         super().__init__(detail)
-        self.status, self.detail, self.code = status, detail, code
+        self.status, self.detail, self.code, self.headers = status, detail, code, headers
 
 
-def _execute(settings: Settings, payload: list[tuple[str, bytes]], perspective: Perspective) -> EvidencePacket:
-    """Run the pipeline, mapping every input-caused failure to a :class:`PipelineFailure`."""
+def _execute(state, payload: list[tuple[str, bytes]], perspective: Perspective) -> EvidencePacket:
+    """Run the pipeline (in the sandbox worker unless ``sandbox_mode=inprocess``).
+
+    Every input-caused or limit-caused failure becomes a :class:`PipelineFailure` with a
+    fixed client-safe message; exception text (which can contain document content) is
+    never returned.
+    """
+    settings: Settings = state.settings
     try:
-        return run_pipeline(payload, perspective, settings)
+        if state.runner is None:  # FR_SANDBOX_MODE=inprocess: dev/tests only
+            return run_pipeline(payload, perspective, settings)
+        return analyze_in_worker(state.runner, payload, perspective, settings)
+    except UnprocessableError as exc:
+        raise PipelineFailure(422, UNPROCESSABLE, "unprocessable") from exc
     except InputError as exc:
         raise PipelineFailure(422, str(exc), "input_error") from exc
     except UNPROCESSABLE_EXCEPTIONS as exc:
-        # The exception text can contain document content, so it is deliberately not returned.
         raise PipelineFailure(422, UNPROCESSABLE, "unprocessable") from exc
+    except SandboxTimeout as exc:
+        raise PipelineFailure(422, "Processing exceeded the time limit.", "timeout") from exc
+    except SandboxTooLarge as exc:
+        raise PipelineFailure(413, "Processing exceeded the size/memory limit.", "too_large") from exc
+    except SandboxBusy as exc:
+        raise PipelineFailure(
+            503, "The server is busy; retry shortly.", "busy", {"Retry-After": "5"}
+        ) from exc
+    except SandboxUnavailable as exc:
+        log.error("sandbox worker could not be started: %s", exc)
+        raise PipelineFailure(503, "Processing is temporarily unavailable.", "worker_unavailable") from exc
+    except SandboxFailed as exc:
+        log.warning("sandbox worker failed: %s", exc)  # exit status only; never document content
+        raise PipelineFailure(422, UNPROCESSABLE, "worker_failed") from exc
 
 
 def _process(
@@ -265,10 +299,10 @@ def _process(
         raise HTTPException(503, "Document storage is unavailable.") from exc
 
     try:
-        packet = _execute(settings, payload, perspective)
+        packet = _execute(state, payload, perspective)
     except PipelineFailure as exc:
         fail(exc.code)
-        raise HTTPException(exc.status, exc.detail) from exc
+        raise HTTPException(exc.status, exc.detail, headers=exc.headers) from exc
     except BaseException:
         fail("internal_error")
         raise
@@ -326,6 +360,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.engine = engine
     app.state.sessionmaker = build_sessionmaker(engine)
     app.state.storage = build_storage(settings)
+    app.state.runner = (
+        SandboxRunner(
+            timeout=settings.sandbox_timeout_seconds,
+            memory_mb=settings.sandbox_memory_mb,
+            max_workers=settings.sandbox_max_workers,
+            queue_timeout=settings.sandbox_queue_timeout_seconds,
+        )
+        if settings.sandbox_mode == "process"
+        else None
+    )
+    if app.state.runner is None:
+        log.warning("FR_SANDBOX_MODE=inprocess: parsing runs inside the API process (dev/tests only)")
     app.add_middleware(BodySizeLimitMiddleware)
 
     @app.exception_handler(RequestValidationError)

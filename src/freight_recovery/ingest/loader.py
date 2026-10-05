@@ -13,8 +13,10 @@ Anything that cannot be parsed raises :class:`~freight_recovery.errors.IngestErr
 ``RawDocument.warnings`` rather than dropped silently.
 
 TODO: OCR for scanned PDFs/images (e.g. Textract) - NOT implemented in this MVP.
-PDF parsing still runs in-process; the page/time guards are best-effort only (a
-single pathological page cannot be interrupted). Sandbox it before real data.
+The page/time guards here are best-effort only (a single pathological page cannot be
+interrupted from inside the process). The API therefore runs the whole pipeline in a
+separate, resource-limited worker process (``freight_recovery.sandbox``) with a hard
+wall-clock timeout and memory cap. Full OS-level isolation is a deployment concern.
 """
 
 from __future__ import annotations

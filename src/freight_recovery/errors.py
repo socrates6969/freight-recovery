@@ -19,6 +19,10 @@ class IngestError(InputError):
     """A file could not be decoded/parsed (bad PDF, malformed CSV, ...)."""
 
 
+class UnprocessableError(InputError):
+    """Malformed content (NaN/huge numbers, schema failures) with a fixed, generic message."""
+
+
 class RuleInputError(InputError):
     """Extracted values are internally inconsistent (e.g. mixed timezones)."""
 

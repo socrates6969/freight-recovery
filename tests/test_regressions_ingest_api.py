@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from datetime import datetime
 from decimal import Decimal
@@ -165,6 +166,14 @@ def test_hostile_numbers_do_not_cause_500(amount):
         assert r.json()["packet"]["result"]["recoverable_total"] == "0.00"
 
 
+# These two patch ``run_pipeline`` inside the API process, so they only apply when parsing
+# runs in-process (the suite default). The worker path is covered in test_sandbox.py.
+inprocess_only = pytest.mark.skipif(
+    os.environ.get("FR_TEST_SANDBOX") == "process", reason="patches run_pipeline in-process"
+)
+
+
+@inprocess_only
 def test_mixed_timezone_input_is_422_not_500(monkeypatch):
     """Was: TypeError from naive-minus-aware subtraction -> HTTP 500."""
     from freight_recovery.errors import RuleInputError
@@ -177,6 +186,7 @@ def test_mixed_timezone_input_is_422_not_500(monkeypatch):
     assert r.status_code == 422 and "timezone" in r.json()["detail"]
 
 
+@inprocess_only
 def test_non_input_pydantic_failure_is_422_with_fixed_message(monkeypatch):
     from pydantic import ValidationError
 
