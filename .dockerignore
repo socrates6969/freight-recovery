@@ -1,7 +1,17 @@
 .venv
 .git
+.github
 __pycache__
 .pytest_cache
+.env
+.env.*
+*.pem
+*.key
+.terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+deploy
 tests
 business
 financial

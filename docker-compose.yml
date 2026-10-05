@@ -3,7 +3,7 @@ services:
   api:
     build: .
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"   # loopback only: the API has no auth
     environment:
       FR_EXTRACTION_PROVIDER: stub        # deterministic offline provider
       FR_DETENTION_INCREMENT_MINUTES: "15"

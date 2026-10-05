@@ -1,9 +1,19 @@
-﻿node_modules/
+node_modules/
 target/
 .env
+.env.*
 *.log
 __pycache__/
 
 .venv/
 .pytest_cache/
 *.egg-info/
+
+# Secrets / infrastructure state (never commit)
+*.pem
+*.key
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
