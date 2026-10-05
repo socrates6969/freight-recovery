@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import datetime
 
 from fastapi.testclient import TestClient
 
-from freight_recovery.api.main import app
+from freight_recovery.api.main import app, create_app
+from freight_recovery.config import Settings
+from tests._support import AUTH
 from freight_recovery.models import Perspective
 from freight_recovery.pipeline import run_pipeline
 
 NOW = datetime(2025, 3, 15, 9, 0)
-client = TestClient(app)
+client = TestClient(app, headers=AUTH)
 
 
 def test_packet_contents_shipper(ld5001):
@@ -45,7 +48,9 @@ def test_health():
 
 
 def test_openapi_documents_surface():
-    spec = client.get("/openapi.json").json()
+    """The schema is OFF on the default app (see test_auth_api.py); serve it via docs_mode=auth."""
+    docs_app = create_app(replace(Settings.from_env(), docs_mode="auth"))
+    spec = TestClient(docs_app, headers=AUTH).get("/openapi.json").json()
     assert "/v1/analyze" in spec["paths"] and "/v1/analyze/text" in spec["paths"]
     assert "pre-product" in spec["info"]["title"].lower()
 

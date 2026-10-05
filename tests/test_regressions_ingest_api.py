@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 from freight_recovery.api import main as api_main
 from freight_recovery.api.main import app
+from tests._support import AUTH
 from freight_recovery.errors import IngestError
 from freight_recovery.evidence.sanitize import md, plain
 from freight_recovery.extraction import DeterministicStubProvider, extract_bundle
@@ -19,7 +20,7 @@ from freight_recovery.ingest import classify, ingest_bytes
 from freight_recovery.models import DocType, Perspective
 from freight_recovery.pipeline import run_pipeline
 
-client = TestClient(app, raise_server_exceptions=False)
+client = TestClient(app, raise_server_exceptions=False, headers=AUTH)
 D = Decimal
 
 
