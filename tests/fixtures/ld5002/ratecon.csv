@@ -1,0 +1,9 @@
+Document,Rate Confirmation
+Load Number,LD-5002
+Carrier,Acme Freight LLC
+Linehaul Rate,1400.00
+Fuel Surcharge,168.00
+Detention Free Hours,2
+Detention Rate Per Hour,50.00
+Detention Max Hours,8
+Authorized Accessorials,Detention

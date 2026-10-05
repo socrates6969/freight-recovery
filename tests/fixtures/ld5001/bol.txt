@@ -1,0 +1,6 @@
+DOCUMENT: BILL OF LADING
+Load Number: LD-5001
+Facility: Widget Co DC 4
+Appointment Time: 2025-03-03 08:00
+Arrival Time: 2025-03-03 07:45
+Departure Time: 2025-03-03 11:30

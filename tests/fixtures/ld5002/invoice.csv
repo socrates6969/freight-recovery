@@ -1,0 +1,4 @@
+Invoice Number,Load Number,Carrier,Shipper,Invoice Date,Total
+INV-2002,LD-5002,Acme Freight LLC,Widget Co,2025-03-12,1568.00
+Linehaul,1400.00
+Fuel Surcharge,168.00
