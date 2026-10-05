@@ -1,0 +1,10 @@
+.venv
+.git
+__pycache__
+.pytest_cache
+tests
+business
+financial
+fundraising
+hiring
+technical

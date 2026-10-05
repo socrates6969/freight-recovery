@@ -1,0 +1,13 @@
+# Local development only. No cloud calls, no credentials.
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      FR_EXTRACTION_PROVIDER: stub        # deterministic offline provider
+      FR_DETENTION_INCREMENT_MINUTES: "15"
+  # TODO: add a postgres service once persistence exists (mirrors RDS in deploy/aws.md).
+  # db:
+  #   image: postgres:16
+  #   environment: { POSTGRES_PASSWORD: local-dev-only }
