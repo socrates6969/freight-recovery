@@ -1,0 +1,9 @@
+# Developer-portal build tooling ONLY (static site generator). Not a runtime dependency of the API.
+# Pinned directly; requirements.txt is the hash-locked output:
+#
+#   uv pip compile requirements.in --universal --python-version 3.12 \
+#       --generate-hashes --no-header -o requirements.txt
+#
+# Install: pip install --require-hashes --no-deps -r developer-portal/requirements.txt
+mkdocs==1.6.1
+mkdocs-material==9.7.7

@@ -15,6 +15,18 @@ updates:
       python-minor-and-patch:
         update-types: ["minor", "patch"]
 
+  # Developer portal tooling (MkDocs + Material), hash-locked like the rest.
+  - package-ecosystem: pip
+    directory: "/developer-portal"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "deps(portal)"
+    groups:
+      portal-minor-and-patch:
+        update-types: ["minor", "patch"]
+
   # Actions stay pinned to commit SHAs; Dependabot rewrites the SHA and the version comment.
   - package-ecosystem: github-actions
     directory: "/"

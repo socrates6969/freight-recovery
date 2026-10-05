@@ -1,0 +1,4 @@
+site/
+# generated at build time from openapi.json (the committed snapshot) so they cannot drift
+docs/api/reference.md
+docs/api/openapi.json

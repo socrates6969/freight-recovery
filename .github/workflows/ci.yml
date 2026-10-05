@@ -80,6 +80,7 @@ jobs:
       # Audit exactly what ships (runtime lock) and the dev/CI lock. Fails on any known vuln.
       - run: pip-audit -r requirements.txt --require-hashes --disable-pip
       - run: pip-audit -r requirements-dev.txt --require-hashes --disable-pip
+      - run: pip-audit -r developer-portal/requirements.txt --require-hashes --disable-pip
 
   trivy-fs:
     name: trivy repository scan (vulnerabilities, secrets, config report)
@@ -107,6 +108,24 @@ jobs:
           scan-ref: .
           severity: HIGH,CRITICAL
           exit-code: "0"
+
+  developer-portal:
+    name: developer portal (MkDocs build; not deployed)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      # The API's runtime lock (the OpenAPI document is generated from the real app) plus the
+      # hash-locked static-site tooling. Both installs refuse anything not in a lock file.
+      - run: pip install --require-hashes --no-deps -r requirements.txt
+      - run: pip install --require-hashes --no-deps -r developer-portal/requirements.txt
+      # --check fails if developer-portal/openapi.json no longer matches the code, then renders
+      # the reference and runs `mkdocs build --strict` (broken links/nav fail the build).
+      - run: python developer-portal/build.py --check
 
   docker:
     name: image (build, trivy scan, container smoke test)

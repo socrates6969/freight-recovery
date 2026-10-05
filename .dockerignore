@@ -24,3 +24,5 @@ var
 requirements-dev.*
 requirements.in
 alembic.ini
+developer-portal
+marketing

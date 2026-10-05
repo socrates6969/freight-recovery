@@ -1,0 +1,1234 @@
+{
+  "components": {
+    "schemas": {
+      "AnalysisList": {
+        "description": "A page of the caller's analyses, newest first.",
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnalysisSummary"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "offset": {
+            "title": "Offset",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "AnalysisList",
+        "type": "object"
+      },
+      "AnalysisRecord": {
+        "description": "A stored analysis with its documents and (when it succeeded) the full packet.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "document_count": {
+            "title": "Document Count",
+            "type": "integer"
+          },
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentInfo"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "load_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Number"
+          },
+          "packet": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EvidencePacket"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pending_review_total": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Review Total"
+          },
+          "perspective": {
+            "title": "Perspective",
+            "type": "string"
+          },
+          "recoverable_total": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recoverable Total"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "perspective",
+          "load_number",
+          "recoverable_total",
+          "pending_review_total",
+          "error_code",
+          "created_at",
+          "completed_at",
+          "document_count",
+          "documents",
+          "packet"
+        ],
+        "title": "AnalysisRecord",
+        "type": "object"
+      },
+      "AnalysisResponse": {
+        "description": "API/CLI output of a full pipeline run.",
+        "properties": {
+          "analysis_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Id of the persisted analysis (retrieve with GET /v1/analyses/{id}).",
+            "title": "Analysis Id"
+          },
+          "packet": {
+            "$ref": "#/components/schemas/EvidencePacket"
+          }
+        },
+        "required": [
+          "packet"
+        ],
+        "title": "AnalysisResponse",
+        "type": "object"
+      },
+      "AnalysisSummary": {
+        "description": "One analysis (job) in a list.",
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "document_count": {
+            "title": "Document Count",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "load_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Number"
+          },
+          "pending_review_total": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pending Review Total"
+          },
+          "perspective": {
+            "title": "Perspective",
+            "type": "string"
+          },
+          "recoverable_total": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recoverable Total"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "perspective",
+          "load_number",
+          "recoverable_total",
+          "pending_review_total",
+          "error_code",
+          "created_at",
+          "completed_at",
+          "document_count"
+        ],
+        "title": "AnalysisSummary",
+        "type": "object"
+      },
+      "BillOfLading": {
+        "description": "Timestamps/facility evidence from the BOL / gate record.",
+        "properties": {
+          "appointment_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Appointment Time"
+          },
+          "arrival_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arrival Time"
+          },
+          "departure_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Departure Time"
+          },
+          "extraction_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Extraction Warnings",
+            "type": "array"
+          },
+          "facility": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Facility"
+          },
+          "load_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Number"
+          }
+        },
+        "title": "BillOfLading",
+        "type": "object"
+      },
+      "Body_analyze_files_v1_analyze_post": {
+        "properties": {
+          "files": {
+            "description": "Invoice, rate confirmation, BOL (PDF/CSV/TXT).",
+            "items": {
+              "contentMediaType": "application/octet-stream",
+              "type": "string"
+            },
+            "title": "Files",
+            "type": "array"
+          },
+          "perspective": {
+            "$ref": "#/components/schemas/Perspective",
+            "default": "shipper"
+          }
+        },
+        "required": [
+          "files"
+        ],
+        "title": "Body_analyze_files_v1_analyze_post",
+        "type": "object"
+      },
+      "ChargeLine": {
+        "description": "One line item on a carrier invoice.",
+        "properties": {
+          "amount": {
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "description",
+          "amount"
+        ],
+        "title": "ChargeLine",
+        "type": "object"
+      },
+      "Direction": {
+        "description": "OVERCHARGE: carrier billed too much (shipper recovers). UNDERBILLED: carrier is owed.",
+        "enum": [
+          "overcharge",
+          "underbilled"
+        ],
+        "title": "Direction",
+        "type": "string"
+      },
+      "DocumentInfo": {
+        "description": "Metadata of a stored upload (the bytes are not returned by the API).",
+        "properties": {
+          "filename": {
+            "title": "Filename",
+            "type": "string"
+          },
+          "sha256": {
+            "title": "Sha256",
+            "type": "string"
+          },
+          "size_bytes": {
+            "title": "Size Bytes",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "filename",
+          "sha256",
+          "size_bytes"
+        ],
+        "title": "DocumentInfo",
+        "type": "object"
+      },
+      "EvidencePacket": {
+        "description": "Everything a human needs to review and send a dispute.",
+        "properties": {
+          "demand_letter": {
+            "title": "Demand Letter",
+            "type": "string"
+          },
+          "disclaimer": {
+            "title": "Disclaimer",
+            "type": "string"
+          },
+          "documents": {
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "extracted": {
+            "$ref": "#/components/schemas/ExtractedBundle"
+          },
+          "generated_at": {
+            "format": "date-time",
+            "title": "Generated At",
+            "type": "string"
+          },
+          "load_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Number"
+          },
+          "markdown": {
+            "title": "Markdown",
+            "type": "string"
+          },
+          "perspective": {
+            "$ref": "#/components/schemas/Perspective"
+          },
+          "result": {
+            "$ref": "#/components/schemas/RecoveryResult"
+          }
+        },
+        "required": [
+          "load_number",
+          "perspective",
+          "generated_at",
+          "documents",
+          "extracted",
+          "result",
+          "demand_letter",
+          "markdown",
+          "disclaimer"
+        ],
+        "title": "EvidencePacket",
+        "type": "object"
+      },
+      "ExtractedBundle": {
+        "description": "All extracted documents for one load. Any member may be missing.",
+        "properties": {
+          "bol": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BillOfLading"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "invoice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Invoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rate_confirmation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RateConfirmation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "title": "ExtractedBundle",
+        "type": "object"
+      },
+      "Finding": {
+        "description": "One rule hit with the arithmetic that produced it.",
+        "properties": {
+          "amount": {
+            "description": "Positive dollars attributable to this finding.",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Amount",
+            "type": "string"
+          },
+          "calculation": {
+            "description": "Human-readable steps.",
+            "items": {
+              "type": "string"
+            },
+            "title": "Calculation",
+            "type": "array"
+          },
+          "confidence": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Confidence",
+            "type": "number"
+          },
+          "direction": {
+            "$ref": "#/components/schemas/Direction"
+          },
+          "explanation": {
+            "title": "Explanation",
+            "type": "string"
+          },
+          "needs_human_review": {
+            "default": false,
+            "title": "Needs Human Review",
+            "type": "boolean"
+          },
+          "rule_id": {
+            "title": "Rule Id",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rule_id",
+          "title",
+          "direction",
+          "amount",
+          "explanation",
+          "confidence"
+        ],
+        "title": "Finding",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Health": {
+        "description": "Liveness response.",
+        "properties": {
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "version"
+        ],
+        "title": "Health",
+        "type": "object"
+      },
+      "Invoice": {
+        "description": "Fields extracted from a carrier freight invoice.",
+        "properties": {
+          "carrier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier"
+          },
+          "extraction_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Extraction Warnings",
+            "type": "array"
+          },
+          "invoice_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoice Date"
+          },
+          "invoice_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invoice Number"
+          },
+          "lines": {
+            "items": {
+              "$ref": "#/components/schemas/ChargeLine"
+            },
+            "title": "Lines",
+            "type": "array"
+          },
+          "load_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Number"
+          },
+          "shipper": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shipper"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          }
+        },
+        "title": "Invoice",
+        "type": "object"
+      },
+      "Perspective": {
+        "description": "Whose money are we recovering?\n\nSHIPPER: recover overcharges the carrier billed us (credits/refunds).\nCARRIER: recover detention/accessorials earned but not billed (or under-billed).",
+        "enum": [
+          "shipper",
+          "carrier"
+        ],
+        "title": "Perspective",
+        "type": "string"
+      },
+      "RateConfirmation": {
+        "description": "Agreed terms for a load (the contract of record for this MVP).",
+        "properties": {
+          "authorized_accessorials": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Authorized Accessorials",
+            "type": "array"
+          },
+          "carrier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Carrier"
+          },
+          "detention_free_hours": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detention Free Hours"
+          },
+          "detention_max_hours": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detention Max Hours"
+          },
+          "detention_rate_per_hour": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Detention Rate Per Hour"
+          },
+          "extraction_warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Extraction Warnings",
+            "type": "array"
+          },
+          "fuel_surcharge": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fuel Surcharge"
+          },
+          "linehaul_rate": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Linehaul Rate"
+          },
+          "load_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Load Number"
+          }
+        },
+        "title": "RateConfirmation",
+        "type": "object"
+      },
+      "RecoveryResult": {
+        "description": "Findings plus the total recoverable for the chosen perspective.",
+        "properties": {
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "ignored_findings": {
+            "description": "Findings that belong to the other perspective; shown for transparency.",
+            "items": {
+              "$ref": "#/components/schemas/Finding"
+            },
+            "title": "Ignored Findings",
+            "type": "array"
+          },
+          "pending_review_total": {
+            "default": "0.00",
+            "description": "Sum of findings flagged needs_human_review; NOT claimed until a person confirms.",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Pending Review Total",
+            "type": "string"
+          },
+          "perspective": {
+            "$ref": "#/components/schemas/Perspective"
+          },
+          "recoverable_total": {
+            "description": "Sum of CONFIRMED findings only (needs_human_review items are excluded).",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Recoverable Total",
+            "type": "string"
+          }
+        },
+        "required": [
+          "perspective",
+          "findings",
+          "recoverable_total"
+        ],
+        "title": "RecoveryResult",
+        "type": "object"
+      },
+      "TextAnalyzeRequest": {
+        "description": "Inline-document analysis request.",
+        "properties": {
+          "documents": {
+            "items": {
+              "$ref": "#/components/schemas/TextDocument"
+            },
+            "maxItems": 10,
+            "minItems": 1,
+            "title": "Documents",
+            "type": "array"
+          },
+          "perspective": {
+            "$ref": "#/components/schemas/Perspective",
+            "default": "shipper"
+          }
+        },
+        "required": [
+          "documents"
+        ],
+        "title": "TextAnalyzeRequest",
+        "type": "object"
+      },
+      "TextDocument": {
+        "description": "A document supplied inline as text/CSV content.",
+        "properties": {
+          "content": {
+            "maxLength": 1000000,
+            "title": "Content",
+            "type": "string"
+          },
+          "filename": {
+            "examples": [
+              "invoice.txt"
+            ],
+            "maxLength": 255,
+            "title": "Filename",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename",
+          "content"
+        ],
+        "title": "TextDocument",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "in": "header",
+        "name": "X-API-Key",
+        "type": "apiKey"
+      },
+      "BearerAuth": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Ingest freight invoice / rate confirmation / BOL, apply detention and invoice-error rules, and return a recovery estimate with an evidence packet and DRAFT demand letter. Pre-product software foundation: authentication, tenant isolation, persistence and sandboxed parsing are implemented; real integrations, a third-party security audit and compliance sign-off are required before real customer data.",
+    "title": "Freight Recovery API (pre-product)",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "description": "Liveness probe (anonymous; used by container/ALB health checks).",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Health"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
+    "/v1/analyses": {
+      "get": {
+        "description": "The caller's analyses, newest first. Never includes other tenants' data.",
+        "operationId": "list_analyses_v1_analyses_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisList"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "API key required"
+          },
+          "403": {
+            "description": "Invalid API key"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "List Analyses",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/v1/analyses/{analysis_id}": {
+      "get": {
+        "description": "One stored analysis. Another tenant's id is indistinguishable from a missing one (404).",
+        "operationId": "get_analysis_v1_analyses__analysis_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "analysis_id",
+            "required": true,
+            "schema": {
+              "maxLength": 64,
+              "title": "Analysis Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisRecord"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "API key required"
+          },
+          "403": {
+            "description": "Invalid API key"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Get Analysis",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/v1/analyze": {
+      "post": {
+        "description": "Analyze uploaded documents for ONE load and return the evidence packet.",
+        "operationId": "analyze_files_v1_analyze_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_analyze_files_v1_analyze_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "API key required"
+          },
+          "403": {
+            "description": "Invalid API key"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Analyze Files",
+        "tags": [
+          "analysis"
+        ]
+      }
+    },
+    "/v1/analyze/text": {
+      "post": {
+        "description": "Analyze inline text/CSV documents (handy for tests and integrations).",
+        "operationId": "analyze_text_v1_analyze_text_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TextAnalyzeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalysisResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "API key required"
+          },
+          "403": {
+            "description": "Invalid API key"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "ApiKeyAuth": []
+          },
+          {
+            "BearerAuth": []
+          }
+        ],
+        "summary": "Analyze Text",
+        "tags": [
+          "analysis"
+        ]
+      }
+    }
+  }
+}

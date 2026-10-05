@@ -1,0 +1,49 @@
+site_name: Freight Recovery API (pre-product)
+site_description: Developer documentation for the Freight Recovery detention/accessorial recovery API. Pre-product; documents the real current API.
+# No site_url on purpose: nothing is deployed yet. Set it when a real host exists.
+docs_dir: docs
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - search.suggest
+  palette:
+    - scheme: default
+      primary: indigo
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Overview: index.md
+  - Authentication: authentication.md
+  - Quickstart: quickstart.md
+  - API reference:
+      - Endpoints and schemas: api/reference.md
+  - SDK and usage examples: sdk.md
+  - Errors: errors.md
+  - Rate limits (planned): rate-limits.md
+  - Changelog: changelog.md
+
+# api/redoc.html and api/openapi.json are copied verbatim (not Markdown pages).
+not_in_nav: |
+  /api/openapi.json

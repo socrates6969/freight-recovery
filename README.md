@@ -68,6 +68,9 @@ Error mapping: bad/malformed input 422 (fixed messages, never echoing content), 
 
 Perspective: **shipper** recovers overcharges; **carrier** recovers detention/accessorials earned but unbilled or under-billed.
 
+## Developer portal
+Static B2B API docs (MkDocs + Material, pinned) in [developer-portal/](developer-portal/README.md): authentication, quickstart, generated API reference and Redoc, errors, rate limits (planned), changelog. Built in CI, **not deployed**. Build locally with `python developer-portal/build.py`.
+
 ## What the rules do today
 Detention (clock starts at later of appointment/arrival, free time and rate from the rate con, rounded down to the configured increment using exact integer-minute arithmetic, capped at contract max), linehaul above rate con, fuel surcharge above rate con, accessorials not authorized on the rate con (flagged for human review), repeated identical lines (also flagged for human review: could be legitimate), invoice total above sum of lines. **Only confirmed findings count toward `recoverable_total` and the demand letter; `needs_human_review` items are listed and summed separately as `pending_review_total`.** Rule keyword tables and thresholds are illustrative and unmeasured. Conventions are explicit in `src/freight_recovery/rules/`; real contracts/tariffs vary and will need per-customer configuration.
 
