@@ -77,3 +77,7 @@ See `technical/overview.md`. Explicit non-goals for v1: moving money (avoids mon
 - **Customer relationship risk:** carriers dunning shippers they depend on may hesitate. Human approval and customer-controlled send settings are required.
 - **Payment/regulatory:** stay out of money movement and brokering until counsel confirms.
 - **Founder/market fit:** no one on the team has been identified with freight-audit domain experience; see `hiring/README.md`.
+
+## 8. Use of funds
+
+Seed proceeds are allocated to independent security audit, external legal counsel, design-partner data validation, and product hardening, in that priority order. See the "Use of Funds (seed raise)" section in `financial/model.md`.

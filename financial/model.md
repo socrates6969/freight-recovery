@@ -120,3 +120,15 @@ Carta-reported medians suggest founder ownership of ~56% after seed, ~36% after 
 5. Whether customers accept contingency, hybrid, or neither.
 
 Until 1-3 are measured, this document should be shown only as a framework, labeled "assumptions, not forecast".
+
+## Use of Funds (seed raise)
+
+The seed is spent in this priority order. The venture is pre-product, so the first dollars buy verification and evidence, not growth.
+
+**1. Independent third-party security audit + penetration test** (SOC 2 readiness). Justified by our own internal pre-audit, which found a ReDoS denial-of-service, missing authentication/tenant isolation, and input-validation gaps (now partially remediated); independent verification plus the auth/persistence hardening is required before any real customer data.
+
+**2. External legal & compliance counsel** — a licensed Norwegian advokat for corporate structure and contracts, plus commercial contract counsel (freight has lower regulatory load, but customer contracts and confidential rate data need review).
+
+**3. Design-partner data & validation** — the #1 milestone: acquire a design partner's real closed files to MEASURE recovery accuracy before scaling (converts our illustrative/unmeasured figures into a provable recovery rate).
+
+**4. Product hardening** (auth, tenancy, persistence, real TMS/EDI integrations) and initial go-to-market.
