@@ -71,7 +71,7 @@ See `technical/overview.md`. Explicit non-goals for v1: moving money (avoids mon
 
 ## 6b. Forecasting (roadmap)
 
-Future capability, not part of the current offer: demand / lane-volume forecasting to help prioritize recovery work (which lanes and carriers to audit first). A simple seasonal baseline is implemented; a neural option (neuralforecast) is opt-in and not yet validated. It requires real multi-series historical data from design partners and often only ties simple baselines, so we make no accuracy claim and do not sell it. Revisit after G2. Norwegian version (`business-plan.no.md`) pending.
+Future capability, not part of the current offer: demand / lane-volume forecasting to help prioritize recovery work (which lanes and carriers to audit first). A simple seasonal baseline is implemented; a neural option (neuralforecast) is opt-in and not yet validated. It requires real multi-series historical data from design partners and often only ties simple baselines, so we make no accuracy claim and do not sell it. Revisit after G2.
 
 ## 7. Key risks (see also README)
 
