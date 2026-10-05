@@ -1,7 +1,9 @@
 """Domain models shared across pipeline stages (pydantic v2).
 
-All money values are ``Decimal`` (never float). Datetimes are naive and are
-assumed to be in the facility's local time (TODO: timezone handling).
+All money values are ``Decimal`` (never float). Datetimes may be naive (assumed
+to be in the facility's local time) or timezone-aware, but one load must not mix
+the two (the rules reject mixed input). Naive local times across a DST change can
+mis-state dwell by an hour; supply offsets when that matters.
 """
 
 from __future__ import annotations
@@ -40,6 +42,9 @@ class RawDocument(BaseModel):
     doc_type: DocType = DocType.UNKNOWN
     text: str
     sha256: str = Field(description="SHA-256 of the original bytes, for evidence integrity.")
+    warnings: list[str] = Field(
+        default_factory=list, description="Ingest-time notes (e.g. rows that were not understood)."
+    )
 
 
 class ChargeLine(BaseModel):
@@ -59,6 +64,7 @@ class Invoice(BaseModel):
     invoice_date: str | None = None
     lines: list[ChargeLine] = Field(default_factory=list)
     total: Decimal | None = None
+    extraction_warnings: list[str] = Field(default_factory=list)
 
 
 class RateConfirmation(BaseModel):
@@ -72,6 +78,7 @@ class RateConfirmation(BaseModel):
     detention_rate_per_hour: Decimal | None = None
     detention_max_hours: Decimal | None = None
     authorized_accessorials: list[str] = Field(default_factory=list)
+    extraction_warnings: list[str] = Field(default_factory=list)
 
 
 class BillOfLading(BaseModel):
@@ -82,6 +89,7 @@ class BillOfLading(BaseModel):
     appointment_time: datetime | None = None
     arrival_time: datetime | None = None
     departure_time: datetime | None = None
+    extraction_warnings: list[str] = Field(default_factory=list)
 
 
 class ExtractedBundle(BaseModel):
@@ -118,7 +126,13 @@ class RecoveryResult(BaseModel):
 
     perspective: Perspective
     findings: list[Finding]
-    recoverable_total: Decimal
+    recoverable_total: Decimal = Field(
+        description="Sum of CONFIRMED findings only (needs_human_review items are excluded)."
+    )
+    pending_review_total: Decimal = Field(
+        default=Decimal("0.00"),
+        description="Sum of findings flagged needs_human_review; NOT claimed until a person confirms.",
+    )
     ignored_findings: list[Finding] = Field(
         default_factory=list,
         description="Findings that belong to the other perspective; shown for transparency.",

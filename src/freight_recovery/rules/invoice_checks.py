@@ -6,6 +6,7 @@ charge-code mapping and tariff/contract lookups instead of keywords.
 
 from __future__ import annotations
 
+import re
 from decimal import Decimal
 
 from freight_recovery.models import ChargeLine, Direction, Finding, Invoice, RateConfirmation
@@ -28,27 +29,57 @@ ACCESSORIAL_WORDS = (
 )
 
 
+_INCLUDED = re.compile(r"\b(incl|includes|including|included|inc)\b")
+
+
+def _norm_text(text: str) -> str:
+    """Lowercase and collapse punctuation/whitespace so 'Stop-off' == 'stop off'."""
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def classify_line(line: ChargeLine) -> str:
+    """Assign a line to exactly ONE category (first match wins; categories never overlap).
+
+    Order matters: detention, then linehaul-that-includes-something ("Linehaul incl fuel"
+    is linehaul, not fuel), then fuel surcharge, linehaul, other fuel, accessorial.
+    Returns one of ``detention | linehaul | fuel | accessorial | other``.
+    """
+    d = _norm_text(line.description)
+    squashed = d.replace(" ", "")
+    if "detention" in d or "dwell" in d:
+        return "detention"
+    has_linehaul = "linehaul" in squashed
+    if has_linehaul and _INCLUDED.search(d):
+        return "linehaul"
+    if "fuel" in d and ("surcharge" in d or "fsc" in d.split()):
+        return "fuel"
+    if has_linehaul:
+        return "linehaul"
+    if "fuel" in d:
+        return "fuel"
+    if any(_norm_text(w) in d for w in ACCESSORIAL_WORDS):
+        return "accessorial"
+    return "other"
+
+
 def is_detention(line: ChargeLine) -> bool:
     """True if the line is a detention/dwell charge."""
-    d = line.description.lower()
-    return "detention" in d or "dwell" in d
+    return classify_line(line) == "detention"
 
 
 def is_linehaul(line: ChargeLine) -> bool:
     """True if the line is base linehaul."""
-    d = line.description.lower().replace(" ", "")
-    return "linehaul" in d
+    return classify_line(line) == "linehaul"
 
 
 def is_fuel(line: ChargeLine) -> bool:
     """True if the line is a fuel surcharge."""
-    return "fuel" in line.description.lower()
+    return classify_line(line) == "fuel"
 
 
 def is_accessorial(line: ChargeLine) -> bool:
     """True for known accessorials (detention is handled by its own rule)."""
-    d = line.description.lower()
-    return any(w in d for w in ACCESSORIAL_WORDS) and not is_detention(line)
+    return classify_line(line) == "accessorial"
 
 
 def dedupe(lines: list[ChargeLine]) -> tuple[list[ChargeLine], list[ChargeLine]]:
@@ -81,9 +112,12 @@ def invoice_findings(
                 title="Duplicate charge line",
                 direction=Direction.OVERCHARGE,
                 amount=ln.amount.quantize(CENT),
-                explanation=f"'{ln.description}' for ${ln.amount} appears more than once.",
+                explanation=f"'{ln.description}' for ${ln.amount} appears more than once. "
+                "Could be a genuine repeat (e.g. two stops) - verify against the BOL/stop list "
+                "before disputing.",
                 calculation=[f"Repeat of identical line '{ln.description}' = ${ln.amount}."],
-                confidence=0.85,
+                confidence=0.6,
+                needs_human_review=True,
             )
         )
 
@@ -114,12 +148,12 @@ def invoice_findings(
                     confidence=0.9,
                 )
             )
-        authorized = [a.lower() for a in rc.authorized_accessorials]
+        authorized = [n for n in (_norm_text(a) for a in rc.authorized_accessorials) if n]
         for ln in unique:
             if not is_accessorial(ln):
                 continue
-            d = ln.description.lower()
-            if not any(a in d or d in a for a in authorized):
+            d = _norm_text(ln.description)
+            if not d or not any(a in d or d in a for a in authorized):
                 findings.append(
                     Finding(
                         rule_id="INV-ACCESSORIAL-UNAUTH",

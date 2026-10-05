@@ -80,7 +80,9 @@ def test_shipper_scenario_ld5001(ld5001):
     assert by_rule["DET-OVERBILLED"].amount == D("225.00")  # billed 300, supported 75
     assert by_rule["INV-ACCESSORIAL-UNAUTH"].amount == D("150.00")
     assert by_rule["INV-ACCESSORIAL-UNAUTH"].needs_human_review
-    assert result.recoverable_total == D("475.00")
+    # The unauthorised-lumper item needs human review: shown, but NOT in the claimed total.
+    assert result.recoverable_total == D("325.00")
+    assert result.pending_review_total == D("150.00")
     assert result.ignored_findings == []
 
 
@@ -119,7 +121,9 @@ def test_duplicate_line_and_total_mismatch():
     rules = sorted(f.rule_id for f in res.findings)
     # duplicate removed before rate comparison, so no double counting vs INV-LINEHAUL-RATE
     assert rules == ["INV-DUPLICATE", "INV-TOTAL-MISMATCH"]
-    assert res.recoverable_total == D("1100.00")
+    # The repeat could be legitimate (two stops), so it is pending review, not claimed.
+    assert res.recoverable_total == D("100.00")
+    assert res.pending_review_total == D("1000.00")
 
 
 def test_clean_invoice_has_no_findings():
