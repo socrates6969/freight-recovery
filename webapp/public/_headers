@@ -1,0 +1,12 @@
+# Security headers for static hosts that honour a Netlify/Cloudflare-style _headers file.
+# For another host, set the same headers in its config. connect-src must list your API origin.
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://api.example.invalid; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Resource-Policy: same-origin
+  Cache-Control: no-store
+  X-Robots-Tag: noindex
