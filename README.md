@@ -18,12 +18,11 @@ Cass, Trax, Descartes, project44, FourKites
 Incumbents could move down-market; invoice-error % figures are vendor-grade. Validate real leakage on one partner's closed files first.
 
 ## Repository map
-- usiness/ — business plan, market & competitor analysis, GTM.
-- inancial/ — unit economics, model, the ARR-to-valuation math.
-- 	echnical/ — architecture, the verified tool/agent pipeline, eval harness (pass^k).
-- undraising/ — right-fit VC/angel firms + their **official** contact channels + outreach templates. (No personal dossiers.)
+- business/ — business plan, market & competitor analysis, GTM.
+- financial/ — unit economics, model, the ARR-to-valuation math.
+- technical/ — architecture, the verified tool/agent pipeline, eval harness (pass^k).
+- fundraising/ — right-fit VC/angel firms + their **official** contact channels + outreach templates. (No personal dossiers.)
 - hiring/ — role specs + how to source an operator/CEO in Norway (recruiters & official channels).
-
 ## Build plan
 Follows the 12-prompt playbook: eval set first → verified tool layer → draft + independent verifier (measured pass^k) → retrieval/memory → routing/cost control → red-team → audit trail + human approval → measured recovery rate → pilot one-pager → seed deck grounded only in measured results.
 
