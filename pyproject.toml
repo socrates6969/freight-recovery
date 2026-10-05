@@ -3,6 +3,7 @@ name = "freight-recovery"
 version = "0.1.0"
 description = "MVP (pre-product): recover freight spend leakage (detention/accessorials/invoice errors)."
 requires-python = ">=3.11"
+authors = [{ name = "Marius Carlsson", email = "mariuscarlsson@gmail.com" }]
 
 [project.optional-dependencies]
 # Optional, OFF by default, roadmap/unvalidated. Not part of the hash-locked

@@ -1,5 +1,7 @@
 # Freight Recovery
 
+(c) 2026 Marius Carlsson (socrates6969) - owner and copyright holder. Proprietary; all rights reserved.
+
 > **Status: pre-product.** Nothing here is validated on real customer data yet. Figures are graded A/B/C from research; the single most important first step is a design-partner pilot. Not investment advice.
 
 ## The problem

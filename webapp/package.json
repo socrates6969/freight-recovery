@@ -1,5 +1,6 @@
 {
   "name": "freight-recovery-webapp",
+  "author": "Marius Carlsson <mariuscarlsson@gmail.com>",
   "version": "0.1.0",
   "private": true,
   "description": "Pilot dashboard for the Freight Recovery API (pre-product, DRAFT, synthetic data only).",
