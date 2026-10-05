@@ -147,7 +147,7 @@ class AnalysisRepository:
             select(Analysis).where(Analysis.id == analysis_id, Analysis.tenant_id == self.tenant_id)
         )
 
-    def list(self, limit: int = 50, offset: int = 0) -> list[Analysis]:
+    def list_page(self, limit: int = 50, offset: int = 0) -> list[Analysis]:
         """This tenant's analyses, newest first."""
         stmt = (
             select(Analysis)

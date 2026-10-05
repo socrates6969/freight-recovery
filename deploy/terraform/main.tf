@@ -46,9 +46,10 @@ resource "aws_ecs_cluster" "this" {
 }
 
 # TODO: IAM execution role + task role (least privilege).
-# TODO: aws_ecs_task_definition (FARGATE, 512 CPU / 1024 MiB, port 8000, logs -> log group,
-#       env FR_EXTRACTION_PROVIDER=stub).
+# TODO: aws_ecs_task_definition (FARGATE, CPU/memory sized for FR_SANDBOX_MAX_WORKERS x FR_SANDBOX_MEMORY_MB + API, port 8000, logs -> log group,
+#       env/secrets per the table in deploy/aws.md: FR_ENV=production, FR_DATABASE_URL and
+#       FR_API_KEY_PEPPER from Secrets Manager, readonlyRootFilesystem, caps dropped, user 10001).
 # TODO: aws_lb + listener (HTTPS/ACM) + target group (health check /health).
 # TODO: aws_ecs_service (desired_count = 1, private subnets, SG from ALB only).
-# TODO: aws_db_instance (postgres, private subnets, encrypted) - only when persistence exists.
+# TODO: aws_db_instance (postgres, private subnets, encrypted) - persistence exists (Alembic migrations; see deploy/aws.md).
 # TODO: aws_s3_bucket for documents (SSE-KMS, block public access) - only when uploads persist.

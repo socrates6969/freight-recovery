@@ -119,9 +119,9 @@ def test_list_is_paginated_and_counted(db_factory, make_tenant):
     with session_scope(db_factory) as s:
         repo = AnalysisRepository(s, tenant.id)
         assert repo.count() == 5
-        assert len(repo.list(limit=2, offset=0)) == 2
-        assert {a.id for a in repo.list(limit=10)} == set(ids)
-        assert len(repo.list(limit=10, offset=4)) == 1
+        assert len(repo.list_page(limit=2, offset=0)) == 2
+        assert {a.id for a in repo.list_page(limit=10)} == set(ids)
+        assert len(repo.list_page(limit=10, offset=4)) == 1
 
 
 def test_storage_keys_must_match_document_count(db_factory, make_tenant):
@@ -164,8 +164,8 @@ def test_repository_never_returns_another_tenants_rows(db_factory, make_tenant, 
         repo_a, repo_b = AnalysisRepository(s, a.id), AnalysisRepository(s, b.id)
         assert repo_a.get(a_id) is not None and repo_a.get(b_id) is None
         assert repo_b.get(b_id) is not None and repo_b.get(a_id) is None
-        assert [x.id for x in repo_a.list()] == [a_id]
-        assert [x.id for x in repo_b.list()] == [b_id]
+        assert [x.id for x in repo_a.list_page()] == [a_id]
+        assert [x.id for x in repo_b.list_page()] == [b_id]
         assert repo_a.count() == repo_b.count() == 1
         with pytest.raises(LookupError):  # cannot mutate another tenant's row either
             repo_a.mark_failed(b_id, "x")

@@ -435,7 +435,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with session_scope(request.app.state.sessionmaker) as s:
             repo = AnalysisRepository(s, ctx.tenant_id)
             return AnalysisList(
-                items=[AnalysisSummary(**_summary(a)) for a in repo.list(limit, offset)],
+                items=[AnalysisSummary(**_summary(a)) for a in repo.list_page(limit, offset)],
                 total=repo.count(),
                 limit=limit,
                 offset=offset,
