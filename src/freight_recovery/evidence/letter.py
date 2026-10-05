@@ -12,6 +12,8 @@ from datetime import date
 
 from freight_recovery.models import ExtractedBundle, Perspective, RecoveryResult
 
+from .sanitize import plain
+
 DRAFT_BANNER = "DRAFT - FOR HUMAN REVIEW. NOT SENT. NOT LEGAL ADVICE."
 
 
@@ -20,10 +22,13 @@ def build_demand_letter(
 ) -> str:
     """Render the demand letter for the result's perspective."""
     inv = bundle.invoice
-    load = (inv.load_number if inv else None) or "N/A"
-    inv_no = (inv.invoice_number if inv else None) or "N/A"
-    carrier = (inv.carrier if inv else None) or "Carrier"
-    shipper = (inv.shipper if inv else None) or "Shipper"
+    load = plain((inv.load_number if inv else None) or "N/A")
+    inv_no = plain((inv.invoice_number if inv else None) or "N/A")
+    carrier = plain((inv.carrier if inv else None) or "Carrier")
+    shipper = plain((inv.shipper if inv else None) or "Shipper")
+    # Only CONFIRMED findings go in the letter and its amount. Items flagged
+    # needs_human_review are internal until a person confirms them.
+    confirmed = [f for f in result.findings if not f.needs_human_review]
 
     if result.perspective is Perspective.SHIPPER:
         to, frm = carrier, shipper
@@ -53,9 +58,13 @@ def build_demand_letter(
         intro,
         "",
     ]
-    for i, f in enumerate(result.findings, 1):
-        lines.append(f"{i}. {f.title}: ${f.amount}")
-        lines.append(f"   {f.explanation}")
+    for i, f in enumerate(confirmed, 1):
+        lines.append(f"{i}. {plain(f.title)}: ${f.amount}")
+        lines.append(f"   {plain(f.explanation, 600)}")
+    if not confirmed:
+        lines.append("(No confirmed discrepancies. Do not send; items below the review "
+                     "threshold are listed only in the internal evidence packet.)")
+        ask = "No amount is requested: there are no confirmed findings."
     lines += [
         "",
         ask,

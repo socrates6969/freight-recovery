@@ -17,10 +17,12 @@ client = TestClient(app)
 def test_packet_contents_shipper(ld5001):
     packet = run_pipeline(ld5001, Perspective.SHIPPER, now=NOW)
     assert packet.load_number == "LD-5001"
-    assert str(packet.result.recoverable_total) == "475.00"
+    assert str(packet.result.recoverable_total) == "325.00"
+    assert str(packet.result.pending_review_total) == "150.00"
     assert len(packet.documents) == 3 and all(len(d["sha256"]) == 64 for d in packet.documents)
     assert "DRAFT - FOR HUMAN REVIEW" in packet.demand_letter
-    assert "$475.00" in packet.demand_letter
+    assert "$325.00" in packet.demand_letter
+    assert "$475.00" not in packet.demand_letter and "Lumper" not in packet.demand_letter
     assert "needs human review" in packet.markdown
     assert "not legal or financial advice" in packet.disclaimer
 
@@ -55,7 +57,7 @@ def test_analyze_text_endpoint(ld5001):
     }
     r = client.post("/v1/analyze/text", json=body)
     assert r.status_code == 200
-    assert r.json()["packet"]["result"]["recoverable_total"] == "475.00"
+    assert r.json()["packet"]["result"]["recoverable_total"] == "325.00"
 
 
 def test_analyze_upload_endpoint(ld5002):

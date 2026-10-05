@@ -13,6 +13,7 @@ from freight_recovery.models import (
 )
 
 from .letter import build_demand_letter
+from .sanitize import md, plain
 
 DISCLAIMER = (
     "MVP / pre-product output. Extracted values and calculations are unverified against "
@@ -30,34 +31,41 @@ def _render_markdown(
     letter: str,
 ) -> str:
     out = [
-        f"# Evidence Packet - Load {load or 'N/A'}",
+        f"# Evidence Packet - Load {md(load or 'N/A')}",
         "",
         f"> {DISCLAIMER}",
         "",
         f"**Perspective:** {perspective.value}  ",
-        f"**Recoverable (pre-review estimate):** ${result.recoverable_total}",
+        f"**Recoverable (confirmed findings only, pre-review estimate):** "
+        f"${result.recoverable_total}  ",
+        f"**Pending human review (NOT claimed):** ${result.pending_review_total}",
         "",
         "## Source documents",
     ]
-    out += [f"- `{d['filename']}` ({d['doc_type']}) sha256 `{d['sha256']}`" for d in docs]
+    out += [
+        f"- `{plain(d['filename'])}` ({md(d['doc_type'])}) sha256 `{plain(d['sha256'], 64)}`"
+        for d in docs
+    ]
     if bundle.warnings:
-        out += ["", "## Extraction warnings"] + [f"- {w}" for w in bundle.warnings]
+        out += ["", "## Extraction warnings"] + [f"- {md(w, 400)}" for w in bundle.warnings]
     out += ["", "## Findings"]
     if not result.findings:
         out.append("No recoverable findings for this perspective.")
     for i, f in enumerate(result.findings, 1):
         review = " **[needs human review]**" if f.needs_human_review else ""
         out += [
-            f"### {i}. {f.title} - ${f.amount}{review}",
-            f"Rule `{f.rule_id}`, confidence {f.confidence:.2f}. {f.explanation}",
+            f"### {i}. {md(f.title)} - ${f.amount}{review}",
+            f"Rule `{plain(f.rule_id)}`, confidence {f.confidence:.2f}. {md(f.explanation, 600)}",
             "",
             "Calculation:",
         ]
-        out += [f"- {s}" for s in f.calculation]
+        out += [f"- {md(s, 400)}" for s in f.calculation]
         out.append("")
     if result.ignored_findings:
         out += ["## Other-direction findings (not included in total)"]
-        out += [f"- {f.title}: ${f.amount} ({f.direction.value})" for f in result.ignored_findings]
+        out += [
+            f"- {md(f.title)}: ${f.amount} ({f.direction.value})" for f in result.ignored_findings
+        ]
         out.append("")
     out += ["## Draft demand letter", "", "```", letter, "```", ""]
     return "\n".join(out)
