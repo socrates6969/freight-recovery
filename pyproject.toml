@@ -4,6 +4,11 @@ version = "0.1.0"
 description = "MVP (pre-product): recover freight spend leakage (detention/accessorials/invoice errors)."
 requires-python = ">=3.11"
 
+[project.optional-dependencies]
+# Optional, OFF by default, roadmap/unvalidated. Not part of the hash-locked
+# requirements.txt or the Docker image. Install: pip install ".[forecast]"
+forecast = ["neuralforecast", "torch"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
