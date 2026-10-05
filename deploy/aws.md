@@ -55,7 +55,7 @@ ECS run-task (operator):  python -m freight_recovery.admin ...      (tenants / A
 
 - [x] Authentication, per-tenant authorization, tenant-scoped persistence (this repo).
 - [x] Bounded parsing (process isolation) (this repo). **[ ] OS-level isolation (above) is yours.**
-- [x] Hash-locked dependencies, `pip-audit`, `trivy`, Dependabot in CI (this repo; CI results not yet seen).
+- [x] Hash-locked dependencies, `pip-audit`, `trivy`, Dependabot in CI (this repo; green in CI).
 - [ ] Real extraction/match providers replacing `stub`; vendor/DPA review before any hosted LLM.
 - [ ] Malware scanning of uploads, retention/deletion policy, tamper-evident audit logging.
 - [ ] Rate limiting / WAF, TLS, private networking, backups/PITR (infrastructure).
