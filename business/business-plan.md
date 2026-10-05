@@ -69,6 +69,10 @@ See `technical/overview.md`. Explicit non-goals for v1: moving money (avoids mon
 | G4: Repeatability | 10+ accounts, measured CAC and payback, churn observed | CAC payback far above 24 months |
 | G5: Raise | Only now present traction; seed deck grounded in measured results only | - |
 
+## 6b. Forecasting (roadmap)
+
+Future capability, not part of the current offer: demand / lane-volume forecasting to help prioritize recovery work (which lanes and carriers to audit first). A simple seasonal baseline is implemented; a neural option (neuralforecast) is opt-in and not yet validated. It requires real multi-series historical data from design partners and often only ties simple baselines, so we make no accuracy claim and do not sell it. Revisit after G2. Norwegian version (`business-plan.no.md`) pending.
+
 ## 7. Key risks (see also README)
 
 - **Recoverable pool smaller than headline.** Mitigation: measure first.

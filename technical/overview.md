@@ -62,6 +62,10 @@ Eval-first: the gold set is built **before** the pipeline.
 
 Named vendors are targets under consideration, not agreements. Integration feasibility and terms are unverified.
 
+## 3b. Forecasting (roadmap)
+
+Optional, off by default, not in the core recovery flow. `freight_recovery.forecast` defines a `Forecaster` interface (`fit` / `predict`, single or multi-series) with a stdlib-only `SeasonalBaselineForecaster` (seasonal-naive / moving average; deterministic; runs in CI). `NeuralForecastForecaster` (NHITS via neuralforecast) is scaffolding behind the `forecast` pip extra (`neuralforecast`, `torch`), imported lazily: without the extra the module still imports and only constructing it raises an "install the [forecast] extra" error. The extra is not hash-locked and not in the Docker image. It is unvalidated; it needs real multi-series history and often only ties the baseline, so any use must be benchmarked against the baseline first. Use: recovery prioritization only. Norwegian version (`overview.no.md`) pending.
+
 ## 4. Security and privacy (baseline)
 Encrypted storage and transit, per-customer data isolation, role-based access, audit logging, retention limits, redaction of personal data in eval sets, and treatment of all inbound documents as untrusted. SOC 2 is a later milestone driven by customer demand.
 
