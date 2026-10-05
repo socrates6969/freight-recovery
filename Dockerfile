@@ -13,6 +13,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     FR_STORAGE_LOCAL_DIR=/data/documents
 
 WORKDIR /app
+# The digest pin makes the base reproducible but freezes its OS packages; pick up fixed
+# security updates at build time (trivy gates the image on fixable HIGH/CRITICAL CVEs).
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get clean \
+    && find /var/lib/apt/lists -type f -delete
 # Hash-locked install: pip aborts if any wheel/sdist differs from requirements.txt, and
 # --no-deps guarantees nothing outside the lock file is pulled in.
 COPY requirements.txt .

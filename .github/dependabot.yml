@@ -31,10 +31,14 @@ updates:
     commit-message:
       prefix: "docker"
 
-  # docker-compose.yml images (postgres, pinned by digest).
+  # docker-compose.yml images (postgres, pinned by digest). The local DB should track the
+  # RDS major version, so major bumps are a deliberate manual decision, not a bot PR.
   - package-ecosystem: docker-compose
     directory: "/"
     schedule:
       interval: weekly
+    ignore:
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "docker"
