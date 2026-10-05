@@ -25,7 +25,9 @@ from freight_recovery.models import (
 
 from .provider import Extracted
 
-_KV = re.compile(r"^\s*([A-Za-z][A-Za-z0-9 /#_\-]*?)\s*[:=]\s*(.+?)\s*$")
+_KEY_OK = re.compile(r"[A-Za-z][A-Za-z0-9 /#_-]{0,79}")  # single class: linear time
+_MAX_LINE = 4000
+_MONEY_OK = re.compile(r"-?[0-9]{1,15}(?:[.][0-9]{1,6})?")
 _DT_FORMATS = ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M")
 
 
@@ -34,12 +36,21 @@ def _norm(key: str) -> str:
 
 
 def parse_money(value: str) -> Decimal | None:
-    """Parse ``$1,234.50`` -> ``Decimal('1234.50')``; ``None`` if not numeric."""
-    cleaned = value.replace("$", "").replace(",", "").strip()
-    try:
-        return Decimal(cleaned)
-    except InvalidOperation:
+    """Parse ``$1,234.50`` / ``(300.00)`` / ``300 USD`` -> ``Decimal``; ``None`` if not numeric.
+
+    Deliberately strict: only plain decimal numbers are accepted. NaN, Infinity,
+    scientific notation (``1e3``), huge magnitudes and ambiguous separators
+    return ``None`` (the caller records a warning) instead of reaching the rules.
+    """
+    cleaned = value.strip()
+    negative = cleaned.startswith("(") and cleaned.endswith(")")
+    if negative:
+        cleaned = cleaned[1:-1]
+    cleaned = re.sub(r"(?i)^usd|usd$", "", cleaned.replace("$", "").replace(",", "").strip()).strip()
+    if not _MONEY_OK.fullmatch(cleaned):
         return None
+    d = Decimal(cleaned)
+    return -d if negative else d
 
 
 def parse_dt(value: str) -> datetime | None:
@@ -53,11 +64,21 @@ def parse_dt(value: str) -> datetime | None:
 
 
 def _pairs(text: str) -> list[tuple[str, str]]:
+    """Split ``Key: value`` / ``Key = value`` lines without backtracking regexes.
+
+    The key never contains ``:`` or ``=`` so the first delimiter is the split point.
+    Over-long lines and keys are skipped (bounded work per line).
+    """
     out: list[tuple[str, str]] = []
     for line in text.splitlines():
-        m = _KV.match(line)
-        if m:
-            out.append((_norm(m.group(1)), m.group(2)))
+        if len(line) > _MAX_LINE:
+            continue
+        idx = min((i for i in (line.find(":"), line.find("=")) if i >= 0), default=-1)
+        if idx <= 0:
+            continue
+        key, val = line[:idx].strip(), line[idx + 1 :].strip()
+        if val and _KEY_OK.fullmatch(key):
+            out.append((_norm(key), val))
     return out
 
 
@@ -98,6 +119,10 @@ class DeterministicStubProvider:
                 amount = parse_money(amt)
                 if amount is not None and name.strip():
                     inv.lines.append(ChargeLine(description=name.strip(), amount=amount))
+                else:
+                    inv.extraction_warnings.append(
+                        "A charge line was ignored because its amount could not be read."
+                    )
         return inv
 
     @staticmethod

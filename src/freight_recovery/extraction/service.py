@@ -29,6 +29,7 @@ def extract_bundle(docs: list[RawDocument], provider: ExtractionProvider) -> Ext
     """
     bundle = ExtractedBundle()
     for doc in docs:
+        bundle.warnings += [f"{doc.filename}: {w}" for w in doc.warnings]
         result = provider.extract(doc)
         if result is None:
             bundle.warnings.append(f"{doc.filename}: unrecognised document type; skipped")
@@ -42,6 +43,7 @@ def extract_bundle(docs: list[RawDocument], provider: ExtractionProvider) -> Ext
             bundle.warnings.append(f"{doc.filename}: duplicate {slot}; ignored")
             continue
         setattr(bundle, slot, result)
+        bundle.warnings += [f"{doc.filename}: {w}" for w in result.extraction_warnings]
     loads = {
         x.load_number
         for x in (bundle.invoice, bundle.rate_confirmation, bundle.bol)
