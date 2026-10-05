@@ -1,27 +1,158 @@
 name: ci
-on: [push, pull_request]
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 # Least privilege: CI only needs to read the repository.
 permissions:
   contents: read
 
+# Actions are pinned to commit SHAs (tag in the comment); Dependabot proposes updates.
+
 jobs:
   test:
+    name: test (sqlite, sandbox=${{ matrix.sandbox }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # inprocess: fast default. process: every request goes through a real worker
+        # subprocess on Linux, exercising the RLIMIT_AS/RLIMIT_CPU memory+CPU caps.
+        sandbox: [inprocess, process]
     steps:
-      # Actions are pinned to commit SHAs (tag in the comment); update deliberately.
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
-      - run: pip install -r requirements-dev.txt
+      # Hash-locked: pip refuses anything not in requirements-dev.txt or whose hash differs.
+      - run: pip install --require-hashes --no-deps -r requirements-dev.txt
+      - run: pip check
       - run: pytest
-  docker-build:
+        env:
+          FR_TEST_SANDBOX: ${{ matrix.sandbox }}
+
+  test-postgres:
+    name: test (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+        env:
+          POSTGRES_USER: freight
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: freight_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U freight -d freight_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: pip install --require-hashes --no-deps -r requirements-dev.txt
+      # The whole suite (Alembic migrations, repositories, API) against a real PostgreSQL.
+      - run: pytest
+        env:
+          FR_TEST_DATABASE_URL: postgresql+psycopg://freight:ci-only@127.0.0.1:5432/freight_test
+
+  dependency-audit:
+    name: pip-audit (known vulnerabilities in locked dependencies)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: pip install --require-hashes --no-deps -r requirements-dev.txt  # provides pip-audit
+      # Audit exactly what ships (runtime lock) and the dev/CI lock. Fails on any known vuln.
+      - run: pip-audit -r requirements.txt --require-hashes --disable-pip
+      - run: pip-audit -r requirements-dev.txt --require-hashes --disable-pip
+
+  trivy-fs:
+    name: trivy repository scan (vulnerabilities, secrets, config report)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      # Blocking: HIGH/CRITICAL vulnerabilities in the lock files and any committed secret.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.70.0
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      # Informational: Dockerfile / Terraform / compose misconfigurations (the Terraform is
+      # still a skeleton, so this reports instead of failing; make it blocking when real).
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.70.0
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: "0"
+
+  docker:
+    name: image (build, trivy scan, container smoke test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           persist-credentials: false
       - run: docker build -t freight-recovery:ci .
+      # Blocking: fixable HIGH/CRITICAL CVEs in the OS packages or Python packages of the image.
+      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.70.0
+          image-ref: freight-recovery:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      # Smoke test in the real image on Linux: migrations, auth, and a full analysis through the
+      # sandbox worker (the production code path). FR_ENV=dev only relaxes the production
+      # guard (SQLite, short pepper); the parser still runs in the worker subprocess.
+      - name: container smoke test
+        run: |
+          set -euo pipefail
+          docker run -d --name api -p 127.0.0.1:8000:8000 \
+            -e FR_ENV=dev -e FR_DATABASE_URL=sqlite:////tmp/ci.db \
+            -e FR_API_KEY_PEPPER=ci-smoke-pepper-not-a-secret-0123456789 \
+            -e FR_SANDBOX_MODE=process \
+            freight-recovery:ci \
+            sh -c 'python -m freight_recovery.db.migrate && exec uvicorn freight_recovery.api.main:app --host 0.0.0.0 --port 8000'
+          for i in $(seq 1 30); do
+            curl -fsS http://127.0.0.1:8000/health && break
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/health
+          # unauthenticated -> 401, wrong key -> 403, docs off -> 404
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/v1/analyses)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'X-API-Key: frk_00000000_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' http://127.0.0.1:8000/v1/analyses)" = 403
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8000/openapi.json)" = 404
+          docker exec api python -m freight_recovery.admin create-tenant ci-tenant
+          KEY=$(docker exec api python -m freight_recovery.admin issue-key ci-tenant 2>/dev/null)
+          F=tests/fixtures/ld5001
+          RESP=$(curl -fsS -H "X-API-Key: $KEY" -F perspective=shipper \
+            -F files=@$F/invoice.txt -F files=@$F/rate_confirmation.txt -F files=@$F/bol.txt \
+            http://127.0.0.1:8000/v1/analyze)
+          echo "$RESP" | grep -q '"recoverable_total":"325.00"'
+          curl -fsS -H "X-API-Key: $KEY" http://127.0.0.1:8000/v1/analyses | grep -q '"total":1'
+      - name: container logs on failure
+        if: failure()
+        run: docker logs api || true

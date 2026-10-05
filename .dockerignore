@@ -18,3 +18,9 @@ financial
 fundraising
 hiring
 technical
+*.db
+*.sqlite3
+var
+requirements-dev.*
+requirements.in
+alembic.ini

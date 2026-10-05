@@ -1,0 +1,16 @@
+# Direct runtime dependencies (exact pins). This file is the HUMAN-EDITED source.
+# requirements.txt is GENERATED from it with hashes for every transitive package:
+#
+#   uv pip compile requirements.in --universal --python-version 3.12 \
+#       --generate-hashes --no-header -o requirements.txt
+#
+# Install (fails if any hash does not match):
+#   pip install --require-hashes --no-deps -r requirements.txt
+fastapi==0.142.2
+uvicorn==0.54.0
+pydantic==2.13.5
+python-multipart==0.0.32
+pdfplumber==0.11.10
+SQLAlchemy==2.0.54
+alembic==1.20.0
+psycopg[binary]==3.3.6

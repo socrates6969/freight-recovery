@@ -1,13 +1,58 @@
-# Local development only. No cloud calls, no credentials.
+# Local development only: API + PostgreSQL (mirrors RDS in deploy/aws.md).
+# No cloud calls, no real credentials. Everything binds to loopback.
+#
+#   docker compose up --build
+#   docker compose run --rm api python -m freight_recovery.admin create-tenant "Acme"
+#   docker compose run --rm api python -m freight_recovery.admin issue-key "Acme"
+#
+# The pepper and DB password below are PUBLIC local-dev values. Never reuse them anywhere real.
+x-api-env: &api-env
+  FR_ENV: dev                                  # the image defaults to production (stricter)
+  FR_DATABASE_URL: postgresql+psycopg://freight:local-dev-only@db:5432/freight
+  FR_API_KEY_PEPPER: ${FR_API_KEY_PEPPER:-local-dev-pepper-not-a-secret-0123456789abcdef}
+  FR_DOCS_MODE: auth                           # /docs only with an API key; "off" to disable
+  FR_EXTRACTION_PROVIDER: stub                 # deterministic offline provider
+  FR_DETENTION_INCREMENT_MINUTES: "15"
+  FR_STORAGE_BACKEND: local
+  FR_SANDBOX_MODE: process
+
 services:
+  db:
+    image: postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_USER: freight
+      POSTGRES_PASSWORD: local-dev-only
+      POSTGRES_DB: freight
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U freight -d freight"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # No published port: only the api/migrate containers on the compose network can reach it.
+
+  migrate:                                      # one-shot: apply Alembic migrations
+    build: .
+    command: ["python", "-m", "freight_recovery.db.migrate"]
+    environment: *api-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   api:
     build: .
     ports:
-      - "127.0.0.1:8000:8000"   # loopback only: the API has no auth
-    environment:
-      FR_EXTRACTION_PROVIDER: stub        # deterministic offline provider
-      FR_DETENTION_INCREMENT_MINUTES: "15"
-  # TODO: add a postgres service once persistence exists (mirrors RDS in deploy/aws.md).
-  # db:
-  #   image: postgres:16
-  #   environment: { POSTGRES_PASSWORD: local-dev-only }
+      - "127.0.0.1:8000:8000"                   # loopback only
+    environment: *api-env
+    volumes:
+      - documents:/data/documents               # StorageProvider=local; prod uses S3
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  documents:
