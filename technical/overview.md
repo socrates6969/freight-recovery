@@ -1,6 +1,18 @@
 # Freight Recovery - Technical Overview
 
-> **Status: pre-product. As of this writing the repository contains documentation only; there is no source code to match.** This overview describes the *intended* architecture so that code can be written to it. When code lands, update this file so each stage maps to a module and each claim to a test. Nothing here has been measured.
+> **Status: pre-product MVP scaffold.** `src/freight_recovery/` contains an offline, deterministic skeleton of the pipeline (about 1,100 lines, 29 tests, FastAPI + CLI). It has never run on real customer documents. Section 0 says exactly what exists; the rest of this file describes the target architecture and marks what is **not built yet**. Nothing here has been measured.
+
+## 0. What the code does today (verified by reading the source)
+
+| Stage | Module | Implemented | Not implemented (TODO in code or this doc) |
+|---|---|---|---|
+| Ingest | `ingest/loader.py` | Classifies and normalizes text, CSV, and PDF text into `RawDocument` | OCR for scans/photos, email parsing, EDI 210/214 |
+| Extract | `extraction/` (`provider.py`, `stub.py`, `service.py`) | Swappable `ExtractionProvider` interface; default is a **rule-based, offline stub** that parses `Key: Value` lines into Invoice / RateConfirmation / BillOfLading models | `LLMExtractionProvider` is a placeholder that raises `NotImplementedError`; no layout-aware parsing; no per-field source pointers yet |
+| Rules | `rules/` (`detention.py`, `invoice_checks.py`, `engine.py`) | Deterministic Decimal arithmetic: detention (clock starts at later of appointment/arrival, free time, 15-min round-down, optional cap) and invoice checks (rate, fuel, unauthorized accessorials via keyword match, duplicates, totals), shipper and carrier perspectives | Carrier-specific charge codes, tariff/contract lookup, multi-stop, weekend/holiday terms, timezone-aware timestamps |
+| Evidence | `evidence/` (`packet.py`, `letter.py`) | Markdown evidence packet and demand-letter draft; dispute window set to 90 days (configurable constant) | Independent verifier, citation spans checked against sources, carrier/contract-specific deadlines |
+| Output | `api/main.py`, `cli.py`, `pipeline.py` | `POST /v1/analyze`, `POST /v1/analyze/text`, `/health`; CLI prints the packet | Case tracking, reminders, dispute status, human approval workflow, immutable audit trail |
+
+Also absent: the pass^k eval harness and gold set (described in section 2 as the plan). The existing tests use small synthetic fixtures (`tests/fixtures/ld5001`, `ld5002`) and prove the arithmetic and plumbing, not real-world accuracy.
 
 ## 1. The pipeline in plain language
 
