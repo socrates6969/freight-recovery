@@ -98,7 +98,9 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     trustProxy: cfg.trustProxy.length > 0 ? cfg.trustProxy : false,
     bodyLimit: cfg.bodyLimitBytes,
     routerOptions: { ignoreTrailingSlash: false, maxParamLength: 128 },
-    requestTimeout: 15000,
+    // Whole-request timeout; uploads need the longer UPLOAD_REQUEST_TIMEOUT_SECONDS (N1). Headers must still
+    // arrive within 10 s (set on the server below) and R43 aborts bodies idle for UPLOAD_IDLE_TIMEOUT_SECONDS.
+    requestTimeout: cfg.imports.uploadRequestTimeoutSeconds * 1000,
     connectionTimeout: 10000,
     keepAliveTimeout: 5000,
     genReqId: () => randomUUID(),
@@ -108,6 +110,7 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     onConstructorPoisoning: 'error',
     return503OnClosing: true,
   });
+  app.server.headersTimeout = 10_000;
   app.removeContentTypeParser('text/plain');
   enforceRouteAccess(app);
 
@@ -166,6 +169,11 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     }),
   );
 
+  const tenMinutes = 600_000;
+  const userKey = (prefix: string) => (req: FastifyRequest) => `${prefix}:${req.ctx?.user.id ?? req.ip}`;
+  const uploadLimiter = wrapLimiter(createRateLimit({ max: cfg.imports.rateLimitUploadMax, timeWindow: tenMinutes, keyGenerator: userKey('u') }));
+  const exportLimiter = wrapLimiter(createRateLimit({ max: cfg.imports.rateLimitExportMax, timeWindow: tenMinutes, keyGenerator: userKey('e') }));
+
   const deps: AuthDeps = {
     cfg,
     base,
@@ -179,7 +187,7 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
 
   registerSecurityPipeline(app, {
     cfg,
-    limiters: { global: globalLimiter, auth: authLimiter },
+    limiters: { global: globalLimiter, auth: authLimiter, upload: uploadLimiter, export: exportLimiter },
     authenticate: (token, meta) => authenticateAccessToken(deps, token, meta),
     onForbidden,
   });

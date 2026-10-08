@@ -31,6 +31,9 @@ const prodOk = {
   APP_ORIGIN: 'https://app.example.com',
   REDIS_URL: 'rediss://cache.internal:6379',
   MAIL_TRANSPORT: 'ses',
+  // Step 3: SSE-KMS key and an existing worker entry (any existing file satisfies the existence check).
+  S3_KMS_KEY_ID: 'arn:aws:kms:us-east-1:111122223333:key/00000000-0000-4000-8000-000000000000',
+  PARSE_WORKER_ENTRY: fileURLToPath(import.meta.url),
 };
 
 function problems(env: Record<string, string>): string[] {
@@ -177,5 +180,81 @@ describe('config', () => {
 
   it('documented dev secrets are long enough to be used in dev', () => {
     for (const s of DOCUMENTED_DEV_SECRETS) expect(s.length).toBeGreaterThanOrEqual(43);
+  });
+});
+
+describe('config: step 3 import/export knobs (N3)', () => {
+  it('has the documented defaults', () => {
+    const c = loadConfig({ ...base, NODE_ENV: 'test' });
+    expect(c.imports).toMatchObject({
+      maxFileBytes: 10485760,
+      maxFilesPerBatch: 10,
+      tenantStorageQuotaBytes: 1073741824,
+      uploadRequestTimeoutSeconds: 60,
+      uploadIdleTimeoutSeconds: 10,
+      uploadMaxConcurrentPerTenant: 4,
+      parseTimeoutMs: 20000,
+      parseMemoryMb: 256,
+      parseMaxConcurrency: 2,
+      parseQueueTimeoutMs: 5000,
+      parseMaxOutputBytes: 25165824,
+      parseMaxPdfPages: 50,
+      parseMaxTextChars: 2000000,
+      parseMaxImagePixels: 50000000,
+      reviewConfidenceThreshold: 0.9,
+      exportMaxRows: 50000,
+      exportMaxConcurrentPerTenant: 2,
+      rateLimitUploadMax: 60,
+      rateLimitExportMax: 10,
+      staleSeconds: 600,
+    });
+    expect(c.s3.sse).toBe('aws:kms');
+    expect(c.imports.workerEntry.replaceAll('\\', '/')).toMatch(/api\/dist\/src\/imports\/sandbox\/worker-main\.js$/u);
+  });
+
+  it('accepts small limits outside production (tests)', () => {
+    const c = loadConfig({ ...base, NODE_ENV: 'test', PARSE_TIMEOUT_MS: '200', PARSE_MEMORY_MB: '32', IMPORT_MAX_FILE_BYTES: '100', S3_SSE: 'none' });
+    expect([c.imports.parseTimeoutMs, c.imports.parseMemoryMb, c.imports.maxFileBytes, c.s3.sse]).toEqual([200, 32, 100, 'none']);
+  });
+
+  it.each([
+    [{ S3_SSE: 'none' }, 'S3_SSE must be aws:kms in production'],
+    [{ S3_KMS_KEY_ID: '' }, 'S3_KMS_KEY_ID is required in production'],
+    [{ PARSE_TIMEOUT_MS: '999' }, 'PARSE_TIMEOUT_MS is below its production floor (1000)'],
+    [{ PARSE_TIMEOUT_MS: '60001' }, 'PARSE_TIMEOUT_MS is above its production ceiling (60000)'],
+    [{ PARSE_MEMORY_MB: '63' }, 'PARSE_MEMORY_MB is below its production floor (64)'],
+    [{ PARSE_MEMORY_MB: '1025' }, 'PARSE_MEMORY_MB is above its production ceiling (1024)'],
+    [{ UPLOAD_REQUEST_TIMEOUT_SECONDS: '121' }, 'UPLOAD_REQUEST_TIMEOUT_SECONDS is above its production ceiling (120)'],
+    [{ UPLOAD_IDLE_TIMEOUT_SECONDS: '31' }, 'UPLOAD_IDLE_TIMEOUT_SECONDS is above its production ceiling (30)'],
+    [{ PARSE_WORKER_ENTRY: '/nonexistent/worker-main.js' }, 'PARSE_WORKER_ENTRY does not exist (build the API first)'],
+  ])('production guard %j', (override, expected) => {
+    expect(problems({ ...prodOk, ...override })).toContain(expected);
+  });
+
+  it('rejects out-of-range values in every environment', () => {
+    expect(problems({ ...base, NODE_ENV: 'test', IMPORT_MAX_FILE_BYTES: '26214401' })).toContain('IMPORT_MAX_FILE_BYTES must be between 1 and 26214400');
+    expect(problems({ ...base, NODE_ENV: 'test', PARSE_MAX_TEXT_CHARS: '5000001' })).toContain('PARSE_MAX_TEXT_CHARS must be between 1 and 5000000');
+    expect(problems({ ...base, NODE_ENV: 'test', EXPORT_MAX_ROWS: '200001' })).toContain('EXPORT_MAX_ROWS must be between 1 and 200000');
+    expect(problems({ ...base, NODE_ENV: 'test', S3_SSE: 'AES256' })).toContain('S3_SSE must be aws:kms or none');
+    for (const bad of ['0.49', '1.01', 'abc', '0.9.1', '-1']) {
+      expect([bad, problems({ ...base, NODE_ENV: 'test', REVIEW_CONFIDENCE_THRESHOLD: bad })]).toEqual([
+        bad,
+        ['REVIEW_CONFIDENCE_THRESHOLD must be a decimal between 0.50 and 1.00'],
+      ]);
+    }
+    expect(loadConfig({ ...base, NODE_ENV: 'test', REVIEW_CONFIDENCE_THRESHOLD: '0.5' }).imports.reviewConfidenceThreshold).toBe(0.5);
+    expect(loadConfig({ ...base, NODE_ENV: 'test', REVIEW_CONFIDENCE_THRESHOLD: '1.00' }).imports.reviewConfidenceThreshold).toBe(1);
+  });
+
+  it('refuses production without the Node permission model', () => {
+    const ps = (() => {
+      try {
+        loadConfig(prodOk, { permissionFlagAvailable: false, fileExists: () => true });
+        return [];
+      } catch (e) {
+        return e instanceof ConfigError ? [...e.problems] : [];
+      }
+    })();
+    expect(ps).toContain('Node permission model (--permission) is required in production for the parse sandbox');
   });
 });

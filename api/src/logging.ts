@@ -29,6 +29,13 @@ export const SENSITIVE_KEYS: ReadonlySet<string> = new Set([
   'cookie',
   'set-cookie',
   'x-csrf-token',
+  // Step 3: document-derived content is never logged (ids, sizes, sha256 prefixes and codes only).
+  'displayname',
+  'filename',
+  'rawvalue',
+  'correctedvalue',
+  'excerpt',
+  'value',
 ]);
 
 const SENSITIVE_FIELDS = [
@@ -48,6 +55,12 @@ const SENSITIVE_FIELDS = [
   'csrfToken',
   'passwordHash',
   'demandLetter',
+  'displayName',
+  'filename',
+  'rawValue',
+  'correctedValue',
+  'excerpt',
+  'value',
 ];
 
 export const REDACT_PATHS: string[] = [

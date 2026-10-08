@@ -10,7 +10,8 @@
     "seed": "tsx --conditions=source scripts/seed.ts",
     "test": "vitest run --project unit",
     "test:acceptance": "vitest run --project acceptance --passWithNoTests",
-    "test:integration": "vitest run --project integration"
+    "test:integration": "vitest run --project integration",
+    "ensure-bucket": "tsx --conditions=source scripts/ensure-bucket.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1147.0",
