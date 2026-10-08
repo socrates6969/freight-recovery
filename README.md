@@ -161,7 +161,8 @@ The software foundation above is necessary, not sufficient. Still required:
 
 > **Status: pre-product, NOT production-ready, synthetic data only.** It has never been deployed, it has
 > had no third-party penetration test, and it has never seen real customer data. A production start is
-> **blocked by design** until a real mail transport exists. The Docker images and the compose stack have
+> **refused by the config validator** until a real mail transport exists: in production every
+> `MAIL_TRANSPORT` value is rejected (`outbox` is a dev sink, `ses` is an unimplemented stub). The Docker images and the compose stack have
 > never been built or started (the Docker engine was down for the whole build). Everything under
 > "Before real customer data" above applies here too. Threat model and known gaps:
 > [technical/web-platform-security.md](technical/web-platform-security.md). Architecture:
@@ -219,7 +220,8 @@ openssl rand -base64 32     # MFA_ENC_KEY     (must be base64 of exactly 32 rand
 #   no openssl? node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 set -a; . ./.env; set +a    # the API and the seed read process.env only (no .env loader)
 
-# 3. Schema + synthetic seed (owner role via MIGRATE_DATABASE_URL; the seed refuses NODE_ENV=production)
+# 3. Schema + synthetic seed (owner role via MIGRATE_DATABASE_URL). The seed runs only with NODE_ENV=development|test
+#    AND a loopback/compose DB host (127.0.0.1, localhost, ::1, postgres) or an explicit ALLOW_SEED=1; never RDS.
 npm run db:migrate:deploy
 npm run db:seed             # idempotent;  npm run db:seed -- --reset  wipes and recreates the seed tenants
 

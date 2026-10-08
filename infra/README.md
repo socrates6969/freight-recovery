@@ -56,5 +56,7 @@ deliberate human step after review.
 
 ## Known gap
 
-The API refuses to start with `MAIL_TRANSPORT=outbox` in production and the SES transport is not
-implemented yet, so a production deployment is blocked until a real mail transport exists (by design).
+No real mail transport exists yet. In production the API's config validator refuses every
+`MAIL_TRANSPORT` value (`outbox` is a dev/test sink; `ses` is a stub whose `SesMailer` throws), so the
+ECS task in `ecs.tf` (which sets `MAIL_TRANSPORT=ses`) will not start until a real transport is
+implemented and allow-listed in `PRODUCTION_MAIL_TRANSPORTS` (`api/src/config.ts`).

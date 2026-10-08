@@ -2,7 +2,8 @@
 
 > **Status: pre-product, synthetic data only.** The TypeScript web platform (`web/`, `api/`,
 > `packages/shared/`, `infra/`) has never been deployed. No independent penetration test has been
-> carried out. A production start is blocked by design until a real mail transport exists. Do not put
+> carried out. A production start is refused by the config validator until a real mail transport exists
+> (every `MAIL_TRANSPORT` value is rejected in production). Do not put
 > real customer data into it. The Python service has its own notes in [deploy/aws.md](../deploy/aws.md).
 
 This document covers build-order steps 1 and 2 of the web platform: authentication, RBAC, tenant
@@ -49,7 +50,7 @@ The exceptions are noted in section 3.
 | T11 | "Approve X, send Y", races | Approval stores the packet content hash. Send re-hashes the latest revision and requires it to equal both the approval's hash and the stored hash. A DB trigger makes packets immutable except for `status`, and only along the state machine. The claim row is locked (`SELECT ... FOR UPDATE`) for the whole transition. | T-APR-01..11 (incl. concurrency), T-PKT tamper tests | Four-eyes (author ≠ approver) is **not** enforced (assumption A9). |
 | T12 | Injection, malformed input | Prisma uses parameterized queries. Claim search escapes `\ % _` itself, because Prisma 7 `contains` does not. Strict Zod schemas reject unknown keys. Bodies are capped at 64 KiB, with a matching WAF Content-Length rule. | T-VAL-01..06, T-CLM | No uploads or URL fetching exist yet (step 3). The hostile-document pipeline is future work. |
 | T13 | Leakage through errors and logs | Error messages are fixed and never echo input. The UI shows fixed texts for 422 and 500. Pino redacts known paths, and a recursive scrubber covers the rest. Request logs carry method, path (no query string), status, duration and requestId. Config errors name the key, never the value. | T-LOG-01/02, T-UI-10, T-CFG | Forced-500 header and log checks are not automatable (section 3). |
-| T14 | Unsafe production configuration | `NODE_ENV` defaults to `production`. Production refuses to start with `COOKIE_SECURE=false`, `ENABLE_DEV_OUTBOX`, `MAIL_TRANSPORT=outbox`, `RATE_LIMIT_ENABLED=false` or a missing `REDIS_URL`. Secrets must be at least 43 characters, must differ from each other and must not look like placeholders, in every environment. In production they also must not be a documented dev or CI value, and must pass an alphabet-aware entropy check (≥160 bits, no repetition, at least 8 distinct characters). Random hex and base64 both pass. | T-CFG-01..04, `api/test/config.test.ts` (1000 random hex and base64 draws) | None known. This includes the G-B hole, fixed in fix round 1. |
+| T14 | Unsafe production configuration | `NODE_ENV` defaults to `production`. Production refuses to start with `COOKIE_SECURE=false`, `ENABLE_DEV_OUTBOX`, any `MAIL_TRANSPORT` that is not implemented (currently all of them: `outbox` is a dev sink and `ses` is a stub, fix round 3), `RATE_LIMIT_ENABLED=false` or a missing `REDIS_URL`. Secrets must be at least 43 characters, must differ from each other and must not look like placeholders, in every environment. In production they also must not be a documented dev or CI value, and must pass an alphabet-aware entropy check (≥160 bits, no repetition, at least 8 distinct characters). Random hex and base64 both pass. | T-CFG-01..04, `api/test/config.test.ts` (1000 random hex and base64 draws) | None known. This includes the G-B hole, fixed in fix round 1. |
 | T15 | Supply chain | Exact pins and a lockfile. `.npmrc` sets `ignore-scripts=true`, and an install-script allow-list is checked in CI. CI runs `npm audit` and `npm audit signatures`. GitHub Actions are pinned by SHA and images by digest. | T-REPO, T-CI-01 | Five allow-listed packages ship install scripts that are never run. Each has a documented reason in `tools/allowed-install-scripts.json`. |
 | T16 | Clickjacking, downgrade, MIME sniffing | `frame-ancestors 'none'`, `X-Frame-Options: DENY`, HSTS, `nosniff`, `Referrer-Policy: no-referrer`, COOP and CORP on the API and the static site (`web/security-headers.json`, CloudFront response-headers policy). | T-HDR-01..03 | None known. |
 | T17 | Money movement or outbound demand | There is no payment code. "Send" only marks a demand `SEND_READY` and audits it. No email or network call is made. | T-APR (no-egress) | None. |
@@ -62,8 +63,12 @@ These are open. Do not read any of them as done.
    returned HTTP 500 for the whole run. Only `docker compose -f compose.web.yml config -q` (an offline
    parse) was run. The API and web Dockerfiles, nginx in a container, MinIO and the `migrate` target are
    unverified. DB paths were verified against a portable PostgreSQL 16.15 instead.
-2. **No real mail transport.** `SesMailer` throws `NotConfigured`, and production refuses
-   `MAIL_TRANSPORT=outbox`, so a **production start is blocked by design**. Password-reset and invite
+2. **No real mail transport.** `SesMailer` throws `NotConfigured`. Until fix round 3, `MAIL_TRANSPORT=ses`
+   passed production validation, which made forgot-password answer 500 for existing accounts and 202 for
+   unknown ones (an enumeration oracle). Now production refuses every unimplemented transport, so a
+   **production start is refused by the config validator**. In addition, forgot-password always answers
+   the identical 202 when delivery fails (logged and audited as `delivery_failed`, never surfaced), and
+   invite creation fails with a fixed 503 and rolls back. Password-reset and invite
    emails cannot be delivered anywhere yet.
 3. **The dev `mail_outbox` stores raw reset and invite tokens** so that `GET /api/v1/dev/outbox` can show
    them. This is dev/test only: the route is registered only when `ENABLE_DEV_OUTBOX=true` and
@@ -90,8 +95,9 @@ Other residual risks and limits:
 - Chain heads are not anchored externally (T10).
 - `infra/` has passed `terraform fmt` and `validate` only. It has never been planned or applied, and it
   has no ECR repository or CI deploy path yet.
-- Seeded MFA accounts share one public TOTP secret (`api/scripts/seed.ts`). The seed refuses to run when
-  `NODE_ENV=production`.
+- Seeded MFA accounts share one public TOTP secret (`api/scripts/seed.ts`). The seed runs only with
+  `NODE_ENV=development|test` AND a loopback/compose database host (or an explicit `ALLOW_SEED=1`), and
+  never against an `amazonaws.com` host.
 - Prisma 7.10 issues concurrent relation loads on one transaction connection, which triggers a `pg`
   DeprecationWarning. Results are correct (pg queues them). This is an upstream issue.
 - The acceptance suites (`*/test-acceptance/`) were run by the test pipeline but are not committed on

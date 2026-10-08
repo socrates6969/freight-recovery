@@ -164,7 +164,8 @@ Programvarefundamentet ovenfor er nødvendig, ikke tilstrekkelig. Fortsatt påkr
 
 > **Status: før produkt, IKKE produksjonsklar, kun syntetiske data.** Plattformen har aldri vært utrullet,
 > har ikke hatt noen tredjeparts penetrasjonstest og har aldri sett reelle kundedata. Oppstart i
-> produksjon er **blokkert med vilje** til en ekte e-posttransport finnes. Docker-imagene og
+> produksjon **avvises av konfigurasjonsvalideringen** til en ekte e-posttransport finnes: i produksjon
+> avvises alle `MAIL_TRANSPORT`-verdier (`outbox` er kun for utvikling, `ses` er en uimplementert stubb). Docker-imagene og
 > compose-stacken har aldri vært bygget eller startet (Docker-motoren var nede under hele byggingen). Alt
 > under «Før reelle kundedata» ovenfor gjelder her også. Trusselmodell og kjente mangler (engelsk):
 > [technical/web-platform-security.md](technical/web-platform-security.md). Arkitektur:
@@ -225,7 +226,8 @@ openssl rand -base64 32     # MFA_ENC_KEY     (must be base64 of exactly 32 rand
 #   no openssl? node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 set -a; . ./.env; set +a    # the API and the seed read process.env only (no .env loader)
 
-# 3. Schema + synthetic seed (owner role via MIGRATE_DATABASE_URL; the seed refuses NODE_ENV=production)
+# 3. Schema + synthetic seed (owner role via MIGRATE_DATABASE_URL). The seed runs only with NODE_ENV=development|test
+#    AND a loopback/compose DB host (127.0.0.1, localhost, ::1, postgres) or an explicit ALLOW_SEED=1; never RDS.
 npm run db:migrate:deploy
 npm run db:seed             # idempotent;  npm run db:seed -- --reset  wipes and recreates the seed tenants
 

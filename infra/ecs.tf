@@ -77,6 +77,8 @@ locals {
     { name = "HSTS_MAX_AGE_SECONDS", value = tostring(var.hsts_max_age_seconds) },
     { name = "BODY_LIMIT_BYTES", value = tostring(var.body_limit_bytes) },
     { name = "TRUST_PROXY", value = var.vpc_cidr },
+    # SES is NOT implemented (SesMailer is a stub). The API's production config refuses every
+    # unimplemented MAIL_TRANSPORT, so this task will not start until a real transport exists.
     { name = "MAIL_TRANSPORT", value = "ses" },
     { name = "S3_REGION", value = var.region },
     { name = "S3_BUCKET", value = aws_s3_bucket.documents.bucket },
