@@ -16,6 +16,11 @@ on:
       - "eslint.config.js"
       - "compose.web.yml"
       - ".github/workflows/web-ci.yml"
+      # The API acceptance suite checks packet parity against the Python CLI.
+      - "requirements.txt"
+      - "pyproject.toml"
+      - "src/freight_recovery/**"
+      - "tests/fixtures/**"
   pull_request:
     paths:
       - "api/**"
@@ -31,6 +36,11 @@ on:
       - "eslint.config.js"
       - "compose.web.yml"
       - ".github/workflows/web-ci.yml"
+      # The API acceptance suite checks packet parity against the Python CLI.
+      - "requirements.txt"
+      - "pyproject.toml"
+      - "src/freight_recovery/**"
+      - "tests/fixtures/**"
 
 concurrency:
   group: web-ci-${{ github.ref }}
@@ -98,7 +108,15 @@ jobs:
       - run: npm run db:migrate:deploy
       - run: npm run db:seed
       - run: npm run test:integration
+      # The acceptance suite runs the existing Python CLI for parity checks. Same setup as ci.yml:
+      # pinned setup-python, hash-locked runtime deps, package importable via PYTHONPATH=src.
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: pip install --require-hashes --no-deps -r requirements.txt
       - run: npm run test:acceptance
+        env:
+          PYTHONPATH: ${{ github.workspace }}/src
       - run: npm run build
       - run: npm run audit
       - run: npm audit signatures
