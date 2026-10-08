@@ -10,7 +10,7 @@
     "web"
   ],
   "engines": {
-    "node": ">=22.12.0 <25"
+    "node": ">=22.13.0 <25"
   },
   "scripts": {
     "prisma:generate": "prisma generate --config api/prisma.config.ts",

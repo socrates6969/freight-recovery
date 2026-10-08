@@ -30,4 +30,5 @@ export const STATUS_LABEL: Record<string, string> = {
   REJECTED: 'Rejected',
   SEND_READY: 'Send-ready',
   SUPERSEDED: 'Superseded',
+  AWAITING_ANALYSIS: 'Awaiting analysis',
 };

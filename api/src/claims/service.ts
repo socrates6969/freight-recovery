@@ -4,7 +4,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import type { ApprovalItemDto, ClaimDetailDto, ClaimSummaryDto, ClaimsQueryInput, PacketDto, Role } from '@fr/shared';
+import type { ApprovalItemDto, ClaimDetailDto, ClaimSummaryDto, ClaimsQueryInput, PacketDto, PacketStatus, Role } from '@fr/shared';
 
 import { appendAudit } from '../audit/audit.js';
 import { isUuid } from '../db/errors.js';
@@ -63,7 +63,7 @@ export function toClaimSummary(c: SummaryRow): ClaimSummaryDto {
     pendingReviewCents: c.pendingReviewCents,
     currency: 'USD',
     assignee: c.assignee ? { id: c.assignee.id, name: c.assignee.name } : null,
-    latestPacket: p ? { revision: p.revision, status: p.status as ClaimSummaryDto['status'] } : null,
+    latestPacket: p ? { revision: p.revision, status: p.status as PacketStatus } : null,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
   };
