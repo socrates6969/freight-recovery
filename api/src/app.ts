@@ -1,0 +1,214 @@
+/**
+ * buildApp (C6): builds a fully configured Fastify instance. Importing this module opens nothing; the
+ * database pool and Redis connect lazily on first use after buildApp() is called; app.close() releases them.
+ */
+import { randomUUID } from 'node:crypto';
+
+import fastifyCookie from '@fastify/cookie';
+import fastifyHelmet from '@fastify/helmet';
+import fastifyRateLimit from '@fastify/rate-limit';
+import Fastify, {
+  type FastifyBaseLogger,
+  type FastifyError,
+  type FastifyInstance,
+  type FastifyReply,
+  type FastifyRequest,
+} from 'fastify';
+import { Redis } from 'ioredis';
+import { ZodError } from 'zod';
+
+import { registerAuditRoutes } from './audit/routes.js';
+import { makeOnForbidden } from './auth/authz-denied.js';
+import type { AuthDeps } from './auth/deps.js';
+import { registerDevOutbox } from './auth/dev-outbox.js';
+import { OutboxMailer, SesMailer } from './auth/mailer.js';
+import { registerAuthRoutes } from './auth/routes.js';
+import { authenticateAccessToken } from './auth/session.js';
+import { registerUserRoutes } from './auth/users-routes.js';
+import { registerClaimRoutes } from './claims/routes.js';
+import { loadConfig, type AppConfig } from './config.js';
+import { createDb } from './db/client.js';
+import { TenantScopeError } from './db/errors.js';
+import { ERROR_MESSAGES, HttpError, errors } from './http/errors.js';
+import { enforceRouteAccess, zodDetails } from './http/route.js';
+import { registerSecurityHeaders, registerSecurityPipeline, type Limiter } from './http/security.js';
+import { createLogger } from './logging.js';
+import { registerHealthRoutes, registerPlatformRoutes } from './platform/routes.js';
+import { emailHash } from './security/crypto.js';
+import { JwtService } from './security/jwt.js';
+import { PasswordHasher } from './security/password.js';
+
+export interface BuildAppOptions {
+  logStream?: NodeJS.WritableStream;
+}
+
+type RateLimitFn = (req: FastifyRequest) => Promise<{ isAllowed: boolean; isExceeded: boolean; ttlInSeconds: number }>;
+
+function wrapLimiter(fn: RateLimitFn): Limiter {
+  return async (req) => {
+    const r = await fn(req);
+    // `isAllowed` means "on the allow-list"; a request is blocked only when the bucket is exceeded.
+    const blocked = !r.isAllowed && r.isExceeded;
+    return { allowed: !blocked, retryAfterSeconds: Math.max(1, Math.ceil(r.ttlInSeconds || 1)) };
+  };
+}
+
+function sendError(reply: FastifyReply, req: FastifyRequest, err: HttpError): void {
+  if (err.retryAfterSeconds !== undefined) reply.header('retry-after', String(err.retryAfterSeconds));
+  const body: { error: { code: string; message: string; requestId: string; details?: unknown } } = {
+    error: { code: err.code, message: err.message, requestId: req.frRequestId || String(req.id) },
+  };
+  if (err.details) body.error.details = err.details;
+  void reply.code(err.statusCode).type('application/json; charset=utf-8').send(body);
+}
+
+/** Map any thrown value to a fixed-shape HttpError (never forwards unknown messages). */
+export function toHttpError(err: unknown): HttpError {
+  if (err instanceof HttpError) return err;
+  if (err instanceof ZodError) return errors.validation(zodDetails(err));
+  const fe = err as Partial<FastifyError> & { code?: string; statusCode?: number };
+  switch (fe.code) {
+    case 'FST_ERR_CTP_BODY_TOO_LARGE':
+      return new HttpError(413, 'payload_too_large');
+    case 'FST_ERR_CTP_INVALID_MEDIA_TYPE':
+      return new HttpError(415, 'unsupported_media_type');
+    case 'FST_ERR_CTP_EMPTY_JSON_BODY':
+    case 'FST_ERR_CTP_INVALID_CONTENT_LENGTH':
+    case 'FST_ERR_CTP_INVALID_JSON_BODY':
+    case 'FST_ERR_BAD_URL':
+      return errors.validation([]);
+    case 'P2002':
+      return errors.conflict();
+    case 'P2025':
+      return errors.notFound();
+    default:
+      break;
+  }
+  if (fe.statusCode === 400 && (err instanceof SyntaxError || fe.code?.startsWith('FST_ERR_CTP'))) return errors.validation([]);
+  if (fe.statusCode === 413) return new HttpError(413, 'payload_too_large');
+  return new HttpError(500, 'internal_error');
+}
+
+export async function buildApp(env?: Record<string, string>, opts: BuildAppOptions = {}): Promise<FastifyInstance> {
+  const cfg: AppConfig = loadConfig({ ...process.env, ...(env ?? {}) });
+  const logger = createLogger(cfg.logLevel, opts.logStream);
+
+  const app = Fastify({
+    loggerInstance: logger as FastifyBaseLogger,
+    trustProxy: cfg.trustProxy.length > 0 ? cfg.trustProxy : false,
+    bodyLimit: cfg.bodyLimitBytes,
+    routerOptions: { ignoreTrailingSlash: false, maxParamLength: 128 },
+    requestTimeout: 15000,
+    connectionTimeout: 10000,
+    keepAliveTimeout: 5000,
+    genReqId: () => randomUUID(),
+    requestIdHeader: false,
+    exposeHeadRoutes: false,
+    onProtoPoisoning: 'error',
+    onConstructorPoisoning: 'error',
+    return503OnClosing: true,
+  });
+  app.removeContentTypeParser('text/plain');
+  enforceRouteAccess(app);
+
+  const base = createDb(cfg.databaseUrl);
+  const redis = cfg.redisUrl
+    ? new Redis(cfg.redisUrl, { lazyConnect: true, enableOfflineQueue: true, maxRetriesPerRequest: 2, connectTimeout: 2000 })
+    : null;
+
+  await app.register(fastifyCookie);
+  await app.register(fastifyHelmet, {
+    global: true,
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"], baseUri: ["'none'"], formAction: ["'none'"] },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: { policy: 'same-origin' },
+    crossOriginResourcePolicy: { policy: 'same-origin' },
+    originAgentCluster: false,
+    referrerPolicy: { policy: 'no-referrer' },
+    strictTransportSecurity: cfg.hstsMaxAgeSeconds > 0 ? { maxAge: cfg.hstsMaxAgeSeconds, includeSubDomains: true, preload: false } : false,
+    xContentTypeOptions: true,
+    xDnsPrefetchControl: false,
+    xDownloadOptions: false,
+    xFrameOptions: { action: 'deny' },
+    xPermittedCrossDomainPolicies: false,
+    xXssProtection: false,
+  });
+  await app.register(fastifyRateLimit, {
+    global: false,
+    ...(redis ? { redis, nameSpace: 'fr-rl-' } : {}),
+    skipOnError: false,
+  });
+
+  const createRateLimit = (app as unknown as { createRateLimit: (o: Record<string, unknown>) => RateLimitFn }).createRateLimit;
+  const minute = 60_000;
+  const globalLimiter = wrapLimiter(
+    createRateLimit({ max: cfg.rateLimitGlobalMax, timeWindow: minute, keyGenerator: (req: FastifyRequest) => `g:${req.ip}` }),
+  );
+  const authLimiter = wrapLimiter(
+    createRateLimit({
+      max: cfg.rateLimitAuthMax,
+      timeWindow: cfg.rateLimitAuthWindowSeconds * 1000,
+      keyGenerator: (req: FastifyRequest) => `a:${req.ip}`,
+    }),
+  );
+  const forgotLimiter = wrapLimiter(
+    createRateLimit({
+      max: cfg.rateLimitForgotMax,
+      timeWindow: cfg.rateLimitForgotWindowSeconds * 1000,
+      keyGenerator: (req: FastifyRequest) => {
+        const body = req.body as { email?: unknown } | undefined;
+        const email = typeof body?.email === 'string' ? body.email : '';
+        return `f:${req.ip}:${emailHash(cfg.refreshPepper, email)}`;
+      },
+    }),
+  );
+
+  const deps: AuthDeps = {
+    cfg,
+    base,
+    jwt: new JwtService(cfg.jwtSecret),
+    hasher: new PasswordHasher({ memoryKib: cfg.argon2MemoryKib, timeCost: cfg.argon2TimeCost }),
+    mailer: cfg.mailTransport === 'outbox' ? new OutboxMailer() : new SesMailer(),
+    log: app.log,
+  };
+
+  const onForbidden = makeOnForbidden(base);
+
+  registerSecurityPipeline(app, {
+    cfg,
+    limiters: { global: globalLimiter, auth: authLimiter },
+    authenticate: (token, meta) => authenticateAccessToken(deps, token, meta),
+    onForbidden,
+  });
+  registerSecurityHeaders(app, cfg);
+
+  app.setErrorHandler((err: unknown, req, reply) => {
+    const httpErr = toHttpError(err);
+    if (httpErr.statusCode >= 500) {
+      const kind = err instanceof TenantScopeError ? 'tenant_scope_violation' : (err as Error | undefined)?.name ?? 'unknown';
+      req.log.error({ errorKind: kind, code: (err as { code?: unknown } | undefined)?.code }, 'request failed');
+    }
+    sendError(reply, req, httpErr);
+  });
+  app.setNotFoundHandler((req, reply) => sendError(reply, req, errors.notFound()));
+
+  registerHealthRoutes(app, base);
+  registerAuthRoutes(app, deps, forgotLimiter);
+  registerUserRoutes(app, deps);
+  registerAuditRoutes(app);
+  registerClaimRoutes(app);
+  registerPlatformRoutes(app, base);
+  registerDevOutbox(app, deps);
+
+  app.addHook('onClose', async () => {
+    await base.$disconnect();
+    if (redis) redis.disconnect();
+  });
+
+  return app;
+}
+
+export { ERROR_MESSAGES };

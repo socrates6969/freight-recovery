@@ -1,0 +1,10 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node"],
+    "rootDir": "."
+  },
+  "references": [{ "path": "../packages/shared/tsconfig.build.json" }],
+  "include": ["src/**/*.ts", "scripts/**/*.ts", "test/**/*.ts", "test-acceptance/**/*.ts", "vitest.config.ts", "prisma.config.ts"]
+}
