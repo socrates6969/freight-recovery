@@ -1,0 +1,133 @@
+name: web-ci
+on:
+  push:
+    branches: [master]
+    paths:
+      - "api/**"
+      - "web/**"
+      - "packages/**"
+      - "infra/**"
+      - "tools/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".npmrc"
+      - ".nvmrc"
+      - "tsconfig.base.json"
+      - "eslint.config.js"
+      - "compose.web.yml"
+      - ".github/workflows/web-ci.yml"
+  pull_request:
+    paths:
+      - "api/**"
+      - "web/**"
+      - "packages/**"
+      - "infra/**"
+      - "tools/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".npmrc"
+      - ".nvmrc"
+      - "tsconfig.base.json"
+      - "eslint.config.js"
+      - "compose.web.yml"
+      - ".github/workflows/web-ci.yml"
+
+concurrency:
+  group: web-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: read the repository only. No secrets are used; every secret-looking value below is
+# a PUBLIC CI-only value (the API refuses them in production).
+permissions:
+  contents: read
+
+# Actions are pinned to full commit SHAs (tag in the comment).
+
+jobs:
+  node:
+    name: TS monorepo (lint, typecheck, unit, migrate, seed, acceptance, build, audit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      NODE_ENV: test
+      TEST_DATABASE_URL: postgresql://freight_app:local-dev-only@127.0.0.1:5433/freight_web_test
+      TEST_ADMIN_DATABASE_URL: postgresql://freight_owner:local-dev-only@127.0.0.1:5433/freight_web_test
+      DATABASE_URL: postgresql://freight_app:local-dev-only@127.0.0.1:5433/freight_web_test
+      MIGRATE_DATABASE_URL: postgresql://freight_owner:local-dev-only@127.0.0.1:5433/freight_web_test
+      JWT_SECRET: ci-only-jwt-secret-not-for-production-0123456789abcdefghij
+      CSRF_SECRET: ci-only-csrf-secret-not-for-production-0123456789abcdefghi
+      REFRESH_PEPPER: ci-only-refresh-pepper-not-for-production-0123456789abcdef
+      MFA_ENC_KEY: Y2ktb25seS1tZmEta2V5LW5vdC1mb3ItcHJvZHVjdCE=
+      APP_ORIGIN: http://127.0.0.1:8080
+      COOKIE_SECURE: "false"
+      ENABLE_DEV_OUTBOX: "true"
+      ARGON2_MEMORY_KIB: "1024"
+      ARGON2_TIME_COST: "1"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Create database roles and databases
+        run: bash api/db/init/ci-init.sh
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: "5433"
+          PGUSER: postgres
+          PGPASSWORD: ci-only
+      - run: npm ci --ignore-scripts
+      - run: npm run verify:no-install-scripts
+      - run: npm run prisma:generate
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run db:migrate:deploy
+      - run: npm run db:seed
+      - run: npm run test:acceptance
+      - run: npm run build
+      - run: npm run audit
+      - run: npm audit signatures
+
+  terraform:
+    name: Terraform (fmt, validate; never applied)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.16.5
+          terraform_wrapper: false
+      - run: terraform fmt -check -recursive
+      - run: terraform init -backend=false -input=false
+      - run: terraform validate
+
+  compose:
+    name: Compose files parse
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - run: docker compose -f compose.web.yml config -q
+      - run: docker compose -f docker-compose.yml config -q

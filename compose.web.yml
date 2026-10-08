@@ -1,0 +1,157 @@
+# Local development stack for the TypeScript web app (api + web + Postgres + Redis + MinIO).
+# Separate compose project ("freight-recovery-web"): it never touches docker-compose.yml, which runs the
+# Python service. Everything binds to loopback.
+#
+#   docker compose -f compose.web.yml up --build -d
+#   docker compose -f compose.web.yml run --rm api node dist/scripts/seed.js            # seed (dev only)
+#   docker compose -f compose.web.yml run --rm api node dist/scripts/seed.js --reset    # wipe + reseed
+#   open http://127.0.0.1:8080  (accounts: see api/scripts/seed.ts; password Synthetic-Pass-2026!)
+#
+# ALL secret-looking values below are PUBLIC local-dev values ("local-dev-..."). Never reuse them
+# anywhere real. The API refuses to start in production with any of them (api/src/config.ts).
+name: freight-recovery-web
+
+x-api-env: &api-env
+  NODE_ENV: development
+  HOST: 0.0.0.0
+  PORT: "3001"
+  DATABASE_URL: postgresql://freight_app:local-dev-only@postgres:5432/freight_web
+  MIGRATE_DATABASE_URL: postgresql://freight_owner:local-dev-only@postgres:5432/freight_web
+  JWT_SECRET: ${JWT_SECRET:-local-dev-jwt-secret-not-for-production-0123456789abcdef}
+  CSRF_SECRET: ${CSRF_SECRET:-local-dev-csrf-secret-not-for-production-0123456789abcdef}
+  REFRESH_PEPPER: ${REFRESH_PEPPER:-local-dev-refresh-pepper-not-for-production-0123456789abc}
+  MFA_ENC_KEY: ${MFA_ENC_KEY:-bG9jYWwtZGV2LW1mYS1rZXktbm90LWZvci1wcm9kISE=}
+  APP_ORIGIN: http://127.0.0.1:8080
+  COOKIE_SECURE: "false"          # dev only: http on loopback; refused in production
+  ENABLE_DEV_OUTBOX: "true"       # dev only: GET /api/v1/dev/outbox shows reset/invite tokens
+  MAIL_TRANSPORT: outbox
+  REDIS_URL: redis://redis:6379
+  TRUST_PROXY: 172.31.250.0/24    # the web (nginx) container on this compose network
+  S3_ENDPOINT: http://minio:9000
+  S3_REGION: us-east-1
+  S3_BUCKET: fr-documents-dev
+  S3_FORCE_PATH_STYLE: "true"
+  S3_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-localdev}
+  S3_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-localdev-minio-password}
+  LOG_LEVEL: info
+
+x-hardening: &hardening
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  postgres:
+    image: postgres:16.15-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-local-dev-only}   # public dev value
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./api/db/init/00-roles.sql:/docker-entrypoint-initdb.d/00-roles.sql:ro
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d freight_web"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    <<: *hardening
+    # No published port: only the api reaches it on the compose network.
+
+  minio:
+    # Docker Hub minio/minio is no longer published; Chainguard's build, pinned by digest.
+    image: chainguard/minio@sha256:59667194421209c2c1eacbe761e24787e047985c5dfa96b15da9b59fe9b55cd0
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-localdev}                     # public dev value
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-localdev-minio-password} # public dev value
+    tmpfs:
+      - /data:mode=1777
+    ports:
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  minio-init:
+    image: chainguard/minio-client@sha256:7a5387f27d1aa8fc11286acde9e024b7b1b77585e17c36378552eeafcccf2ba3
+    environment:
+      MC_HOST_local: http://${MINIO_ROOT_USER:-localdev}:${MINIO_ROOT_PASSWORD:-localdev-minio-password}@minio:9000
+      MC_CONFIG_DIR: /tmp/.mc
+    command: ["mb", "--ignore-existing", "local/fr-documents-dev"]
+    depends_on:
+      - minio
+    restart: on-failure:5
+    <<: *hardening
+
+  migrate:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+      target: migrate
+    environment:
+      MIGRATE_DATABASE_URL: postgresql://freight_owner:local-dev-only@postgres:5432/freight_web
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+      target: runtime
+    environment: *api-env
+    user: "10001"
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    <<: *hardening
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      - api
+    restart: unless-stopped
+    <<: *hardening
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.31.250.0/24
+
+volumes:
+  pgdata:

@@ -1,0 +1,8 @@
+# Files consumed inside Linux containers / CI must keep LF line endings on every platform.
+*.sh text eol=lf
+api/Dockerfile text eol=lf
+web/Dockerfile text eol=lf
+api/db/init/*.sql text eol=lf
+api/prisma/migrations/**/*.sql text eol=lf
+web/nginx.conf text eol=lf
+compose.web.yml text eol=lf

@@ -1,0 +1,22 @@
+# BuildKit uses this file (instead of the root .dockerignore) for api/Dockerfile. Allow-list style.
+*
+!package.json
+!package-lock.json
+!.npmrc
+!tsconfig.base.json
+!packages/shared/package.json
+!packages/shared/tsconfig.build.json
+!packages/shared/tsconfig.json
+!packages/shared/src/**
+!api/package.json
+!api/tsconfig.json
+!api/tsconfig.build.json
+!api/prisma.config.ts
+!api/prisma/**
+!api/src/**
+!api/scripts/**
+!web/package.json
+api/src/generated/**
+**/*.test.ts
+**/node_modules
+**/dist
