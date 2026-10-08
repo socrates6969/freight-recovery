@@ -1,4 +1,4 @@
-import { ClaimDetail, ClaimSummary, Packet, displayText, type PacketDto } from '@fr/shared';
+import { ClaimDetail, ClaimDocumentsResponse, ClaimSummary, Packet, displayText, type PacketDto } from '@fr/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { useId, useRef, useState, type KeyboardEvent } from 'react';
@@ -6,11 +6,14 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError } from '../../api/client';
 import { useApi, useCan, useSession, useToast } from '../../app-context';
+import { ExportMenu } from '../../components/ui/ExportMenu';
 import { SafeText } from '../../components/ui/SafeText';
 import { useFocusTrap } from '../../components/ui/use-focus-trap';
 import { formatDate, formatDateTime, formatUsdCents, STATUS_LABEL } from '../../lib/format';
 
-const TABS = ['Summary', 'Evidence', 'History'] as const;
+const TABS = ['Summary', 'Evidence', 'History', 'Documents'] as const;
+export const NO_PACKET_TEXT = 'No evidence packet yet. Analysis has not run for this claim.';
+const DOC_TYPE_LABEL: Record<string, string> = { INVOICE: 'Invoice', RATE_CONFIRMATION: 'Rate confirmation', BILL_OF_LADING: 'Bill of lading', OTHER: 'Other' };
 type Tab = (typeof TABS)[number];
 
 export const DISCLAIMER_TEXT = 'Draft for human review. Not legal advice. Nothing is sent from this app.';
@@ -173,6 +176,7 @@ export function ClaimSheet() {
   const navigate = useNavigate();
   const location = useLocation();
   const canAssign = useCan('claims:assign');
+  const canExportPackets = useCan('export:packets');
   const me = useSession((s) => s.user);
   const [tab, setTab] = useState<Tab>('Summary');
   const ref = useRef<HTMLDivElement>(null);
@@ -185,10 +189,18 @@ export function ClaimSheet() {
   );
 
   const claim = useQuery({ queryKey: ['claim', id], queryFn: () => api.get(`/api/v1/claims/${encodeURIComponent(id)}`, ClaimDetail), retry: false });
+  const hasPacket = claim.data ? claim.data.latestPacket !== null : false;
   const packet = useQuery({
     queryKey: ['packet', id],
     queryFn: () => api.get(`/api/v1/claims/${encodeURIComponent(id)}/packet`, Packet),
     retry: false,
+    enabled: hasPacket,
+  });
+  const documents = useQuery({
+    queryKey: ['claim-documents', id],
+    queryFn: () => api.get(`/api/v1/claims/${encodeURIComponent(id)}/documents`, ClaimDocumentsResponse),
+    retry: false,
+    enabled: tab === 'Documents',
   });
 
   const assign = useMutation({
@@ -229,10 +241,19 @@ export function ClaimSheet() {
               title
             )}
           </h2>
-          <button type="button" className="btn" onClick={close}>
-            <X size={16} aria-hidden="true" />
-            Close
-          </button>
+          <div className="flex items-start gap-2">
+            {canExportPackets && hasPacket ? (
+              <ExportMenu
+                label="Export packet"
+                fallbackName="freight-recovery-packets"
+                pathFor={(f) => `/api/v1/exports/packets?format=${f}&claimId=${encodeURIComponent(id)}`}
+              />
+            ) : null}
+            <button type="button" className="btn" onClick={close}>
+              <X size={16} aria-hidden="true" />
+              Close
+            </button>
+          </div>
         </div>
         <div className="px-6 py-4">
           {claim.isError ? (
@@ -308,7 +329,9 @@ export function ClaimSheet() {
                   </dl>
                 ) : null}
                 {tab === 'Evidence' ? (
-                  packet.isError ? (
+                  !hasPacket ? (
+                    <p className="muted">{NO_PACKET_TEXT}</p>
+                  ) : packet.isError ? (
                     <p role="alert">The evidence packet could not be loaded.</p>
                   ) : packet.data ? (
                     <EvidencePanel packet={packet.data} />
@@ -317,7 +340,9 @@ export function ClaimSheet() {
                   )
                 ) : null}
                 {tab === 'History' ? (
-                  packet.data ? (
+                  !hasPacket ? (
+                    <p className="muted">No review actions yet.</p>
+                  ) : packet.data ? (
                     packet.data.approvals.length === 0 ? (
                       <p className="muted">No review actions yet.</p>
                     ) : (
@@ -343,6 +368,38 @@ export function ClaimSheet() {
                     )
                   ) : (
                     <div className="skeleton h-24" aria-hidden="true" />
+                  )
+                ) : null}
+                {tab === 'Documents' ? (
+                  documents.isError ? (
+                    <p role="alert">The documents could not be loaded.</p>
+                  ) : !documents.data ? (
+                    <div className="skeleton h-24" aria-hidden="true" />
+                  ) : documents.data.items.length === 0 ? (
+                    <p className="muted">No imported documents are linked to this claim.</p>
+                  ) : (
+                    <table className="data-table text-sm">
+                      <thead>
+                        <tr>
+                          <th scope="col">Name</th>
+                          <th scope="col">Type</th>
+                          <th scope="col">SHA-256</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {documents.data.items.map((d) => (
+                          <tr key={d.id}>
+                            <td className="max-w-56">
+                              <SafeText value={d.displayName} />
+                            </td>
+                            <td>{DOC_TYPE_LABEL[d.docType] ?? d.docType}</td>
+                            <td className="font-mono text-xs break-all">
+                              <SafeText value={d.sha256} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   )
                 ) : null}
               </div>
