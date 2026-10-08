@@ -75,10 +75,9 @@ export async function listClaims(
 ): Promise<{ items: ClaimSummaryDto[]; page: number; pageSize: number; total: number }> {
   const filter: ClaimFilter = { q: q.q, status: q.status, perspective: q.perspective, assigneeId: q.assigneeId };
   const where = buildClaimWhere(filter);
-  const [total, rows] = await Promise.all([
-    tx.claim.count({ where }),
-    tx.claim.findMany({ where, orderBy: buildClaimOrderBy(q.sort), ...pageArgs(q.page, q.pageSize), include: SUMMARY_INCLUDE }),
-  ]);
+  // Sequential: both run on the same transaction connection.
+  const total = await tx.claim.count({ where });
+  const rows = await tx.claim.findMany({ where, orderBy: buildClaimOrderBy(q.sort), ...pageArgs(q.page, q.pageSize), include: SUMMARY_INCLUDE });
   return { items: (rows as SummaryRow[]).map(toClaimSummary), page: q.page, pageSize: q.pageSize, total };
 }
 
@@ -112,10 +111,8 @@ export async function listApprovalQueue(
       },
     },
   };
-  const [total, rows] = await Promise.all([
-    tx.claim.count({ where }),
-    tx.claim.findMany({ where, orderBy: buildClaimOrderBy(q.sort), ...pageArgs(q.page, q.pageSize), include }),
-  ]);
+  const total = await tx.claim.count({ where });
+  const rows = await tx.claim.findMany({ where, orderBy: buildClaimOrderBy(q.sort), ...pageArgs(q.page, q.pageSize), include });
   const items = rows.map((r) => {
     const p = r.packets[0];
     const summary = toClaimSummary(r as unknown as SummaryRow);

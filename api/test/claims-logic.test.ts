@@ -1,21 +1,30 @@
 import { describe, expect, it } from 'vitest';
 
 import { packetContentHash, packetTotals, type HashPacket } from '../src/claims/content-hash.js';
-import { buildClaimOrderBy, buildClaimWhere, pageArgs } from '../src/claims/query.js';
+import { buildClaimOrderBy, buildClaimWhere, escapeLike, pageArgs } from '../src/claims/query.js';
 import { canTransition, targetStatus } from '../src/claims/state-machine.js';
 
 describe('claims query builder', () => {
-  it('builds an OR of case-insensitive contains over five fields with the literal q', () => {
+  it('escapes LIKE metacharacters so q is a literal substring', () => {
+    expect(escapeLike('50%')).toBe('50\\%');
+    expect(escapeLike('a_b')).toBe('a\\_b');
+    expect(escapeLike('back\\slash')).toBe('back\\\\slash');
+    expect(escapeLike(`quote'"`)).toBe(`quote'"`);
+    expect(escapeLike('%_\\')).toBe('\\%\\_\\\\');
+  });
+
+  it('builds an OR of case-insensitive contains over five fields with the escaped q', () => {
     for (const q of ['50%', 'a_b', 'back\\slash', `quote'"`]) {
+      const e = escapeLike(q);
       expect(buildClaimWhere({ q })).toEqual({
         AND: [
           {
             OR: [
-              { claimNumber: { contains: q, mode: 'insensitive' } },
-              { loadNumber: { contains: q, mode: 'insensitive' } },
-              { invoiceNumber: { contains: q, mode: 'insensitive' } },
-              { carrierName: { contains: q, mode: 'insensitive' } },
-              { shipperName: { contains: q, mode: 'insensitive' } },
+              { claimNumber: { contains: e, mode: 'insensitive' } },
+              { loadNumber: { contains: e, mode: 'insensitive' } },
+              { invoiceNumber: { contains: e, mode: 'insensitive' } },
+              { carrierName: { contains: e, mode: 'insensitive' } },
+              { shipperName: { contains: e, mode: 'insensitive' } },
             ],
           },
         ],

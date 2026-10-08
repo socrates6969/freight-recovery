@@ -75,20 +75,18 @@ export function registerUserRoutes(app: FastifyInstance, deps: AuthDeps): void {
       const ctx = requireTenant(req);
       return sys(ctx.tenantId, async (tx) => {
         const where = { tenantId: ctx.tenantId };
-        const [total, rows] = await Promise.all([
-          tx.membership.count({ where }),
-          tx.membership.findMany({
-            where,
-            orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-            skip: (query.page - 1) * query.pageSize,
-            take: query.pageSize,
-            include: {
-              user: {
-                select: { id: true, email: true, name: true, status: true, lastLoginAt: true, createdAt: true, mfaSecret: { select: { verifiedAt: true } } },
-              },
+        const total = await tx.membership.count({ where });
+        const rows = await tx.membership.findMany({
+          where,
+          orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+          skip: (query.page - 1) * query.pageSize,
+          take: query.pageSize,
+          include: {
+            user: {
+              select: { id: true, email: true, name: true, status: true, lastLoginAt: true, createdAt: true, mfaSecret: { select: { verifiedAt: true } } },
             },
-          }),
-        ]);
+          },
+        });
         return {
           items: rows.map((m) => ({
             id: m.user.id,

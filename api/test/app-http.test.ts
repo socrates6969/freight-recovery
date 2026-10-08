@@ -21,6 +21,15 @@ const ENV = {
   LOG_LEVEL: 'silent',
   ARGON2_MEMORY_KIB: '8',
   ARGON2_TIME_COST: '1',
+  // Pin every knob these tests depend on so CI/job-level env cannot change the outcome.
+  ENABLE_DEV_OUTBOX: 'false',
+  HSTS_MAX_AGE_SECONDS: '0',
+  BODY_LIMIT_BYTES: '65536',
+  RATE_LIMIT_ENABLED: 'true',
+  RATE_LIMIT_GLOBAL_MAX: '600',
+  RATE_LIMIT_AUTH_MAX: '20',
+  REDIS_URL: '',
+  TRUST_PROXY: '',
 };
 
 const CLAIM = '11111111-1111-4111-8111-111111111111';
