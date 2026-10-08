@@ -1,10 +1,11 @@
+import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { ConfigError, DOCUMENTED_DEV_SECRETS, loadConfig } from '../src/config.js';
+import { ConfigError, DOCUMENTED_DEV_SECRETS, loadConfig, secretEntropyProblem } from '../src/config.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -113,8 +114,35 @@ describe('config', () => {
     }
   });
 
-  it('rejects low-variety secrets in production', () => {
-    expect(problems({ ...prodOk, JWT_SECRET: 'ab'.repeat(30) })).toContain('JWT_SECRET has too little variety to be a random secret');
+  it('accepts 1000 random hex-64 and 1000 random base64-48 secrets (no false rejects)', () => {
+    for (let i = 0; i < 1000; i += 1) {
+      const hex = randomBytes(32).toString('hex');
+      const b64 = randomBytes(48).toString('base64');
+      const b64of32 = randomBytes(32).toString('base64');
+      expect([hex, secretEntropyProblem(hex)]).toEqual([hex, null]);
+      expect([b64, secretEntropyProblem(b64)]).toEqual([b64, null]);
+      expect([b64of32, secretEntropyProblem(b64of32)]).toEqual([b64of32, null]);
+    }
+    // and through the production config path
+    const env = { ...prodOk, JWT_SECRET: randomBytes(32).toString('hex'), CSRF_SECRET: randomBytes(32).toString('hex'), REFRESH_PEPPER: randomBytes(48).toString('base64') };
+    expect(problems(env)).toEqual([]);
+  });
+
+  it('rejects low-entropy, repeated and short secrets in production only', () => {
+    const cases: [string, string][] = [
+      ['a'.repeat(64), 'is a repeated pattern'],
+      ['ab'.repeat(32), 'is a repeated pattern'],
+      ['0123456789abcdef'.repeat(4), 'is a repeated pattern'],
+      ['Synthetic-Pass-2026!'.repeat(3), 'is a repeated pattern'],
+      ['0a1b2c3d4e5f6789abcdef0123456798', 'is too short for its alphabet'],
+      ['deadbeef'.repeat(5) + '0', 'uses too few distinct characters'],
+      ['0'.repeat(40) + '0123456789abcdefABCDEFGH', 'is dominated by one character'],
+      ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaab', 'uses too few distinct characters'],
+    ];
+    for (const [secret, reason] of cases) {
+      expect([secret, secretEntropyProblem(secret)]).toEqual([secret, reason]);
+      expect(problems({ ...prodOk, JWT_SECRET: secret })).toContain(`JWT_SECRET ${reason} to be a random secret`);
+    }
     expect(problems({ ...base, NODE_ENV: 'test', JWT_SECRET: 'ab'.repeat(30) })).toEqual([]);
   });
 

@@ -33,7 +33,8 @@ deliberate human step after review.
 1. Bootstrap remote state (S3 bucket with versioning + SSE-KMS; `use_lockfile = true`) and uncomment the
    backend block in `versions.tf`.
 2. `terraform apply -target=aws_secretsmanager_secret.app` to create the secret containers, then set every
-   value out of band, e.g. `aws secretsmanager put-secret-value --secret-id <arn> --secret-string "$(openssl rand -base64 48)"`.
+   value out of band, e.g. `aws secretsmanager put-secret-value --secret-id <arn> --secret-string "$(openssl rand -hex 32)"`
+   (or `openssl rand -base64 48`; both formats pass the API's production entropy check).
    `mfa-enc-key` must be base64 of 32 random bytes. `redis-auth-token` must be 16-128 printable characters.
 3. `terraform plan` / `terraform apply` for the rest. Terraform never reads any secret value: no secret
    material is in state or plan output.

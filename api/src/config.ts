@@ -104,8 +104,39 @@ const KNOBS = {
 } as const satisfies Record<string, Knob>;
 
 const MIN_SECRET_CHARS = 43;
-/** Production secrets must not be trivially low-entropy (e.g. 'aaaa...'). */
-const MIN_DISTINCT_SECRET_CHARS = 16;
+/** Minimum estimated entropy (bits) for a production secret: alphabet bits per character x length. */
+export const MIN_SECRET_ENTROPY_BITS = 160;
+
+/**
+ * Alphabet-aware low-entropy check for production secrets. Returns a reason, or null if acceptable.
+ * Designed to accept random hex (`openssl rand -hex 32`, 64 chars) and base64 (`openssl rand -base64 32`
+ * or `-base64 48`) with negligible false rejects, while rejecting repeated/patterned strings:
+ *  - estimated entropy = bits per symbol of the detected alphabet (hex 4, base64/base64url 6,
+ *    other printable 6.5) x length must be >= 160 bits;
+ *  - the string must not be a repetition of a shorter unit (period <= half the length), e.g.
+ *    "aaaa...", "abab...", "0123456789abcdef" repeated;
+ *  - at least 8 distinct characters, and no single character above 25% of the string.
+ * For 64 random hex chars each condition fails with probability far below 1e-6.
+ */
+export function secretEntropyProblem(value: string): string | null {
+  const bitsPerChar = /^[0-9a-fA-F]+$/u.test(value) ? 4 : /^[A-Za-z0-9+/_-]+={0,2}$/u.test(value) ? 6 : 6.5;
+  if (value.length * bitsPerChar < MIN_SECRET_ENTROPY_BITS) return 'is too short for its alphabet';
+  for (let p = 1; p <= value.length / 2; p += 1) {
+    let periodic = true;
+    for (let i = p; i < value.length; i += 1) {
+      if (value[i] !== value[i - p]) {
+        periodic = false;
+        break;
+      }
+    }
+    if (periodic) return 'is a repeated pattern';
+  }
+  const counts = new Map<string, number>();
+  for (const c of value) counts.set(c, (counts.get(c) ?? 0) + 1);
+  if (counts.size < 8) return 'uses too few distinct characters';
+  if (Math.max(...counts.values()) > value.length / 4) return 'is dominated by one character';
+  return null;
+}
 
 /**
  * Template/placeholder text (e.g. the `<...>` values in .env.example) is never a secret: angle brackets,
@@ -172,7 +203,8 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     if (v && v.length < MIN_SECRET_CHARS) problems.push(`${k} must be at least ${MIN_SECRET_CHARS} characters`);
     if (v && looksLikePlaceholder(v)) problems.push(`${k} looks like a placeholder, not a secret`);
     if (v && prod && DOCUMENTED_DEV_SECRETS.includes(v)) problems.push(`${k} must not be a documented dev default`);
-    if (v && prod && new Set(v).size < MIN_DISTINCT_SECRET_CHARS) problems.push(`${k} has too little variety to be a random secret`);
+    const weak = v && prod ? secretEntropyProblem(v) : null;
+    if (weak) problems.push(`${k} ${weak} to be a random secret`);
     return v;
   };
   const jwtSecret = secret('JWT_SECRET');
