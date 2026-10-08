@@ -104,6 +104,16 @@ const KNOBS = {
 } as const satisfies Record<string, Knob>;
 
 const MIN_SECRET_CHARS = 43;
+/** Production secrets must not be trivially low-entropy (e.g. 'aaaa...'). */
+const MIN_DISTINCT_SECRET_CHARS = 16;
+
+/**
+ * Template/placeholder text (e.g. the `<...>` values in .env.example) is never a secret: angle brackets,
+ * whitespace, or obvious placeholder words. Rejected in every environment.
+ */
+export function looksLikePlaceholder(value: string): boolean {
+  return /[<>\s]/u.test(value) || /change[-_ ]?me|placeholder|replace[-_ ]?me|your[-_ ]?secret|openssl rand/iu.test(value);
+}
 
 function parseBool(raw: string | undefined, def: boolean, key: string, problems: string[]): boolean {
   if (raw === undefined || raw === '') return def;
@@ -160,7 +170,9 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const secret = (k: string): string => {
     const v = required(k);
     if (v && v.length < MIN_SECRET_CHARS) problems.push(`${k} must be at least ${MIN_SECRET_CHARS} characters`);
+    if (v && looksLikePlaceholder(v)) problems.push(`${k} looks like a placeholder, not a secret`);
     if (v && prod && DOCUMENTED_DEV_SECRETS.includes(v)) problems.push(`${k} must not be a documented dev default`);
+    if (v && prod && new Set(v).size < MIN_DISTINCT_SECRET_CHARS) problems.push(`${k} has too little variety to be a random secret`);
     return v;
   };
   const jwtSecret = secret('JWT_SECRET');
@@ -173,6 +185,7 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   const mfaRaw = required('MFA_ENC_KEY');
   let mfaEncKey = Buffer.alloc(0);
   if (mfaRaw) {
+    if (looksLikePlaceholder(mfaRaw)) problems.push('MFA_ENC_KEY looks like a placeholder, not a secret');
     if (!/^[A-Za-z0-9+/]+={0,2}$/u.test(mfaRaw)) problems.push('MFA_ENC_KEY must be base64');
     else {
       mfaEncKey = Buffer.from(mfaRaw, 'base64');

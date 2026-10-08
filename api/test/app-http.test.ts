@@ -3,6 +3,8 @@
  * security headers on 200/401/404/500, error body shape, evaluation order (rate limit -> Origin ->
  * CSRF -> authN -> validation), body limit, route-access enforcement, dev outbox absence.
  */
+import { Writable } from 'node:stream';
+
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -107,6 +109,33 @@ describe('API HTTP pipeline (no database)', () => {
       code: 'internal_error',
       message: 'Internal server error.',
     });
+  });
+
+  it('logs method, path, requestId on arrival and status + duration on completion, without secrets', async () => {
+    const lines: string[] = [];
+    const stream = new Writable({
+      write(chunk: Buffer, _enc, cb) {
+        lines.push(...chunk.toString().split('\n').filter(Boolean));
+        cb();
+      },
+    });
+    app = await buildApp({ ...ENV, LOG_LEVEL: 'info' }, { logStream: stream });
+    await app.ready();
+    const r = await app.inject({
+      method: 'GET',
+      url: '/api/v1/me?token=query-secret-value',
+      headers: { authorization: 'Bearer header-secret-value', cookie: 'fr_rt=cookie-secret-value' },
+    });
+    expect(r.statusCode).toBe(401);
+    const parsed = lines.map((l) => JSON.parse(l) as Record<string, unknown>);
+    const incoming = parsed.find((l) => l['msg'] === 'incoming request');
+    const completed = parsed.find((l) => l['msg'] === 'request completed');
+    const rid = r.headers['x-request-id'];
+    expect(incoming?.['req']).toMatchObject({ method: 'GET', path: '/api/v1/me', requestId: rid });
+    expect(completed?.['res']).toMatchObject({ statusCode: 401, method: 'GET', path: '/api/v1/me', requestId: rid });
+    expect(typeof (completed?.['res'] as Record<string, unknown>)['durationMs']).toBe('number');
+    const all = lines.join('\n');
+    for (const secret of ['query-secret-value', 'header-secret-value', 'cookie-secret-value']) expect(all).not.toContain(secret);
   });
 
   it('emits HSTS only when configured', async () => {

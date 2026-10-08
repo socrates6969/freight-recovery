@@ -1,6 +1,12 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import { describe, expect, it } from 'vitest';
 
 import { ConfigError, DOCUMENTED_DEV_SECRETS, loadConfig } from '../src/config.js';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const base = {
   DATABASE_URL: 'postgresql://freight_app:x@127.0.0.1:5433/freight_web_test',
@@ -14,6 +20,10 @@ const base = {
 const prodOk = {
   ...base,
   NODE_ENV: 'production',
+  JWT_SECRET: 'Qm9vZ3Vz-prod-like-7f3a9c1e5b2d8f4a6c0e9b7d5f3a1c8e2b4d6f0a',
+  CSRF_SECRET: 'Zx81Lq0v-prod-like-c4e6a8f0b2d4c6e8a0b2c4d6e8f0a1b3c5d7e9f1',
+  REFRESH_PEPPER: 'Mn5Kp2Ws-prod-like-9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b3a2f1e0d',
+  MFA_ENC_KEY: Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 37 + 11) % 256)).toString('base64'),
   DATABASE_URL: 'postgresql://freight_app:x@db.internal:5432/freight_web?sslmode=require',
   APP_ORIGIN: 'https://app.example.com',
   REDIS_URL: 'rediss://cache.internal:6379',
@@ -83,6 +93,29 @@ describe('config', () => {
     } catch (e) {
       expect(String((e as Error).message)).not.toContain(DOCUMENTED_DEV_SECRETS[0]);
     }
+  });
+
+  it('rejects every placeholder secret from .env.example in production (and anywhere)', () => {
+    const example = readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
+    const values: Record<string, string> = {};
+    for (const line of example.split('\n')) {
+      const m = /^([A-Z0-9_]+)=(.*)$/u.exec(line.trim());
+      if (m?.[1] && m[2] !== undefined) values[m[1]] = m[2];
+    }
+    const secrets = ['JWT_SECRET', 'CSRF_SECRET', 'REFRESH_PEPPER', 'MFA_ENC_KEY'] as const;
+    for (const k of secrets) expect(values[k], k).toBeTruthy();
+    for (const nodeEnv of ['production', 'development']) {
+      const env = { ...prodOk, NODE_ENV: nodeEnv, COOKIE_SECURE: 'true' };
+      for (const k of secrets) env[k] = values[k] ?? '';
+      const ps = problems(env);
+      for (const k of secrets) expect([nodeEnv, k, ps.some((p) => p.startsWith(`${k} looks like a placeholder`))]).toEqual([nodeEnv, k, true]);
+      expect(ps.join(' ')).not.toContain(values['JWT_SECRET']);
+    }
+  });
+
+  it('rejects low-variety secrets in production', () => {
+    expect(problems({ ...prodOk, JWT_SECRET: 'ab'.repeat(30) })).toContain('JWT_SECRET has too little variety to be a random secret');
+    expect(problems({ ...base, NODE_ENV: 'test', JWT_SECRET: 'ab'.repeat(30) })).toEqual([]);
   });
 
   it('allows low tuning knobs outside production only', () => {

@@ -91,8 +91,9 @@ export async function login(deps: AuthDeps, emailInput: string, password: string
       await appendAudit(tx, {
         tenantId: user ? tenantIdOf(user) : null,
         action: 'auth.login.failure',
-        actorId: user?.id ?? null,
-        actorRole: user ? roleOf(user) : null,
+        // The caller is unauthenticated: no actor. The known account is the target (its tenant chain).
+        actorId: null,
+        actorRole: null,
         targetType: user ? 'user' : null,
         targetId: user?.id ?? null,
         metadata: { emailHash: eh },

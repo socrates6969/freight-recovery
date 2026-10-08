@@ -2,7 +2,7 @@ import { Writable } from 'node:stream';
 
 import { describe, expect, it } from 'vitest';
 
-import { createLogger, scrub, serializeReq } from '../src/logging.js';
+import { createLogger, scrub, serializeReq, serializeRes } from '../src/logging.js';
 import { MAX_PRESIGN_SECONDS, ObjectStore, StorageKeyError, isKeyInTenant, tenantKey } from '../src/storage/s3.js';
 
 const T = '11111111-1111-4111-8111-111111111111';
@@ -42,10 +42,17 @@ describe('logging redaction', () => {
 
   it('logs requests without query strings', () => {
     expect(serializeReq({ id: 'r1', method: 'GET', url: '/api/v1/claims?q=secret', ip: '1.2.3.4' })).toEqual({
-      id: 'r1',
+      requestId: 'r1',
       method: 'GET',
       path: '/api/v1/claims',
       remoteAddress: '1.2.3.4',
+    });
+    expect(serializeRes({ statusCode: 401, elapsedTime: 1.5, request: { id: 'r1', method: 'POST', url: '/x?token=abc' } })).toEqual({
+      statusCode: 401,
+      requestId: 'r1',
+      method: 'POST',
+      path: '/x',
+      durationMs: 1.5,
     });
   });
 

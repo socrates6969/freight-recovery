@@ -62,6 +62,13 @@ export const REDACT_PATHS: string[] = [
 
 const MAX_DEPTH = 8;
 
+/**
+ * Keys whose values are handed untouched to the Pino serializers below (Fastify passes its request and
+ * reply objects there; their fields are prototype getters that a generic copy would lose). The
+ * serializers extract only safe fields, and the redact paths still cover their headers.
+ */
+const SERIALIZED_KEYS: ReadonlySet<string> = new Set(['req', 'res']);
+
 /** Recursively replace sensitive values. Returns a new object; never mutates the input. */
 export function scrub(value: unknown, depth = 0): unknown {
   if (depth > MAX_DEPTH || value === null || typeof value !== 'object') return value;
@@ -69,7 +76,9 @@ export function scrub(value: unknown, depth = 0): unknown {
   if (Array.isArray(value)) return value.map((v) => scrub(v, depth + 1));
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    out[k] = SENSITIVE_KEYS.has(k.toLowerCase()) ? REDACT_CENSOR : scrub(v, depth + 1);
+    if (SENSITIVE_KEYS.has(k.toLowerCase())) out[k] = REDACT_CENSOR;
+    else if (depth === 0 && SERIALIZED_KEYS.has(k)) out[k] = v;
+    else out[k] = scrub(v, depth + 1);
   }
   return out;
 }
@@ -79,22 +88,45 @@ interface ReqLike {
   method?: unknown;
   url?: unknown;
   ip?: unknown;
+  routeOptions?: { url?: unknown };
   socket?: { remoteAddress?: unknown };
 }
 
+function pathOf(url: unknown): string {
+  const u = typeof url === 'string' ? url : '';
+  const q = u.indexOf('?');
+  return q === -1 ? u : u.slice(0, q);
+}
+
+/** Request line fields: requestId, method, path (query string dropped), route pattern, client address. */
 export function serializeReq(req: ReqLike): Record<string, unknown> {
-  const url = typeof req.url === 'string' ? req.url : '';
-  const q = url.indexOf('?');
+  const route = req.routeOptions?.url;
   return {
-    id: req.id,
+    requestId: req.id,
     method: req.method,
-    path: q === -1 ? url : url.slice(0, q),
+    path: pathOf(req.url),
+    ...(typeof route === 'string' ? { route } : {}),
     remoteAddress: req.ip ?? req.socket?.remoteAddress,
   };
 }
 
-export function serializeRes(res: { statusCode?: unknown }): Record<string, unknown> {
-  return { statusCode: res.statusCode };
+interface ResLike {
+  statusCode?: unknown;
+  elapsedTime?: unknown;
+  request?: ReqLike;
+}
+
+/** Completion line fields: requestId, method, path, status and duration (ms). */
+export function serializeRes(res: ResLike): Record<string, unknown> {
+  const req = res.request;
+  const out: Record<string, unknown> = { statusCode: res.statusCode };
+  if (req) {
+    out['requestId'] = req.id;
+    out['method'] = req.method;
+    out['path'] = pathOf(req.url);
+  }
+  if (typeof res.elapsedTime === 'number') out['durationMs'] = Math.round(res.elapsedTime * 1000) / 1000;
+  return out;
 }
 
 export function createLogger(level: string, stream?: DestinationStream | NodeJS.WritableStream): Logger {

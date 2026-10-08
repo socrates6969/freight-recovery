@@ -6,7 +6,7 @@ import type { SystemTx } from '../db/system.js';
 import { lockDurationSeconds, isLocked, retryAfterSeconds } from '../security/lockout.js';
 
 import type { AuthDeps, RequestMeta } from './deps.js';
-import { roleOf, tenantIdOf, type AuthUser } from './session.js';
+import { tenantIdOf, type AuthUser } from './session.js';
 
 /** Seconds remaining if the email hash is locked right now, else null. */
 export async function lockedForSeconds(tx: SystemTx, emailHashHex: string, now: Date): Promise<number | null> {
@@ -46,8 +46,9 @@ export async function recordFailure(
     await appendAudit(tx, {
       tenantId: user ? tenantIdOf(user) : null,
       action: 'auth.lockout',
-      actorId: user?.id ?? null,
-      actorRole: user ? roleOf(user) : null,
+      // Lockouts are triggered by unauthenticated attempts: no actor; the account is the target.
+      actorId: null,
+      actorRole: null,
       targetType: user ? 'user' : null,
       targetId: user?.id ?? null,
       metadata: { emailHash: emailHashHex, failures: row.failures, lockedForSeconds: lockSeconds },
