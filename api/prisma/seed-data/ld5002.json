@@ -1,0 +1,29 @@
+{
+  "_source": "Transcribed 2026-10-08 from the existing Python pipeline (read-only use): `python -m freight_recovery.cli --perspective shipper tests/fixtures/ld5002/*.csv` (run via freight_recovery.pipeline.run_pipeline to obtain JSON). From the shipper perspective the pipeline reports NO recoverable findings (its only finding, DET-UNBILLED $162.50, is carrier-direction and therefore excluded from the shipper packet), so this packet has zero findings and zero totals; the draft letter and disclaimer are copied verbatim. sha256/sizeBytes are of the git blob content (LF line endings). The rules are NOT ported or called at runtime.",
+  "claimNumber": "CLM-0002",
+  "loadNumber": "LD-5002",
+  "invoiceNumber": "INV-2002",
+  "invoiceDate": "2025-03-12T00:00:00.000Z",
+  "carrierName": "Acme Freight LLC",
+  "shipperName": "Widget Co",
+  "perspective": "SHIPPER",
+  "generatedAt": "2026-10-08T12:00:00.000Z",
+  "verifierStatus": "NEEDS_REVIEW",
+  "verifierNote": "Synthetic seed: carrier-direction detention excluded from the shipper view; review perspective.",
+  "disclaimer": "MVP / pre-product output. Extracted values and calculations are unverified against real customer data and must be reviewed by a person before any dispute is sent. This is not legal or financial advice.",
+  "recoverableCents": 0,
+  "pendingReviewCents": 0,
+  "sources": [
+    { "ordinal": 1, "filename": "bol.csv", "docType": "BILL_OF_LADING", "sha256": "5ffe2a1c8c7dab31569818aab4636d7573278e2ff187e00d4c4c835b5eb6b097", "sizeBytes": 164 },
+    { "ordinal": 2, "filename": "invoice.csv", "docType": "INVOICE", "sha256": "8bfc88d19abf468a569a47af1673c437662779874fcf3cf1026eff3dd998e75e", "sizeBytes": 164 },
+    { "ordinal": 3, "filename": "ratecon.csv", "docType": "RATE_CONFIRMATION", "sha256": "a4b206ac4c4958772d27178415857d8d112c8cb48fcf40c7b6e424358626f741", "sizeBytes": 225 }
+  ],
+  "timeline": [
+    { "ordinal": 1, "occurredAt": "2025-03-04T09:00:00.000Z", "kind": "APPOINTMENT", "label": "Appointment time", "sourceOrdinal": 1 },
+    { "ordinal": 2, "occurredAt": "2025-03-04T09:00:00.000Z", "kind": "ARRIVAL", "label": "Arrived at Widget Co DC 4 (on time)", "sourceOrdinal": 1 },
+    { "ordinal": 3, "occurredAt": "2025-03-04T14:20:00.000Z", "kind": "DEPARTURE", "label": "Departed Widget Co DC 4", "sourceOrdinal": 1 },
+    { "ordinal": 4, "occurredAt": "2025-03-12T00:00:00.000Z", "kind": "INVOICE", "label": "Invoice INV-2002 issued (total $1,568.00)", "sourceOrdinal": 2 }
+  ],
+  "findings": [],
+  "demandLetter": "DRAFT - FOR HUMAN REVIEW. NOT SENT. NOT LEGAL ADVICE.\n\nDate: 2026-10-08\nTo: Acme Freight LLC\nFrom: Widget Co\nRe: Load LD-5002 / Invoice INV-2002 - billing dispute\n\nOur audit of the above invoice against the signed rate confirmation and delivery records found the following billing discrepancies:\n\n(No confirmed discrepancies. Do not send; items below the review threshold are listed only in the internal evidence packet.)\n\nNo amount is requested: there are no confirmed findings.\nSupporting documents and calculations are attached in the evidence packet.\nPlease respond within 30 days. (Reminder for sender: confirm the contractual dispute window - assumed 90 days from invoice date; verify before sending.)\n\nSincerely,\n[Name / Title / Contact - to be completed by sender]"
+}

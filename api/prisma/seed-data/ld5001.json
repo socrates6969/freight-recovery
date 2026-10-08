@@ -1,0 +1,81 @@
+{
+  "_source": "Transcribed 2026-10-08 from the existing Python pipeline (read-only use): `python -m freight_recovery.cli --perspective shipper tests/fixtures/ld5001/*.txt` (run via freight_recovery.pipeline.run_pipeline to obtain JSON instead of markdown). Rule ids, amounts (integer cents), explanations, calculation steps, confidences, needs-review flags, totals, draft letter and disclaimer are copied verbatim. sha256/sizeBytes are of the git blob content (LF line endings, as on Linux/CI). The rules are NOT ported or called at runtime.",
+  "claimNumber": "CLM-0001",
+  "loadNumber": "LD-5001",
+  "invoiceNumber": "INV-1001",
+  "invoiceDate": "2025-03-10T00:00:00.000Z",
+  "carrierName": "Acme Freight LLC",
+  "shipperName": "Widget Co",
+  "perspective": "SHIPPER",
+  "generatedAt": "2026-10-08T12:00:00.000Z",
+  "verifierStatus": "PASSED",
+  "verifierNote": "Synthetic seed: independent re-calculation matched (dev data).",
+  "disclaimer": "MVP / pre-product output. Extracted values and calculations are unverified against real customer data and must be reviewed by a person before any dispute is sent. This is not legal or financial advice.",
+  "recoverableCents": 32500,
+  "pendingReviewCents": 15000,
+  "sources": [
+    { "ordinal": 1, "filename": "bol.txt", "docType": "BILL_OF_LADING", "sha256": "b316aab6db8bc12eb5bb694055f4f39949c6d9e41581847210910c99bd4f97ab", "sizeBytes": 170 },
+    { "ordinal": 2, "filename": "invoice.txt", "docType": "INVOICE", "sha256": "702c1f0d8f24cfef98871a4c805e27c166abd4e2f629ba05be2591cc83256381", "sizeBytes": 269 },
+    { "ordinal": 3, "filename": "rate_confirmation.txt", "docType": "RATE_CONFIRMATION", "sha256": "c44ed97ab3452c0b42ddac30495fc5a361e2fa45ff6ff37bbcf0342c2105090b", "sizeBytes": 234 }
+  ],
+  "timeline": [
+    { "ordinal": 1, "occurredAt": "2025-03-03T07:45:00.000Z", "kind": "ARRIVAL", "label": "Arrived at Widget Co DC 4 (15 min before appointment)", "sourceOrdinal": 1 },
+    { "ordinal": 2, "occurredAt": "2025-03-03T08:00:00.000Z", "kind": "APPOINTMENT", "label": "Appointment time", "sourceOrdinal": 1 },
+    { "ordinal": 3, "occurredAt": "2025-03-03T11:30:00.000Z", "kind": "DEPARTURE", "label": "Departed Widget Co DC 4", "sourceOrdinal": 1 },
+    { "ordinal": 4, "occurredAt": "2025-03-10T00:00:00.000Z", "kind": "INVOICE", "label": "Invoice INV-1001 issued (total $2,118.00)", "sourceOrdinal": 2 }
+  ],
+  "findings": [
+    {
+      "ordinal": 1,
+      "ruleId": "INV-LINEHAUL-RATE",
+      "title": "Linehaul billed above rate confirmation",
+      "direction": "OVERCHARGE",
+      "amountCents": 10000,
+      "explanation": "Invoice linehaul $1500.00 vs agreed $1400.00.",
+      "calculation": ["$1500.00 - $1400.00 = $100.00."],
+      "confidence": 0.95,
+      "needsHumanReview": false,
+      "citations": [{ "sourceOrdinal": 2, "locator": "invoice.txt:L7", "excerpt": "Charge: Linehaul | 1500.00" }],
+      "clause": { "sourceOrdinal": 3, "label": "Contracted linehaul rate", "locator": "rate_confirmation.txt:L4", "excerpt": "Linehaul Rate: 1400.00" }
+    },
+    {
+      "ordinal": 2,
+      "ruleId": "INV-ACCESSORIAL-UNAUTH",
+      "title": "Accessorial not authorized on rate confirmation",
+      "direction": "OVERCHARGE",
+      "amountCents": 15000,
+      "explanation": "'Lumper' ($150.00) is not listed as authorized on the rate confirmation. May be valid with a receipt or separate approval - verify before disputing.",
+      "calculation": ["Authorized accessorials: ['Detention'].", "Charged: 'Lumper' = $150.00."],
+      "confidence": 0.6,
+      "needsHumanReview": true,
+      "citations": [{ "sourceOrdinal": 2, "locator": "invoice.txt:L10", "excerpt": "Charge: Lumper | 150.00" }],
+      "clause": { "sourceOrdinal": 3, "label": "Authorized accessorials", "locator": "rate_confirmation.txt:L9", "excerpt": "Authorized Accessorials: Detention" }
+    },
+    {
+      "ordinal": 3,
+      "ruleId": "DET-OVERBILLED",
+      "title": "Detention billed above supported amount",
+      "direction": "OVERCHARGE",
+      "amountCents": 22500,
+      "explanation": "Invoice billed $300.00 detention; gate times and rate-con terms support only $75.00.",
+      "calculation": [
+        "Arrived early; clock starts at appointment 2025-03-03 08:00.",
+        "Departure 2025-03-03 11:30; dwell = 210 min (3.50 h).",
+        "Less 2 h free time = 1.50 h over.",
+        "Rounded down to 15-minute increments = 90 min (1.50 h).",
+        "1.50 h x $50.00/h = $75.00.",
+        "Invoiced detention = $300.00; earned = $75.00."
+      ],
+      "confidence": 0.85,
+      "needsHumanReview": false,
+      "citations": [
+        { "sourceOrdinal": 2, "locator": "invoice.txt:L9", "excerpt": "Charge: Detention | 300.00" },
+        { "sourceOrdinal": 1, "locator": "bol.txt:L4", "excerpt": "Appointment Time: 2025-03-03 08:00" },
+        { "sourceOrdinal": 1, "locator": "bol.txt:L6", "excerpt": "Departure Time: 2025-03-03 11:30" },
+        { "sourceOrdinal": 3, "locator": "rate_confirmation.txt:L7", "excerpt": "Detention Rate Per Hour: 50.00" }
+      ],
+      "clause": { "sourceOrdinal": 3, "label": "Detention free time", "locator": "rate_confirmation.txt:L6", "excerpt": "Detention Free Hours: 2" }
+    }
+  ],
+  "demandLetter": "DRAFT - FOR HUMAN REVIEW. NOT SENT. NOT LEGAL ADVICE.\n\nDate: 2026-10-08\nTo: Acme Freight LLC\nFrom: Widget Co\nRe: Load LD-5001 / Invoice INV-1001 - billing dispute\n\nOur audit of the above invoice against the signed rate confirmation and delivery records found the following billing discrepancies:\n\n1. Linehaul billed above rate confirmation: $100.00\n   Invoice linehaul $1500.00 vs agreed $1400.00.\n2. Detention billed above supported amount: $225.00\n   Invoice billed $300.00 detention; gate times and rate-con terms support only $75.00.\n\nWe request a credit or refund of $325.00 against invoice INV-1001 (load LD-5001).\nSupporting documents and calculations are attached in the evidence packet.\nPlease respond within 30 days. (Reminder for sender: confirm the contractual dispute window - assumed 90 days from invoice date; verify before sending.)\n\nSincerely,\n[Name / Title / Contact - to be completed by sender]"
+}
