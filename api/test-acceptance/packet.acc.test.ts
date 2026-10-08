@@ -51,16 +51,20 @@ describe('T-PKT-01 shape', () => {
   }, 120000);
 });
 
-function pythonCmd(): string[] | null {
-  const cands = [resolve(REPO, '.venv/Scripts/python.exe'), resolve(REPO, '.venv/bin/python'), 'python3', 'python'];
+/** Environment the reference CLI runs with: PYTHONPATH from the environment when set, else <repo>/src. */
+const pyEnv = () => ({ ...process.env, PYTHONPATH: process.env.PYTHONPATH || resolve(REPO, 'src') });
+/** First interpreter on which the CLI itself imports (so missing third-party deps are detected). */
+function pythonCmd(): { cmd: string | null; reasons: string[] } {
+  const cands = [process.env.PYTHON, resolve(REPO, '.venv/Scripts/python.exe'), resolve(REPO, '.venv/bin/python'), 'python3', 'python'].filter((c): c is string => !!c);
+  const reasons: string[] = [];
   for (const c of cands) {
     if (c.includes('.venv') && !existsSync(c)) continue;
-    const r = spawnSync(c, ['-c', 'import freight_recovery'], { cwd: REPO, env: { ...process.env, PYTHONPATH: resolve(REPO, 'src') }, encoding: 'utf8' });
-    if (r.status === 0) return [c];
+    const r = spawnSync(c, ['-c', 'import freight_recovery.cli'], { cwd: REPO, env: pyEnv(), encoding: 'utf8' });
+    if (r.status === 0) return { cmd: c, reasons };
+    reasons.push(`${c}: ${r.error ? r.error.message : (r.stderr || '').trim().split('\n').pop()}`);
   }
-  return null;
-}
-const dollars = (s: string) => Math.round(parseFloat(s.replace(/,/g, '')) * 100);
+  return { cmd: null, reasons };
+}const dollars = (s: string) => Math.round(parseFloat(s.replace(/,/g, '')) * 100);
 function parsePython(out: string) {
   const rec = dollars(/\*\*Recoverable[^*]*\*\*\s*\$([\d,.]+)/.exec(out)![1]!);
   const pend = dollars(/\*\*Pending human review[^*]*\*\*\s*\$([\d,.]+)/.exec(out)![1]!);
@@ -78,12 +82,17 @@ describe('T-PKT-02 fixture parity with the Python tool', () => {
   for (const [num, dir, files] of cases) {
     it(`${num} matches the reference run on ${dir}`, async (ctx) => {
       const py = pythonCmd();
-      if (!py) return ctx.skip('python / freight_recovery not importable in this environment');
+      if (!py.cmd) {
+        const why = `freight_recovery.cli is not importable on any interpreter (${py.reasons.join('; ') || 'no interpreter found'})`;
+        // In CI the parity check must never disappear silently.
+        if (process.env.CI === 'true') throw new Error(`T-PKT-02 cannot run in CI: ${why}`);
+        return ctx.skip(why);
+      }
       expect(readdirSync(resolve(REPO, dir)).sort()).toEqual([...files].sort());
       const p = (await packet(num)).body;
       const persp = String(p.perspective).toLowerCase();
-      const r = spawnSync(py[0]!, ['-m', 'freight_recovery.cli', '--perspective', persp, ...files.map((f) => `${dir}/${f}`)], {
-        cwd: REPO, env: { ...process.env, PYTHONPATH: resolve(REPO, 'src') }, encoding: 'utf8',
+      const r = spawnSync(py.cmd, ['-m', 'freight_recovery.cli', '--perspective', persp, ...files.map((f) => `${dir}/${f}`)], {
+        cwd: REPO, env: pyEnv(), encoding: 'utf8',
       });
       expect(r.status, r.stderr).toBe(0);
       const ref = parsePython(r.stdout);
