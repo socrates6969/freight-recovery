@@ -36,7 +36,7 @@ interface SummaryRow {
   carrierName: string;
   shipperName: string;
   perspective: 'SHIPPER' | 'CARRIER';
-  status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SEND_READY';
+  status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SEND_READY' | 'AWAITING_ANALYSIS';
   amountClaimedCents: number;
   recoverableCents: number;
   pendingReviewCents: number;
@@ -314,7 +314,9 @@ async function lockAndLoadLatest(tx: TenantTx, claimId: string): Promise<LockedS
     where: { claimId, status: { not: 'SUPERSEDED' } },
     include: PACKET_INCLUDE,
   });
-  if (!latest) throw errors.notFound();
+  // A claim without a packet (AWAITING_ANALYSIS, created from imports) cannot be edited, approved,
+  // rejected or sent: 409 invalid_state (never 500). Step 5 adds AWAITING_ANALYSIS -> PENDING_REVIEW.
+  if (!latest) throw errors.invalidState();
   return { claimId, tenantId: latest.tenantId, latest };
 }
 

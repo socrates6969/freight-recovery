@@ -14,6 +14,8 @@ import {
   type WarningCode,
 } from '@fr/shared';
 
+import type { TenantTx } from '../db/tenant.js';
+
 /** Python-style messages for warning codes (for bundle warnings; messages are informational). */
 const WARNING_MESSAGES: Readonly<Record<WarningCode, string>> = {
   CHARGE_AMOUNT_UNREADABLE: 'A charge line was ignored because its amount could not be read.',
@@ -138,4 +140,44 @@ export function assembleBundle(docs: readonly BundleDocument[]): ExtractedBundle
 /** Citation locator (`file:L5`, PDF `file:p2:L5`), the convention already used by the seed. */
 export function pointerToLocator(displayName: string, pointer: { page: number | null; line: number }): string {
   return pointer.page === null ? `${displayName}:L${pointer.line}` : `${displayName}:p${pointer.page}:L${pointer.line}`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Loader for the step-5 rules engine (Part F)
+// ---------------------------------------------------------------------------------------------
+
+export interface BundleSource {
+  documentId: string;
+  displayName: string;
+  sha256: string;
+  docType: ImportDocType;
+}
+
+/**
+ * The ExtractedBundle of a claim from its linked ACCEPTED documents (oldest link first), with the
+ * sources a packet must cite. Runs in the caller's tenant transaction.
+ */
+export async function loadBundleForClaim(tx: TenantTx, claimId: string): Promise<{ bundle: ExtractedBundle; sources: BundleSource[] }> {
+  const links = await tx.claimDocument.findMany({ where: { claimId }, orderBy: [{ linkedAt: 'asc' }, { id: 'asc' }], select: { documentId: true } });
+  const docs = await tx.importDocument.findMany({
+    where: { id: { in: links.map((l) => l.documentId) }, status: 'ACCEPTED' },
+    select: { id: true, displayName: true, sha256: true, docType: true, warnings: true },
+  });
+  const order = new Map(links.map((l, i) => [l.documentId, i]));
+  docs.sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  const fields = await tx.extractedField.findMany({
+    where: { documentId: { in: docs.map((d) => d.id) } },
+    select: { documentId: true, key: true, groupIndex: true, status: true, value: true, correctedValue: true },
+  });
+  const bundle = assembleBundle(
+    docs.map((d) => ({
+      displayName: d.displayName,
+      docType: d.docType,
+      warnings: d.warnings as WarningCode[],
+      fields: fields
+        .filter((f) => f.documentId === d.id)
+        .map((f) => ({ key: f.key, groupIndex: f.groupIndex, effectiveValue: f.status === 'CORRECTED' ? f.correctedValue : f.status === 'REJECTED' ? null : f.value })),
+    })),
+  );
+  return { bundle, sources: docs.map((d) => ({ documentId: d.id, displayName: d.displayName, sha256: d.sha256, docType: d.docType })) };
 }

@@ -5,7 +5,21 @@
  * octet-stream). Authentication and permission run before any body byte is read (global onRequest
  * pipeline); a rejected upload's connection is closed after the response.
  */
-import { BatchParams, CreateBatchBody, DocParams, ImportsPageQuery, UploadQuery } from '@fr/shared';
+import {
+  AcceptDocBody,
+  AddFieldBody,
+  BatchParams,
+  CommitBody,
+  CreateBatchBody,
+  DocParams,
+  FieldParams,
+  IdParams,
+  ImportsPageQuery,
+  RejectDocBody,
+  ResolveFieldBody,
+  SetDocTypeBody,
+  UploadQuery,
+} from '@fr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Readable } from 'node:stream';
 
@@ -13,6 +27,7 @@ import { errors } from '../http/errors.js';
 import { defineRoute, requireTenant } from '../http/route.js';
 
 import { BodyAbortedError, BodyIdleError, BodyTooLargeError, readLimitedBody } from './body.js';
+import { claimDocuments, commitBatch } from './commit-service.js';
 import type { Actor, ImportDeps } from './deps.js';
 import { displayNameFor } from './display-name.js';
 import {
@@ -26,6 +41,7 @@ import {
   prepareDownload,
   reapStale,
 } from './service.js';
+import { acceptDocument, addField, rejectDocument, resolveField, reviewQueue, setDocType } from './review-service.js';
 import { sniff } from './sniff.js';
 
 const P = '/api/v1';
@@ -107,6 +123,79 @@ export function registerImportRoutes(app: FastifyInstance, deps: ImportDeps): vo
         .header('cache-control', 'no-store');
       return reply.send(dl.stream);
     },
+  });
+
+  // ---- Review (R46-R51, import:review) ----
+  const threshold = deps.cfg.imports.reviewConfidenceThreshold;
+  defineRoute(app, {
+    method: 'PATCH',
+    url: `${P}/imports/:batchId/documents/:docId`,
+    access: { kind: 'permission', permission: 'import:review' },
+    schema: { params: DocParams, body: SetDocTypeBody },
+    handler: async (req, _reply, { params, body }) => setDocType(requireTenant(req).db, params.batchId, params.docId, body.docType, actorOf(req), threshold),
+  });
+
+  defineRoute(app, {
+    method: 'POST',
+    url: `${P}/imports/:batchId/documents/:docId/fields`,
+    access: { kind: 'permission', permission: 'import:review' },
+    schema: { params: DocParams, body: AddFieldBody },
+    handler: async (req, reply, { params, body }) => {
+      const f = await addField(requireTenant(req).db, params.batchId, params.docId, body, actorOf(req), threshold);
+      return reply.code(201).send(f);
+    },
+  });
+
+  defineRoute(app, {
+    method: 'POST',
+    url: `${P}/imports/:batchId/documents/:docId/fields/:fieldId/resolve`,
+    access: { kind: 'permission', permission: 'import:review' },
+    schema: { params: FieldParams, body: ResolveFieldBody },
+    handler: async (req, _reply, { params, body }) => resolveField(requireTenant(req).db, params.batchId, params.docId, params.fieldId, body, actorOf(req), threshold),
+  });
+
+  defineRoute(app, {
+    method: 'POST',
+    url: `${P}/imports/:batchId/documents/:docId/accept`,
+    access: { kind: 'permission', permission: 'import:review' },
+    schema: { params: DocParams, body: AcceptDocBody },
+    handler: async (req, _reply, { params, body }) => acceptDocument(requireTenant(req).db, params.batchId, params.docId, body, actorOf(req), threshold),
+  });
+
+  defineRoute(app, {
+    method: 'POST',
+    url: `${P}/imports/:batchId/documents/:docId/reject`,
+    access: { kind: 'permission', permission: 'import:review' },
+    schema: { params: DocParams, body: RejectDocBody },
+    handler: async (req, _reply, { params, body }) => rejectDocument(deps, requireTenant(req).db, params.batchId, params.docId, body, actorOf(req), threshold),
+  });
+
+  defineRoute(app, {
+    method: 'GET',
+    url: `${P}/reviews`,
+    access: { kind: 'permission', permission: 'import:review' },
+    schema: { query: ImportsPageQuery },
+    handler: async (req, _reply, { query }) => requireTenant(req).db.tx((tx) => reviewQueue(tx, query.page, query.pageSize)),
+  });
+
+  // ---- Commit (R52) and claim documents (R53) ----
+  defineRoute(app, {
+    method: 'POST',
+    url: `${P}/imports/:batchId/commit`,
+    access: { kind: 'permission', permission: 'import:run' },
+    schema: { params: BatchParams, body: CommitBody },
+    handler: async (req, _reply, { params, body }) => {
+      const ctx = requireTenant(req);
+      return ctx.db.tx((tx) => commitBatch(tx, ctx.tenantId, params.batchId, body.perspective, actorOf(req)), { timeoutMs: 30_000 });
+    },
+  });
+
+  defineRoute(app, {
+    method: 'GET',
+    url: `${P}/claims/:id/documents`,
+    access: { kind: 'permission', permission: 'claims:read' },
+    schema: { params: IdParams },
+    handler: async (req, _reply, { params }) => requireTenant(req).db.tx((tx) => claimDocuments(tx, params.id)),
   });
 
   // R43 in its own context: octet-stream only, raw stream, own body limit.
