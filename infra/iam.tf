@@ -87,6 +87,14 @@ data "aws_iam_policy_document" "api_task" {
     }
   }
 
+  # Rejected/failed import originals are deleted (versioning keeps them 30 days, see s3.tf). Only the
+  # imports prefix; no GetObjectVersion / DeleteObjectVersion.
+  statement {
+    sid       = "DeleteImportObjects"
+    actions   = ["s3:DeleteObject"]
+    resources = ["${aws_s3_bucket.documents.arn}/t/*/imports/*"]
+  }
+
   statement {
     sid       = "DocumentsKey"
     actions   = ["kms:Decrypt", "kms:GenerateDataKey"]

@@ -82,7 +82,32 @@ locals {
     { name = "MAIL_TRANSPORT", value = "ses" },
     { name = "S3_REGION", value = var.region },
     { name = "S3_BUCKET", value = aws_s3_bucket.documents.bucket },
+    { name = "S3_SSE", value = "aws:kms" },
+    { name = "S3_KMS_KEY_ID", value = aws_kms_key.data.arn },
     { name = "LOG_LEVEL", value = "info" },
+    # Imports (step 3). The parser child process inherits this task's network posture (no NAT;
+    # egress only to VPC endpoints); see README.md.
+    { name = "IMPORT_MAX_FILE_BYTES", value = tostring(var.import_max_file_bytes) },
+    { name = "IMPORT_MAX_FILES_PER_BATCH", value = "10" },
+    { name = "TENANT_STORAGE_QUOTA_BYTES", value = "1073741824" },
+    { name = "UPLOAD_REQUEST_TIMEOUT_SECONDS", value = "60" },
+    { name = "UPLOAD_IDLE_TIMEOUT_SECONDS", value = "10" },
+    { name = "UPLOAD_MAX_CONCURRENT_PER_TENANT", value = "4" },
+    { name = "PARSE_TIMEOUT_MS", value = "20000" },
+    { name = "PARSE_MEMORY_MB", value = "256" },
+    { name = "PARSE_MAX_CONCURRENCY", value = "2" },
+    { name = "PARSE_QUEUE_TIMEOUT_MS", value = "5000" },
+    { name = "PARSE_MAX_OUTPUT_BYTES", value = "25165824" },
+    { name = "PARSE_MAX_PDF_PAGES", value = "50" },
+    { name = "PARSE_MAX_TEXT_CHARS", value = "2000000" },
+    { name = "PARSE_MAX_IMAGE_PIXELS", value = "50000000" },
+    { name = "PARSE_WORKER_ENTRY", value = "/app/api/dist/src/imports/sandbox/worker-main.js" },
+    { name = "IMPORT_STALE_SECONDS", value = "600" },
+    { name = "REVIEW_CONFIDENCE_THRESHOLD", value = "0.90" },
+    { name = "EXPORT_MAX_ROWS", value = "50000" },
+    { name = "EXPORT_MAX_CONCURRENT_PER_TENANT", value = "2" },
+    { name = "RATE_LIMIT_UPLOAD_MAX", value = "60" },
+    { name = "RATE_LIMIT_EXPORT_MAX", value = "10" },
   ]
 
   api_secrets = [
