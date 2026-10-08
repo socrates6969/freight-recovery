@@ -1,0 +1,71 @@
+/*
+ * Design tokens (brief section 6). 8px spacing grid, neutral grayscale + ONE accent (deep teal),
+ * semantic colors used sparingly, 120-180 ms ease-out motion. Contrast of text pairs is unit-tested
+ * (src/styles/contrast.test.ts) against WCAG AA. Light theme default; dark override block below.
+ */
+:root {
+  --space-1: 8px;
+  --space-2: 16px;
+  --space-3: 24px;
+  --space-4: 32px;
+  --space-5: 40px;
+  --space-6: 48px;
+
+  --color-bg: #ffffff;
+  --color-surface: #f8fafc;
+  --color-surface-2: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+  --color-text: #0f172a;
+  --color-text-muted: #475569;
+  --color-text-subtle: #64748b;
+
+  --color-accent: #0f766e;
+  --color-accent-hover: #115e59;
+  --color-accent-tint: #f0fdfa;
+  --color-on-accent: #ffffff;
+
+  --color-danger: #b91c1c;
+  --color-danger-tint: #fef2f2;
+  --color-warn: #92400e;
+  --color-warn-tint: #fffbeb;
+  --color-success: #166534;
+  --color-success-tint: #f0fdf4;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+
+  --shadow-sm: 0 1px 2px rgb(15 23 42 / 0.06);
+  --shadow-md: 0 4px 12px rgb(15 23 42 / 0.08);
+  --shadow-lg: 0 12px 32px rgb(15 23 42 / 0.14);
+
+  --duration-fast: 120ms;
+  --duration-base: 150ms;
+  --duration-slow: 180ms;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, 'SFMono-Regular', 'Cascadia Mono', Consolas, monospace;
+}
+
+[data-theme='dark'] {
+  --color-bg: #0b1220;
+  --color-surface: #111a2b;
+  --color-surface-2: #172238;
+  --color-border: #233149;
+  --color-border-strong: #2f405e;
+  --color-text: #e2e8f0;
+  --color-text-muted: #a3b1c6;
+  --color-text-subtle: #8b9ab0;
+  --color-accent: #2dd4bf;
+  --color-accent-hover: #5eead4;
+  --color-accent-tint: #0f2a2a;
+  --color-on-accent: #042f2e;
+  --color-danger: #fca5a5;
+  --color-danger-tint: #2a1414;
+  --color-warn: #fcd34d;
+  --color-warn-tint: #2a2210;
+  --color-success: #86efac;
+  --color-success-tint: #10261a;
+}

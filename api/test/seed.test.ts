@@ -57,7 +57,7 @@ describe('seed claim set (C7)', () => {
 
   it('hostile claims carry attacker-style strings', () => {
     const h = JSON.stringify(acme.filter((c) => c.claimNumber.startsWith('CLM-HOSTILE')));
-    for (const needle of ['<script>', 'onerror=', 'javascript:', '‮', '⁦']) expect(h).toContain(needle);
+    for (const needle of ['<script>', 'onerror=', 'javascript:', '\u202E', '\u2066']) expect(h).toContain(needle);
     expect(h).toContain('A'.repeat(4995));
   });
 });

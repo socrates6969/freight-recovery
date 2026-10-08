@@ -110,13 +110,22 @@ describe('architecture', () => {
     } catch {
       webFiles = [];
     }
+    const apiDir = path.join(repoRoot, 'api') + path.sep;
+    const webDir = path.join(repoRoot, 'web') + path.sep;
     for (const p of webFiles) {
       for (const spec of imports(readFileSync(p, 'utf8'))) {
-        expect([p, /(^|\/)api\/|@fr\/api/u.test(spec)]).toEqual([p, false]);
+        const target = spec.startsWith('.') ? path.resolve(path.dirname(p), spec) : '';
+        const crosses = spec === '@fr/api' || spec.startsWith('@fr/api/') || target.startsWith(apiDir);
+        expect([p, spec, crosses]).toEqual([p, spec, false]);
       }
     }
     for (const f of files) {
-      for (const spec of imports(f.text)) expect([f.path, /(^|\/)web\/|@fr\/web/u.test(spec)]).toEqual([f.path, false]);
+      for (const spec of imports(f.text)) {
+        const target = spec.startsWith('.') ? path.resolve(apiRoot, path.dirname(f.path), spec) : '';
+        const crosses = spec === '@fr/web' || spec.startsWith('@fr/web/') || target.startsWith(webDir);
+        expect([f.path, spec, crosses]).toEqual([f.path, spec, false]);
+      }
     }
+    expect(webFiles.length).toBeGreaterThan(5);
   });
 });

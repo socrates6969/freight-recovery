@@ -360,7 +360,7 @@ export const HOSTILE = {
   img: '<img src=x onerror=alert(1)>',
   jsUrl: 'javascript:alert(document.cookie)',
   markdown: '[click me](javascript:alert(1)) **bold** <b>html</b>',
-  bidi: 'Invoice ‮gnp.exe‬ total ⁦isolated⁩',
+  bidi: 'Invoice \u202Egnp.exe\u202C total \u2066isolated\u2069',
   long: `LONG-${'A'.repeat(4995)}`,
 };
 

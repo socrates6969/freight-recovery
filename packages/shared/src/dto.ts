@@ -23,6 +23,8 @@ export const CLAIM_SORT_FIELDS = [
   'createdAt',
   'updatedAt',
   'claimNumber',
+  // loadNumber: added so the C8 'Load' sortable column header is server-sortable (contract gap, reported).
+  'loadNumber',
   'carrierName',
   'status',
   'amountClaimedCents',
