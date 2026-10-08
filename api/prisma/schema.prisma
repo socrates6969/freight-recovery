@@ -1,0 +1,466 @@
+// Freight Recovery web API - PostgreSQL 16 schema.
+// Tenant isolation is enforced in three layers: Postgres RLS (see migrations), a fail-closed
+// Prisma client extension (api/src/db/tenant.ts), and per-request plumbing. Append-only tables
+// are guarded by triggers and grants. Money is integer cents.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  runtime                = "nodejs"
+  moduleFormat           = "esm"
+  importFileExtension    = "js"
+  generatedFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  MANAGER
+  REVIEWER
+  ANALYST
+  VIEWER
+}
+
+enum PlatformRole {
+  PLATFORM_DEV
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+}
+
+enum Perspective {
+  SHIPPER
+  CARRIER
+}
+
+enum ClaimStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  SEND_READY
+}
+
+enum PacketStatus {
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+  SEND_READY
+  SUPERSEDED
+}
+
+enum ApprovalAction {
+  EDIT
+  APPROVE
+  REJECT
+  SEND_READY
+}
+
+enum DocType {
+  INVOICE
+  RATE_CONFIRMATION
+  BILL_OF_LADING
+  OTHER
+}
+
+enum TimelineKind {
+  APPOINTMENT
+  ARRIVAL
+  DEPARTURE
+  INVOICE
+  RATE_CONFIRMATION
+  NOTE
+}
+
+enum Direction {
+  OVERCHARGE
+  UNDERBILLED
+}
+
+enum VerifierStatus {
+  NOT_RUN
+  PASSED
+  FAILED
+  NEEDS_REVIEW
+}
+
+enum MailKind {
+  PASSWORD_RESET
+  INVITE
+}
+
+enum LoginOutcome {
+  SUCCESS
+  BAD_PASSWORD
+  BAD_MFA
+  LOCKED
+  UNKNOWN_USER
+  DISABLED
+}
+
+// ---------------------------------------------------------------------------------------------
+// Global tables (no RLS). Reachable only through api/src/db/system.ts (auth/platform/audit).
+// ---------------------------------------------------------------------------------------------
+
+model Tenant {
+  id        String       @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String       @unique
+  status    TenantStatus @default(ACTIVE)
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  memberships     Membership[]
+  invites         Invite[]
+  claims          Claim[]
+  packets         EvidencePacket[]
+  packetSources   PacketSource[]
+  packetTimeline  PacketTimelineEvent[]
+  packetFindings  PacketFinding[]
+  approvals       Approval[]
+
+  @@map("tenants")
+}
+
+model User {
+  id                String        @id @default(uuid()) @db.Uuid
+  email             String        @unique
+  name              String
+  passwordHash      String        @map("password_hash")
+  status            UserStatus    @default(ACTIVE)
+  platformRole      PlatformRole? @map("platform_role")
+  passwordChangedAt DateTime      @default(now()) @map("password_changed_at") @db.Timestamptz(3)
+  lastLoginAt       DateTime?     @map("last_login_at") @db.Timestamptz(3)
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  membership     Membership?
+  refreshTokens  RefreshToken[]
+  mfaSecret      MfaSecret?
+  recoveryCodes  MfaRecoveryCode[]
+  passwordResets PasswordReset[]
+  invitesSent    Invite[]          @relation("InvitedBy")
+  assignedClaims Claim[]           @relation("ClaimAssignee")
+  packetsCreated EvidencePacket[]  @relation("PacketCreatedBy")
+  approvals      Approval[]        @relation("ApprovalActor")
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id              String    @id @default(uuid()) @db.Uuid
+  familyId        String    @map("family_id") @db.Uuid
+  userId          String    @map("user_id") @db.Uuid
+  tokenHash       String    @unique @map("token_hash")
+  parentId        String?   @map("parent_id") @db.Uuid
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt       DateTime  @map("expires_at") @db.Timestamptz(3)
+  familyExpiresAt DateTime  @map("family_expires_at") @db.Timestamptz(3)
+  usedAt          DateTime? @map("used_at") @db.Timestamptz(3)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedReason   String?   @map("revoked_reason")
+  ip              String?
+  userAgentHash   String?   @map("user_agent_hash")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([familyId])
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model MfaSecret {
+  userId       String    @id @map("user_id") @db.Uuid
+  ciphertext   Bytes
+  nonce        Bytes
+  keyId        String    @map("key_id")
+  verifiedAt   DateTime? @map("verified_at") @db.Timestamptz(3)
+  lastUsedStep BigInt?   @map("last_used_step")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("mfa_secrets")
+}
+
+model MfaRecoveryCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  codeHash  String    @map("code_hash")
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("mfa_recovery_codes")
+}
+
+model LoginAttempt {
+  id        String       @id @default(uuid()) @db.Uuid
+  emailHash String       @map("email_hash")
+  ip        String?
+  outcome   LoginOutcome
+  createdAt DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([emailHash, createdAt])
+  @@map("login_attempts")
+}
+
+model LoginLockout {
+  emailHash     String    @id @map("email_hash")
+  failures      Int       @default(0)
+  lockedUntil   DateTime? @map("locked_until") @db.Timestamptz(3)
+  lastFailureAt DateTime? @map("last_failure_at") @db.Timestamptz(3)
+
+  @@map("login_lockouts")
+}
+
+model PasswordReset {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz(3)
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("password_resets")
+}
+
+model MailOutbox {
+  id        String   @id @default(uuid()) @db.Uuid
+  toEmail   String   @map("to_email")
+  kind      MailKind
+  token     String
+  tenantId  String?  @map("tenant_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@index([toEmail, createdAt])
+  @@map("mail_outbox")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Tenant-scoped tables (tenant_id NOT NULL + RLS FORCE). Composite FKs keep children in the
+// same tenant as their parents even though FK checks bypass RLS.
+// ---------------------------------------------------------------------------------------------
+
+model Membership {
+  id        String   @id @default(uuid()) @db.Uuid
+  tenantId  String   @map("tenant_id") @db.Uuid
+  userId    String   @unique @map("user_id") @db.Uuid
+  role      Role
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([tenantId])
+  @@map("memberships")
+}
+
+model Invite {
+  id          String    @id @default(uuid()) @db.Uuid
+  tenantId    String    @map("tenant_id") @db.Uuid
+  email       String
+  role        Role
+  tokenHash   String    @unique @map("token_hash")
+  invitedById String    @map("invited_by_id") @db.Uuid
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt   DateTime  @map("expires_at") @db.Timestamptz(3)
+  acceptedAt  DateTime? @map("accepted_at") @db.Timestamptz(3)
+  revokedAt   DateTime? @map("revoked_at") @db.Timestamptz(3)
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id])
+  invitedBy User   @relation("InvitedBy", fields: [invitedById], references: [id])
+
+  @@index([tenantId])
+  @@map("invites")
+}
+
+model Claim {
+  id                 String      @id @default(uuid()) @db.Uuid
+  tenantId           String      @map("tenant_id") @db.Uuid
+  claimNumber        String      @map("claim_number")
+  loadNumber         String?     @map("load_number")
+  invoiceNumber      String?     @map("invoice_number")
+  invoiceDate        DateTime?   @map("invoice_date") @db.Timestamptz(3)
+  carrierName        String      @map("carrier_name")
+  shipperName        String      @map("shipper_name")
+  perspective        Perspective
+  status             ClaimStatus @default(PENDING_REVIEW)
+  amountClaimedCents Int         @map("amount_claimed_cents")
+  recoverableCents   Int         @map("recoverable_cents")
+  pendingReviewCents Int         @map("pending_review_cents")
+  currency           String      @default("USD")
+  assigneeId         String?     @map("assignee_id") @db.Uuid
+  version            Int         @default(0)
+  createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id])
+  assignee  User?            @relation("ClaimAssignee", fields: [assigneeId], references: [id])
+  packets   EvidencePacket[]
+  approvals Approval[]
+
+  @@unique([tenantId, claimNumber])
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, updatedAt])
+  @@index([tenantId, createdAt])
+  @@map("claims")
+}
+
+model EvidencePacket {
+  id                 String         @id @default(uuid()) @db.Uuid
+  tenantId           String         @map("tenant_id") @db.Uuid
+  claimId            String         @map("claim_id") @db.Uuid
+  revision           Int
+  status             PacketStatus   @default(PENDING_REVIEW)
+  perspective        Perspective
+  loadNumber         String?        @map("load_number")
+  generatedAt        DateTime       @map("generated_at") @db.Timestamptz(3)
+  disclaimer         String
+  demandLetter       String         @map("demand_letter")
+  currency           String         @default("USD")
+  recoverableCents   Int            @map("recoverable_cents")
+  pendingReviewCents Int            @map("pending_review_cents")
+  verifierStatus     VerifierStatus @default(NOT_RUN) @map("verifier_status")
+  verifierCheckedAt  DateTime?      @map("verifier_checked_at") @db.Timestamptz(3)
+  verifierNote       String?        @map("verifier_note")
+  contentHash        String         @map("content_hash")
+  createdById        String?        @map("created_by_id") @db.Uuid
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant    Tenant                @relation(fields: [tenantId], references: [id])
+  claim     Claim                 @relation(fields: [claimId, tenantId], references: [id, tenantId])
+  createdBy User?                 @relation("PacketCreatedBy", fields: [createdById], references: [id])
+  sources   PacketSource[]
+  timeline  PacketTimelineEvent[]
+  findings  PacketFinding[]
+  approvals Approval[]
+
+  @@unique([claimId, revision])
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+  @@map("evidence_packets")
+}
+
+model PacketSource {
+  id        String  @id @default(uuid()) @db.Uuid
+  tenantId  String  @map("tenant_id") @db.Uuid
+  packetId  String  @map("packet_id") @db.Uuid
+  filename  String
+  docType   DocType @map("doc_type")
+  sha256    String
+  sizeBytes Int     @map("size_bytes")
+  ordinal   Int
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id])
+  packet EvidencePacket @relation(fields: [packetId, tenantId], references: [id, tenantId])
+
+  @@unique([packetId, ordinal])
+  @@map("packet_sources")
+}
+
+model PacketTimelineEvent {
+  id         String       @id @default(uuid()) @db.Uuid
+  tenantId   String       @map("tenant_id") @db.Uuid
+  packetId   String       @map("packet_id") @db.Uuid
+  occurredAt DateTime     @map("occurred_at") @db.Timestamptz(3)
+  kind       TimelineKind
+  label      String
+  sourceId   String?      @map("source_id") @db.Uuid
+  ordinal    Int
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id])
+  packet EvidencePacket @relation(fields: [packetId, tenantId], references: [id, tenantId])
+
+  @@unique([packetId, ordinal])
+  @@map("packet_timeline_events")
+}
+
+model PacketFinding {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  packetId         String    @map("packet_id") @db.Uuid
+  ordinal          Int
+  ruleId           String    @map("rule_id")
+  title            String
+  direction        Direction
+  amountCents      Int       @map("amount_cents")
+  explanation      String
+  calculation      Json
+  confidence       Decimal   @db.Decimal(4, 3)
+  needsHumanReview Boolean   @map("needs_human_review")
+  citations        Json
+  clauseSourceId   String?   @map("clause_source_id") @db.Uuid
+  clauseLabel      String?   @map("clause_label")
+  clauseExcerpt    String?   @map("clause_excerpt")
+  clauseLocator    String?   @map("clause_locator")
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id])
+  packet EvidencePacket @relation(fields: [packetId, tenantId], references: [id, tenantId])
+
+  @@unique([packetId, ordinal])
+  @@map("packet_findings")
+}
+
+model Approval {
+  id             String         @id @default(uuid()) @db.Uuid
+  tenantId       String         @map("tenant_id") @db.Uuid
+  claimId        String         @map("claim_id") @db.Uuid
+  packetId       String         @map("packet_id") @db.Uuid
+  packetRevision Int            @map("packet_revision")
+  action         ApprovalAction
+  reason         String
+  fromStatus     String         @map("from_status")
+  toStatus       String         @map("to_status")
+  contentHash    String         @map("content_hash")
+  actorId        String         @map("actor_id") @db.Uuid
+  actorRole      String         @map("actor_role")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant Tenant         @relation(fields: [tenantId], references: [id])
+  claim  Claim          @relation(fields: [claimId, tenantId], references: [id, tenantId])
+  packet EvidencePacket @relation(fields: [packetId, tenantId], references: [id, tenantId])
+  actor  User           @relation("ApprovalActor", fields: [actorId], references: [id])
+
+  @@index([tenantId, claimId, createdAt])
+  @@map("approvals")
+}
+
+model AuditEvent {
+  id         String   @id @db.Uuid
+  chainKey   String   @map("chain_key")
+  tenantId   String?  @map("tenant_id") @db.Uuid
+  seq        BigInt
+  actorId    String?  @map("actor_id") @db.Uuid
+  actorRole  String?  @map("actor_role")
+  action     String
+  targetType String?  @map("target_type")
+  targetId   String?  @map("target_id")
+  metadata   Json
+  ip         String?
+  requestId  String?  @map("request_id")
+  createdAt  DateTime @map("created_at") @db.Timestamptz(3)
+  prevHash   String   @map("prev_hash")
+  hash       String
+
+  @@unique([chainKey, seq])
+  @@index([tenantId, seq])
+  @@map("audit_events")
+}
