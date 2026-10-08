@@ -8,7 +8,7 @@ import { safeNextPath } from '../../lib/safe-next';
 
 import { AuthLayout } from './AuthLayout';
 import { loadMe, lockMessage } from './session-actions';
-import { useRetryCountdown } from './use-retry-countdown';
+import { useRetryCountdown, type RetryWindow } from './use-retry-countdown';
 
 export function LoginPage() {
   const api = useApi();
@@ -19,9 +19,9 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<{ code: string } | null>(null);
-  const [retryUntil, setRetryUntil] = useState<number | null>(null);
+  const [retry, setRetry] = useState<RetryWindow | null>(null);
   const [busy, setBusy] = useState(false);
-  const remaining = useRetryCountdown(retryUntil);
+  const remaining = useRetryCountdown(retry);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -42,7 +42,7 @@ export function LoginPage() {
       }
     } catch (err) {
       const code = err instanceof ApiError ? err.code : 'error';
-      if (err instanceof ApiError && err.status === 429) setRetryUntil(Date.now() + (err.retryAfterSeconds ?? 60) * 1000);
+      if (err instanceof ApiError && err.status === 429) setRetry({ seconds: err.retryAfterSeconds ?? 60, startedAt: Date.now() });
       setError({ code });
     } finally {
       setBusy(false);
@@ -85,7 +85,7 @@ export function LoginPage() {
             {message}
           </p>
         ) : null}
-        <button type="submit" className="btn btn-primary justify-center" disabled={busy || (retryUntil !== null && remaining > 0)}>
+        <button type="submit" className="btn btn-primary justify-center" disabled={busy || (retry !== null && remaining > 0)}>
           Sign in
         </button>
         <Link to="/forgot" className="text-sm text-[var(--color-accent)]">

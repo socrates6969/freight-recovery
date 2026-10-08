@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import { AppRoot } from '../src/app-root';
+import { UNPROCESSABLE_MESSAGE } from '../src/features/approvals/ApprovalsPage';
 import { EvidencePanel } from '../src/features/claims/ClaimSheet';
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -178,5 +179,91 @@ describe('AppRoot routing and auth', () => {
     render(<AppRoot fetchImpl={fetchImpl as typeof fetch} initialEntries={['/approvals']} />);
     expect(await screen.findByText('Nothing is waiting for review.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approve' })).toBeNull();
+  });
+});
+
+describe('fix round 1: fixed error texts, retry, Retry-After', () => {
+  const authed = (handler: (u: string, init?: RequestInit) => Response | undefined) => async (url: RequestInfo | URL, init?: RequestInit) => {
+    const u = String(url);
+    if (u === '/api/v1/auth/csrf') return json(200, { csrfToken: 'n.sig' });
+    if (u === '/api/v1/auth/refresh') return json(200, { accessToken: 't', tokenType: 'Bearer', expiresIn: 600, user: manager });
+    if (u === '/api/v1/me') return json(200, { user: manager, permissions: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send'] });
+    return handler(u, init) ?? json(404, { error: { code: 'not_found', message: 'Not found.', requestId: 'r' } });
+  };
+
+  it('shows the Retry-After value exactly (42 seconds) on a locked sign-in', async () => {
+    const fetchImpl = async (url: RequestInfo | URL) => {
+      if (String(url) === '/api/v1/auth/csrf') return json(200, { csrfToken: 'n.sig' });
+      if (String(url) === '/api/v1/auth/login') {
+        return new Response(JSON.stringify({ error: { code: 'account_locked', message: 'x', requestId: 'r' } }), {
+          status: 429,
+          headers: { 'content-type': 'application/json', 'retry-after': '42' },
+        });
+      }
+      return json(401, { error: { code: 'unauthenticated', message: 'x', requestId: 'r' } });
+    };
+    const user = userEvent.setup();
+    render(<AppRoot fetchImpl={fetchImpl as typeof fetch} initialEntries={['/login']} />);
+    await user.type(await screen.findByRole('textbox', { name: 'Email' }), 'lockme@acme.test');
+    await user.type(screen.getByLabelText('Password'), 'wrong-password-123');
+    await user.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Try again in 42 seconds.');
+  });
+
+  it('offers a working retry button when the claims list fails', async () => {
+    let calls = 0;
+    const fetchImpl = authed((u) => {
+      if (u.startsWith('/api/v1/claims')) {
+        calls += 1;
+        if (calls <= 2) return json(500, { error: { code: 'internal_error', message: 'Internal server error.', requestId: 'r' } });
+        return json(200, { items: [], page: 1, pageSize: 25, total: 0 });
+      }
+      if (u.startsWith('/api/v1/approvals')) return json(200, { items: [], page: 1, pageSize: 1, total: 0 });
+      return undefined;
+    });
+    const user = userEvent.setup();
+    render(<AppRoot fetchImpl={fetchImpl as typeof fetch} initialEntries={['/claims']} />);
+    const retry = await screen.findByRole('button', { name: 'Try again' }, { timeout: 8000 });
+    expect(screen.getByRole('alert')).toHaveTextContent('Claims could not be loaded.');
+    await user.click(retry);
+    expect(await screen.findByText('No claims match these filters.')).toBeInTheDocument();
+    expect(calls).toBe(3);
+  });
+
+  it('never renders server error text on 422 in the approval dialog', async () => {
+    const item = {
+      id: U(20),
+      claimNumber: 'CLM-0013',
+      loadNumber: 'LD-1',
+      invoiceNumber: 'INV-1',
+      carrierName: 'C',
+      shipperName: 'S',
+      perspective: 'SHIPPER',
+      status: 'PENDING_REVIEW',
+      amountClaimedCents: 1,
+      recoverableCents: 1,
+      pendingReviewCents: 0,
+      currency: 'USD',
+      assignee: null,
+      latestPacket: { revision: 1, status: 'PENDING_REVIEW' },
+      createdAt: '2026-10-01T00:00:00.000Z',
+      updatedAt: '2026-10-01T00:00:00.000Z',
+      packetRevision: 1,
+      pendingFindingsCount: 0,
+      waitingSince: '2026-10-01T00:00:00.000Z',
+    };
+    const fetchImpl = authed((u) => {
+      if (u.startsWith('/api/v1/approvals')) return json(200, { items: [item], page: 1, pageSize: 25, total: 1 });
+      if (u.endsWith('/packet/approve')) return json(422, { error: { code: 'unprocessable', message: '<b>SERVER TEXT</b>', requestId: 'r' } });
+      return undefined;
+    });
+    const user = userEvent.setup();
+    render(<AppRoot fetchImpl={fetchImpl as typeof fetch} initialEntries={['/approvals']} />);
+    await user.click(await screen.findByRole('button', { name: 'Approve' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Approve CLM-0013' });
+    await user.type(within(dialog).getByRole('textbox', { name: 'Reason' }), 'Reason long enough here');
+    await user.click(within(dialog).getByRole('button', { name: 'Confirm' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(UNPROCESSABLE_MESSAGE);
+    expect(dialog.textContent).not.toContain('SERVER TEXT');
   });
 });

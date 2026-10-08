@@ -12,6 +12,8 @@ import { formatDateTime, formatUsdCents, STATUS_LABEL } from '../../lib/format';
 type Action = 'Approve' | 'Reject' | 'Edit' | 'Send';
 const PAGE_SIZE = 25;
 export const STALE_MESSAGE = 'This item changed. Reload to continue.';
+/** Fixed client-side text for 422 (server error text is never rendered). */
+export const UNPROCESSABLE_MESSAGE = 'This action could not be completed. Check the acknowledgement and reason, then try again.';
 export const SEND_NOTICE = 'This marks the demand as ready to send. No email is sent from this app.';
 const ACK_LABEL = 'I acknowledge findings pending human review';
 
@@ -75,7 +77,7 @@ function ActionDialog({ action, item, onClose }: { action: Action; item: Approva
       if (e instanceof ApiError && e.status === 409) {
         setError(STALE_MESSAGE);
         await queryClient.invalidateQueries({ queryKey: ['approvals'] });
-      } else if (e instanceof ApiError && e.status === 422) setError(e.message);
+      } else if (e instanceof ApiError && e.status === 422) setError(UNPROCESSABLE_MESSAGE);
       else if (e instanceof ApiError && e.status === 403) setError('You do not have permission to perform this action.');
       else setError('The action failed. Please try again.');
     },
@@ -167,9 +169,14 @@ export function ApprovalsPage() {
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-semibold">Approvals</h1>
       {queue.isError ? (
-        <p role="alert" className="card p-4 text-[var(--color-danger)]">
-          The approval queue could not be loaded.
-        </p>
+        <div className="card flex items-center justify-between gap-3 p-4">
+          <p role="alert" className="text-[var(--color-danger)]">
+            The approval queue could not be loaded.
+          </p>
+          <button type="button" className="btn" disabled={queue.isFetching} onClick={() => void queue.refetch()}>
+            Try again
+          </button>
+        </div>
       ) : (
         <div className="card max-h-[70vh] overflow-auto">
           <table className="data-table" aria-label="Approval queue">

@@ -112,9 +112,14 @@ export function ClaimsPage() {
       </div>
 
       {claims.isError ? (
-        <p role="alert" className="card p-4 text-[var(--color-danger)]">
-          Claims could not be loaded. Try again.
-        </p>
+        <div className="card flex items-center justify-between gap-3 p-4">
+          <p role="alert" className="text-[var(--color-danger)]">
+            Claims could not be loaded.
+          </p>
+          <button type="button" className="btn" disabled={claims.isFetching} onClick={() => void claims.refetch()}>
+            Try again
+          </button>
+        </div>
       ) : (
         <div className="card max-h-[70vh] overflow-auto">
           <table className="data-table">

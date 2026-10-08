@@ -198,7 +198,8 @@ export function ClaimSheet() {
       await queryClient.invalidateQueries({ queryKey: ['claim', id] });
       await queryClient.invalidateQueries({ queryKey: ['claims'] });
     },
-    onError: (e) => toast(e instanceof ApiError && e.status === 422 ? e.message : 'Assignment failed.', 'error'),
+    onError: (e) =>
+      toast(e instanceof ApiError && e.status === 422 ? 'That person cannot be assigned to this claim.' : 'Assignment failed.', 'error'),
   });
 
   const onTabKey = (e: KeyboardEvent<HTMLButtonElement>) => {
