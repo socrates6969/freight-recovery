@@ -20,6 +20,7 @@ import {
 } from '../security/totp.js';
 
 import type { AuthDeps, RequestMeta } from './deps.js';
+import { MailDeliveryError, deliverMail } from './mailer.js';
 import { lockedForSeconds, recordFailure } from './lockout-store.js';
 import {
   AUTH_USER_SELECT,
@@ -306,9 +307,11 @@ export async function forgotPassword(deps: AuthDeps, emailInput: string, meta: R
   const started = Date.now();
   const email = normalizeEmail(emailInput);
   const eh = emailHash(deps.cfg.refreshPepper, email);
+  let target: AuthUser | null = null;
   try {
     await withSystemTx(deps.base, async (tx) => {
       const user = (await tx.user.findUnique({ where: { email }, select: AUTH_USER_SELECT })) as AuthUser | null;
+      target = user;
       if (!user || !isUsable(user)) {
         await appendAudit(tx, {
           tenantId: user ? tenantIdOf(user) : null,
@@ -331,7 +334,8 @@ export async function forgotPassword(deps: AuthDeps, emailInput: string, meta: R
           expiresAt: new Date(now.getTime() + deps.cfg.resetTokenTtlSeconds * 1000),
         },
       });
-      await deps.mailer.send(tx, { kind: 'PASSWORD_RESET', to: user.email, token, tenantId: tenantIdOf(user) });
+      // A delivery failure throws MailDeliveryError here, rolling back the reset token.
+      await deliverMail(deps.mailer, tx, { kind: 'PASSWORD_RESET', to: user.email, token, tenantId: tenantIdOf(user) });
       await appendAudit(tx, {
         tenantId: tenantIdOf(user),
         action: 'auth.password.reset_requested',
@@ -344,6 +348,25 @@ export async function forgotPassword(deps: AuthDeps, emailInput: string, meta: R
         requestId: meta.requestId,
       });
     });
+  } catch (e) {
+    if (!(e instanceof MailDeliveryError)) throw e;
+    // Never surface delivery failures to the caller (the response must not reveal that the account
+    // exists): log server-side, audit in the account's tenant chain, answer like every other case.
+    const user = target as AuthUser | null;
+    deps.log.error({ emailHash: eh.slice(0, 12), event: 'mail_delivery_failed', kind: 'password_reset' }, 'reset email could not be delivered');
+    await withSystemTx(deps.base, (tx) =>
+      appendAudit(tx, {
+        tenantId: user ? tenantIdOf(user) : null,
+        action: 'auth.password.reset_requested',
+        actorId: null,
+        actorRole: null,
+        targetType: user ? 'user' : null,
+        targetId: user?.id ?? null,
+        metadata: { emailHash: eh, status: 'delivery_failed' },
+        ip: meta.ip,
+        requestId: meta.requestId,
+      }),
+    );
   } finally {
     const elapsed = Date.now() - started;
     if (elapsed < FORGOT_MIN_DURATION_MS) await new Promise((r) => setTimeout(r, FORGOT_MIN_DURATION_MS - elapsed));

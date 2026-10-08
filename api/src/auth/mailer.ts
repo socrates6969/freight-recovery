@@ -41,3 +41,20 @@ export class SesMailer implements Mailer {
     return Promise.reject(new NotConfiguredError());
   }
 }
+
+/** Raised (inside the caller's transaction, so it rolls back) when a mail transport fails to deliver. */
+export class MailDeliveryError extends Error {
+  constructor() {
+    super('mail delivery failed');
+    this.name = 'MailDeliveryError';
+  }
+}
+
+/** Send through the configured mailer; any transport failure becomes a MailDeliveryError (no details). */
+export async function deliverMail(mailer: Mailer, tx: SystemTx, msg: MailMessage): Promise<void> {
+  try {
+    await mailer.send(tx, msg);
+  } catch {
+    throw new MailDeliveryError();
+  }
+}

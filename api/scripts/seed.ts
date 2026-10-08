@@ -69,13 +69,34 @@ function env(name: string): string {
   return v;
 }
 
-function guard(): void {
-  const nodeEnv = process.env['NODE_ENV'];
-  if (nodeEnv !== 'development' && nodeEnv !== 'test') {
-    throw new Error('Refusing to seed: NODE_ENV must be development or test');
+/** Hosts where seeding needs no extra opt-in: loopback and the compose.web.yml Postgres service. */
+export const SEED_SAFE_HOSTS: readonly string[] = Object.freeze(['127.0.0.1', 'localhost', '::1', '[::1]', 'postgres']);
+
+/**
+ * Returns a refusal reason, or null if seeding is allowed. Seeding requires NODE_ENV=development|test
+ * AND either a loopback/compose database host or an explicit ALLOW_SEED=1 opt-in. Managed cloud
+ * databases (RDS) are always refused.
+ */
+export function seedRefusal(env: Record<string, string | undefined>): string | null {
+  const nodeEnv = env['NODE_ENV'];
+  if (nodeEnv !== 'development' && nodeEnv !== 'test') return 'NODE_ENV must be development or test';
+  const url = env['MIGRATE_DATABASE_URL'];
+  if (!url) return 'MIGRATE_DATABASE_URL is required';
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    return 'MIGRATE_DATABASE_URL is not a valid URL';
   }
-  const url = env('MIGRATE_DATABASE_URL');
-  if (/rds\.amazonaws\.com/iu.test(url)) throw new Error('Refusing to seed an RDS database');
+  if (/(^|\.)amazonaws\.com$/u.test(host)) return 'refusing to seed a managed cloud database (RDS)';
+  if (SEED_SAFE_HOSTS.includes(host)) return null;
+  if (env['ALLOW_SEED'] === '1') return null;
+  return `database host ${host} is not local; set ALLOW_SEED=1 to seed it deliberately`;
+}
+
+function guard(): void {
+  const reason = seedRefusal(process.env);
+  if (reason) throw new Error(`Refusing to seed: ${reason}`);
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));

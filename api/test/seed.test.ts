@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildClaimSet } from '../scripts/seed.js';
+import { buildClaimSet, seedRefusal } from '../scripts/seed.js';
 
 describe('seed claim set (C7)', () => {
   const { acme, globex } = buildClaimSet();
@@ -59,5 +59,27 @@ describe('seed claim set (C7)', () => {
     const h = JSON.stringify(acme.filter((c) => c.claimNumber.startsWith('CLM-HOSTILE')));
     for (const needle of ['<script>', 'onerror=', 'javascript:', '\u202E', '\u2066']) expect(h).toContain(needle);
     expect(h).toContain('A'.repeat(4995));
+  });
+});
+
+describe('seed guard (F-09)', () => {
+  const url = (host: string) => `postgresql://freight_owner:pw@${host}:5432/freight_web`;
+  it('allows dev/test against loopback or the compose service', () => {
+    for (const host of ['127.0.0.1', 'localhost', '[::1]', 'postgres']) {
+      expect([host, seedRefusal({ NODE_ENV: 'test', MIGRATE_DATABASE_URL: url(host) })]).toEqual([host, null]);
+    }
+    expect(seedRefusal({ NODE_ENV: 'development', MIGRATE_DATABASE_URL: url('127.0.0.1') })).toBeNull();
+  });
+  it('refuses production/unset NODE_ENV even on loopback', () => {
+    expect(seedRefusal({ NODE_ENV: 'production', MIGRATE_DATABASE_URL: url('127.0.0.1') })).toMatch(/NODE_ENV/u);
+    expect(seedRefusal({ MIGRATE_DATABASE_URL: url('127.0.0.1') })).toMatch(/NODE_ENV/u);
+  });
+  it('refuses non-local hosts unless ALLOW_SEED=1, and never seeds RDS', () => {
+    expect(seedRefusal({ NODE_ENV: 'test', MIGRATE_DATABASE_URL: url('db.internal.example') })).toMatch(/ALLOW_SEED=1/u);
+    expect(seedRefusal({ NODE_ENV: 'test', MIGRATE_DATABASE_URL: url('db.internal.example'), ALLOW_SEED: 'true' })).toMatch(/ALLOW_SEED=1/u);
+    expect(seedRefusal({ NODE_ENV: 'test', MIGRATE_DATABASE_URL: url('db.internal.example'), ALLOW_SEED: '1' })).toBeNull();
+    expect(seedRefusal({ NODE_ENV: 'test', MIGRATE_DATABASE_URL: url('x.abc123.eu-north-1.rds.amazonaws.com'), ALLOW_SEED: '1' })).toMatch(/managed cloud/u);
+    expect(seedRefusal({ NODE_ENV: 'test' })).toMatch(/MIGRATE_DATABASE_URL/u);
+    expect(seedRefusal({ NODE_ENV: 'test', MIGRATE_DATABASE_URL: 'not a url' })).toMatch(/valid URL/u);
   });
 });

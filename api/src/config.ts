@@ -104,6 +104,13 @@ const KNOBS = {
 } as const satisfies Record<string, Knob>;
 
 const MIN_SECRET_CHARS = 43;
+
+/**
+ * Mail transports that are actually implemented and allowed in production. EMPTY on purpose: `outbox`
+ * is a dev/test sink and `ses` is a stub (SesMailer throws), so production refuses to start until a
+ * real transport is implemented and added here.
+ */
+export const PRODUCTION_MAIL_TRANSPORTS: readonly string[] = Object.freeze([]);
 /** Minimum estimated entropy (bits) for a production secret: alphabet bits per character x length. */
 export const MIN_SECRET_ENTROPY_BITS = 160;
 
@@ -273,6 +280,8 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
   else problems.push('MAIL_TRANSPORT must be outbox or ses');
   if (prod && mailTransport === 'outbox') {
     problems.push('MAIL_TRANSPORT=outbox is not allowed in production (no real mail transport is implemented yet)');
+  } else if (prod && !PRODUCTION_MAIL_TRANSPORTS.includes(mailTransport)) {
+    problems.push(`MAIL_TRANSPORT=${mailTransport} is not implemented (stub); production start is refused until a real mail transport exists`);
   }
 
   const enableDevOutbox = parseBool(get('ENABLE_DEV_OUTBOX'), false, 'ENABLE_DEV_OUTBOX', problems);

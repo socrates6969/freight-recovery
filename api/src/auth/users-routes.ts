@@ -17,11 +17,12 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { appendAudit } from '../audit/audit.js';
 import { isUuid } from '../db/errors.js';
 import { scopeSystemTxToTenant, withSystemTx, type SystemTx } from '../db/system.js';
-import { errors } from '../http/errors.js';
+import { HttpError, errors } from '../http/errors.js';
 import { defineRoute, requireTenant } from '../http/route.js';
 import { hmacSha256Hex, normalizeEmail, randomOpaqueToken } from '../security/crypto.js';
 
 import type { AuthDeps } from './deps.js';
+import { MailDeliveryError, deliverMail } from './mailer.js';
 import { revokeUserSessionsTx } from './session.js';
 
 const P = '/api/v1';
@@ -140,7 +141,8 @@ export function registerUserRoutes(app: FastifyInstance, deps: AuthDeps): void {
             expiresAt: new Date(now.getTime() + deps.cfg.inviteTtlSeconds * 1000),
           },
         });
-        await deps.mailer.send(tx, { kind: 'INVITE', to: email, token, tenantId: ctx.tenantId });
+        // Delivery failure throws MailDeliveryError: the whole transaction (invite row) rolls back.
+        await deliverMail(deps.mailer, tx, { kind: 'INVITE', to: email, token, tenantId: ctx.tenantId });
         await appendAudit(tx, {
           ...auditBase(ctx, req),
           action: 'invite.created',
@@ -149,6 +151,11 @@ export function registerUserRoutes(app: FastifyInstance, deps: AuthDeps): void {
           metadata: { inviteId: created.id, role: body.role },
         });
         return created;
+      }).catch((e: unknown) => {
+        if (!(e instanceof MailDeliveryError)) throw e;
+        // Rolled back already; fail cleanly with a fixed message (no transport details).
+        req.log.error({ event: 'mail_delivery_failed', kind: 'invite' }, 'invite email could not be delivered');
+        throw new HttpError(503, 'service_unavailable', { message: 'Invitations cannot be delivered right now. Try again later.' });
       });
       return reply.code(201).send({ id: invite.id, email: invite.email, role: invite.role, expiresAt: invite.expiresAt.toISOString() });
     },

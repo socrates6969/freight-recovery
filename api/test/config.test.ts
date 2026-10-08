@@ -5,7 +5,9 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { ConfigError, DOCUMENTED_DEV_SECRETS, loadConfig, secretEntropyProblem } from '../src/config.js';
+import { ConfigError, DOCUMENTED_DEV_SECRETS, PRODUCTION_MAIL_TRANSPORTS, loadConfig, secretEntropyProblem } from '../src/config.js';
+
+const SES_PROBLEM = 'MAIL_TRANSPORT=ses is not implemented (stub); production start is refused until a real mail transport exists';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -64,11 +66,23 @@ describe('config', () => {
     );
   });
 
-  it('accepts a hardened production config', () => {
-    const c = loadConfig(prodOk);
-    expect(c.nodeEnv).toBe('production');
-    expect(c.hstsMaxAgeSeconds).toBe(31536000);
+  it('refuses to start production with any mail transport until a real one is implemented', () => {
+    expect(PRODUCTION_MAIL_TRANSPORTS).toEqual([]);
+    // A fully hardened production config fails on exactly one thing: the unimplemented mail transport.
+    expect(problems(prodOk)).toEqual([SES_PROBLEM]);
+    expect(() => loadConfig(prodOk)).toThrow(ConfigError);
+    expect(problems({ ...prodOk, MAIL_TRANSPORT: 'outbox' })).toEqual([
+      'MAIL_TRANSPORT=outbox is not allowed in production (no real mail transport is implemented yet)',
+    ]);
+    expect(problems({ ...prodOk, MAIL_TRANSPORT: 'smtp' })).toContain('MAIL_TRANSPORT must be outbox or ses');
+    // Outside production the stub may be selected (forgot-password still answers 202; invites 503).
+    expect(loadConfig({ ...base, NODE_ENV: 'test', MAIL_TRANSPORT: 'ses' }).mailTransport).toBe('ses');
+  });
+
+  it('hardened production config is otherwise valid (HSTS, secure cookies)', () => {
+    const c = loadConfig({ ...prodOk, NODE_ENV: 'development', APP_ORIGIN: 'https://app.example.com' });
     expect(c.cookieSecure).toBe(true);
+    expect(loadConfig({ ...prodOk, NODE_ENV: 'development' }).hstsMaxAgeSeconds).toBe(0);
   });
 
   it('enforces every production guard without echoing secret values', () => {
@@ -125,7 +139,7 @@ describe('config', () => {
     }
     // and through the production config path
     const env = { ...prodOk, JWT_SECRET: randomBytes(32).toString('hex'), CSRF_SECRET: randomBytes(32).toString('hex'), REFRESH_PEPPER: randomBytes(48).toString('base64') };
-    expect(problems(env)).toEqual([]);
+    expect(problems(env)).toEqual([SES_PROBLEM]);
   });
 
   it('rejects low-entropy, repeated and short secrets in production only', () => {
