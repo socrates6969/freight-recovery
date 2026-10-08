@@ -26,6 +26,7 @@ Incumbents could move down-market; invoice-error % figures are vendor-grade. Val
 - fundraising/ — right-fit VC/angel firms + their **official** contact channels + outreach templates. (No personal dossiers.)
 - marketing/ — B2B SEO + content + channel plan (`seo-and-growth.md`) and a landing-page outline (`landing/`); plan only, no live site yet.
 - hiring/ — role specs + how to source an operator/CEO in Norway (recruiters & official channels).
+- web/, api/, packages/shared/, infra/ — the new TypeScript web platform (pre-product, synthetic data only); see [Web platform](#web-platform-typescript-pre-product-synthetic-data-only) below.
 ## Build plan
 Follows the 12-prompt playbook: eval set first → verified tool layer → draft + independent verifier (measured pass^k) → retrieval/memory → routing/cost control → red-team → audit trail + human approval → measured recovery rate → pilot one-pager → seed deck grounded only in measured results.
 
@@ -153,3 +154,114 @@ The software foundation above is necessary, not sufficient. Still required:
 4. **Deployment-layer hardening** that code cannot provide: WAF + rate limiting, TLS, private networking, no-egress/seccomp/read-only-rootfs containers for the parser, KMS-encrypted RDS and S3, Secrets Manager, tamper-evident audit logging, alarms, backups/PITR. A complete, validated Terraform stack (the current one is a skeleton) is part of this.
 5. Malware scanning of uploads, an async job queue for large documents, and PostgreSQL row-level security as defense in depth for tenant isolation.
 6. Measured accuracy on a design-partner pilot (see the business docs): no accuracy figures exist yet.
+
+---
+
+# Web platform (TypeScript, pre-product, synthetic data only)
+
+> **Status: pre-product, NOT production-ready, synthetic data only.** It has never been deployed, it has
+> had no third-party penetration test, and it has never seen real customer data. A production start is
+> **blocked by design** until a real mail transport exists. The Docker images and the compose stack have
+> never been built or started (the Docker engine was down for the whole build). Everything under
+> "Before real customer data" above applies here too. Threat model and known gaps:
+> [technical/web-platform-security.md](technical/web-platform-security.md). Architecture:
+> [ARCHITECTURE.md, "Web platform"](ARCHITECTURE.md#web-platform-typescript-steps-1-2).
+
+A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 and 2
+are done:
+
+- **Step 1:** email + password login (argon2id), a short-lived access token plus a rotating refresh
+  cookie, TOTP MFA for Owner/Admin/platform roles, lockout with exponential backoff, CSRF protection,
+  a strict CSP and security headers, rate limits, RBAC across 8 roles, fail-closed tenant isolation
+  (PostgreSQL row-level security plus a Prisma guard), and a hash-chained, append-only audit trail.
+- **Step 2:** a claims list (filter, sort, search), a claim detail sheet with the evidence-packet viewer,
+  and the approvals human gate (approve / edit / reject / send, each with a reason).
+
+"Send" only marks a demand send-ready and audits it. No email is sent and no money moves. Claims and
+packets are synthetic and are transcribed from the Python CLI output on `tests/fixtures/`. Import/export,
+the dev dashboard, AI features and the TS port of the Python rules are later steps.
+
+**The Python service and the `webapp/` pilot dashboard are unchanged and remain.** The web platform has
+its own compose file (`compose.web.yml`), CI workflow (`.github/workflows/web-ci.yml`) and Terraform
+(`infra/`, which supersedes `deploy/terraform/` for the web stack only). The root `docker-compose.yml`,
+`ci.yml`, `src/`, `tests/`, `webapp/` and `deploy/` were not modified.
+
+## Layout
+
+| Path | What |
+| --- | --- |
+| `web/` | React 19 + TypeScript + Vite SPA (React Router, TanStack Query, Zustand, Tailwind) |
+| `api/` | Node 22 + Fastify 5 + Prisma 7 (PostgreSQL 16) + Zod + Pino. Schema, migration and RLS SQL live in `api/prisma/`; DB roles in `api/db/init/00-roles.sql`; the synthetic seed in `api/scripts/seed.ts` |
+| `packages/shared/` | `@fr/shared`: roles and the permission matrix (single source of truth), Zod DTOs, canonical JSON, text safety |
+| `infra/` | Terraform skeleton for AWS (VPC, RDS, S3 + KMS, ECS Fargate, ALB + WAF, ElastiCache, Secrets Manager, CloudFront). `fmt` and `validate` only, **never applied**; see `infra/README.md` |
+| `compose.web.yml` | Local stack: postgres, redis, minio, migrate, api, web (loopback only) |
+| `.env.example` | Every variable, with placeholders. Placeholders are refused at start-up |
+
+## Local quickstart (without Docker: the path that was actually verified)
+
+Prerequisites: Node 22 (`.nvmrc`; `engines` allows `>=22.12 <25`), PostgreSQL 16, and `openssl` (or Node,
+see below).
+
+```bash
+npm ci --ignore-scripts                 # install scripts stay disabled (.npmrc)
+npm run verify:no-install-scripts
+npm run prisma:generate
+
+# 1. Database roles + databases (once, as the Postgres superuser; .env.example assumes port 5433):
+psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5433 -U postgres -f api/db/init/00-roles.sql
+
+# 2. Environment: copy and replace EVERY <...> placeholder (the API refuses to start with them).
+cp .env.example .env
+openssl rand -hex 32        # JWT_SECRET      (hex is valid ...)
+openssl rand -hex 32        # CSRF_SECRET
+openssl rand -base64 48     # REFRESH_PEPPER  (... and so is base64)
+openssl rand -base64 32     # MFA_ENC_KEY     (must be base64 of exactly 32 random bytes)
+#   no openssl? node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+set -a; . ./.env; set +a    # the API and the seed read process.env only (no .env loader)
+
+# 3. Schema + synthetic seed (owner role via MIGRATE_DATABASE_URL; the seed refuses NODE_ENV=production)
+npm run db:migrate:deploy
+npm run db:seed             # idempotent;  npm run db:seed -- --reset  wipes and recreates the seed tenants
+
+# 4. Run (two terminals, each with the env loaded)
+npm run dev -w api          # http://127.0.0.1:3001
+npm run dev -w web          # http://127.0.0.1:5173 (proxies /api to the API)
+```
+
+Secret rules: `JWT_SECRET`, `CSRF_SECRET` and `REFRESH_PEPPER` must each be at least 43 characters and
+must all differ. Placeholder-looking values are refused in every environment. In production the
+documented dev/CI values are refused as well, and every secret must pass an entropy check. Random hex
+(`openssl rand -hex 32`) and base64 (`openssl rand -base64 48`) both pass it.
+
+Seed accounts (synthetic, local only): `owner@acme.test`, `admin@acme.test`, `manager@acme.test`,
+`reviewer@acme.test`, `analyst@acme.test`, `viewer@acme.test`, a second tenant `*@globex.test`, and the
+platform users `dev@platform.test` and `super@platform.test`. The password is `Synthetic-Pass-2026!`.
+Owner, admin and platform accounts need TOTP. The seed uses the public test secret
+`JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP`, which you can add to any authenticator app. Reset and invite tokens
+appear at `GET /api/v1/dev/outbox`. That route is dev only: it exists only with `ENABLE_DEV_OUTBOX=true`
+outside production.
+
+**With Docker (unverified):** `docker compose -f compose.web.yml up --build -d`, then seed with
+`docker compose -f compose.web.yml run --rm api node dist/scripts/seed.js` and open
+http://127.0.0.1:8080. This file passes `docker compose config`, but the images have never been built.
+Treat the first run as a test.
+
+## Tests and checks
+
+```bash
+npm run typecheck
+npm run lint                 # --max-warnings 0
+npm test                     # unit tests (shared, api, web); no database needed
+npm run test:integration     # api, against a migrated + seeded test DB (TEST_DATABASE_URL, TEST_ADMIN_DATABASE_URL,
+                             # and the same MFA_ENC_KEY the seed used); see the env block in .github/workflows/web-ci.yml
+npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
+npm run build                # shared + api + web (+ dist check: no inline script/style, no sourcemaps)
+npm run audit && npm audit signatures
+terraform -chdir=infra fmt -check -recursive && terraform -chdir=infra init -backend=false && terraform -chdir=infra validate
+```
+
+What was actually run (2026-10-08, Windows, Node 24, portable PostgreSQL 16.15): typecheck, lint, unit
+tests (shared 30, api 83, web 29), integration (3/3), build, `npm audit` (0 vulnerabilities),
+`npm audit signatures`, migrate + seed, and terraform fmt/validate (portable 1.16.5). The independent
+acceptance run gave 334 passed, 0 failed, 5 skipped, 2 todo. **Not run:** the Docker images or compose
+stack, Playwright end-to-end tests, and any AWS deployment.

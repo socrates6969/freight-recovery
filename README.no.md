@@ -28,6 +28,7 @@ De etablerte aktørene kan gå ned i markedet; tall for feilprosent på fakturae
 - fundraising/ — passende VC-/englefirmaer + deres **offisielle** kontaktkanaler + utkast til henvendelser. (Ingen personlige dossierer.)
 - marketing/ — B2B SEO + innhold + kanalplan (`seo-and-growth.md`, norsk: `seo-and-growth.no.md`) og en landingssideskisse (`landing/`); kun plan, ingen live nettside ennå.
 - hiring/ — rollebeskrivelser + hvordan finne en operatør/daglig leder i Norge (rekrutterere og offisielle kanaler).
+- web/, api/, packages/shared/, infra/ — den nye TypeScript-nettplattformen (før produkt, kun syntetiske data); se [Nettplattform](#nettplattform-typescript-før-produkt-kun-syntetiske-data) nedenfor.
 
 ## Byggeplan
 Følger spillboken med 12 prompter: eval-sett først → verifisert verktøylag → utkast + uavhengig verifikator (målt pass^k) → henting/minne → ruting/kostnadskontroll → red-team → revisjonsspor + menneskelig godkjenning → målt innkrevingsrate → pilot-enpager → seed-deck som kun bygger på målte resultater.
@@ -156,3 +157,117 @@ Programvarefundamentet ovenfor er nødvendig, ikke tilstrekkelig. Fortsatt påkr
 4. **Herding på utrullingslaget** som kode ikke kan gi: WAF + ratebegrensning, TLS, privat nettverk, containere uten egress/med seccomp/skrivebeskyttet rotfilsystem for parseren, KMS-kryptert RDS og S3, Secrets Manager, manipulasjonssikker revisjonslogging, alarmer, backup/PITR. En komplett, validert Terraform-stack (den nåværende er et skjelett) er en del av dette.
 5. Malware-skanning av opplastinger, en asynkron jobbkø for store dokumenter, og PostgreSQL radnivåsikkerhet som dybdeforsvar for tenant-isolasjon.
 6. Målt treffsikkerhet i en designpartner-pilot (se forretningsdokumentene): ingen treffsikkerhetstall finnes ennå.
+
+---
+
+# Nettplattform (TypeScript, før produkt, kun syntetiske data)
+
+> **Status: før produkt, IKKE produksjonsklar, kun syntetiske data.** Plattformen har aldri vært utrullet,
+> har ikke hatt noen tredjeparts penetrasjonstest og har aldri sett reelle kundedata. Oppstart i
+> produksjon er **blokkert med vilje** til en ekte e-posttransport finnes. Docker-imagene og
+> compose-stacken har aldri vært bygget eller startet (Docker-motoren var nede under hele byggingen). Alt
+> under «Før reelle kundedata» ovenfor gjelder her også. Trusselmodell og kjente mangler (engelsk):
+> [technical/web-platform-security.md](technical/web-platform-security.md). Arkitektur:
+> [ARCHITECTURE.no.md, «Nettplattform»](ARCHITECTURE.no.md#nettplattform-typescript-steg-1-2).
+
+En nettapplikasjon med flere tenants for arbeidsflyten rundt bevispakker, bygget med sikkerhet først.
+Byggesteg 1 og 2 er ferdige:
+
+- **Steg 1:** innlogging med e-post og passord (argon2id), et kortlivet tilgangstoken pluss en roterende
+  refresh-informasjonskapsel, TOTP-MFA for eier, administrator og plattformroller, utestenging med
+  eksponentiell backoff, CSRF-beskyttelse, streng CSP og sikkerhetshoder, ratebegrensning, RBAC for 8
+  roller, tenant-isolasjon som feiler lukket (PostgreSQL radnivåsikkerhet pluss en Prisma-vakt), og et
+  hashkjedet revisjonsspor som bare kan utvides.
+- **Steg 2:** en kravliste (filtrering, sortering, søk), et detaljpanel for kravet med visning av
+  bevispakken, og godkjenningsporten med menneske i løkken (godkjenn / rediger / avvis / send, hver med
+  begrunnelse).
+
+«Send» merker bare et krav som klart til sending og logger det i revisjonssporet. Ingen e-post sendes, og
+ingen penger flyttes. Krav og bevispakker er syntetiske og er transkribert fra Python-CLI-ens utdata på
+`tests/fixtures/`. Import/eksport, utviklerdashbordet, AI-funksjoner og TS-porten av Python-reglene er
+senere steg.
+
+**Python-tjenesten og pilotdashbordet `webapp/` er uendret og blir værende.** Nettplattformen har sin
+egen compose-fil (`compose.web.yml`), sin egen CI-arbeidsflyt (`.github/workflows/web-ci.yml`) og sin
+egen Terraform (`infra/`, som erstatter `deploy/terraform/` kun for nettstacken). Rotens
+`docker-compose.yml`, `ci.yml`, `src/`, `tests/`, `webapp/` og `deploy/` ble ikke endret.
+
+## Struktur
+
+| Sti | Innhold |
+| --- | --- |
+| `web/` | React 19 + TypeScript + Vite SPA (React Router, TanStack Query, Zustand, Tailwind) |
+| `api/` | Node 22 + Fastify 5 + Prisma 7 (PostgreSQL 16) + Zod + Pino. Skjema, migrasjon og RLS-SQL ligger i `api/prisma/`; DB-roller i `api/db/init/00-roles.sql`; den syntetiske seeden i `api/scripts/seed.ts` |
+| `packages/shared/` | `@fr/shared`: roller og tillatelsesmatrisen (eneste sannhetskilde), Zod-DTO-er, kanonisk JSON, tekstsikkerhet |
+| `infra/` | Terraform-skjelett for AWS (VPC, RDS, S3 + KMS, ECS Fargate, ALB + WAF, ElastiCache, Secrets Manager, CloudFront). Kun `fmt` og `validate`, **aldri anvendt**; se `infra/README.md` |
+| `compose.web.yml` | Lokal stack: postgres, redis, minio, migrate, api, web (kun loopback) |
+| `.env.example` | Alle variabler, med plassholdere. Plassholdere avvises ved oppstart |
+
+## Lokal hurtigstart (uten Docker: veien som faktisk ble verifisert)
+
+Forutsetninger: Node 22 (`.nvmrc`; `engines` tillater `>=22.12 <25`), PostgreSQL 16, og `openssl` (eller
+Node, se nedenfor).
+
+```bash
+npm ci --ignore-scripts                 # install scripts stay disabled (.npmrc)
+npm run verify:no-install-scripts
+npm run prisma:generate
+
+# 1. Database roles + databases (once, as the Postgres superuser; .env.example assumes port 5433):
+psql -v ON_ERROR_STOP=1 -h 127.0.0.1 -p 5433 -U postgres -f api/db/init/00-roles.sql
+
+# 2. Environment: copy and replace EVERY <...> placeholder (the API refuses to start with them).
+cp .env.example .env
+openssl rand -hex 32        # JWT_SECRET      (hex is valid ...)
+openssl rand -hex 32        # CSRF_SECRET
+openssl rand -base64 48     # REFRESH_PEPPER  (... and so is base64)
+openssl rand -base64 32     # MFA_ENC_KEY     (must be base64 of exactly 32 random bytes)
+#   no openssl? node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+set -a; . ./.env; set +a    # the API and the seed read process.env only (no .env loader)
+
+# 3. Schema + synthetic seed (owner role via MIGRATE_DATABASE_URL; the seed refuses NODE_ENV=production)
+npm run db:migrate:deploy
+npm run db:seed             # idempotent;  npm run db:seed -- --reset  wipes and recreates the seed tenants
+
+# 4. Run (two terminals, each with the env loaded)
+npm run dev -w api          # http://127.0.0.1:3001
+npm run dev -w web          # http://127.0.0.1:5173 (proxies /api to the API)
+```
+
+Regler for hemmeligheter: `JWT_SECRET`, `CSRF_SECRET` og `REFRESH_PEPPER` må hver være minst 43 tegn og
+må være forskjellige fra hverandre. Verdier som ser ut som plassholdere avvises i alle miljøer. I
+produksjon avvises i tillegg de dokumenterte dev-/CI-verdiene, og hver hemmelighet må bestå en
+entropisjekk. Tilfeldig hex (`openssl rand -hex 32`) og base64 (`openssl rand -base64 48`) består begge.
+
+Seed-kontoer (syntetiske, kun lokalt): `owner@acme.test`, `admin@acme.test`, `manager@acme.test`,
+`reviewer@acme.test`, `analyst@acme.test`, `viewer@acme.test`, en andre tenant `*@globex.test`, og
+plattformbrukerne `dev@platform.test` og `super@platform.test`. Passordet er `Synthetic-Pass-2026!`.
+Eier-, administrator- og plattformkontoer krever TOTP. Seeden bruker den offentlige testhemmeligheten
+`JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP`, som du kan legge inn i en hvilken som helst autentiseringsapp.
+Tilbakestillings- og invitasjonstokener vises på `GET /api/v1/dev/outbox`. Den ruten er kun for
+utvikling: den finnes bare med `ENABLE_DEV_OUTBOX=true` utenfor produksjon.
+
+**Med Docker (ikke verifisert):** `docker compose -f compose.web.yml up --build -d`, seed deretter med
+`docker compose -f compose.web.yml run --rm api node dist/scripts/seed.js` og åpne http://127.0.0.1:8080.
+Filen består `docker compose config`, men imagene har aldri vært bygget. Behandle første kjøring som en
+test.
+
+## Tester og kontroller
+
+```bash
+npm run typecheck
+npm run lint                 # --max-warnings 0
+npm test                     # unit tests (shared, api, web); no database needed
+npm run test:integration     # api, against a migrated + seeded test DB (TEST_DATABASE_URL, TEST_ADMIN_DATABASE_URL,
+                             # and the same MFA_ENC_KEY the seed used); see the env block in .github/workflows/web-ci.yml
+npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
+npm run build                # shared + api + web (+ dist check: no inline script/style, no sourcemaps)
+npm run audit && npm audit signatures
+terraform -chdir=infra fmt -check -recursive && terraform -chdir=infra init -backend=false && terraform -chdir=infra validate
+```
+
+Hva som faktisk ble kjørt (2026-10-08, Windows, Node 24, portabel PostgreSQL 16.15): typecheck, lint,
+enhetstester (shared 30, api 83, web 29), integrasjon (3/3), build, `npm audit` (0 sårbarheter),
+`npm audit signatures`, migrering + seed, og terraform fmt/validate (portabel 1.16.5). Den uavhengige
+akseptansekjøringen ga 334 bestått, 0 feilet, 5 hoppet over, 2 todo. **Ikke kjørt:** Docker-imagene eller
+compose-stacken, Playwright-ende-til-ende-tester og enhver AWS-utrulling.
