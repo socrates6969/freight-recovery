@@ -6,7 +6,20 @@ export default defineConfig({
   test: {
     environment: 'node',
     projects: [
-      { extends: true, test: { name: 'unit', include: ['src/**/*.test.ts', 'test/**/*.test.ts'] } },
+      {
+        extends: true,
+        test: { name: 'unit', include: ['src/**/*.test.ts', 'test/**/*.test.ts'], exclude: ['test/integration/**', '**/node_modules/**'] },
+      },
+      {
+        extends: true,
+        test: {
+          name: 'integration',
+          include: ['test/integration/**/*.int.test.ts'],
+          fileParallelism: false,
+          testTimeout: 180000,
+          hookTimeout: 180000,
+        },
+      },
       {
         extends: true,
         test: {

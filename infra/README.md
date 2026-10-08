@@ -16,7 +16,7 @@ deliberate human step after review.
   deletion protection, Multi-AZ (variable).
 - S3: documents (SSE-KMS, versioning, public access blocked, TLS-only), static site (CloudFront OAC only),
   access logs.
-- ElastiCache Redis 7 (rate-limit store): TLS in transit, encrypted at rest, AUTH token.
+- ElastiCache Redis 7 (rate-limit store): TLS in transit, encrypted at rest, AUTH token set out of band (never in state).
 - Secrets Manager containers (no values): `jwt-secret`, `csrf-secret`, `refresh-pepper`, `mfa-enc-key`,
   `database-url`, `redis-url`, `redis-auth-token`.
 - IAM: execution role (pull this image, read these secrets, write this log group) and task role (documents
@@ -35,8 +35,11 @@ deliberate human step after review.
 2. `terraform apply -target=aws_secretsmanager_secret.app` to create the secret containers, then set every
    value out of band, e.g. `aws secretsmanager put-secret-value --secret-id <arn> --secret-string "$(openssl rand -base64 48)"`.
    `mfa-enc-key` must be base64 of 32 random bytes. `redis-auth-token` must be 16-128 printable characters.
-3. `terraform plan` / `terraform apply` for the rest (the Redis AUTH token is read from its secret, so it is
-   also stored in the encrypted remote state).
+3. `terraform plan` / `terraform apply` for the rest. Terraform never reads any secret value: no secret
+   material is in state or plan output.
+3a. Redis AUTH (out of band, before the API is deployed): generate a token, store it in `redis-auth-token`,
+   then `aws elasticache modify-replication-group --replication-group-id <name>-redis --auth-token <token>
+   --auth-token-update-strategy SET --apply-immediately`. Terraform ignores `auth_token` afterwards.
 4. Database roles: connect to RDS as the managed master user (from its Secrets Manager secret) from a
    bastion/SSM session inside the VPC and apply `api/db/init/00-roles.sql` with **random passwords
    substituted** for the `local-dev-only` placeholders (and without `CREATE DATABASE freight_web_test`).

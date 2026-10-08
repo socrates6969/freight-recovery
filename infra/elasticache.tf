@@ -1,6 +1,8 @@
 # Redis (rate-limit store): private, encrypted at rest (data CMK) and in transit, AUTH token.
-# The token is read from a Secrets Manager secret whose value an operator sets BEFORE apply
-# (it therefore also lands in the encrypted remote state; see README.md).
+# The AUTH token is NEVER read by Terraform (so it never lands in state or plan output): an operator
+# generates it, stores it in the `redis-auth-token` / `redis-url` secrets, and sets it on the
+# replication group out of band (see README.md). Terraform ignores the attribute afterwards. The ECS
+# task only references the `redis-url` secret by ARN.
 
 resource "aws_elasticache_subnet_group" "main" {
   name       = "${local.name}-redis"
@@ -22,10 +24,6 @@ resource "aws_vpc_security_group_ingress_rule" "redis_from_api" {
   description                  = "Redis from API tasks"
 }
 
-data "aws_secretsmanager_secret_version" "redis_auth_token" {
-  secret_id = aws_secretsmanager_secret.app["redis-auth-token"].id
-}
-
 resource "aws_elasticache_replication_group" "main" {
   replication_group_id       = "${local.name}-redis"
   description                = "${local.name} rate-limit store"
@@ -41,6 +39,10 @@ resource "aws_elasticache_replication_group" "main" {
   at_rest_encryption_enabled = true
   kms_key_id                 = aws_kms_key.data.arn
   transit_encryption_enabled = true
-  auth_token                 = data.aws_secretsmanager_secret_version.redis_auth_token.secret_string
   snapshot_retention_limit   = 1
+
+  lifecycle {
+    # Set out of band with `aws elasticache modify-replication-group --auth-token ... --auth-token-update-strategy SET`.
+    ignore_changes = [auth_token]
+  }
 }

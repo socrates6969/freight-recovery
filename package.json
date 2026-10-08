@@ -17,6 +17,7 @@
     "typecheck": "tsc -b packages/shared/tsconfig.build.json && tsc -p packages/shared/tsconfig.json && tsc -p api/tsconfig.json && tsc -p web/tsconfig.json",
     "lint": "eslint . --max-warnings 0",
     "test": "npm run test -w packages/shared && npm run test -w api && npm run test -w web",
+    "test:integration": "npm run test:integration -w api",
     "test:acceptance": "npm run test:acceptance -w packages/shared && npm run test:acceptance -w api && npm run test:acceptance -w web",
     "db:migrate:deploy": "prisma migrate deploy --config api/prisma.config.ts",
     "db:seed": "npm run seed -w api --",

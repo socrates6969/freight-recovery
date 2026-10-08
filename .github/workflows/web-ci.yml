@@ -97,6 +97,7 @@ jobs:
       - run: npm test
       - run: npm run db:migrate:deploy
       - run: npm run db:seed
+      - run: npm run test:integration
       - run: npm run test:acceptance
       - run: npm run build
       - run: npm run audit
