@@ -24,6 +24,9 @@ export function createDb(databaseUrl: string, opts: DbOptions = {}): BaseClient 
     idleTimeoutMillis: 30000,
     statement_timeout: 15000,
     application_name: 'fr-api',
+    // The driver adapter mis-reads timestamptz values when the server session TimeZone is not UTC
+    // (seen with a non-UTC local cluster); pin every session to UTC ("GMT" is built into every PostgreSQL).
+    options: '-c TimeZone=GMT',
   });
   return new PrismaClient({ adapter });
 }

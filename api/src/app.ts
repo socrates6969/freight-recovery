@@ -28,6 +28,10 @@ import { registerUserRoutes } from './auth/users-routes.js';
 import { registerClaimRoutes } from './claims/routes.js';
 import { loadConfig, type AppConfig } from './config.js';
 import { createDb } from './db/client.js';
+import type { ImportDeps, ObjectStorePort } from './imports/deps.js';
+import { registerImportRoutes } from './imports/routes.js';
+import { ChildProcessExecutor, type ParseExecutor } from './imports/sandbox/executor.js';
+import { KeyedGate } from './imports/sandbox/semaphore.js';
 import { TenantScopeError } from './db/errors.js';
 import { ERROR_MESSAGES, HttpError, errors } from './http/errors.js';
 import { enforceRouteAccess, zodDetails } from './http/route.js';
@@ -37,9 +41,16 @@ import { registerHealthRoutes, registerPlatformRoutes } from './platform/routes.
 import { emailHash } from './security/crypto.js';
 import { JwtService } from './security/jwt.js';
 import { PasswordHasher } from './security/password.js';
+import { ObjectStore } from './storage/s3.js';
 
 export interface BuildAppOptions {
   logStream?: NodeJS.WritableStream;
+  /** Test seams (never reachable from configuration). */
+  overrides?: {
+    objectStore?: ObjectStorePort;
+    parseExecutor?: ParseExecutor;
+    now?: () => Date;
+  };
 }
 
 type RateLimitFn = (req: FastifyRequest) => Promise<{ isAllowed: boolean; isExceeded: boolean; ttlInSeconds: number }>;
@@ -211,9 +222,40 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   registerPlatformRoutes(app, base);
   registerDevOutbox(app, deps);
 
+  // Step 3: imports (sandboxed parsing, per-tenant object storage) and exports.
+  const objectStore = opts.overrides?.objectStore ?? ObjectStore.fromConfig(cfg);
+  const imp = cfg.imports;
+  const parseExecutor =
+    opts.overrides?.parseExecutor ??
+    new ChildProcessExecutor(
+      {
+        workerEntry: imp.workerEntry,
+        timeoutMs: imp.parseTimeoutMs,
+        memoryMb: imp.parseMemoryMb,
+        maxConcurrency: imp.parseMaxConcurrency,
+        queueTimeoutMs: imp.parseQueueTimeoutMs,
+        maxOutputBytes: imp.parseMaxOutputBytes,
+        limits: { pdfPages: imp.parseMaxPdfPages, textChars: imp.parseMaxTextChars, imagePixels: imp.parseMaxImagePixels },
+        threshold: imp.reviewConfidenceThreshold,
+      },
+      (e) => app.log.info({ event: 'parse_job', ...e }, 'parse job finished'),
+    );
+  const importDeps: ImportDeps = {
+    cfg,
+    store: objectStore,
+    executor: parseExecutor,
+    uploadGate: new KeyedGate(imp.uploadMaxConcurrentPerTenant),
+    exportGate: new KeyedGate(imp.exportMaxConcurrentPerTenant),
+    verifyWrites: cfg.nodeEnv === 'production',
+    now: opts.overrides?.now ?? (() => new Date()),
+    log: app.log,
+  };
+  registerImportRoutes(app, importDeps);
+
   app.addHook('onClose', async () => {
     await base.$disconnect();
     if (redis) redis.disconnect();
+    if (objectStore instanceof ObjectStore) objectStore.destroy();
   });
 
   return app;
