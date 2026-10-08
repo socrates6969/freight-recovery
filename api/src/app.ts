@@ -28,6 +28,7 @@ import { registerUserRoutes } from './auth/users-routes.js';
 import { registerClaimRoutes } from './claims/routes.js';
 import { loadConfig, type AppConfig } from './config.js';
 import { createDb } from './db/client.js';
+import { registerExportRoutes } from './exports/routes.js';
 import type { ImportDeps, ObjectStorePort } from './imports/deps.js';
 import { registerImportRoutes } from './imports/routes.js';
 import { ChildProcessExecutor, type ParseExecutor } from './imports/sandbox/executor.js';
@@ -251,6 +252,7 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     log: app.log,
   };
   registerImportRoutes(app, importDeps);
+  registerExportRoutes(app, importDeps);
 
   app.addHook('onClose', async () => {
     await base.$disconnect();
