@@ -1,7 +1,7 @@
 /**
  * PDF text layer (A5.5). Runs ONLY inside the sandboxed parse worker (and in unit/parity tests).
- * Mozilla pdf.js (pdfjs-dist 6, legacy build for Node) with every optional feature off: no eval (pdf.js
- * 6 removed the font `eval` path that CVE-2024-4367 abused; code generation from strings is also
+ * Mozilla pdf.js (pdfjs-dist 6, legacy build for Node) with every optional feature off: no string
+ * evaluation (pdf.js 6 removed the font code path that CVE-2024-4367 abused; code generation from strings is also
  * disabled by the worker's Node flags), no font faces, no system fonts, no fetches, no streaming, no
  * XFA, no WebAssembly, no image decoders. Annotations, attachments, JavaScript and embedded files are
  * never read: only `getTextContent()` per page.
