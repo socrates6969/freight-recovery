@@ -65,6 +65,8 @@ export const PARSE_REJECT_REASONS = [
   'malformed_image',
   'image_too_large',
   'trailing_data',
+  // Cooperative deadline inside the worker (the parent also enforces the wall clock).
+  'parse_timeout',
 ] as const;
 export type ParseRejectReason = (typeof PARSE_REJECT_REASONS)[number];
 
