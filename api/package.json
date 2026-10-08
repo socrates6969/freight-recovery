@@ -1,0 +1,32 @@
+{
+  "name": "@fr/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/src/server.js",
+    "dev": "tsx --conditions=source watch src/server.ts",
+    "seed": "tsx --conditions=source scripts/seed.ts",
+    "test": "vitest run --project unit",
+    "test:acceptance": "vitest run --project acceptance --passWithNoTests"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "3.1147.0",
+    "@aws-sdk/s3-request-presigner": "3.1147.0",
+    "@fastify/cookie": "11.1.2",
+    "@fastify/helmet": "13.1.1",
+    "@fastify/rate-limit": "11.2.0",
+    "@fr/shared": "0.1.0",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "argon2": "0.45.1",
+    "fastify": "5.12.5",
+    "ioredis": "5.11.1",
+    "jose": "6.2.12",
+    "otpauth": "9.5.2",
+    "pg": "8.23.1",
+    "pino": "10.4.0",
+    "zod": "4.6.5"
+  }
+}

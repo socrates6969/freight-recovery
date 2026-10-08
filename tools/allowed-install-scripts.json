@@ -1,0 +1,10 @@
+{
+  "comment": "Packages that DECLARE an install script. Nothing here is ever executed: .npmrc sets ignore-scripts=true and CI uses npm ci --ignore-scripts. Each entry was reviewed; anything new fails npm run verify:no-install-scripts until reviewed and listed.",
+  "allowed": [
+    { "name": "argon2", "reason": "install = node-gyp-build fallback; the package ships N-API prebuilds (glibc + musl + win32) that load at runtime without the script (smoke-tested by api unit tests)." },
+    { "name": "prisma", "reason": "Prisma CLI preinstall/install hooks only print/verify; dev tooling. Engines are fetched lazily by the CLI on first use." },
+    { "name": "@prisma/engines", "reason": "postinstall downloads the schema engine; the Prisma CLI downloads it lazily on first use instead. Runtime uses the query compiler + pg driver adapter (no native query engine)." },
+    { "name": "esbuild", "reason": "postinstall only validates the platform binary that npm installs via optionalDependencies; dev tooling (tsx)." },
+    { "name": "fsevents", "reason": "macOS-only optional file watcher; never installed on Linux/Windows; dev tooling." }
+  ]
+}

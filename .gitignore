@@ -22,3 +22,12 @@ __pycache__/
 *.db
 *.sqlite3
 var/
+
+# Web stack (TS monorepo)
+api/src/generated/
+web/dist/
+packages/*/dist/
+api/dist/
+coverage/
+*.tsbuildinfo
+!.env.example
