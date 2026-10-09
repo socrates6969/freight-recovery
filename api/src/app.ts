@@ -38,6 +38,8 @@ import { ERROR_MESSAGES, HttpError, errors } from './http/errors.js';
 import { enforceRouteAccess, zodDetails } from './http/route.js';
 import { registerSecurityHeaders, registerSecurityPipeline, type Limiter } from './http/security.js';
 import { createLogger } from './logging.js';
+import { MetricsRegistry, UNMATCHED_ROUTE } from './observability/metrics.js';
+import { LogRingBuffer } from './observability/ring-buffer.js';
 import { registerHealthRoutes, registerPlatformRoutes } from './platform/routes.js';
 import { emailHash } from './security/crypto.js';
 import { JwtService } from './security/jwt.js';
@@ -101,9 +103,22 @@ export function toHttpError(err: unknown): HttpError {
   return new HttpError(500, 'internal_error');
 }
 
+declare module 'fastify' {
+  interface FastifyInstance {
+    metrics: MetricsRegistry;
+    logRing: LogRingBuffer;
+    startedAt: Date;
+  }
+}
+
 export async function buildApp(env?: Record<string, string>, opts: BuildAppOptions = {}): Promise<FastifyInstance> {
   const cfg: AppConfig = loadConfig({ ...process.env, ...(env ?? {}) });
-  const logger = createLogger(cfg.logLevel, opts.logStream);
+  // Step 4 observability (per instance): derived-log ring buffer (R62) fed by a logger tee, and the
+  // request/component metrics registry (R61).
+  const logRing = new LogRingBuffer(cfg.observability.logBufferSize);
+  const metrics = new MetricsRegistry();
+  const startedAt = opts.overrides?.now?.() ?? new Date();
+  const logger = createLogger(cfg.logLevel, opts.logStream, logRing);
 
   const app = Fastify({
     loggerInstance: logger as FastifyBaseLogger,
@@ -125,6 +140,19 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   app.server.headersTimeout = 10_000;
   app.removeContentTypeParser('text/plain');
   enforceRouteAccess(app);
+  app.decorate('metrics', metrics);
+  app.decorate('logRing', logRing);
+  app.decorate('startedAt', startedAt);
+  // Request telemetry: route PATTERN, method, status and duration only (never the URL, query, headers or
+  // body). Registered before every route so health routes and 404s are counted.
+  app.addHook('onResponse', async (req, reply) => {
+    metrics.observeRequest({
+      method: req.method,
+      route: req.routeOptions.url ?? UNMATCHED_ROUTE,
+      status: reply.statusCode,
+      durationMs: reply.elapsedTime,
+    });
+  });
 
   const base = createDb(cfg.databaseUrl);
   const redis = cfg.redisUrl

@@ -5,6 +5,19 @@
  */
 import pino, { type DestinationStream, type Logger } from 'pino';
 
+/** Anything shaped like a tenant API key (Q13) is replaced wherever it appears in a logged string. */
+export const API_KEY_LIKE_RE = /fr_live_[A-Za-z0-9_-]+/gu;
+
+/** Replace API-key-shaped substrings with the censor. */
+export function scrubKeyMaterial(s: string): string {
+  return s.includes('fr_live_') ? s.replace(API_KEY_LIKE_RE, REDACT_CENSOR) : s;
+}
+
+/** Sink for derived records (the R62 ring buffer); must never throw. */
+export interface LogTee {
+  ingest(line: string): void;
+}
+
 export const REDACT_CENSOR = '[REDACTED]';
 
 /** Keys whose values are never logged, wherever they appear. */
@@ -29,6 +42,10 @@ export const SENSITIVE_KEYS: ReadonlySet<string> = new Set([
   'cookie',
   'set-cookie',
   'x-csrf-token',
+  // Step 4: API key material (the plaintext secret only ever exists in the R80 response).
+  'apikey',
+  'secrethash',
+  'pepper',
   // Step 3: document-derived content is never logged (ids, sizes, sha256 prefixes and codes only).
   'displayname',
   'filename',
@@ -84,6 +101,7 @@ const SERIALIZED_KEYS: ReadonlySet<string> = new Set(['req', 'res']);
 
 /** Recursively replace sensitive values. Returns a new object; never mutates the input. */
 export function scrub(value: unknown, depth = 0): unknown {
+  if (typeof value === 'string') return scrubKeyMaterial(value);
   if (depth > MAX_DEPTH || value === null || typeof value !== 'object') return value;
   if (value instanceof Error) return { type: value.name };
   if (Array.isArray(value)) return value.map((v) => scrub(v, depth + 1));
@@ -108,7 +126,7 @@ interface ReqLike {
 function pathOf(url: unknown): string {
   const u = typeof url === 'string' ? url : '';
   const q = u.indexOf('?');
-  return q === -1 ? u : u.slice(0, q);
+  return scrubKeyMaterial(q === -1 ? u : u.slice(0, q));
 }
 
 /** Request line fields: requestId, method, path (query string dropped), route pattern, client address. */
@@ -129,7 +147,7 @@ interface ResLike {
   request?: ReqLike;
 }
 
-/** Completion line fields: requestId, method, path, status and duration (ms). */
+/** Completion line fields: requestId, method, path, route pattern, status and duration (ms). */
 export function serializeRes(res: ResLike): Record<string, unknown> {
   const req = res.request;
   const out: Record<string, unknown> = { statusCode: res.statusCode };
@@ -137,12 +155,32 @@ export function serializeRes(res: ResLike): Record<string, unknown> {
     out['requestId'] = req.id;
     out['method'] = req.method;
     out['path'] = pathOf(req.url);
+    const route = req.routeOptions?.url;
+    if (typeof route === 'string') out['route'] = route;
   }
   if (typeof res.elapsedTime === 'number') out['durationMs'] = Math.round(res.elapsedTime * 1000) / 1000;
   return out;
 }
 
-export function createLogger(level: string, stream?: DestinationStream | NodeJS.WritableStream): Logger {
+/**
+ * Destination that writes every formatted line to the original stream (stdout when none) AND hands it
+ * to the tee (the R62 ring buffer). The tee can never break logging.
+ */
+function teeDestination(stream: DestinationStream | NodeJS.WritableStream | undefined, tee: LogTee): DestinationStream {
+  const out: DestinationStream | NodeJS.WritableStream = stream ?? pino.destination(1);
+  return {
+    write(line: string): void {
+      out.write(line);
+      try {
+        tee.ingest(line);
+      } catch {
+        // never propagate into the logger
+      }
+    },
+  };
+}
+
+export function createLogger(level: string, stream?: DestinationStream | NodeJS.WritableStream, tee?: LogTee): Logger {
   const options: pino.LoggerOptions = {
     level,
     base: { service: 'fr-api' },
@@ -160,5 +198,6 @@ export function createLogger(level: string, stream?: DestinationStream | NodeJS.
       log: (obj) => scrub(obj) as Record<string, unknown>,
     },
   };
+  if (tee) return pino(options, teeDestination(stream, tee));
   return stream ? pino(options, stream as DestinationStream) : pino(options);
 }

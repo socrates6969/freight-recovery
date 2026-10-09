@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { ConfigError, DEFAULT_RUNTIME, DOCUMENTED_DEV_SECRETS, PRODUCTION_MAIL_TRANSPORTS, loadConfig, secretEntropyProblem } from '../src/config.js';
+import { ConfigError, DEFAULT_RUNTIME, DEV_API_KEY_PEPPER, DOCUMENTED_DEV_SECRETS, PRODUCTION_MAIL_TRANSPORTS, loadConfig, secretEntropyProblem } from '../src/config.js';
 
 const SES_PROBLEM = 'MAIL_TRANSPORT=ses is not implemented (stub); production start is refused until a real mail transport exists';
 
@@ -34,6 +34,8 @@ const prodOk = {
   // Step 3: SSE-KMS key and an existing worker entry (any existing file satisfies the existence check).
   S3_KMS_KEY_ID: 'arn:aws:kms:us-east-1:111122223333:key/00000000-0000-4000-8000-000000000000',
   PARSE_WORKER_ENTRY: fileURLToPath(import.meta.url),
+  // Step 4: a production-like API key pepper (random-looking, 64 hex = 256 bits).
+  API_KEY_PEPPER: '3f9a1c7e5b2d8a4f6c0e9b7d5f3a1c8e2b4d6f0a9c7e5b3d1f8a6c4e2b0d9f7a',
 };
 
 function problems(env: Record<string, string>): string[] {
@@ -270,5 +272,49 @@ describe('config: step 3 import/export knobs (N3)', () => {
       expect([env.NODE_ENV, ps]).toEqual([env.NODE_ENV, expect.arrayContaining([NEED])]);
     }
     expect(DEFAULT_RUNTIME.moduleHooksAvailable).toBe(true);
+  });
+
+  describe('step 4 knobs (Q9, Q13)', () => {
+    const dev = { ...base, NODE_ENV: 'development', COOKIE_SECURE: 'false' };
+    it('defaults', () => {
+      const c = loadConfig(dev);
+      expect(c.observability.logBufferSize).toBe(500);
+      expect(c.flags.cacheTtlMs).toBe(5000);
+      expect(c.intelligence).toEqual({ pendingWeightPercent: 25, similarCandidateLimit: 500 });
+      expect(c.rateLimitPlatformMax).toBe(120);
+      expect(c.rateLimitIntelligenceMax).toBe(120);
+      expect(c.apiKeys).toMatchObject({ maxActive: 20, defaultTtlDays: 90, allowNonExpiring: true, rateLimitMax: 300, rateLimitFailMax: 30 });
+      expect(c.apiKeys.pepper).toBe(DEV_API_KEY_PEPPER);
+    });
+    it('range checks', () => {
+      for (const [k, v] of [
+        ['LOG_BUFFER_SIZE', '49'],
+        ['LOG_BUFFER_SIZE', '5001'],
+        ['FLAGS_CACHE_TTL_MS', '60001'],
+        ['INTELLIGENCE_PENDING_WEIGHT_PERCENT', '101'],
+        ['INTELLIGENCE_PENDING_WEIGHT_PERCENT', '2.5'],
+        ['SIMILAR_CANDIDATE_LIMIT', '9'],
+        ['SIMILAR_CANDIDATE_LIMIT', '2001'],
+        ['API_KEY_MAX_ACTIVE', '201'],
+        ['API_KEY_DEFAULT_TTL_DAYS', '366'],
+        ['API_KEY_ALLOW_NON_EXPIRING', 'maybe'],
+      ] as const) {
+        expect([k, v, problems({ ...dev, [k]: v }).length > 0]).toEqual([k, v, true]);
+      }
+      expect(loadConfig({ ...dev, FLAGS_CACHE_TTL_MS: '0' }).flags.cacheTtlMs).toBe(0);
+    });
+    it('production guards: pepper required, not a dev default, distinct, strong; no non-expiring keys; flag TTL ceiling', () => {
+      const { API_KEY_PEPPER: _p, ...noPepper } = prodOk;
+      expect(problems(noPepper)).toContain('API_KEY_PEPPER is required in production');
+      expect(problems({ ...prodOk, API_KEY_PEPPER: DEV_API_KEY_PEPPER })).toContain('API_KEY_PEPPER must not be a documented dev default');
+      expect(problems({ ...prodOk, API_KEY_PEPPER: prodOk.JWT_SECRET })).toContain('API_KEY_PEPPER must differ from every other secret');
+      expect(problems({ ...prodOk, API_KEY_PEPPER: 'ab'.repeat(32) }).some((p) => p.startsWith('API_KEY_PEPPER'))).toBe(true);
+      expect(problems({ ...prodOk, API_KEY_PEPPER: '0123456789abcdef0123456789abcdef0123456789ab' }).some((p) => p.startsWith('API_KEY_PEPPER'))).toBe(true);
+      expect(problems({ ...prodOk, API_KEY_ALLOW_NON_EXPIRING: 'true' })).toContain('API_KEY_ALLOW_NON_EXPIRING=true is not allowed in production');
+      expect(problems({ ...prodOk, FLAGS_CACHE_TTL_MS: '30001' })).toContain('FLAGS_CACHE_TTL_MS is above its production ceiling (30000)');
+      expect(loadConfig.length).toBeGreaterThan(0);
+      const errs = problems({ ...prodOk, API_KEY_PEPPER: 'Zq9Wv' });
+      expect(errs.join(' ')).not.toContain('Zq9Wv');
+    });
   });
 });

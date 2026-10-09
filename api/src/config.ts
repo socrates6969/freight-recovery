@@ -59,6 +59,30 @@ export interface AppConfig {
   rateLimitForgotWindowSeconds: number;
   argon2MemoryKib: number;
   argon2TimeCost: number;
+  /** Step 4 (Q9): in-memory log buffer for R62 (this instance only). */
+  observability: { logBufferSize: number };
+  /** Step 4 (Q4/Q9): per-instance feature-flag cache TTL (0 = no caching). */
+  flags: { cacheTtlMs: number };
+  /** Step 4 (Q6/Q9): fixed policy inputs of the intelligence features. */
+  intelligence: { pendingWeightPercent: number; similarCandidateLimit: number };
+  /** R60-R68 per user per 600 s. */
+  rateLimitPlatformMax: number;
+  /** R71-R73 per user per 600 s. */
+  rateLimitIntelligenceMax: number;
+  /** Step 4 (Q13): tenant API keys. */
+  apiKeys: ApiKeyConfig;
+}
+
+export interface ApiKeyConfig {
+  /** HMAC-SHA-256 key for stored secret hashes. Never logged. */
+  pepper: string;
+  maxActive: number;
+  defaultTtlDays: number;
+  allowNonExpiring: boolean;
+  /** Requests per key per 60 s. */
+  rateLimitMax: number;
+  /** Failed key authentications per client IP per 600 s. */
+  rateLimitFailMax: number;
 }
 
 export interface ImportConfig {
@@ -134,7 +158,14 @@ export const DOCUMENTED_DEV_SECRETS: readonly string[] = Object.freeze([
   'ci-only-csrf-secret-not-for-production-0123456789abcdefghi',
   'ci-only-refresh-pepper-not-for-production-0123456789abcdef',
   'Y2ktb25seS1tZmEta2V5LW5vdC1mb3ItcHJvZHVjdCE=',
+  // Step 4: the PUBLIC dev/test API key pepper (used when API_KEY_PEPPER is unset outside production).
+  'local-dev-api-key-pepper-not-for-production-0123456789abcdef',
 ]);
+
+/** Default API_KEY_PEPPER outside production (documented, public, refused in production). */
+export const DEV_API_KEY_PEPPER = 'local-dev-api-key-pepper-not-for-production-0123456789abcdef';
+/** Minimum estimated entropy of a production API key pepper (32 bytes). */
+export const MIN_PEPPER_ENTROPY_BITS = 256;
 
 interface Knob {
   key: string;
@@ -197,6 +228,20 @@ const IMPORT_KNOBS = {
   rateLimitUploadMax: { key: 'RATE_LIMIT_UPLOAD_MAX', def: 60, min: 1, max: 100000 },
   rateLimitExportMax: { key: 'RATE_LIMIT_EXPORT_MAX', def: 10, min: 1, max: 100000 },
   staleSeconds: { key: 'IMPORT_STALE_SECONDS', def: 600, min: 1, max: 86400 },
+} as const satisfies Record<string, ImportKnob>;
+
+/** Step 4 knobs (Q9, Q13). Same semantics as IMPORT_KNOBS (production floor/ceiling only in production). */
+const STEP4_KNOBS = {
+  logBufferSize: { key: 'LOG_BUFFER_SIZE', def: 500, min: 50, max: 5000 },
+  flagsCacheTtlMs: { key: 'FLAGS_CACHE_TTL_MS', def: 5000, min: 0, max: 60000, ceiling: 30000 },
+  pendingWeightPercent: { key: 'INTELLIGENCE_PENDING_WEIGHT_PERCENT', def: 25, min: 0, max: 100 },
+  similarCandidateLimit: { key: 'SIMILAR_CANDIDATE_LIMIT', def: 500, min: 10, max: 2000 },
+  rateLimitPlatformMax: { key: 'RATE_LIMIT_PLATFORM_MAX', def: 120, min: 1, max: 100000 },
+  rateLimitIntelligenceMax: { key: 'RATE_LIMIT_INTELLIGENCE_MAX', def: 120, min: 1, max: 100000 },
+  apiKeyMaxActive: { key: 'API_KEY_MAX_ACTIVE', def: 20, min: 1, max: 200 },
+  apiKeyDefaultTtlDays: { key: 'API_KEY_DEFAULT_TTL_DAYS', def: 90, min: 1, max: 365, ceiling: 365 },
+  rateLimitApiKeyMax: { key: 'RATE_LIMIT_API_KEY_MAX', def: 300, min: 1, max: 100000 },
+  rateLimitApiKeyFailMax: { key: 'RATE_LIMIT_API_KEY_FAIL_MAX', def: 30, min: 1, max: 100000 },
 } as const satisfies Record<string, ImportKnob>;
 
 /** REVIEW_CONFIDENCE_THRESHOLD: decimal 0.50..1.00 (at most 3 fraction digits). */
@@ -433,6 +478,33 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
   if (!runtime.moduleHooksAvailable) problems.push('Node.js >= 22.15.0 is required (module.registerHooks, used by the parse sandbox guard)');
   if (prod && !runtime.fileExists(workerEntry)) problems.push('PARSE_WORKER_ENTRY does not exist (build the API first)');
 
+  // ---- Step 4 knobs (Q9, Q13) ----
+  const s4 = {} as Record<keyof typeof STEP4_KNOBS, number>;
+  for (const [name, k] of Object.entries(STEP4_KNOBS) as [keyof typeof STEP4_KNOBS, ImportKnob][]) {
+    const v = parseIntStrict(get(k.key), k.key, problems) ?? k.def;
+    if (v < k.min || v > k.max) problems.push(`${k.key} must be between ${k.min} and ${k.max}`);
+    if (prod && k.floor !== undefined && v < k.floor) problems.push(`${k.key} is below its production floor (${k.floor})`);
+    if (prod && k.ceiling !== undefined && v > k.ceiling) problems.push(`${k.key} is above its production ceiling (${k.ceiling})`);
+    s4[name] = v;
+  }
+  const allowNonExpiring = parseBool(get('API_KEY_ALLOW_NON_EXPIRING'), !prod, 'API_KEY_ALLOW_NON_EXPIRING', problems);
+  if (prod && allowNonExpiring) problems.push('API_KEY_ALLOW_NON_EXPIRING=true is not allowed in production');
+  const pepperRaw = get('API_KEY_PEPPER');
+  if (prod && pepperRaw === undefined) problems.push('API_KEY_PEPPER is required in production');
+  const apiKeyPepper = pepperRaw ?? (prod ? '' : DEV_API_KEY_PEPPER);
+  if (pepperRaw !== undefined) {
+    if (pepperRaw.length < MIN_SECRET_CHARS) problems.push(`API_KEY_PEPPER must be at least ${MIN_SECRET_CHARS} characters`);
+    if (looksLikePlaceholder(pepperRaw)) problems.push('API_KEY_PEPPER looks like a placeholder, not a secret');
+    if (prod && DOCUMENTED_DEV_SECRETS.includes(pepperRaw)) problems.push('API_KEY_PEPPER must not be a documented dev default');
+    if (prod) {
+      const weak = secretEntropyProblem(pepperRaw);
+      if (weak) problems.push(`API_KEY_PEPPER ${weak} to be a random secret`);
+      const bits = (/^[0-9a-fA-F]+$/u.test(pepperRaw) ? 4 : /^[A-Za-z0-9+/_-]+={0,2}$/u.test(pepperRaw) ? 6 : 6.5) * pepperRaw.replace(/=+$/u, '').length;
+      if (bits < MIN_PEPPER_ENTROPY_BITS) problems.push('API_KEY_PEPPER must carry at least 32 bytes of entropy');
+    }
+    if ([jwtSecret, csrfSecret, refreshPepper, mfaRaw].includes(pepperRaw)) problems.push('API_KEY_PEPPER must differ from every other secret');
+  }
+
   const totpIssuer = get('TOTP_ISSUER') ?? 'FreightRecovery';
   if (!/^[A-Za-z0-9 ._-]{1,64}$/u.test(totpIssuer)) problems.push('TOTP_ISSUER contains invalid characters');
 
@@ -471,5 +543,18 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
     totpIssuer,
     rateLimitEnabled,
     ...knobValues,
+    observability: { logBufferSize: s4.logBufferSize },
+    flags: { cacheTtlMs: s4.flagsCacheTtlMs },
+    intelligence: { pendingWeightPercent: s4.pendingWeightPercent, similarCandidateLimit: s4.similarCandidateLimit },
+    rateLimitPlatformMax: s4.rateLimitPlatformMax,
+    rateLimitIntelligenceMax: s4.rateLimitIntelligenceMax,
+    apiKeys: {
+      pepper: apiKeyPepper,
+      maxActive: s4.apiKeyMaxActive,
+      defaultTtlDays: s4.apiKeyDefaultTtlDays,
+      allowNonExpiring,
+      rateLimitMax: s4.rateLimitApiKeyMax,
+      rateLimitFailMax: s4.rateLimitApiKeyFailMax,
+    },
   };
 }
