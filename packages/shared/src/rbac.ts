@@ -45,6 +45,10 @@ export const PERMISSIONS = [
   'platform:logs',
   'platform:tenants:list',
   'platform:cross_tenant_read',
+  // Step 4 (Q2): evaluation runs (PLATFORM_DEV), platform audit chain (SUPER_ADMIN), tenant API keys.
+  'platform:eval',
+  'platform:audit',
+  'apikeys:manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -70,6 +74,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'export:claims',
     'export:packets',
     'export:outcomes',
+    'apikeys:manage',
   ] as const),
   ADMIN: Object.freeze([
     'claims:read',
@@ -87,6 +92,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'export:claims',
     'export:packets',
     'export:outcomes',
+    'apikeys:manage',
   ] as const),
   MANAGER: Object.freeze([
     'claims:read',
@@ -112,11 +118,12 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
   ] as const),
   ANALYST: Object.freeze(['claims:read', 'import:run', 'export:claims'] as const),
   VIEWER: Object.freeze(['claims:read'] as const),
-  PLATFORM_DEV: Object.freeze(['platform:health', 'platform:flags', 'platform:logs'] as const),
+  PLATFORM_DEV: Object.freeze(['platform:health', 'platform:flags', 'platform:logs', 'platform:eval'] as const),
   SUPER_ADMIN: Object.freeze([
     'platform:health',
     'platform:tenants:list',
     'platform:cross_tenant_read',
+    'platform:audit',
   ] as const),
 });
 

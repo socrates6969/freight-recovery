@@ -44,6 +44,16 @@ export const AUDIT_ACTIONS = [
   'export.started',
   'export.completed',
   'export.aborted',
+  // Step 4 (Q10): platform dashboard reads, flag changes, recorded evaluation runs (platform chain);
+  // intelligence reads and API key lifecycle (tenant chain).
+  'platform.dashboard_viewed',
+  'platform.logs_viewed',
+  'platform.flag_changed',
+  'eval.run_recorded',
+  'intelligence.viewed',
+  'apikey.created',
+  'apikey.revoked',
+  'apikey.use_denied',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

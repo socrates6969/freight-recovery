@@ -39,6 +39,10 @@ const Y: Record<Permission, readonly Role[]> = {
   'platform:logs': ['PLATFORM_DEV'],
   'platform:tenants:list': ['SUPER_ADMIN'],
   'platform:cross_tenant_read': ['SUPER_ADMIN'],
+  // Step 4 (Q2).
+  'platform:eval': ['PLATFORM_DEV'],
+  'platform:audit': ['SUPER_ADMIN'],
+  'apikeys:manage': ['OWNER', 'ADMIN'],
 };
 
 describe('permission matrix', () => {

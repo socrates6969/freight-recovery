@@ -140,7 +140,7 @@ export const AuditEventsQuery = z.strictObject({
 // Claims / packets / approvals requests
 // ---------------------------------------------------------------------------------------------
 
-const commaList = <T extends readonly [string, ...string[]]>(values: T) =>
+export const commaList = <T extends readonly [string, ...string[]]>(values: T) =>
   z
     .string()
     .max(200)
