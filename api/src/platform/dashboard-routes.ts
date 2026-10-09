@@ -24,13 +24,13 @@ import {
   type AuditAction,
 } from '@fr/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { z } from 'zod';
 
 import { appendAudit, listAuditEvents, verifyChain } from '../audit/audit.js';
 import type { BaseClient } from '../db/client.js';
 import { platformPipelineStats, withSystemTx } from '../db/system.js';
-import { HttpError, errors } from '../http/errors.js';
+import { errors } from '../http/errors.js';
 import { defineRoute, requireCtx } from '../http/route.js';
+import { strictBody } from '../http/strict-body.js';
 import type { ParserCounters } from '../observability/metrics.js';
 
 import { getEvalRun, listEvalRuns } from './eval-read.js';
@@ -46,13 +46,6 @@ export interface DashboardDeps {
   staleSeconds: number;
   parserCounters: () => ParserCounters;
   now: () => Date;
-}
-
-/** Parse an outgoing body with its strict schema; drift is a server error, never a partial body. */
-export function strictBody<S extends z.ZodType>(schema: S, value: unknown): z.output<S> {
-  const r = schema.safeParse(value);
-  if (!r.success) throw new HttpError(500, 'internal_error');
-  return r.data;
 }
 
 function platformActor(req: FastifyRequest) {

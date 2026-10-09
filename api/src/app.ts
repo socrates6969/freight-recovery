@@ -37,6 +37,7 @@ import { TenantScopeError } from './db/errors.js';
 import { ERROR_MESSAGES, HttpError, errors } from './http/errors.js';
 import { enforceRouteAccess, zodDetails } from './http/route.js';
 import { registerSecurityHeaders, registerSecurityPipeline, type Limiter } from './http/security.js';
+import { registerIntelligenceRoutes } from './intelligence/routes.js';
 import { createLogger } from './logging.js';
 import { MetricsRegistry, UNMATCHED_ROUTE, ZERO_PARSER_COUNTERS } from './observability/metrics.js';
 import { LogRingBuffer } from './observability/ring-buffer.js';
@@ -304,6 +305,13 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     staleSeconds: imp.staleSeconds,
     parserCounters: () => (parseExecutor instanceof ChildProcessExecutor ? parseExecutor.counters : ZERO_PARSER_COUNTERS),
     now,
+  });
+  // Step 4: Recovery Intelligence routes R70-R73 (tenant data only).
+  registerIntelligenceRoutes(app, {
+    flags,
+    policy: { pendingWeightPercent: cfg.intelligence.pendingWeightPercent, similarCandidateLimit: cfg.intelligence.similarCandidateLimit },
+    now,
+    toHttpError,
   });
 
   app.addHook('onClose', async () => {
