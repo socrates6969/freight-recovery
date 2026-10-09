@@ -25,7 +25,7 @@ function mockDownload() {
   vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) { clicks.push(this); });
   return { create, revoke, clicks };
 }
-const csvResp = () => new Response(new Blob(['a,b\r\n']), { status: 200, headers: { 'content-type': 'text/csv' } });
+const csvResp = () => new Response('a,b' + String.fromCharCode(13, 10), { status: 200, headers: { 'content-type': 'text/csv' } });
 
 describe('UI-08 export', () => {
   it('Export menu on /claims downloads with the current filters, announces success, revokes the object URL', async () => {
@@ -46,7 +46,10 @@ describe('UI-08 export', () => {
     expect(c.query.has('page') || c.query.has('pageSize')).toBe(false);
     expect(c.headers.get('authorization')).toMatch(/^Bearer /);
     await waitFor(() => expect(dl.create).toHaveBeenCalled());
-    expect((dl.create.mock.calls[0] as any[])[0]).toBeInstanceOf(Blob);
+    const blob = (dl.create.mock.calls[0] as any[])[0];
+    const NodeBlob = (await import('node:buffer')).Blob;
+    expect(blob instanceof Blob || blob instanceof NodeBlob, 'createObjectURL receives a Blob (jsdom or Node implementation)').toBe(true);
+    expect(blob.size).toBeGreaterThan(0);
     await waitFor(() => expect(dl.clicks.length).toBe(1));
     expect(dl.clicks[0]!.hasAttribute('download')).toBe(true);
     await waitFor(() => expect(dl.revoke).toHaveBeenCalled());
