@@ -79,8 +79,9 @@ kanonisk JSON, tekstsikkerhet og DTO-skjemaene; begge sider importerer den. `inf
 Terraform-skjelett for AWS. Byggesteg 1 og 2 er implementert: autentisering (argon2id, tilgangs-JWT pluss
 en roterende refresh-informasjonskapsel, TOTP-MFA, utestenging), RBAC for 8 roller, tenant-isolasjon i
 tre lag, applikasjonsherding, et hashkjedet revisjonsspor som bare kan utvides, kravlisten, visningen av
-bevispakken og godkjenningsporten med menneske i løkken. Import/eksport, utviklerdashbordet,
-AI-funksjoner og TS-porten av Python-reglene er senere steg. Krav og pakker seedes fra Python-CLI-ens
+bevispakken og godkjenningsporten med menneske i løkken. Steg 3 (import og eksport) er beskrevet i
+et eget avsnitt nedenfor: [Nettplattform: import og eksport (steg 3)](#nettplattform-import-og-eksport-steg-3).
+Utviklerdashbordet, AI-funksjoner og TS-porten av Python-reglene er senere steg. Krav og pakker seedes fra Python-CLI-ens
 utdata på `tests/fixtures/` (syntetisk).
 
 ## Modulstruktur
@@ -261,7 +262,10 @@ hver forespørsel. Nettappen importerer de samme frosne dataene bare for å skju
 | `claims:assign` | x | x | x | | | | | |
 | `packets:edit`, `packets:approve` | x | x | x | x | | | | |
 | `demands:send` | x | x | x | | | | | |
-| `import:run` (ingen rute ennå) | x | x | x | x | x | | | |
+| `import:run` (steg 3: batcher, opplasting, dokumenter, nedlasting, opprett krav) | x | x | x | x | x | | | |
+| `import:review` (steg 3: gjennomgangskø og beslutninger) | x | x | x | x | | | | |
+| `export:claims` (steg 3) | x | x | x | x | x | | | |
+| `export:packets`, `export:outcomes` (steg 3) | x | x | x | x | | | | |
 | `users:read`, `users:manage`, `audit:read`, `settings:manage`, `integrations:manage` | x | x | | | | | | |
 | `admins:manage`, `billing:manage`, `tenant:delete` | x | | | | | | | |
 | `platform:health` | | | | | | | x | x |
@@ -380,10 +384,10 @@ graph TD
 | --- | --- | --- |
 | SPA | nginx-unprivileged, hoder fra `web/security-headers.json` | S3 + CloudFront (OAC), respons-hode-policy generert fra den samme JSON-filen |
 | API | `api`-container (uid 10001, skrivebeskyttet rotfilsystem, capabilities fjernet) | ECS Fargate, samme herding, private subnett, VPC-endepunkter (ingen NAT) |
-| Kant | kun loopback | ALB nåbar bare fra CloudFronts origin-områder, TLS 1.2/1.3-policy, WAFv2 (administrerte regler, IP-ratebegrensning, Content-Length > 64 KiB) |
+| Kant | kun loopback | ALB nåbar bare fra CloudFronts origin-områder, TLS 1.2/1.3-policy, WAFv2 (administrerte regler, IP-ratebegrensning, Content-Length > 64 KiB; steg 3: opplastingsruten har en egen regel > 10 MiB) |
 | DB | `postgres:16.15-alpine` + `00-roles.sql` | RDS PostgreSQL 16, KMS, `rds.force_ssl=1`, administrert masterpassord; roller legges inn av en operatør |
 | Lager for ratebegrensning | `redis:7-alpine` | ElastiCache Redis 7, TLS + kryptering i hvile, AUTH-token satt utenom Terraform |
-| Dokumenter | MinIO (`chainguard/minio`) | S3 SSE-KMS, versjonering, task-rollen begrenset til prefikset `t/*` |
+| Dokumenter | MinIO (`chainguard/minio`) med innebygd KMS (`fr-dev-key`) og versjonering | S3 SSE-KMS (bucket-policyen avviser opplasting uten CMK-en), versjonering, livssyklusregler; task-rollen begrenset til prefikset `t/*`, `s3:DeleteObject` bare på `t/*/imports/*` |
 | Hemmeligheter | offentlige `local-dev-*`-verdier (avvist i produksjon) | 7 Secrets Manager-beholdere; verdiene settes utenom Terraform |
 
 ## Arkitekturmønstre
@@ -398,3 +402,354 @@ graph TD
 
 - Avvik fra briefen: Node 22 i stedet for 20 (Node 20 er EOL); en Prisma-klientutvidelse i stedet for den fjernede `$use`-mellomvaren; eslint 9; framer-motion utelatt. Hele listen (22 punkter) står i kjøringens `implementation.md`.
 - Ikke verifisert: Docker-imagene og compose-stacken, Playwright-ende-til-ende-tester, enhver AWS-utrulling. Se «Known gaps» i trusselmodellen.
+
+---
+
+# Nettplattform: import og eksport (steg 3)
+
+> Skrevet av scriber for kjøringen `REQ-20261008-step3-import-export` 2026-10-09 (grenen
+> `feat/import-export`). **Før produkt, kun syntetiske data, aldri utrullet.** Trusselradene for dette
+> steget er T18-T31 i [technical/web-platform-security.md](technical/web-platform-security.md) (engelsk).
+> E-postvideresending er kun et design: [docs/design/email-ingest.md](docs/design/email-ingest.md)
+> (engelsk). Mermaid-diagrammene er de samme som i den engelske originalen
+> ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-import-and-export-step-3)).
+
+## Oversikt (steg 3)
+
+Steg 3 legger til **import** og **eksport** av dokumenter. Import dekker opplasting, typegjenkjenning,
+kryptert lagring, parsing i sandkasse, deterministisk uttrekk med kildehenvisninger, menneskelig
+gjennomgang og opprettelse av krav. Eksport strømmer krav, bevispakker og godkjenningsutfall som CSV
+eller XLSX, med nøytralisering av formler. Steg 3 legger ikke til OCR, AI- eller LLM-kall, utgående
+e-post eller mottak av videresendt e-post. Parsing og uttrekk er en TypeScript-port av Python-modulene
+`ingest/` og `extraction/`. Paritetstester sjekker den mot Python-koden. Python er bare et testorakel og
+kjører aldri i produksjon.
+
+Hovedbeslutninger:
+
+- Pipelinen er **synkron** inne i opplastingsforespørselen og begrenset av tidsgrenser. Statusmodellen
+  åpner allerede for en kø senere.
+- API-et **videreformidler** originalene. Det finnes ingen signerte URL-er.
+- PDF-er leses bare fra tekstlaget. Bilder lagres og flagges for manuell registrering.
+- Krav som opprettes fra import, starter i den nye statusen `AWAITING_ANALYSIS`, uten beløp og uten
+  bevispakke. Steg 5 legger til analysen.
+
+## Modulstruktur (steg 3)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/ (SPA)"]
+        WI["features/imports pages"]
+        WE["ui/ExportMenu"]
+        WC["api/client upload+download"]
+    end
+
+    subgraph Shared["packages/shared"]
+        SR["rbac.ts (+4 permissions)"]
+        SD["import-dto + decimal"]
+        SS["text-sanitize (plain/md)"]
+    end
+
+    subgraph Imp["api/src/imports"]
+        IR["routes.ts R40-R53"]
+        IS["service.ts ingestDocument"]
+        IN["sniff + display-name"]
+        RV["review + commit services"]
+        BU["bundle.ts (step 5 input)"]
+    end
+
+    subgraph Sbx["api/src/imports/sandbox"]
+        EX["executor.ts"]
+        SP["spawn.ts (only spawner)"]
+        WM["worker-main + guard"]
+    end
+
+    subgraph Parse["api/src/imports/parse (pure)"]
+        PP["pipeline.ts"]
+        PD["pdf + pdf-prescan"]
+        PX["csv, text, image"]
+        DE["deterministic + confidence"]
+    end
+
+    subgraph Exp["api/src/exports"]
+        ER["routes.ts R54-R56"]
+        EW["rows + writers"]
+        NZ["neutralize.ts"]
+    end
+
+    subgraph Data["storage + db"]
+        S3["storage/s3.ts SSE-KMS"]
+        DB["5 tables, RLS FORCE"]
+    end
+
+    WI --> WC
+    WE --> WC
+    WC --> IR
+    WC --> ER
+    IR --> IS
+    IR --> RV
+    IS --> IN
+    IS --> EX
+    IS --> S3
+    IS --> DB
+    RV --> DB
+    RV --> BU
+    EX --> SP
+    SP --> WM
+    WM --> PP
+    PP --> PD
+    PP --> PX
+    PP --> DE
+    DE --> SD
+    PX --> SS
+    ER --> EW
+    EW --> NZ
+    EW --> DB
+    IR --> SR
+    ER --> SR
+
+    style IS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EX fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style WM fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style NZ fill:#1e90ff,stroke:#1565c0,color:#fff
+    style S3 fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+> Alt i dette diagrammet er nytt eller endret i steg 3. Blått markerer modulene som håndterer fiendtlige
+> bytes eller fiendtlig celleinnhold. Modulreferansen (filer, eksporter, endringer) står i den engelske
+> originalen.
+
+## Importpipeline (dataflyt)
+
+Én opplasting er én forespørsel `POST /api/v1/imports/:batchId/documents?filename=` med filens rå bytes.
+Pipelinen kjører synkront, og svaret inneholder dokumentets endelige tilstand.
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    Up["R43 raw bytes + ?filename="] --> Sec["Security pipeline (step 1-2)"]
+    Sec --> Pre{"Batch open, gate free, name ok?"}
+    Pre -- no --> E4["400 / 404 / 409 / 429"]
+    Pre -- yes --> Rd["Stream body: cap, idle timeout, SHA-256"]
+    Rd --> Big{"Over IMPORT_MAX_FILE_BYTES?"}
+    Big -- yes --> E413["413, nothing stored"]
+    Big -- no --> Sn{"Magic + extension ok?"}
+    Sn -- no --> E415["415 reason, audited, nothing stored"]
+    Sn -- yes --> Tx1["Tx 1: dedupe, quota, RECEIVED + audit"]
+    Tx1 --> Put["S3 put SSE-KMS + verify"]
+    Put --> Slot{"Parse slot in time?"}
+    Slot -- no --> E503["503 parser_busy, FAILED"]
+    Slot -- yes --> Wk["Sandbox worker parse"]
+    Wk --> Ok{"Parsed, response valid?"}
+    Ok -- no --> Rej["Tx 2: REJECTED, objects deleted"]
+    Ok -- yes --> Txt["Store derived text (SSE-KMS)"]
+    Txt --> Tx2["Tx 2: fields + status + audit"]
+    Tx2 --> St{"Any review reason?"}
+    St -- yes --> NR["NEEDS_REVIEW (review queue)"]
+    St -- no --> AC["ACCEPTED"]
+
+    style Rd fill:#1e90ff,stroke:#1565c0,color:#fff
+    style Sn fill:#1e90ff,stroke:#1565c0,color:#fff
+    style Put fill:#1e90ff,stroke:#1565c0,color:#fff
+    style Wk fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+1. **Opplasting.** Klienten sender rå bytes (`Content-Type: application/octet-stream`, ingen multipart).
+   Filnavnet er en spørreparameter og renses til et visningsnavn. Klientens medietype brukes aldri.
+   Ratebegrensning, Origin, CSRF, autentisering og tillatelse kjøres før innholdet leses.
+2. **Typegjenkjenning.** API-et godtar `%PDF-` på posisjon 0, PNG-signaturen eller `FF D8 FF`. Alt annet
+   behandles som tekst. Tekst kan ikke inneholde NUL, C0-kontrolltegn eller DEL utenom HT, LF, CR og FF,
+   og kan ikke starte som HTML, SVG, XML eller PHP. Kjente signaturer som ikke er tillatt (zip, gzip, PE,
+   ELF, GIF, RIFF, OLE, PostScript, rar, 7z) avvises. Den siste filendelsen må være en av
+   `.pdf .png .jpg .jpeg .csv .txt` og stemme med den gjenkjente typen.
+3. **Lagring.** Transaksjon 1 setter inn raden `RECEIVED` og revisjonshendelsen før all treg I/O.
+   Originalen lagres under `t/<tenantId>/imports/<batchId>/<docId>/original` med SSE-KMS og
+   SHA-256-kontrollsum. I produksjon verifiserer en `HEAD`-forespørsel krypteringen. Nøkler inneholder
+   aldri klientens filnavn.
+4. **Isolert parsearbeider.** `ChildProcessExecutor` tar en plass fra en semafor per instans. Den
+   starter `node` med `--permission`, som bare gir lesetilgang til arbeiderens filer. Arbeideren får
+   ingen skrive-, barneprosess-, worker-, addon- eller WASI-tillatelse. Den får også
+   `--max-old-space-size`, et **tomt miljø** og en tom arbeidsmappe. En vaktmodul sletter `fetch`,
+   `WebSocket`, `EventSource` og `XMLHttpRequest`, og blokkerer nettverks-, prosess- og VM-modulene.
+   Forelderprosessen håndhever veggklokke, utdatagrense og (på Linux) en RSS-grense. Den behandler
+   arbeideren som upålitelig: hele svaret valideres på nytt, og et ugyldig svar blir `parse_failed`.
+5. **PDF-forhåndsskanning.** `pdf-prescan.ts` går gjennom PDF-strukturen med faste grenser før pdf.js
+   ser filen. Den avviser som `malformed_pdf`: mer enn 3 kjedede filtre, et indirekte `/Filter`,
+   dekompresjonsbomber (32 MiB per strøm, 64 MiB totalt), `/Prev`-løkker, mer enn 64 xref-seksjoner,
+   sidetrær større enn sideantallet pluss 16, og null sider. Den teller også tekst i innholdsstrømmene,
+   også tekst utenfor siden, slik at grensen `PARSE_MAX_TEXT_CHARS` holder (`text_too_large`). Deretter
+   leser pdf.js bare tekstlaget, uten merknader, vedlegg, JavaScript eller XFA.
+6. **Uttrekk med kildehenvisning.** Den deterministiske leverandøren (`deterministic`, versjon 1) leser
+   `Nøkkel: verdi`-linjer og gir bare tillatte felt. Hvert felt har en kildepeker (side, linje,
+   UTF-16-start og -slutt, CSV-rad, renset utdrag) og en regelbasert konfidens. Et felt flagges når
+   konfidensen er under `REVIEW_CONFIDENCE_THRESHOLD` (0,90), når verdien ikke kan tolkes, eller når
+   duplikater er i konflikt. PDF-felt starter på 0,85, så alle PDF-felt flagges som standard.
+7. **Gjennomgang.** Et dokument med en gjennomgangsgrunn får `NEEDS_REVIEW` og havner i
+   gjennomgangskøen (`GET /reviews`). En gjennomgåer bekrefter, korrigerer eller avviser hvert flagget
+   felt. For bilder kan gjennomgåeren også sette dokumenttypen og legge inn felt manuelt. Deretter godtar
+   eller avviser gjennomgåeren dokumentet. Hver handling krever en begrunnelse og gir en rad i tabellen
+   `import_review_decisions`, som bare kan utvides, pluss en revisjonshendelse. Godtatte dokumenter kan
+   ikke endres.
+8. **Opprett krav.** `POST /imports/:batchId/commit` grupperer batchens godtatte dokumenter etter
+   normalisert lastnummer (NFKC, sammenslått mellomrom, store bokstaver). Den oppretter et
+   `AWAITING_ANALYSIS`-krav eller kobler til et eksisterende. Har kravet allerede en bevispakke, kobles
+   dokumentene bare til (`new_evidence_not_in_packet`), og pakken og feltene endres aldri. Operasjonen er
+   atomisk og idempotent.
+
+### Funksjonskall (opplasting)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R43["R43 handler"] --> ING["ingestDocument"]
+    ING --> ABA["assertBatchAcceptsUploads"]
+    ING --> BODY["read body (body.ts)"]
+    ING --> SNF["sniff"]
+    ING --> PUT["ObjectStore.putObject"]
+    ING --> RUN["ChildProcessExecutor.run"]
+    RUN --> SEM["semaphore acquire"]
+    RUN --> STW["startWorker (spawn.ts)"]
+    STW --> WMN["worker-main"]
+    WMN --> PDOC["parseDocument"]
+    PDOC --> PSC["prescanPdf"]
+    PDOC --> PDF["pdf.js text layer"]
+    PDOC --> CSV["csv / text / image"]
+    PDOC --> EXT["deterministic extract"]
+    RUN --> VAL["validateWorkerResponse"]
+    ING --> TX2["Tx 2 + appendAudit"]
+
+    style ING fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RUN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PSC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style VAL fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+## Dokumenttilstander
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    RC["RECEIVED (transient)"] --> AC["ACCEPTED (terminal)"]
+    RC --> NR["NEEDS_REVIEW"]
+    RC --> RJ["REJECTED (terminal, no object)"]
+    RC --> FL["FAILED (terminal)"]
+    NR -- "R49 accept + reason" --> AC
+    NR -- "R50 reject + reason" --> RJ
+
+    style NR fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Et felt går én gang fra `PROPOSED` til `CONFIRMED`, `CORRECTED` eller `REJECTED`. En databasetrigger
+håndhever overgangene og holder uttrukket verdi, råverdi, konfidens og pekere uforanderlige.
+
+## Datamodell og lagring
+
+Fem nye tenant-tabeller: `import_batches`, `import_documents`, `extracted_fields`,
+`import_review_decisions` (kun tillegg) og `claim_documents` (kun innsetting). Alle har `ENABLE` og
+`FORCE ROW LEVEL SECURITY`, kolonnevise tildelinger for `freight_app`, og står i `TENANT_MODELS`. En
+CHECK krever at `storage_key` starter med `t/<egen tenant_id>/`. Objektlagringen er privat. Hvert kall i
+`ObjectStore` kontrollerer tenant-prefikset på nytt, og API-et returnerer aldri en lagrings-URL.
+Nedlasting av originalen strømmes gjennom API-et med et syntetisk filnavn, og SHA-256 av de strømmede
+bytene kontrolleres.
+
+## Eksportstrømming
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    Rq["R54/R55/R56 + format"] --> Gt{"Permission, rate, gate ok?"}
+    Gt -- no --> X4["403 / 429"]
+    Gt -- yes --> Cn["Count rows (R26 filters)"]
+    Cn --> Mx{"Over EXPORT_MAX_ROWS?"}
+    Mx -- yes --> X422["422 export_too_large"]
+    Mx -- no --> St["Commit export.started audit"]
+    St --> Bt["Keyset batch of 500 (short tx)"]
+    Bt --> Nz["cleanText + neutralizeFormula"]
+    Nz --> Wr["CSV or XLSX writer"]
+    Wr --> More{"More rows?"}
+    More -- yes --> Bt
+    More -- no --> Dn["export.completed: rows, bytes, SHA-256"]
+    Wr -. "client abort" .-> Ab["export.aborted: rowsWritten"]
+
+    style Nz fill:#1e90ff,stroke:#1565c0,color:#fff
+    style St fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+- **Formater.** CSV er UTF-8 med BOM og CRLF, og hver tekstcelle står i anførselstegn. XLSX er ett ark,
+  skrevet som en strømmet ZIP med `fflate`, med typede tekster og tall og en fet, fastfrosset
+  overskriftsrad. Det finnes ingen formler, lenker, makroer, tegninger eller eksterne relasjoner.
+- **Formelnøytralisering.** Tekstceller mister kontrolltegn, bidi- og nullbreddetegn (tab, CR, LF, LS og
+  PS blir ett mellomrom) og kuttes ved 10 000 tegn. Er første tegn etter eventuelt mellomrom `=`, `+`,
+  `-`, `@` eller en fullbreddeform (U+FF1D, U+FF0B, U+FF0D, U+FF20), får cellen en ledende `'`. Tall
+  skrives som tall og nøytraliseres aldri.
+- **Begrenset minne.** Hver bolk på 500 rader bruker sin egen korte transaksjon, og skriverne respekterer
+  mottrykk (backpressure).
+
+## Python-paritet: registrerte avvik (D1-D8)
+
+TypeScript-parseren skal gi samme resultat som Python-referansen (`ingest_bytes`, `classify`,
+`DeterministicStubProvider.extract`) for den støttede delmengden. `api/test/parity/extract.parity.test.ts`
+kjører Python-koden via `tools/parity/extract_dump.py` og sammenligner dokumenttype, sha256, tekst og
+felt. Avvikene nedenfor er de **eneste** tillatte forskjellene. Alle andre forskjeller er feil.
+
+| ID | Avvik (TS mot Python) | Begrunnelse |
+| --- | --- | --- |
+| D1 | PDF-signaturen `%PDF-` må stå på posisjon 0. Python tåler opptil 1024 søppelbytes foran. | Søppel foran er et klassisk polyglott-triks. Posisjon 0 gjør typen entydig. |
+| D2 | PDF-tekst kommer fra pdf.js, ikke pdfplumber. Paritet gjelder bare enkle PDF-er med tekstlag (én tekstlinje per linje, standard Helvetica eller Times, én spalte). | pdfplumber finnes bare i Python, og TS-porten skal ikke kalle Python under kjøring. To motorer ordner og spatierer tekst ulikt på komplekse oppsett. |
+| D3 | Filendelsen og den gjenkjente typen må stemme overens. Tillatte endelser: `.pdf .png .jpg .jpeg .csv .txt` (uten hensyn til store og små bokstaver, bare siste endelse). Python ser bare på endelsen. | Hindrer at en PDF eller et skript forkledd som `.csv` (og omvendt) havner i feil parser. |
+| D4 | Ugyldig UTF-8 dekodes med U+FFFD som i Python, men gir advarselen og gjennomgangsgrunnen `DECODE_REPLACEMENTS`. NUL, C0-kontrollbytes utenom HT, LF, CR og FF, **eller DEL (0x7F)** avviser filen som `binary_content`. Python ville fortsatt. | Binært innhold i en «tekstfil» tyder på en forkledd eller ødelagt fil. DEL-regelen kom i rettingsrunde 1 (lederavgjørelse SQ2). Python har ingen binærsperre, så DEL har ingen motpart i Python. |
+| D5 | Tekst over `PARSE_MAX_TEXT_CHARS` (standard 2 000 000) avvises som `text_too_large`. Pythons grense er 5 000 000. For PDF-er teller også tekst utenfor siden (forhåndsskanning, rettingsrunde 1). | Strammere grense for minne og tid i parseren. |
+| D6 | Tekstverdier renses for usikre tegn (kontrolltegn, linjeskilletegn, bidi-kontrolltegn) og kuttes ved 200 tegn, med feltgrunnen `SANITIZED_VALUE` når noe ble endret. | Verdiene vises i brukergrensesnittet og eksporteres, så de må være trygg tekst på én linje. |
+| D7 | Ikke-ASCII-sifre og eksotisk Unicode-bokstavfolding godtas ikke der Pythons regulære uttrykk ville godtatt dem. Dato- og tidssifre er bare ASCII `0-9`, og `USD`-endelsen godtar bare ASCII-bokstaver. | Hindrer at sifre og bokstaver som ser like ut, endrer beløp eller datoer. |
+| D8 | PNG og JPEG godtas og strukturvalideres, men gir **ingen felt** (ingen OCR). Status er `NEEDS_REVIEW` med grunnen `IMAGE_NO_TEXT_LAYER`. En gjennomgåer kan sette typen (R46) og legge inn felt (R47). | Python leser ikke bilder, og OCR er utenfor omfanget av steg 3. |
+
+Beslektede merknader (ikke nye avvik): `parseMoney` beholder CPython-paritet, så `"1,2,3"` blir `123` og
+`"$-5"` blir `-5` (avgjørelse SQ1; steg 5 kan gjøre dette strengere som et nytt registrert avvik).
+Forhåndsskanningen avviser fiendtlige PDF-er utenfor D2-delmengden. Opptil 16 nullbytes etter `IEND` i
+PNG tåles, som for JPEG. `strptime`-paritet følger CPython 3.12 for et ledende mellomrom foran `%H` eller
+`%d`. Feltrekkefølgen følger N7-nøkkelrekkefølgen og deretter `groupIndex` (SQ4).
+
+## Grensesnitt for steg 5 (port av regler og bevis)
+
+1. **Inndata.** `loadBundleForClaim(tx, claimId)` gir `{bundle, sources}`. `bundle` er TS-versjonen av
+   `ExtractedBundle`, bygget fra de effektive feltverdiene i kravets dokumenter. Den er inndata til den
+   fremtidige `analyze(bundle, perspective, settings) -> Packet`, motparten til Pythons `run_pipeline`
+   etter `extract_bundle`.
+2. **Kildehenvisning.** `pointerToLocator(displayName, pointer)` gir sitatlokatorer som `invoice.txt:L5`
+   eller `file.pdf:p2:L14`. `sources[]` har `documentId`, `displayName`, `sha256` og `docType`.
+3. **Penger.** `packages/shared/src/decimal.ts` er grunnlaget for penge- og timeregning. Steg 5 legger
+   til avrunding med paritet mot Pythons `Decimal`.
+4. **Tekst.** `plain` og `md` (`packages/shared/src/text-sanitize.ts`) er allerede portert med paritet.
+5. **Kravets livsløp.** Steg 5 legger til overgangen `AWAITING_ANALYSIS -> PENDING_REVIEW`, med
+   pakkerevisjon 1 og en revisjonshendelse i samme transaksjon. `claim_documents` viser kildedokumentene.
+6. **Paritetsmønster.** `tools/parity/` og `api/test/parity/` er mønsteret for regel-dumpen. CI setter
+   allerede opp Python.
+7. **Leverandører.** `ExtractionProvider` er der en LLM-leverandør kan kobles inn senere, bak rensing og
+   med obligatorisk kildehenvisning. Den kan aldri senke et flagg som de deterministiske kontrollene har
+   satt.
+
+## Slik kjører du kontrollene for steg 3
+
+```bash
+npm run db:migrate:deploy && npm run db:seed -- --reset
+npm run ensure-bucket        # creates the dev/test bucket (MinIO), enables versioning; refuses production
+npm run build                # builds the parser worker; run it before the integration and acceptance tests
+npm run test:integration     # needs Postgres, S3 (MinIO) and Python for the parity suite (PYTHON=<interpreter>)
+npm run test:acceptance      # black-box suites; same services
+```
+
+README-avsnittet «Import og eksport (steg 3)» beskriver lokalt oppsett uten Docker: portabel PostgreSQL,
+MinIO med KMS og Python for paritet.
+
+## Merknader (steg 3)
+
+- Kjøringens `implementation.md` lister avvikene fra spesifikasjonen (14 punkter pluss rettingsrunde 1).
+  De to viktigste: arbeideren startes ikke med `--no-experimental-fetch` (vakten sletter
+  nettverksglobalene i stedet), og WAF-regelen for Content-Length har et eget unntak for
+  opplastingsruten.
+- Samtidighetsgrensene (opplasting, eksport, parseplasser) gjelder per API-instans, ikke distribuert.
+- Ikke verifisert: container-images, compose-stacken, Playwright-ende-til-ende-tester, enhver
+  AWS-utrulling.
