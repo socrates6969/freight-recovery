@@ -17,7 +17,10 @@ import Fastify, {
 import { Redis } from 'ioredis';
 import { ZodError } from 'zod';
 
+import { registerApiKeyRoutes } from './apikeys/routes.js';
+import { registerApiKeyRequest, releaseApiKeyRequest } from './audit/attribution.js';
 import { registerAuditRoutes } from './audit/routes.js';
+import { ApiKeyAuthenticator } from './auth/api-key-auth.js';
 import { makeOnForbidden } from './auth/authz-denied.js';
 import type { AuthDeps } from './auth/deps.js';
 import { registerDevOutbox } from './auth/dev-outbox.js';
@@ -218,6 +221,13 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   const uploadLimiter = wrapLimiter(createRateLimit({ max: cfg.imports.rateLimitUploadMax, timeWindow: tenMinutes, keyGenerator: userKey('u') }));
   const exportLimiter = wrapLimiter(createRateLimit({ max: cfg.imports.rateLimitExportMax, timeWindow: tenMinutes, keyGenerator: userKey('e') }));
   const platformLimiter = wrapLimiter(createRateLimit({ max: cfg.rateLimitPlatformMax, timeWindow: tenMinutes, keyGenerator: userKey('p') }));
+  // Step 4 (Q13): per key (60 s) and per client address for FAILED key authentications (600 s).
+  const apiKeyLimiter = wrapLimiter(
+    createRateLimit({ max: cfg.apiKeys.rateLimitMax, timeWindow: minute, keyGenerator: (req: FastifyRequest) => `k:${req.frApiKeyId ?? req.ip}` }),
+  );
+  const apiKeyFailLimiter = wrapLimiter(
+    createRateLimit({ max: cfg.apiKeys.rateLimitFailMax, timeWindow: tenMinutes, keyGenerator: (req: FastifyRequest) => `kf:${req.ip}` }),
+  );
   const intelligenceLimiter = wrapLimiter(createRateLimit({ max: cfg.rateLimitIntelligenceMax, timeWindow: tenMinutes, keyGenerator: userKey('i') }));
 
   const deps: AuthDeps = {
@@ -231,6 +241,17 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
 
   const onForbidden = makeOnForbidden(base);
   const flags = new FlagService(base, cfg.flags.cacheTtlMs);
+  const clock = opts.overrides?.now ?? (() => new Date());
+  const apiKeyAuth = new ApiKeyAuthenticator({
+    base,
+    pepper: cfg.apiKeys.pepper,
+    rateLimitEnabled: cfg.rateLimitEnabled,
+    failLimiter: apiKeyFailLimiter,
+    keyLimiter: apiKeyLimiter,
+    now: clock,
+  });
+  app.addHook('onResponse', async (req) => releaseApiKeyRequest(req.frRequestId));
+  app.addHook('onRequestAbort', async (req) => releaseApiKeyRequest(req.frRequestId));
   app.decorate('flags', flags);
 
   registerSecurityPipeline(app, {
@@ -244,6 +265,10 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
       intelligence: intelligenceLimiter,
     },
     authenticate: (token, meta) => authenticateAccessToken(deps, token, meta),
+    authenticateApiKey: (req, presented, access) => apiKeyAuth.authenticate(req, presented, access),
+    onApiKeyContext: (req, ctx) => {
+      if (ctx.viaApiKey) registerApiKeyRequest(req.frRequestId, ctx.viaApiKey);
+    },
     onForbidden,
   });
   registerSecurityHeaders(app, cfg);
@@ -306,6 +331,12 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     parserCounters: () => (parseExecutor instanceof ChildProcessExecutor ? parseExecutor.counters : ZERO_PARSER_COUNTERS),
     now,
   });
+  // Step 4: tenant API key management R80-R82.
+  registerApiKeyRoutes(
+    app,
+    { pepper: cfg.apiKeys.pepper, maxActive: cfg.apiKeys.maxActive, defaultTtlDays: cfg.apiKeys.defaultTtlDays, allowNonExpiring: cfg.apiKeys.allowNonExpiring },
+    now,
+  );
   // Step 4: Recovery Intelligence routes R70-R73 (tenant data only).
   registerIntelligenceRoutes(app, {
     flags,

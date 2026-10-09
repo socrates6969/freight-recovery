@@ -38,6 +38,13 @@ export interface PipelineDeps {
     intelligence?: Limiter | null;
   };
   authenticate: (token: string, meta: { ip: string; requestId: string }) => Promise<RequestCtx | null>;
+  /**
+   * Step 4 (Q13): tenant API key authentication for bearer values starting with `fr_live_`. Returns the
+   * request context or throws the fixed 401/403/429 error. Absent -> every key request is 401.
+   */
+  authenticateApiKey?: (req: FastifyRequest, presented: string, access: RouteAccess | undefined) => Promise<RequestCtx>;
+  /** Called once a key-authenticated context exists (audit attribution). */
+  onApiKeyContext?: (req: FastifyRequest, ctx: RequestCtx) => void;
   onForbidden: (req: FastifyRequest, ctx: RequestCtx, access: RouteAccess) => Promise<void>;
 }
 
@@ -52,6 +59,15 @@ function headerValue(req: FastifyRequest, name: string): string | undefined {
   const v = req.headers[name];
   if (Array.isArray(v)) return v.length === 1 ? v[0] : '\u0000invalid';
   return v;
+}
+
+export const API_KEY_BEARER_PREFIX = 'Bearer fr_live_';
+
+/** A request presents an API key when its Authorization header is `Bearer fr_live_...` (any suffix). */
+function presentedApiKey(req: FastifyRequest): string | null {
+  const h = headerValue(req, 'authorization');
+  if (h === undefined || !h.startsWith(API_KEY_BEARER_PREFIX)) return null;
+  return h.slice('Bearer '.length);
 }
 
 function bearerToken(req: FastifyRequest): string | null {
@@ -72,6 +88,8 @@ export function registerSecurityPipeline(app: FastifyInstance, deps: PipelineDep
   app.addHook('onRequest', async (req: FastifyRequest) => {
     req.frRequestId = String(req.id);
     req.ctx = null;
+    // 0. API keys are never accepted in URLs (path or query): refuse before anything else is done.
+    if (req.url.includes('fr_live_')) throw errors.validation([{ path: 'url', code: 'invalid_string' }]);
     const config = req.routeOptions.config as { access?: RouteAccess; rateGroup?: string } | undefined;
 
     // 1. Rate limits (global per IP, then the route group's own bucket).
@@ -87,6 +105,27 @@ export function registerSecurityPipeline(app: FastifyInstance, deps: PipelineDep
     }
 
     const unsafe = UNSAFE_METHODS.has(req.method);
+    const apiKey = presentedApiKey(req);
+    const access = config?.access;
+    if (apiKey !== null) {
+      // Machine request: no cookie-derived identity is ever consulted and no CSRF token is needed.
+      // 2k. Origin: if present it must equal APP_ORIGIN (any method).
+      const origin = headerValue(req, 'origin');
+      if (origin !== undefined && origin !== deps.cfg.appOrigin) throw errors.origin();
+      // Unknown URL: the standard 404 (no route, nothing to authenticate against).
+      if (!access) return;
+      if (!deps.authenticateApiKey) throw errors.unauthenticated();
+      const ctx = await deps.authenticateApiKey(req, apiKey, access);
+      req.ctx = ctx;
+      deps.onApiKeyContext?.(req, ctx);
+      await userStageLimit(req, config?.rateGroup);
+      if (access.kind === 'permission' && !ctx.permissions.has(access.permission)) {
+        await deps.onForbidden(req, ctx, access);
+        throw errors.forbidden();
+      }
+      return;
+    }
+
     // 2. Origin check.
     if (unsafe && !originAllowed(deps.cfg.appOrigin, headerValue(req, 'origin'), headerValue(req, 'sec-fetch-site'))) {
       throw errors.origin();
@@ -101,7 +140,6 @@ export function registerSecurityPipeline(app: FastifyInstance, deps: PipelineDep
       }
     }
 
-    const access = config?.access;
     if (!access || access.kind === 'public' || access.kind === 'cookie-session') return;
 
     // 4. Authentication (Bearer access token; state reloaded from the database).
@@ -113,14 +151,7 @@ export function registerSecurityPipeline(app: FastifyInstance, deps: PipelineDep
 
     // 4b. Per-user rate limit for upload/export/platform/intelligence routes (second stage; needs the
     // authenticated user).
-    const userGroup = userRateGroup(config?.rateGroup);
-    if (deps.cfg.rateLimitEnabled && userGroup) {
-      const limiter = deps.limiters[userGroup];
-      if (limiter) {
-        const r = await limiter(req);
-        if (!r.allowed) throw errors.rateLimited(r.retryAfterSeconds);
-      }
-    }
+    await userStageLimit(req, config?.rateGroup);
 
     // 5. Permission.
     if (access.kind === 'permission' && !ctx.permissions.has(access.permission)) {
@@ -128,6 +159,17 @@ export function registerSecurityPipeline(app: FastifyInstance, deps: PipelineDep
       throw errors.forbidden();
     }
   });
+
+  async function userStageLimit(req: FastifyRequest, group: string | undefined): Promise<void> {
+    const userGroup = userRateGroup(group);
+    if (deps.cfg.rateLimitEnabled && userGroup) {
+      const limiter = deps.limiters[userGroup];
+      if (limiter) {
+        const r = await limiter(req);
+        if (!r.allowed) throw errors.rateLimited(r.retryAfterSeconds);
+      }
+    }
+  }
 }
 
 /** API security headers (C1), emitted on every response including errors. */

@@ -15,7 +15,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { errors } from '../http/errors.js';
-import { defineRoute, requireCtx } from '../http/route.js';
+import { defineRoute, requireCtx, userRole } from '../http/route.js';
 import type { Limiter } from '../http/security.js';
 
 import { clearCsrfCookie, clearRefreshCookie, issueCsrfCookie, REFRESH_COOKIE, setRefreshCookie } from './cookies.js';
@@ -215,7 +215,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps, forgotL
           tenant: ctx.tenantId && ctx.tenantName ? { id: ctx.tenantId, name: ctx.tenantName } : null,
           mfaEnabled: ctx.user.mfaEnabled,
         },
-        permissions: [...permissionsFor(ctx.role)],
+        permissions: [...permissionsFor(userRole(ctx))],
       };
     },
   });

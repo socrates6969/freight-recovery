@@ -18,7 +18,7 @@ import { appendAudit } from '../audit/audit.js';
 import { isUuid } from '../db/errors.js';
 import { scopeSystemTxToTenant, withSystemTx, type SystemTx } from '../db/system.js';
 import { HttpError, errors } from '../http/errors.js';
-import { defineRoute, requireTenant } from '../http/route.js';
+import { defineRoute, requireTenant, userRole } from '../http/route.js';
 import { hmacSha256Hex, normalizeEmail, randomOpaqueToken } from '../security/crypto.js';
 
 import type { AuthDeps } from './deps.js';
@@ -50,7 +50,7 @@ async function activeOwnerCount(tx: SystemTx, tenantId: string): Promise<number>
 
 function assertCanManage(ctx: TenantCtx, subjectUserId: string, subjectRole: Role): void {
   if (subjectUserId === ctx.user.id) throw errors.forbidden();
-  if (!canManageUserWithRole(ctx.role, subjectRole, ctx.permissions)) throw errors.forbidden();
+  if (!canManageUserWithRole(userRole(ctx), subjectRole, ctx.permissions)) throw errors.forbidden();
 }
 
 function inviteStatus(i: { acceptedAt: Date | null; revokedAt: Date | null; expiresAt: Date }, now: Date): string {
@@ -114,7 +114,7 @@ export function registerUserRoutes(app: FastifyInstance, deps: AuthDeps): void {
     schema: { body: InviteCreateBody },
     handler: async (req, reply, { body }) => {
       const ctx = requireTenant(req);
-      if (!canAssignRole(ctx.role, body.role, ctx.permissions)) throw errors.forbidden();
+      if (!canAssignRole(userRole(ctx), body.role, ctx.permissions)) throw errors.forbidden();
       const email = normalizeEmail(body.email);
       const token = randomOpaqueToken();
       const now = new Date();
@@ -220,7 +220,7 @@ export function registerUserRoutes(app: FastifyInstance, deps: AuthDeps): void {
       return sys(ctx.tenantId, async (tx) => {
         const subject = await loadSubject(tx, ctx.tenantId, params.id);
         assertCanManage(ctx, subject.userId, subject.role);
-        if (!canAssignRole(ctx.role, body.role, ctx.permissions)) throw errors.forbidden();
+        if (!canAssignRole(userRole(ctx), body.role, ctx.permissions)) throw errors.forbidden();
         if (subject.role === 'OWNER' && subject.user.status === 'ACTIVE' && (await activeOwnerCount(tx, ctx.tenantId)) <= 1) {
           throw errors.conflict();
         }

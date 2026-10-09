@@ -14,7 +14,7 @@ import {
 } from '@fr/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
-import { defineRoute, requireTenant } from '../http/route.js';
+import { defineRoute, requireTenant, userRole } from '../http/route.js';
 
 import { assignClaim, createRevision, getClaim, getPacket, listApprovalQueue, listClaims, transition, type Actor } from './service.js';
 
@@ -22,14 +22,14 @@ const P = '/api/v1';
 
 function actorOf(req: FastifyRequest): Actor {
   const ctx = requireTenant(req);
-  return { userId: ctx.user.id, role: ctx.role, ip: req.ip, requestId: req.frRequestId };
+  return { userId: ctx.user.id, role: userRole(ctx), ip: req.ip, requestId: req.frRequestId };
 }
 
 export function registerClaimRoutes(app: FastifyInstance): void {
   defineRoute(app, {
     method: 'GET',
     url: `${P}/claims`,
-    access: { kind: 'permission', permission: 'claims:read' },
+    access: { kind: 'permission', permission: 'claims:read', apiKeyScope: 'claims.read' },
     schema: { query: ClaimsQuery },
     handler: async (req, _reply, { query }) => requireTenant(req).db.tx((tx) => listClaims(tx, query)),
   });
@@ -37,7 +37,7 @@ export function registerClaimRoutes(app: FastifyInstance): void {
   defineRoute(app, {
     method: 'GET',
     url: `${P}/claims/:id`,
-    access: { kind: 'permission', permission: 'claims:read' },
+    access: { kind: 'permission', permission: 'claims:read', apiKeyScope: 'claims.read' },
     schema: { params: IdParams },
     handler: async (req, _reply, { params }) => requireTenant(req).db.tx((tx) => getClaim(tx, params.id)),
   });

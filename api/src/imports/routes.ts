@@ -67,7 +67,7 @@ export function registerImportRoutes(app: FastifyInstance, deps: ImportDeps): vo
   defineRoute(app, {
     method: 'POST',
     url: `${P}/imports`,
-    access: { kind: 'permission', permission: 'import:run' },
+    access: { kind: 'permission', permission: 'import:run', apiKeyScope: 'imports.write' },
     schema: { body: CreateBatchBody },
     handler: async (req, reply, { body }) => {
       const ctx = requireTenant(req);
@@ -79,7 +79,7 @@ export function registerImportRoutes(app: FastifyInstance, deps: ImportDeps): vo
   defineRoute(app, {
     method: 'GET',
     url: `${P}/imports`,
-    access: { kind: 'permission', permission: 'import:run' },
+    access: { kind: 'permission', permission: 'import:run', apiKeyScope: 'imports.write' },
     schema: { query: ImportsPageQuery },
     handler: async (req, _reply, { query }) => requireTenant(req).db.tx((tx) => listBatches(tx, query.page, query.pageSize)),
   });
@@ -87,7 +87,7 @@ export function registerImportRoutes(app: FastifyInstance, deps: ImportDeps): vo
   defineRoute(app, {
     method: 'GET',
     url: `${P}/imports/:batchId`,
-    access: { kind: 'permission', permission: 'import:run' },
+    access: { kind: 'permission', permission: 'import:run', apiKeyScope: 'imports.write' },
     schema: { params: BatchParams },
     handler: async (req, _reply, { params }) => {
       const ctx = requireTenant(req);
@@ -99,7 +99,7 @@ export function registerImportRoutes(app: FastifyInstance, deps: ImportDeps): vo
   defineRoute(app, {
     method: 'GET',
     url: `${P}/imports/:batchId/documents/:docId`,
-    access: { kind: 'permission', permission: 'import:run' },
+    access: { kind: 'permission', permission: 'import:run', apiKeyScope: 'imports.write' },
     schema: { params: DocParams },
     handler: async (req, _reply, { params }) => {
       const ctx = requireTenant(req);
@@ -193,7 +193,7 @@ export function registerImportRoutes(app: FastifyInstance, deps: ImportDeps): vo
   defineRoute(app, {
     method: 'GET',
     url: `${P}/claims/:id/documents`,
-    access: { kind: 'permission', permission: 'claims:read' },
+    access: { kind: 'permission', permission: 'claims:read', apiKeyScope: 'claims.read' },
     schema: { params: IdParams },
     handler: async (req, _reply, { params }) => requireTenant(req).db.tx((tx) => claimDocuments(tx, params.id)),
   });
@@ -210,7 +210,7 @@ export function registerImportRoutes(app: FastifyInstance, deps: ImportDeps): vo
     defineRoute(sub, {
       method: 'POST',
       url: `${P}/imports/:batchId/documents`,
-      access: { kind: 'permission', permission: 'import:run' },
+      access: { kind: 'permission', permission: 'import:run', apiKeyScope: 'imports.write' },
       rateGroup: 'upload',
       schema: { params: BatchParams, query: UploadQuery },
       handler: async (req, reply, { params, query }) => uploadHandler(deps, req, reply, params.batchId, query.filename),

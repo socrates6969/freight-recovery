@@ -4,6 +4,7 @@
  * in the global onRequest security pipeline (before body parsing); request validation runs afterwards
  * in preHandler, so a caller lacking permission gets 403 even for an invalid body.
  */
+import type { Role } from '@fr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods, RouteOptions } from 'fastify';
 import { type z } from 'zod';
 
@@ -98,4 +99,14 @@ export function requireTenant(req: FastifyRequest): RequestCtx & { tenantId: str
   const ctx = requireCtx(req);
   if (!ctx.tenantId || !ctx.db) throw new HttpError(403, 'forbidden');
   return ctx as RequestCtx & { tenantId: string; db: NonNullable<RequestCtx['db']> };
+}
+
+/**
+ * The caller's user role for routes that never accept API keys (role management, /me, packets...).
+ * A key-authenticated request reaching such code is refused (defense in depth; the pipeline already
+ * rejects keys on every route without an `apiKeyScope`).
+ */
+export function userRole(ctx: RequestCtx): Role {
+  if (ctx.role === 'API_KEY' || ctx.viaApiKey !== undefined) throw errors.forbidden();
+  return ctx.role;
 }

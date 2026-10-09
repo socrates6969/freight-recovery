@@ -10,6 +10,7 @@ import type { Prisma } from '../db/client.js';
 import { TenantScopeError, assertUuid } from '../db/errors.js';
 import { unwrapRawTx, type TenantTx } from '../db/tenant.js';
 
+import { apiKeyFor } from './attribution.js';
 import {
   ChainVerifier,
   auditTimestamp,
@@ -73,6 +74,10 @@ export async function appendAudit(txIn: AnyTx, input: AuditInput): Promise<Appen
     await tx.$executeRaw`SELECT set_config('app.tenant_id', ${tenantId}, true)`;
   }
 
+  // Key-authenticated requests: attribute the event to the key (public id only).
+  const viaKey = input.actorRole === 'API_KEY' ? apiKeyFor(input.requestId) : undefined;
+  const metadataIn = viaKey ? { ...(input.metadata ?? {}), viaApiKey: viaKey } : input.metadata;
+
   const chainKey = chainKeyFor(tenantId);
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${chainKey}, 0))`;
   const last = await tx.$queryRaw<{ seq: bigint; hash: string }[]>`
@@ -91,7 +96,7 @@ export async function appendAudit(txIn: AnyTx, input: AuditInput): Promise<Appen
     action: input.action,
     targetType: input.targetType ?? null,
     targetId: input.targetId ?? null,
-    metadata: sanitizeMetadata(input.metadata),
+    metadata: sanitizeMetadata(metadataIn),
     ip: input.ip ?? null,
     requestId: input.requestId ?? null,
     createdAt: createdAt.toISOString(),

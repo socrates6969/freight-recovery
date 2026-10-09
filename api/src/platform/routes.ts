@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import type { BaseClient } from '../db/client.js';
 import { pingDb, platformTenantStats, withSystemTx } from '../db/system.js';
 import { listClaims } from '../claims/service.js';
-import { defineRoute, requireCtx } from '../http/route.js';
+import { defineRoute, requireCtx, userRole } from '../http/route.js';
 
 import { crossTenantRead } from './cross-tenant.js';
 
@@ -72,7 +72,7 @@ export function registerPlatformRoutes(app: FastifyInstance, base: BaseClient): 
       const { reason, ...filters } = query;
       return crossTenantRead(
         base,
-        { userId: ctx.user.id, role: ctx.role, ip: req.ip, requestId: req.frRequestId },
+        { userId: ctx.user.id, role: userRole(ctx), ip: req.ip, requestId: req.frRequestId },
         params.tenantId,
         reason,
         {

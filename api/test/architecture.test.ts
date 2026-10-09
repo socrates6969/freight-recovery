@@ -63,7 +63,9 @@ describe('architecture', () => {
       for (const spec of imports(f.text)) {
         const target = resolves(f.path, spec);
         if (/src\/db\/system(\.js)?$/u.test(target)) {
-          expect([f.path, inDir(f.path, ['src/auth/', 'src/platform/', 'src/audit/', 'src/db/'])]).toEqual([f.path, true]);
+          // Step 4 carve-outs: the evaluation recorder (the only eval writer) and observability (none expected).
+          const allowed = inDir(f.path, ['src/auth/', 'src/platform/', 'src/audit/', 'src/db/', 'src/observability/']) || f.path === 'src/eval/record.ts';
+          expect([f.path, allowed]).toEqual([f.path, true]);
         }
       }
     }
@@ -174,5 +176,85 @@ describe('architecture', () => {
       }
     }
     expect(webFiles.length).toBeGreaterThan(5);
+  });
+
+  // -------------------------------------------------------------------------------------------
+  // Step 4 guard rails (A1.2, A12.5)
+  // -------------------------------------------------------------------------------------------
+
+  it('platform dashboard modules never touch tenant models or tables (only fr_platform_pipeline_stats)', () => {
+    const platformFiles = files.filter((f) => ['src/platform/pipeline.ts', 'src/platform/flags.ts', 'src/platform/eval-read.ts', 'src/platform/dashboard-routes.ts'].includes(f.path));
+    expect(platformFiles).toHaveLength(4);
+    const tenantModels = /\.(claim|evidencePacket|packetFinding|packetSource|packetTimelineEvent|approval|importDocument|importBatch|extractedField|importReviewDecision|claimDocument|membership|invite|apiKey|tenant)\s*\.(find|count|aggregate|group|create|update|delete|upsert)/u;
+    const tenantTables = /\b(FROM|JOIN|INTO|UPDATE)\s+"?(claims|evidence_packets|packet_findings|packet_sources|approvals|import_documents|import_batches|extracted_fields|claim_documents|memberships|invites|api_keys)\b/iu;
+    for (const f of platformFiles) {
+      expect([f.path, tenantModels.test(f.text)]).toEqual([f.path, false]);
+      expect([f.path, tenantTables.test(f.text)]).toEqual([f.path, false]);
+      expect([f.path, /\bemail\b/u.test(f.text)]).toEqual([f.path, false]);
+    }
+  });
+
+  it('intelligence code reads only through the tenant transaction (no base client, no system mode)', () => {
+    const intel = files.filter((f) => f.path.startsWith('src/intelligence/'));
+    expect(intel.length).toBeGreaterThanOrEqual(4);
+    for (const f of intel) {
+      for (const spec of imports(f.text)) {
+        const target = resolves(f.path, spec);
+        expect([f.path, spec, /db\/(system|client)(\.js)?$/u.test(target) || /generated\/prisma|@prisma\//u.test(spec)]).toEqual([f.path, spec, false]);
+      }
+      expect([f.path, /\b(PrismaClient|BaseClient|withSystemTx|withTenantTx\s*\()\b/u.test(f.text)]).toEqual([f.path, false]);
+    }
+  });
+
+  it('no learning, speed-up or accuracy claims appear in source (honest labeling, Q8)', () => {
+    const FORBIDDEN = [
+      /neural mesh/iu,
+      /hebbian/iu,
+      /solved-problems cache/iu,
+      /ai-powered/iu,
+      /faster than/iu,
+      /\b\d+(\.\d+)?\s*[x\u00d7]\s*faster/iu,
+      /\d+(\.\d+)?\s*%\s*accura/iu,
+      /accura\w*\s*(of|:|=|is)?\s*\d+(\.\d+)?\s*%/iu,
+    ];
+    const roots = [srcRoot, path.join(repoRoot, 'packages', 'shared', 'src'), path.join(repoRoot, 'web', 'src')];
+    let scanned = 0;
+    for (const root of roots) {
+      for (const p of walk(root)) {
+        const text = readFileSync(p, 'utf8');
+        scanned += 1;
+        for (const re of FORBIDDEN) expect([p, re.source, re.test(text)]).toEqual([p, re.source, false]);
+      }
+    }
+    expect(scanned).toBeGreaterThan(50);
+  });
+
+  it('exactly nine routes accept API keys, with the contract scopes (Q13)', () => {
+    const found: string[] = [];
+    const blockRe = /defineRoute\(\w+, \{\s*method: '([A-Z]+)',\s*url: `\$\{P\}([^`]+)`,\s*access: \{([^}]*)\}/gu;
+    for (const f of files) {
+      for (const m of f.text.matchAll(blockRe)) {
+        const scope = /apiKeyScope: '([a-z.]+)'/u.exec(m[3] ?? '');
+        if (scope) found.push(`${m[1]} ${m[2]} ${scope[1]}`);
+      }
+      // Any apiKeyScope must be inside such a recognized block.
+      const total = (f.text.match(/apiKeyScope: '/gu) ?? []).length;
+      const inBlocks = [...f.text.matchAll(blockRe)].filter((m) => /apiKeyScope/u.test(m[3] ?? '')).length;
+      expect([f.path, total]).toEqual([f.path, inBlocks]);
+    }
+    expect(found.sort()).toEqual(
+      [
+        'GET /claims claims.read',
+        'GET /claims/:id claims.read',
+        'GET /claims/:id/documents claims.read',
+        'GET /exports/claims exports.claims',
+        'POST /imports imports.write',
+        'GET /imports imports.write',
+        'GET /imports/:batchId imports.write',
+        'POST /imports/:batchId/documents imports.write',
+        'GET /imports/:batchId/documents/:docId imports.write',
+      ].sort(),
+    );
+    for (const r of found) expect([r, /\/(platform|auth|users|api-keys|audit|flags)\b|approve|send|reject/u.test(r)]).toEqual([r, false]);
   });
 });

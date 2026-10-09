@@ -119,7 +119,7 @@ export function registerExportRoutes(app: FastifyInstance, deps: ImportDeps): vo
   defineRoute(app, {
     method: 'GET',
     url: `${P}/exports/claims`,
-    access: { kind: 'permission', permission: 'export:claims' },
+    access: { kind: 'permission', permission: 'export:claims', apiKeyScope: 'exports.claims' },
     rateGroup: 'export',
     schema: { query: ExportClaimsQuery },
     handler: async (req, reply, { query }) => {
