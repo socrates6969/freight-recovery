@@ -178,6 +178,9 @@ async function resetSeedData(base: BaseClient): Promise<void> {
     await tx.$executeRaw`DELETE FROM packet_sources WHERE tenant_id = ANY(${ids}::uuid[])`;
     await tx.$executeRaw`DELETE FROM evidence_packets WHERE tenant_id = ANY(${ids}::uuid[])`;
     await tx.$executeRaw`DELETE FROM claims WHERE tenant_id = ANY(${ids}::uuid[])`;
+    // Step 4: tenant API keys of the seed tenants/users; flags back to their registry defaults (version 1).
+    await tx.$executeRaw`DELETE FROM api_keys WHERE tenant_id = ANY(${ids}::uuid[]) OR created_by_id = ANY(${userIds}::uuid[]) OR revoked_by_id = ANY(${userIds}::uuid[])`;
+    await tx.$executeRaw`UPDATE feature_flags SET enabled = true, version = 1, updated_by_id = NULL, updated_at = NULL, last_reason = NULL`;
     await tx.$executeRaw`DELETE FROM invites WHERE tenant_id = ANY(${ids}::uuid[]) OR invited_by_id = ANY(${userIds}::uuid[])`;
     await tx.$executeRaw`DELETE FROM memberships WHERE tenant_id = ANY(${ids}::uuid[]) OR user_id = ANY(${userIds}::uuid[])`;
     await tx.$executeRaw`DELETE FROM mfa_recovery_codes WHERE user_id = ANY(${userIds}::uuid[])`;

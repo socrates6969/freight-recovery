@@ -30,6 +30,8 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'ExtractedField',
   'ImportReviewDecision',
   'ClaimDocument',
+  // Step 4: tenant API keys.
+  'ApiKey',
 ]);
 
 const TENANT_READ_OPS: ReadonlySet<string> = new Set(['findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow']);
@@ -148,6 +150,7 @@ export type TenantTx = Pick<
   | 'extractedField'
   | 'importReviewDecision'
   | 'claimDocument'
+  | 'apiKey'
 >;
 
 const RAW = Symbol('fr.rawTx');

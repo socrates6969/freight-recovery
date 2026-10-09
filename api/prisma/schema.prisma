@@ -192,6 +192,7 @@ model Tenant {
   extractedFields ExtractedField[]
   reviewDecisions ImportReviewDecision[]
   claimDocuments  ClaimDocument[]
+  apiKeys         ApiKey[]
 
   @@map("tenants")
 }
@@ -222,6 +223,9 @@ model User {
   fieldsResolved ExtractedField[]       @relation("ExtractedFieldResolvedBy")
   reviewActions  ImportReviewDecision[] @relation("ReviewDecisionActor")
   documentLinks  ClaimDocument[]        @relation("ClaimDocumentLinkedBy")
+  flagChanges    FeatureFlag[]          @relation("FeatureFlagUpdatedBy")
+  apiKeysCreated ApiKey[]               @relation("ApiKeyCreatedBy")
+  apiKeysRevoked ApiKey[]               @relation("ApiKeyRevokedBy")
 
   @@map("users")
 }
@@ -391,6 +395,7 @@ model Claim {
   @@index([tenantId, status])
   @@index([tenantId, updatedAt])
   @@index([tenantId, createdAt])
+  @@index([tenantId, status, updatedAt(sort: Desc), id])
   @@map("claims")
 }
 
@@ -675,4 +680,98 @@ model AuditEvent {
   @@unique([chainKey, seq])
   @@index([tenantId, seq])
   @@map("audit_events")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 4: platform tables (NOT tenant-scoped; RLS FORCE with system-mode policies, see migration
+// 20261010000000) and tenant API keys (tenant-scoped, RLS FORCE).
+// ---------------------------------------------------------------------------------------------
+
+model FeatureFlag {
+  key         String    @id
+  enabled     Boolean
+  version     Int       @default(1)
+  updatedById String?   @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime? @map("updated_at") @db.Timestamptz(3)
+  lastReason  String?   @map("last_reason")
+
+  updatedBy User? @relation("FeatureFlagUpdatedBy", fields: [updatedById], references: [id])
+
+  @@map("feature_flags")
+}
+
+model EvalRun {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  evalSetId            String   @map("eval_set_id")
+  evalSetVersion       String   @map("eval_set_version")
+  evalSetSha256        String   @map("eval_set_sha256") @db.Char(64)
+  stage                String
+  k                    Int
+  startedAt            DateTime @map("started_at") @db.Timestamptz(3)
+  finishedAt           DateTime @map("finished_at") @db.Timestamptz(3)
+  gitSha               String?  @map("git_sha")
+  providerName         String   @map("provider_name")
+  providerVersion      String   @map("provider_version")
+  parserVersion        String   @map("parser_version")
+  caseCount            Int      @map("case_count")
+  runsTotal            Int      @map("runs_total")
+  runsPassed           Int      @map("runs_passed")
+  passHatKCount        Int      @map("pass_hat_k_count")
+  passAtLeastOneCount  Int      @map("pass_at_least_one_count")
+  flakyCaseCount       Int      @map("flaky_case_count")
+  alwaysFailCount      Int      @map("always_fail_count")
+  deterministicCases   Int      @map("deterministic_cases")
+  wilsonLow            Decimal  @map("wilson_low") @db.Decimal(8, 6)
+  wilsonHigh           Decimal  @map("wilson_high") @db.Decimal(8, 6)
+  passPowCurve         Float[]  @map("pass_pow_curve")
+  runMsP50             Float    @map("run_ms_p50")
+  runMsP95             Float    @map("run_ms_p95")
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  results EvalCaseResult[]
+
+  @@index([createdAt])
+  @@map("eval_runs")
+}
+
+model EvalCaseResult {
+  id               String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId            String  @map("run_id") @db.Uuid
+  caseId           String  @map("case_id")
+  category         String
+  runsPassed       Int     @map("runs_passed")
+  k                Int
+  passedAll        Boolean @map("passed_all")
+  distinctOutputs  Int     @map("distinct_outputs")
+  firstFailureCode String? @map("first_failure_code")
+  medianDurationMs Float   @map("median_duration_ms")
+
+  run EvalRun @relation(fields: [runId], references: [id])
+
+  @@unique([runId, caseId])
+  @@map("eval_case_results")
+}
+
+model ApiKey {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenantId     String    @map("tenant_id") @db.Uuid
+  keyId        String    @unique @map("key_id") @db.Char(16)
+  name         String
+  secretHash   String    @map("secret_hash") @db.Char(64)
+  scopes       String[]
+  createdById  String    @map("created_by_id") @db.Uuid
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt    DateTime? @map("expires_at") @db.Timestamptz(3)
+  lastUsedAt   DateTime? @map("last_used_at") @db.Timestamptz(3)
+  revokedAt    DateTime? @map("revoked_at") @db.Timestamptz(3)
+  revokedById  String?   @map("revoked_by_id") @db.Uuid
+  revokeReason String?   @map("revoke_reason")
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id])
+  createdBy User   @relation("ApiKeyCreatedBy", fields: [createdById], references: [id])
+  revokedBy User?  @relation("ApiKeyRevokedBy", fields: [revokedById], references: [id])
+
+  @@unique([id, tenantId])
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@map("api_keys")
 }
