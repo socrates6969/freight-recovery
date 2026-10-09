@@ -6,6 +6,7 @@ import { ApiClient, ApiError } from '../src/api/client';
 import { AppRoot } from '../src/app-root';
 import { createSessionStore } from '../src/auth/session-store';
 import { claimsExportPath } from '../src/features/claims/ClaimsPage';
+import { formatDay } from '../src/lib/format';
 import {
   commitSummary,
   confidenceText,
@@ -236,6 +237,24 @@ describe('import page', () => {
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('File type not supported.'));
   });
 
+  it('fix round 1 (D8): refuses a selection over the batch limit without any request', async () => {
+    const { Xhr, requests } = fakeXhrFactory([]);
+    const posts: string[] = [];
+    const fetchImpl = authed(ALL, (u, init) => {
+      if (init?.method === 'POST') posts.push(u);
+      return undefined;
+    });
+    const user = userEvent.setup();
+    render(<AppRoot fetchImpl={fetchImpl as typeof fetch} xhrImpl={Xhr} initialEntries={['/import']} />);
+    const files = Array.from({ length: 11 }, (_, i) => new File(['x'], `f${i}.txt`, { type: 'text/plain' }));
+    await user.upload(await screen.findByLabelText('Choose files to import'), files);
+    expect(await screen.findByRole('alert')).toHaveTextContent('Select at most 10 files per batch.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Upload failed.');
+    expect(requests).toHaveLength(0);
+    expect(posts).toEqual([]);
+    expect(screen.queryByRole('progressbar')).toBeNull();
+  });
+
   it('hides import navigation and page from users without permission', async () => {
     const fetchImpl = authed(['claims:read'], (u) => (u.startsWith('/api/v1/claims') ? json(200, { items: [], page: 1, pageSize: 25, total: 0 }) : undefined));
     render(<AppRoot fetchImpl={fetchImpl as typeof fetch} initialEntries={['/import']} />);
@@ -388,5 +407,53 @@ describe('exports and claim sheet', () => {
     await user.click(screen.getByRole('tab', { name: 'Documents' }));
     expect(await screen.findByText('b'.repeat(64))).toBeInTheDocument();
     expect(document.querySelector('script, img')).toBeNull();
+  });
+
+  it('fix round 1 (D9): Export packet is disabled and aria-busy while downloading; SQ5 plain invoice day', async () => {
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    let finish: (r: Response) => void = () => undefined;
+    const withPacket = { ...claim, latestPacket: { revision: 1, status: 'PENDING_REVIEW' }, invoiceNumber: 'INV-9', invoiceDate: '2025-03-10T00:00:00.000Z' };
+    const urls: string[] = [];
+    const fetchImpl = authed(ALL, (u) => {
+      if (u.startsWith('/api/v1/exports/packets')) {
+        urls.push(u);
+        return undefined;
+      }
+      if (u === `/api/v1/claims/${U(20)}`) return json(200, withPacket);
+      if (u.startsWith('/api/v1/claims')) return json(200, { items: [withPacket], page: 1, pageSize: 25, total: 1 });
+      return undefined;
+    });
+    const gated = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).startsWith('/api/v1/exports/packets')) {
+        urls.push(String(url));
+        return new Promise<Response>((resolve) => {
+          finish = resolve;
+        });
+      }
+      return fetchImpl(url, init);
+    }) as typeof fetch;
+    const user = userEvent.setup();
+    render(<AppRoot fetchImpl={gated} initialEntries={[`/claims/${U(20)}`]} />);
+    expect(await screen.findByText('2025-03-10')).toBeInTheDocument();
+    const trigger = await screen.findByRole('button', { name: 'Export packet' });
+    expect(trigger).not.toHaveAttribute('aria-busy', 'true');
+    await user.click(trigger);
+    await user.click(screen.getByRole('menuitem', { name: 'Download CSV' }));
+    await waitFor(() => expect(trigger).toHaveAttribute('aria-busy', 'true'));
+    expect(trigger).toBeDisabled();
+    expect(urls[0]).toBe(`/api/v1/exports/packets?format=csv&claimId=${U(20)}`);
+    finish(new Response('a\n', { status: 200 }));
+    await waitFor(() => expect(screen.getAllByRole('status').some((x) => x.textContent === 'Export downloaded')).toBe(true));
+    expect(trigger).toHaveAttribute('aria-busy', 'false');
+    expect(trigger).toBeEnabled();
+  });
+
+  it('SQ5: formatDay renders plain YYYY-MM-DD (UTC)', () => {
+    expect(formatDay('2025-03-10T00:00:00.000Z')).toBe('2025-03-10');
+    expect(formatDay('2025-03-10T23:30:00.000-05:00')).toBe('2025-03-11');
+    expect(formatDay(null)).toBe('\u{2014}');
+    expect(formatDay('nope')).toBe('\u{2014}');
   });
 });

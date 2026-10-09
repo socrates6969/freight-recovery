@@ -211,4 +211,38 @@ describe.skipIf(!canRun)('review, commit and AWAITING_ANALYSIS (PostgreSQL + S3 
     expect(filtered.items.some((i) => i.id === claimId)).toBe(true);
     expect(filtered.items.every((i) => i.status === 'AWAITING_ANALYSIS')).toBe(true);
   });
+
+  it('fix round 1 (D12): load numbers differing only in case and inner whitespace map to one claim', async () => {
+    const tag = unique();
+    const doc = (load: string) => enc(`Document: Rate Confirmation\nLoad Number: ${load}\nLinehaul Rate: 900.00\nNote: ${unique()}\n`);
+    const commitOne = async (load: string) => {
+      const b = await s.batch(analyst);
+      batches.push(b);
+      const up = await s.upload(analyst, b, 'rc.txt', doc(load));
+      expect((up.json() as Detail).status).toBe('ACCEPTED');
+      const r = await post(`/api/v1/imports/${b}/commit`, { perspective: 'CARRIER' }, analyst);
+      expect(r.statusCode, r.body).toBe(200);
+      const res = r.json() as { created: { claimId: string; loadNumber: string }[]; updated: { claimId: string }[] };
+      createdClaims.push(...res.created.map((c) => c.claimId));
+      return res;
+    };
+    const first = await commitOne(`LD  TPV  ${tag}`);
+    expect(first.created).toHaveLength(1);
+    expect(first.created[0]?.loadNumber).toBe(`LD TPV ${tag}`);
+    const second = await commitOne(`ld tpv ${tag.toUpperCase()}`);
+    expect([second.created.length, second.updated.map((u) => u.claimId)]).toEqual([0, [first.created[0]?.claimId]]);
+
+    // A claim stored before this fix with inner whitespace runs is still found (SQL-side normalization).
+    const legacyTag = unique();
+    const legacyId = `00000000-0000-4000-8000-${legacyTag.padEnd(12, '0').slice(0, 12).replace(/[^0-9a-f]/gu, 'b')}`;
+    await admin.query(
+      `INSERT INTO claims (id, tenant_id, claim_number, load_number, carrier_name, shipper_name, perspective, status, amount_claimed_cents,
+         recoverable_cents, pending_review_cents, updated_at)
+       VALUES ($1, $2, $3, $4, '', '', 'CARRIER', 'AWAITING_ANALYSIS', 0, 0, 0, now())`,
+      [legacyId, acmeId, `CLM-LEGACY-${legacyTag}`, `LD   TPV\t${legacyTag}`],
+    );
+    createdClaims.push(legacyId);
+    const third = await commitOne(`ld tpv ${legacyTag}`);
+    expect([third.created.length, third.updated.map((u) => u.claimId)]).toEqual([0, [legacyId]]);
+  });
 });

@@ -21,8 +21,12 @@ describe('upload filename', () => {
     expect(UploadQuery.parse({ filename: 'e\u{301}.txt' }).filename).toBe('\u{e9}.txt');
   });
 
-  it.each(['', 'a\u0000.txt', 'a\nb.txt', 'x\u{202e}fdp.txt', 'a\u{2028}.txt', 'x'.repeat(256)])('rejects %j', (name) => {
+  it.each(['', 'a\u0000.txt', 'a\nb.txt', 'a\u{1b}.txt', 'a\u{7f}.txt', 'a\u{85}.txt', 'a\u{2028}.txt', 'x'.repeat(256)])('rejects %j', (name) => {
     expect(UploadQuery.safeParse({ filename: name }).success).toBe(false);
+  });
+
+  it.each(['x\u{202e}fdp.txt', 'a\u{2066}b\u{2069}.txt', 'z\u{200b}.txt'])('accepts format characters (stripped later) %j', (name) => {
+    expect(UploadQuery.safeParse({ filename: name }).success).toBe(true);
   });
 
   it('rejects unknown query keys and repeated filenames', () => {

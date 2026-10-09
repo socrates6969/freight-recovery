@@ -19,6 +19,7 @@ import {
   DOC_TYPE_TEXT,
   MAX_FILES,
   STATUS_TEXT,
+  TOO_MANY_FILES_TEXT,
   UPLOAD_ERROR_TEXT,
   commitSummary,
   preFilter,
@@ -78,12 +79,17 @@ export function ImportPage() {
     setAlert(null);
     setStatus('');
     const already = rows.filter((r) => r.doc !== null).length;
+    // Fix round 1 (D8): a selection that would exceed the batch limit is refused as a whole, before any
+    // request (no batch is created, nothing is uploaded).
+    if (already + files.length > MAX_FILES) {
+      setAlert(TOO_MANY_FILES_TEXT);
+      return;
+    }
     const queued: { row: Row; file: File }[] = [];
     const added: Row[] = [];
-    files.forEach((file, i) => {
+    files.forEach((file) => {
       const localId = nextId.current++;
-      const tooMany = already + i >= MAX_FILES;
-      const error = tooMany ? UPLOAD_ERROR_TEXT.other : preFilter(file);
+      const error = preFilter(file);
       const row: Row = { localId, name: file.name, progress: error ? null : 0, error, doc: null };
       added.push(row);
       if (!error) queued.push({ row, file });

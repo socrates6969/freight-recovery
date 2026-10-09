@@ -47,6 +47,8 @@ export function preFilter(file: { name: string; size: number }): string | null {
 }
 
 export const MAX_FILES = DEFAULT_IMPORT_MAX_FILES_PER_BATCH;
+/** Shown when a selection would exceed the batch limit; nothing is uploaded (the server enforces it too). */
+export const TOO_MANY_FILES_TEXT = `Upload failed. Select at most ${DEFAULT_IMPORT_MAX_FILES_PER_BATCH} files per batch.`;
 
 export function fieldLabel(key: string): string {
   return FIELD_LABELS[key] ?? key;

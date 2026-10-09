@@ -33,6 +33,9 @@ describe('sniff', () => {
     ['x.pdf.exe', enc('%PDF-1.4'), { ok: false, reason: 'unsupported_type' }],
     ['x.txt', enc('a\u0000b'), { ok: false, reason: 'binary_content' }],
     ['x.txt', enc('a\u000bb'), { ok: false, reason: 'binary_content' }],
+    // SQ2 (leader ruling): DEL 0x7F is binary content too.
+    ['x.csv', enc('a,b\n1,\u{7f}'), { ok: false, reason: 'binary_content' }],
+    ['x.txt', enc('a\u{1b}b'), { ok: false, reason: 'binary_content' }],
     ['x.csv', enc('\u{feff}\n  <SVG onload=x>'), { ok: false, reason: 'markup_content' }],
     ['x.txt', enc('<?php system($_GET[1]);'), { ok: false, reason: 'markup_content' }],
     ['x.txt', enc('Total: 5 <html> later is fine'), { ok: true, detectedType: 'TXT' }],
@@ -56,6 +59,16 @@ describe('displayNameFor', () => {
     ['', 'unnamed'],
     ['\u{202e}', 'unnamed'],
     ['e\u{301}.txt', '\u{e9}.txt'],
+    // Fix round 1 (D1): bidi and other format characters are stripped, not refused.
+    ['invoice\u{202e}fdp.txt', 'invoicefdp.txt'],
+    ['a\u{202e}txt\u{202c}.txt', 'atxt.txt'],
+    ['invoice\u{202e}txt.exe', 'invoicetxt.exe'],
+    ['zw\u{200b}\u{200d}\u{feff}\u{2066}j\u{2069}.csv', 'zwj.csv'],
+    // Fix round 1 (D2): leading/trailing spaces and dots trimmed.
+    ['  .lead and trail.txt  ', 'lead and trail.txt'],
+    ['..a.txt', 'a.txt'],
+    ['a.txt. . ', 'a.txt'],
+    ['...', 'unnamed'],
   ])('%j -> %j', (raw, expected) => {
     expect(displayNameFor(raw)).toBe(expected);
   });

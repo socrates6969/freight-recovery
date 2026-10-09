@@ -24,6 +24,13 @@ export function formatDate(iso: string | null | undefined): string {
   return Number.isNaN(d.getTime()) ? '—' : DATE.format(d);
 }
 
+/** Calendar day as plain YYYY-MM-DD in UTC (leader ruling SQ5: used for invoice dates). */
+export function formatDay(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? '—' : d.toISOString().slice(0, 10);
+}
+
 export const STATUS_LABEL: Record<string, string> = {
   PENDING_REVIEW: 'Pending review',
   APPROVED: 'Approved',

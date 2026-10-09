@@ -11,6 +11,7 @@ import type { ClaimDocumentsResponseDto, CommitResultDto, Perspective } from '@f
 import { cpLength, cpSlice, sanitizeSingleLine } from '@fr/shared';
 
 import { appendAudit } from '../audit/audit.js';
+import { findClaimIdsByLoadKey } from '../db/claim-load-key.js';
 import { nextClaimNumber } from '../db/claim-numbers.js';
 import { isUuid } from '../db/errors.js';
 import { lockImportBatch } from '../db/import-locks.js';
@@ -96,7 +97,9 @@ export async function commitBatch(tx: TenantTx, tenantId: string, batchId: strin
   for (const [key, group] of [...groups.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
     const first = group[0];
     if (!first) continue;
-    const loadNumber = cpLength(first.loadNumber.trim()) > LOAD_MAX ? cpSlice(first.loadNumber.trim(), LOAD_MAX) : first.loadNumber.trim();
+    // Stored form: whitespace runs collapsed and trimmed (case kept); the grouping key is normalizeLoadNumber.
+    const display = first.loadNumber.replace(/\s+/gu, ' ').trim();
+    const loadNumber = cpLength(display) > LOAD_MAX ? cpSlice(display, LOAD_MAX) : display;
     const invoice = group.find((d) => d.docType === 'INVOICE');
     const ratecon = group.find((d) => d.docType === 'RATE_CONFIRMATION');
     const extracted = {
@@ -106,8 +109,11 @@ export async function commitBatch(tx: TenantTx, tenantId: string, batchId: strin
       shipperName: clean(value(invoice, 'invoice.shipper')),
     };
     const documentIds = group.map((d) => d.id);
+    // Same grouping key in the database (NFKC, collapsed whitespace, trimmed, upper case); the exact JS key
+    // check below is the final gate.
+    const keyed = await findClaimIdsByLoadKey(tx, perspective, key);
     const candidates = await tx.claim.findMany({
-      where: { perspective, loadNumber: { equals: loadNumber, mode: 'insensitive' } },
+      where: { perspective, OR: [{ id: { in: keyed } }, { loadNumber: { equals: loadNumber, mode: 'insensitive' } }] },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: { id: true, claimNumber: true, status: true, loadNumber: true, invoiceNumber: true, invoiceDate: true, carrierName: true, shipperName: true },
     });

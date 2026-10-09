@@ -35,6 +35,10 @@ describe('commit helpers', () => {
     expect(normalizeLoadNumber('  ld-5001 ')).toBe('LD-5001');
     expect(normalizeLoadNumber('LD\u{a0} 5001')).toBe('LD 5001');
     expect(normalizeLoadNumber('\u{ff2c}\u{ff24}-1')).toBe('LD-1');
+    // Fix round 1 (D12): inner whitespace runs collapse, so case/spacing variants share one key.
+    const variants = ['LD  TPV  x', 'ld tpv X', ' Ld\tTPV \u{a0}x ', 'LD TPV x'];
+    expect(new Set(variants.map(normalizeLoadNumber))).toEqual(new Set(['LD TPV X']));
+    expect(normalizeLoadNumber('LD TPVX')).not.toBe(normalizeLoadNumber('LD TPV X'));
   });
 
   it('parses invoice dates from ISO, US and ISO-datetime strings only', () => {

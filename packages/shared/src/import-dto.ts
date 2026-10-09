@@ -19,7 +19,6 @@ import {
   REVIEW_ACTIONS,
 } from './import-fields.js';
 import { cpLength } from './text-sanitize.js';
-import { hasUnsafeChars } from './text.js';
 
 export * from './import-fields.js';
 
@@ -47,16 +46,27 @@ export const BatchParams = z.strictObject({ batchId: pathId });
 export const DocParams = z.strictObject({ batchId: pathId, docId: pathId });
 export const FieldParams = z.strictObject({ batchId: pathId, docId: pathId, fieldId: pathId });
 
+/** C0/C1 control characters (incl. NUL and DEL) or U+2028/U+2029. */
+function hasControlCodePoint(v: string): boolean {
+  for (const ch of v) {
+    const c = ch.codePointAt(0) ?? 0;
+    if (c < 0x20 || (c >= 0x7f && c <= 0x9f) || c === 0x2028 || c === 0x2029) return true;
+  }
+  return false;
+}
+
 /**
  * Upload file name (R43 `?filename=`): already percent-decoded once by the query parser; NFC-normalized;
- * 1..255 code points; no control, bidi or NUL characters (400 otherwise).
+ * 1..255 code points; no C0/C1 control, NUL or line/paragraph separator characters (400 otherwise).
+ * Bidi and other format characters (Unicode Cf) are accepted here and stripped by the API's
+ * display-name normalization (they never reach a response, key, header or log).
  */
 export const uploadFilenameSchema = z
   .string()
   .max(4 * DISPLAY_NAME_MAX)
   .transform((v) => v.normalize('NFC'))
   .refine((v) => cpLength(v) >= 1 && cpLength(v) <= DISPLAY_NAME_MAX, { message: 'invalid length' })
-  .refine((v) => !hasUnsafeChars(v) && !/[\u{2028}\u{2029}]/u.test(v), { message: 'unsafe characters' });
+  .refine((v) => !hasControlCodePoint(v), { message: 'control characters' });
 export const UploadQuery = z.strictObject({ filename: uploadFilenameSchema });
 
 export const SetDocTypeBody = z.strictObject({ docType: z.enum(KNOWN_DOC_TYPES) });

@@ -63,6 +63,8 @@ async function runExport(deps: ImportDeps, req: FastifyRequest, reply: FastifyRe
     const hash = createHash('sha256');
     let bytes = 0;
     let rows = 0;
+    /** Rows contained in the chunks already handed to the response (rows serialized when the last chunk was produced). */
+    let rowsWritten = 0;
     const source = plan.format === 'csv' ? csvStream(plan.columns, counting(plan.rows())) : xlsxStream(plan.entity, plan.columns, counting(plan.rows()));
     async function* counting(it: AsyncIterable<Cell[][]>): AsyncGenerator<Cell[][]> {
       for await (const batch of it) {
@@ -74,6 +76,7 @@ async function runExport(deps: ImportDeps, req: FastifyRequest, reply: FastifyRe
       for await (const chunk of source) {
         hash.update(chunk);
         bytes += chunk.byteLength;
+        rowsWritten = rows;
         yield chunk;
       }
     }
@@ -92,7 +95,8 @@ async function runExport(deps: ImportDeps, req: FastifyRequest, reply: FastifyRe
       done();
       if (!finished) {
         body.destroy();
-        void appendLater('export.aborted', { rowCount: rows, byteLength: bytes });
+        // rowCount / rowsWritten: rows actually handed to the client before the abort; plannedRowCount: the total.
+        void appendLater('export.aborted', { rowCount: rowsWritten, rowsWritten, plannedRowCount: rowCount, byteLength: bytes });
       }
     });
     body.once('error', () => {

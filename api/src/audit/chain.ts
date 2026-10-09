@@ -146,6 +146,8 @@ const METADATA_KEYS = new Set([
   'entity',
   'format',
   'rowCount',
+  'rowsWritten',
+  'plannedRowCount',
   'byteLength',
   'sha256',
   'durationMs',

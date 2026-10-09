@@ -5,6 +5,8 @@
  * whose SHA-256 equals the hash of the downloaded bytes.
  */
 import { createHash } from 'node:crypto';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 
 import type { FastifyInstance } from 'fastify';
 import { strFromU8, unzipSync } from 'fflate';
@@ -145,6 +147,8 @@ describe.skipIf(!appUrl || !adminUrl)('exports R54-R56 (PostgreSQL)', () => {
       for (const i of [8, 9, 10]) expect([row.cells[i], row.quoted[i], /^-?\d+\.\d{2}$/u.test(row.cells[i] ?? '')]).toEqual([row.cells[i], false, true]);
       for (const c of row.cells) expect([c, FORMULA_START.test(c)]).toEqual([c, false]);
       expect(row.cells[0]?.startsWith('GLX-')).toBe(false);
+      // SQ5: invoice dates are plain calendar days.
+      expect([row.cells[3], /^(\d{4}-\d{2}-\d{2})?$/u.test(row.cells[3] ?? '')]).toEqual([row.cells[3], true]);
     }
     const ordered = data.map((x) => x.cells[14] ?? '');
     expect([...ordered].sort().reverse()).toEqual(ordered);
@@ -235,6 +239,57 @@ describe.skipIf(!appUrl || !adminUrl)('exports R54-R56 (PostgreSQL)', () => {
     expect(rows.slice(1).every((x) => x.cells[2] === 'APPROVE' || x.cells[2] === 'SEND_READY')).toBe(true);
     const none = await get('/api/v1/exports/outcomes?format=csv&from=2000-01-01&to=2000-01-02', 'reviewer');
     expect(parseCsv(new TextDecoder().decode(none.rawPayload.subarray(3)))).toHaveLength(1);
+  });
+
+  it('fix round 1 (D11): a client disconnect audits export.aborted with rowsWritten < planned rows', async () => {
+    const total = 20000;
+    await admin.query(
+      `INSERT INTO claims (id, tenant_id, claim_number, load_number, carrier_name, shipper_name, perspective, status, amount_claimed_cents,
+         recoverable_cents, pending_review_cents, updated_at)
+       SELECT ('00000000-0000-4000-8000-' || lpad(to_hex(g), 12, '0'))::uuid, $1, 'CLM-ABORT-' || g, 'LD-ABORT-' || g,
+              'Carrier ' || g, 'Shipper ' || g, 'SHIPPER', 'AWAITING_ANALYSIS', 100, 0, 0, now()
+       FROM generate_series(1, $2::int) AS g`,
+      [acmeId, total],
+    );
+    const live = await buildApp(baseEnv());
+    try {
+      await live.listen({ host: '127.0.0.1', port: 0 });
+      const ss = new Session(live);
+      await ss.init();
+      const t = await ss.login('analyst@acme.test');
+      const port = (live.server.address() as AddressInfo).port;
+      const firstChunk = await new Promise<number>((resolve, reject) => {
+        const req = http.get({ host: '127.0.0.1', port, path: '/api/v1/exports/claims?format=csv', headers: ss.headers(t) }, (res) => {
+          if (res.statusCode !== 200) reject(new Error(`status ${String(res.statusCode)}`));
+          res.once('data', (c: Buffer) => {
+            req.destroy();
+            resolve(c.length);
+          });
+        });
+        req.on('error', () => undefined);
+      });
+      expect(firstChunk).toBeGreaterThan(0);
+      let aborted: Record<string, unknown> | undefined;
+      for (let i = 0; i < 50 && !aborted; i += 1) {
+        await new Promise((r) => setTimeout(r, 100));
+        aborted = (
+          await admin.query<{ metadata: Record<string, unknown> }>(
+            `SELECT metadata FROM audit_events WHERE tenant_id = $1 AND action = 'export.aborted' AND metadata->>'entity' = 'claims' ORDER BY seq DESC LIMIT 1`,
+            [acmeId],
+          )
+        ).rows[0]?.metadata;
+      }
+      expect(aborted).toBeDefined();
+      const m = aborted ?? {};
+      expect(typeof m['rowsWritten']).toBe('number');
+      expect(m['rowCount']).toBe(m['rowsWritten']);
+      expect(Number(m['plannedRowCount'])).toBeGreaterThanOrEqual(total);
+      expect(Number(m['rowsWritten'])).toBeLessThan(Number(m['plannedRowCount']));
+      expect(Number(m['byteLength'])).toBeGreaterThan(0);
+    } finally {
+      await live.close();
+      await admin.query(`DELETE FROM claims WHERE tenant_id = $1 AND claim_number LIKE 'CLM-ABORT-%'`, [acmeId]);
+    }
   });
 
   it('EXPORT_MAX_ROWS is checked before the first byte (422 export_too_large)', async () => {

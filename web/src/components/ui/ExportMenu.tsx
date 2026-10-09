@@ -58,7 +58,15 @@ export function ExportMenu({ label, pathFor, fallbackName }: { label: string; pa
 
   return (
     <div ref={ref} className="relative inline-flex flex-col items-end gap-1">
-      <button type="button" className="btn" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button
+        type="button"
+        className="btn"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-busy={busy !== null}
+        disabled={busy !== null}
+        onClick={() => setOpen((o) => !o)}
+      >
         <Download size={16} aria-hidden="true" />
         {label}
       </button>

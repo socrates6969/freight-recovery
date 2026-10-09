@@ -48,6 +48,8 @@ export function keysetAfter(field: ClaimSortField, dir: Dir, value: unknown, id:
 }
 
 const iso = (d: Date | null | undefined) => (d ? d.toISOString() : null);
+/** Calendar day (UTC) as plain YYYY-MM-DD (leader ruling SQ5: invoice dates are dates, not instants). */
+const day = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : null);
 const s = (v: string | null | undefined): Cell => ({ t: 's', v: v ?? null });
 const money = (cents: number): Cell => ({ t: 'n', v: formatCents(cents), money: true });
 const int = (n: number | null | undefined): Cell => ({ t: 'n', v: n === null || n === undefined ? null : String(n) });
@@ -60,7 +62,7 @@ export const CLAIM_COLUMNS: Column[] = [
   { header: 'Claim Number', width: 16 },
   { header: 'Load Number', width: 16 },
   { header: 'Invoice Number', width: 16 },
-  { header: 'Invoice Date', width: 24 },
+  { header: 'Invoice Date', width: 12 },
   { header: 'Carrier', width: 24 },
   { header: 'Shipper', width: 24 },
   { header: 'Perspective', width: 12 },
@@ -105,7 +107,7 @@ export async function* claimRows(db: TenantDb, q: ClaimExportQuery): AsyncGenera
         s(c.claimNumber),
         s(c.loadNumber),
         s(c.invoiceNumber),
-        s(iso(c.invoiceDate)),
+        s(day(c.invoiceDate)),
         s(c.carrierName),
         s(c.shipperName),
         s(c.perspective),

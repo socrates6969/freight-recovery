@@ -9,7 +9,7 @@ import { useApi, useCan, useSession, useToast } from '../../app-context';
 import { ExportMenu } from '../../components/ui/ExportMenu';
 import { SafeText } from '../../components/ui/SafeText';
 import { useFocusTrap } from '../../components/ui/use-focus-trap';
-import { formatDate, formatDateTime, formatUsdCents, STATUS_LABEL } from '../../lib/format';
+import { formatDateTime, formatDay, formatUsdCents, STATUS_LABEL } from '../../lib/format';
 
 const TABS = ['Summary', 'Evidence', 'History', 'Documents'] as const;
 export const NO_PACKET_TEXT = 'No evidence packet yet. Analysis has not run for this claim.';
@@ -290,7 +290,7 @@ export function ClaimSheet() {
                       <SafeText value={c.loadNumber ?? '—'} />
                     </Field>
                     <Field label="Invoice">
-                      <SafeText value={c.invoiceNumber ?? '—'} /> <span className="muted">{formatDate(c.invoiceDate)}</span>
+                      <SafeText value={c.invoiceNumber ?? '—'} /> <span className="muted">{formatDay(c.invoiceDate)}</span>
                     </Field>
                     <Field label="Carrier">
                       <SafeText value={c.carrierName} />

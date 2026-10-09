@@ -12,6 +12,7 @@
  * with `\n`. Registered divergence D2: a different engine than the Python reference (pdfplumber), so
  * parity is claimed only for simple single-column text-layer PDFs.
  */
+import { PDF_PAGE_TREE_SLACK, prescanPdf } from './pdf-prescan.js';
 import { cpLength } from './text.js';
 import { ParseRejection } from './types.js';
 
@@ -92,11 +93,14 @@ async function loadPdfjs(): Promise<PdfjsModule> {
 }
 
 /**
- * Extract the text layer. Rejections: encrypted (password) -> encrypted_pdf; more pages than allowed
- * (checked before any page text is read) -> too_many_pages; extracted characters over the cap ->
- * text_too_large; anything else -> malformed_pdf.
+ * Extract the text layer. The structural pre-scan runs first (pdf-prescan.ts: filter chains,
+ * decompression caps, xref loops, page-tree size, text upper bound incl. off-page text). Rejections:
+ * encrypted (password) -> encrypted_pdf; zero pages or a page tree larger than the page count allows ->
+ * malformed_pdf; more pages than allowed (checked before any page text is read) -> too_many_pages;
+ * text over the cap -> text_too_large; anything else -> malformed_pdf.
  */
 export async function pdfToText(bytes: Uint8Array, limits: { pdfPages: number; textChars: number }, deadlineMs?: number): Promise<PdfText> {
+  const scan = prescanPdf(bytes, limits);
   const pdfjs = await loadPdfjs();
   const task = pdfjs.getDocument({
     data: new Uint8Array(bytes),
@@ -121,7 +125,9 @@ export async function pdfToText(bytes: Uint8Array, limits: { pdfPages: number; t
     } catch (e) {
       throw new ParseRejection((e as { name?: string }).name === 'PasswordException' ? 'encrypted_pdf' : 'malformed_pdf');
     }
+    if (!Number.isSafeInteger(doc.numPages) || doc.numPages < 1) throw new ParseRejection('malformed_pdf');
     if (doc.numPages > limits.pdfPages) throw new ParseRejection('too_many_pages');
+    if (scan.pageTreeNodes > doc.numPages + PDF_PAGE_TREE_SLACK) throw new ParseRejection('malformed_pdf');
     const pages: string[] = [];
     let total = 0;
     for (let n = 1; n <= doc.numPages; n += 1) {

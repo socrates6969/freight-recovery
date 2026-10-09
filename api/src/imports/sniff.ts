@@ -47,8 +47,9 @@ export function lastExtension(name: string): string {
   return dot === -1 ? '' : name.slice(dot).toLowerCase();
 }
 
+/** C0 controls except HT, LF, CR, FF, plus DEL (0x7F; leader ruling SQ2). */
 function isBinaryControl(byte: number): boolean {
-  return (byte < 0x20 && byte !== 0x09 && byte !== 0x0a && byte !== 0x0d && byte !== 0x0c) || byte === 0x00;
+  return (byte < 0x20 && byte !== 0x09 && byte !== 0x0a && byte !== 0x0d && byte !== 0x0c) || byte === 0x7f;
 }
 
 function looksLikeMarkup(b: Uint8Array): boolean {

@@ -160,7 +160,8 @@ describe.skipIf(!canRun)('imports R40-R45 (PostgreSQL + S3 + sandbox)', () => {
     const big = await s.upload(analyst, b, 'big.txt', new Uint8Array(200_001).fill(0x61));
     expect(big.statusCode).toBe(413);
     expect(big.headers['connection']).toBe('close');
-    for (const bad of ['', 'a\u0000.txt', 'x\u{202e}txt.exe', 'a'.repeat(256)]) {
+    // Fix round 1 (D1): bidi/format characters are stripped (see the D1 test); controls stay 400.
+    for (const bad of ['', 'a\u0000.txt', 'a\u{1b}.txt', 'a'.repeat(256)]) {
       const r = await app.inject({
         method: 'POST',
         url: `/api/v1/imports/${b}/documents?filename=${encodeURIComponent(bad)}`,
@@ -226,6 +227,40 @@ describe.skipIf(!canRun)('imports R40-R45 (PostgreSQL + S3 + sandbox)', () => {
       expect([q.statusCode, (q.json() as { error: { code: string } }).error.code]).toEqual([422, 'quota_exceeded']);
     } finally {
       await tiny.close();
+    }
+  });
+
+  it('fix round 1 (D1/D2): format characters in ?filename= are stripped; controls stay 400', async () => {
+    const b = await newBatch();
+    const bidi = await s.upload(analyst, b, 'invoice\u{202e}fdp.txt', enc(`Load: ${unique()}`));
+    expect(bidi.statusCode).toBe(201);
+    expect((bidi.json() as { displayName: string }).displayName).toBe('invoicefdp.txt');
+    const exe = await s.upload(analyst, b, 'invoice\u{202e}txt.exe', enc('hello'));
+    expect([exe.statusCode, (exe.json() as { error: { details: { code: string }[] } }).error.details[0]?.code]).toEqual([415, 'unsupported_type']);
+    const dots = await s.upload(analyst, b, '  .lead and trail.txt  ', enc(`Load: ${unique()}`));
+    expect((dots.json() as { displayName: string }).displayName).toBe('lead and trail.txt');
+    const ctl = await s.upload(analyst, b, 'a\u{1b}.txt', enc('x'));
+    expect(ctl.statusCode).toBe(400);
+  });
+
+  it('SQ6: RATE_LIMIT_ENABLED=false disables the per-user upload limiter (enabled: 429)', async () => {
+    for (const [enabled, expected] of [
+      ['false', [201, 201, 201]],
+      ['true', [201, 429, 429]],
+    ] as const) {
+      const limited = await buildApp(baseEnv({ RATE_LIMIT_ENABLED: enabled, RATE_LIMIT_UPLOAD_MAX: '1', RATE_LIMIT_GLOBAL_MAX: '100000' }));
+      try {
+        const ss = new Session(limited);
+        await ss.init();
+        const t = await ss.login('analyst@acme.test');
+        const b = await ss.batch(t);
+        batches.push(b);
+        const codes: number[] = [];
+        for (let i = 0; i < 3; i += 1) codes.push((await ss.upload(t, b, `r${i}.txt`, enc(`Load: ${unique()}`))).statusCode);
+        expect([enabled, codes]).toEqual([enabled, expected]);
+      } finally {
+        await limited.close();
+      }
     }
   });
 

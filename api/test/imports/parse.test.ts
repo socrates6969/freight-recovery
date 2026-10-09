@@ -333,7 +333,11 @@ describe('images (structure only)', () => {
         return e instanceof ParseRejection ? e.reason : 'other';
       }
     };
-    expect(reason(() => validatePng(png(2, 3, Uint8Array.from([0])), 100))).toBe('trailing_data');
+    // Fix round 1 (D3): up to 16 zero padding bytes after IEND are tolerated (as for JPEG).
+    expect(validatePng(png(2, 3, Uint8Array.from([0])), 100)).toEqual({ width: 2, height: 3 });
+    expect(validatePng(png(2, 3, new Uint8Array(16)), 100)).toEqual({ width: 2, height: 3 });
+    expect(reason(() => validatePng(png(2, 3, new Uint8Array(17)), 100))).toBe('trailing_data');
+    expect(reason(() => validatePng(png(2, 3, Uint8Array.from([0, 1])), 100))).toBe('trailing_data');
     const bad = png(2, 3);
     bad[20] = (bad[20] ?? 0) ^ 1;
     expect(reason(() => validatePng(bad, 100))).toBe('malformed_image');

@@ -1,6 +1,6 @@
 /**
  * Image structure validation (A5.6). No pixel decoding: PNG chunk walk with CRC-32 verification and
- * JPEG marker walk, dimension/pixel limits, and no trailing data. Images yield no fields (D8: no OCR).
+ * JPEG marker walk, dimension/pixel limits, and no trailing data beyond <= 16 zero padding bytes. Images yield no fields (D8: no OCR).
  */
 import { crc32 } from 'node:zlib';
 
@@ -9,7 +9,12 @@ import { ParseRejection } from './types.js';
 export const MAX_IMAGE_DIMENSION = 20000;
 export const MAX_PNG_CHUNKS = 10_000;
 export const MAX_JPEG_MARKERS = 100_000;
-const JPEG_MAX_TRAILING = 16;
+/** Zero padding tolerated after IEND / EOI (some encoders pad to a block size); anything else is rejected. */
+const MAX_ZERO_PADDING = 16;
+
+function checkTrailing(trailing: Uint8Array): void {
+  if (trailing.length > MAX_ZERO_PADDING || trailing.some((x) => x !== 0)) throw new ParseRejection('trailing_data');
+}
 
 const PNG_SIG = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 /** Valid PNG (colorType -> bit depths). */
@@ -68,7 +73,7 @@ export function validatePng(b: Uint8Array, maxPixels: number): ImageInfo {
     pos += 12 + length;
     if (type === 'IEND') {
       if (length !== 0 || !sawIdat || !info) throw new ParseRejection('malformed_image');
-      if (pos !== b.length) throw new ParseRejection('trailing_data');
+      checkTrailing(b.subarray(pos));
       return info;
     }
   }
@@ -91,8 +96,7 @@ export function validateJpeg(b: Uint8Array, maxPixels: number): ImageInfo {
     if (marker === 0x00 || marker === 0xd8) throw new ParseRejection('malformed_image');
     if (marker === 0xd9) {
       if (!info || !sawSos) throw new ParseRejection('malformed_image');
-      const trailing = b.subarray(pos);
-      if (trailing.length > JPEG_MAX_TRAILING || trailing.some((x) => x !== 0)) throw new ParseRejection('trailing_data');
+      checkTrailing(b.subarray(pos));
       return info;
     }
     if ((marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) continue;
