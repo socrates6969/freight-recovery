@@ -81,7 +81,10 @@ en roterende refresh-informasjonskapsel, TOTP-MFA, utestenging), RBAC for 8 roll
 tre lag, applikasjonsherding, et hashkjedet revisjonsspor som bare kan utvides, kravlisten, visningen av
 bevispakken og godkjenningsporten med menneske i løkken. Steg 3 (import og eksport) er beskrevet i
 et eget avsnitt nedenfor: [Nettplattform: import og eksport (steg 3)](#nettplattform-import-og-eksport-steg-3).
-Utviklerdashbordet, AI-funksjoner og TS-porten av Python-reglene er senere steg. Krav og pakker seedes fra Python-CLI-ens
+Steg 4 (utviklerdashbord, Recovery intelligence, API-nøkler for tenanter og evalueringsverktøyet) har
+også et eget avsnitt:
+[Nettplattform: utviklerdashbord, Recovery intelligence og API-nøkler (steg 4)](#nettplattform-utviklerdashbord-recovery-intelligence-og-api-nøkler-steg-4).
+TS-porten av Python-reglene er et senere steg (steg 5). Det finnes ingen lært modell og ingen LLM-kall. Krav og pakker seedes fra Python-CLI-ens
 utdata på `tests/fixtures/` (syntetisk).
 
 ## Modulstruktur
@@ -268,8 +271,11 @@ hver forespørsel. Nettappen importerer de samme frosne dataene bare for å skju
 | `export:packets`, `export:outcomes` (steg 3) | x | x | x | x | | | | |
 | `users:read`, `users:manage`, `audit:read`, `settings:manage`, `integrations:manage` | x | x | | | | | | |
 | `admins:manage`, `billing:manage`, `tenant:delete` | x | | | | | | | |
-| `platform:health` | | | | | | | x | x |
+| `apikeys:manage` (steg 4: opprette, liste og tilbakekalle tenantenes API-nøkler) | x | x | | | | | | |
+| `platform:health` (steg 4: også pipelinehelse og telemetri) | | | | | | | x | x |
 | `platform:flags`, `platform:logs` | | | | | | | x | |
+| `platform:eval` (steg 4: evalueringskjøringer) | | | | | | | x | |
+| `platform:audit` (steg 4: plattformens revisjonskjede) | | | | | | | | x |
 | `platform:tenants:list`, `platform:cross_tenant_read` | | | | | | | | x |
 
 Plattformroller har ingen tenant og ingen tillatelse til tenant-data. En SUPER_ADMIN-lesing på tvers av
@@ -754,5 +760,395 @@ MinIO med KMS og Python for paritet.
   nettverksglobalene i stedet), og WAF-regelen for Content-Length har et eget unntak for
   opplastingsruten.
 - Samtidighetsgrensene (opplasting, eksport, parseplasser) gjelder per API-instans, ikke distribuert.
+- Ikke verifisert: container-images, compose-stacken, Playwright-ende-til-ende-tester, enhver
+  AWS-utrulling.
+
+---
+
+# Nettplattform: utviklerdashbord, Recovery intelligence og API-nøkler (steg 4)
+
+> Skrevet av scriber for kjøringen `REQ-20261009-step4-intelligence` 2026-10-09 (grenen
+> `feat/intelligence`). **Før produkt, kun syntetiske data, aldri utrullet.** Trusselradene for dette
+> steget er T32-T45 i [technical/web-platform-security.md](technical/web-platform-security.md) (engelsk).
+> Alle hemmeligheter står i [docs/secrets.no.md](docs/secrets.no.md). Beskrivelse for brukere:
+> [README.no.md, steg 4](README.no.md#utviklerdashbord-recovery-intelligence-og-api-nøkler-steg-4).
+> Mermaid-diagrammene er de samme som i den engelske originalen
+> ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-dev-dashboard-recovery-intelligence-and-api-keys-step-4)).
+
+## Oversikt (steg 4)
+
+Steg 4 legger fire ting oppå steg 1-3:
+
+1. **Utviklerdashbord** (`/dev`, rutene R60-R68) for `PLATFORM_DEV` og `SUPER_ADMIN`: pipelinehelse
+   aggregert over alle tenanter, telemetri for forespørsler og en filtrert loggvisning fra API-instansen
+   som svarer, funksjonsflagg, skrivebeskyttede evalueringskjøringer og plattformens revisjonskjede.
+   Plattformsvar inneholder bare aggregater og telemetri.
+2. **Recovery intelligence** (rutene R70-R73) for tenantbrukere: en prioritert arbeidsliste
+   (`priority-v1`), lignende tidligere krav (`similar-v1`) og et sammendrag av proveniens per krav. Alle
+   tre er deterministiske funksjoner av lagrede kolonner i innringerens egen tenant.
+3. **API-nøkler for tenanter** (rutene R80-R82 pluss en vei for maskinautentisering): HMAC-hashet, vist
+   én gang, tre omfang over nøyaktig ni ruter som har valgt å godta nøkler.
+4. **Evalueringsverktøy** (`api/src/eval/`, et kommandolinjeprogram): pass^k over det syntetiske settet
+   `api/eval/sets/extraction-v1`, kjørt gjennom den ekte sandkasseparsingen; den eneste som skriver
+   evalueringsdata.
+
+Bindende regel for alt sammen (**regelen om ærlig merking**): ingenting vises som ikke er beregnet fra data
+systemet har ved forespørselen eller registrert av et måleverktøy, hvert tall oppgir grunnlaget sitt, og
+ingen påstand om treffsikkerhet, hastighetsgevinst, læring eller «AI» forekommer. De faste tekstene ligger
+i `packages/shared/src/honest-copy.ts`; brukergrensesnittet viser dem ordrett. En arkitekturtest stopper
+byggingen hvis strengene «neural mesh», «Hebbian», «solved-problems cache», «AI-powered», «faster than»
+eller et mønster «Nx faster» forekommer i `api/src`, `packages/shared/src` eller `web/src`.
+
+## Begreper i briefen mot det som er bygget
+
+Produktbriefen bruker ord som denne koden **ikke** implementerer. Ingenting av det følgende finnes i
+repoet, og ingen tall fra briefen er målt:
+
+| Begrep i briefen | Status | Hva som er bygget i stedet (ærlig motsvar) |
+| --- | --- | --- |
+| «Hebbian router» (rangerer krav/ruter etter forventet innkrevbar verdi) | **Ikke implementert.** En Hebbian eller annen lært rangering trenger registrerte innkrevingsutfall (betalt, delvis betalt, avslått), og slike finnes ikke. Ruter (lanes) er ikke modellert. | `priority-v1`: en fast formel `recoverable + floor(pending_review * W / 100)` med W = 25 % som uttalt policy, eksplisitte regler ved likhet og en «hvorfor»-liste per rad. Ikke kalt «forventet verdi» (det finnes ingen sannsynligheter). |
+| «Neural mesh» (panel / målinger) | **Ikke implementert.** Produktet har ingen nevral komponent. (`src/freight_recovery/forecast/neural.py` er valgfritt, uvalidert veikartstillas for Python-tjenesten og er ikke koblet til noe.) | Tabellen «Intelligence components» på Telemetry-fanen: de to komponentene `priority-v1` og `similar-v1` med målte kall, feil, varighetsgrenser og antall kandidater fra ekte forespørsler, merket Method «Fixed rules» og Learned model «None». |
+| «Solved-problems cache» med «~250x» | **Ikke implementert.** Det finnes ingen cache av noe slag, og tallet ~250x er aldri målt. «Vinnende bevismønster» ville kreve utfall som ikke finnes. | `similar-v1`: forklarbar heltallslikhet (samme transportør 35, felles regler opptil 40, lignende beløp opptil 15, samme perspektiv 10; anker påkrevd; minimum 30) over tenantens egne avgjorte krav, som viser hvordan teamet behandlet hvert av dem. Den viser den målte `computeMs` for den ene forespørselen og ingenting som ligner et forhold for hastighetsgevinst. |
+| «AI-uttrekk med proveniens» | Finnes siden steg 3 som **deterministisk, regelbasert** uttrekk med kildepekere (ingen LLM). | Steg 4 legger til proveniens-sammendraget per krav (antall felt per gjennomgangsstatus, laveste regelbaserte konfidens). |
+| «pass^k-målinger» | **Bygget, bare på syntetiske testdata.** | Evalueringsverktøyet og den skrivebeskyttede Evaluation-fanen. Med denne deterministiske pipelinen er pass^k lik pass^1, og brukergrensesnittet sier det. Presenteres aldri som treffsikkerhet på kundedokumenter. |
+
+Hva en lært rangering ville trenge (utsatt, kun design): registrerte utfall per krav; en offline
+sammenligning mot `priority-v1` på en holdt-ut periode med en forhåndsregistrert måleverdi (for eksempel
+innkrevde dollar ved fast gjennomgangskapasitet) og et intervall; og lansering bare bak et nytt flagg hvis
+den slår den faste formelen med et intervall som ikke inneholder null. Sømmen er det rene paret
+`scoreClaim`/`compareWorklist` pluss feltet `formula.version`.
+
+## Modulstruktur (steg 4)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/ (SPA)"]
+        WD["features/dev (6 tabs)"]
+        WI["features/intelligence"]
+        WK["features/apikeys"]
+        WC["api/client (strict parse)"]
+    end
+
+    subgraph Shared["packages/shared"]
+        SR["rbac (+3 permissions)"]
+        SF["feature-flags registry"]
+        SH["honest-copy texts"]
+        SE["eval-stats computePassStats"]
+        SD["platform/intel/key DTOs"]
+    end
+
+    subgraph Http["api/src/http + auth"]
+        SP["security.ts pipeline"]
+        AK["auth/api-key-auth.ts"]
+    end
+
+    subgraph Plat["api/src/platform"]
+        PR["dashboard-routes R60-R68"]
+        FS["flags.ts FlagService"]
+        PP["pipeline.ts + eval-read"]
+    end
+
+    subgraph Intel["api/src/intelligence"]
+        IR["routes R70-R73"]
+        IS["service.ts"]
+        PRI["priority.ts (pure)"]
+        SIM["similarity.ts (pure)"]
+    end
+
+    subgraph Keys["api/src/apikeys"]
+        KR["routes R80-R82"]
+        KM["key-material HMAC"]
+    end
+
+    subgraph Obs["api/src/observability"]
+        MR["metrics.ts registry"]
+        RB["ring-buffer.ts"]
+    end
+
+    subgraph Data["db + eval"]
+        DI["db/intelligence.ts SQL"]
+        DS["db/system.ts stats fn"]
+        EV["eval CLI + record"]
+    end
+
+    WD --> WC
+    WI --> WC
+    WK --> WC
+    WC --> SD
+    WC --> SP
+    SP --> AK
+    AK --> KM
+    SP --> PR
+    SP --> IR
+    SP --> KR
+    PR --> FS
+    PR --> PP
+    PR --> MR
+    PR --> RB
+    PP --> DS
+    IR --> FS
+    IR --> IS
+    IS --> PRI
+    IS --> SIM
+    IS --> DI
+    KR --> KM
+    EV --> SE
+    PP --> SE
+    FS --> SF
+    WI --> SH
+
+    style AK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style KM fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PRI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SIM fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+> Alt i dette diagrammet er nytt eller endret i steg 4. Blått markerer de sikkerhetsrelevante modulene
+> (nøkkelautentisering, hashing av nøkler, flaggbufferen, avledning av logger, aggregatfunksjonen på tvers
+> av tenanter) og de to poengkjernene.
+
+### Modulreferanse (steg 4)
+
+| Modul / fil | Lag | Formål | Viktige eksporter | Endret |
+| --- | --- | --- | --- | --- |
+| `packages/shared/src/rbac.ts` | Shared | Legger til `platform:eval` (PLATFORM_DEV), `platform:audit` (SUPER_ADMIN), `apikeys:manage` (OWNER, ADMIN) | `PERMISSION_MATRIX`, `can` | endret |
+| `packages/shared/src/feature-flags.ts` | Shared | Flaggregisteret: nøyaktig `intelligence.provenance`, `intelligence.similar_claims`, `intelligence.worklist` (arkitekturtest) | `FEATURE_FLAGS`, `isKnownFlag` | ny |
+| `packages/shared/src/honest-copy.ts` | Shared | De faste, ærlige tekstene (merknader for arbeidsliste, lignende krav, proveniens, ingen treffsikkerhet, evaluering, telemetri, logger, pipeline) | `WORKLIST_NOTE`, `worklistNote`, `EVAL_NOTE`, ... | ny |
+| `packages/shared/src/eval-stats.ts` | Shared | pass^k-statistikk: andel per kjøring, pass^k, forventningsrett pass^j-kurve, ustabile saker, Wilson 95 %-intervall (z = 1,959964) | `computePassStats`, `binomial`, `wilsonInterval` | ny |
+| `packages/shared/src/{platform,intelligence,api-key}-dto.ts` | Shared | Strenge Zod-skjemaer for hver forespørsel og hvert svar i steg 4; både nettklienten og API-et parser med dem | skjemaer, `API_KEY_SCOPES`, `SCOPE_PERMISSION` | ny |
+| `api/src/http/security.ts`, `http/route.ts`, `http/context.ts` | API | URL-vakt (`fr_live_` i en URL = 400), nøkkelgrenen i forhåndsbehandleren, `apiKeyScope` på rutetilgang, `RequestCtx.role = 'API_KEY'` med `viaApiKey` | `registerSecurityPipeline`, `defineRoute` | endret |
+| `api/src/auth/api-key-auth.ts` | API | Maskinautentisering: feilport per IP, format, oppslag, HMAC-sammenligning med konstant tid, tilstandskontroller, rute- og omfangskontroll, ny kontroll av skaperen, grense per nøkkel, kontekst | `ApiKeyAuthenticator`, `FailureGate` | ny |
+| `api/src/apikeys/{key-material,service,routes}.ts` | API | Nøkkelgenerering (`randomBytes`), HMAC-SHA-256 med pepperen, kvote under en tenantlås, R80-R82 | `generateKey`, `verifySecret`, `createApiKey`, `revokeApiKey` | ny |
+| `api/src/audit/attribution.ts` | API | Legger til `viaApiKey` og aktørrollen `API_KEY` sentralt i `appendAudit` for nøkkelautentiserte forespørsler (DV-7) | `registerApiKeyRequest`, `apiKeyFor` | ny |
+| `api/src/platform/dashboard-routes.ts` | API | R60-R68: plattformlesinger med revisjonsspor, strenge utgående skjemaer (`strictBody`), rategruppen `platform` | `registerPlatformDashboardRoutes` | ny |
+| `api/src/platform/flags.ts` | API | `FlagService`: buffer med TTL per instans, feiler lukket, radlås + optimistisk versjon + revisjonsspor i én systemtransaksjon | `FlagService`, `validFlagReason` | ny |
+| `api/src/platform/pipeline.ts`, `eval-read.ts` | API | Setter sammen `PipelineHealth` fra SQL-funksjonen (nullutfylling, andeler); leser evalueringskjøringer | `assemblePipelineHealth`, `listEvalRuns`, `getEvalRun` | ny |
+| `api/src/intelligence/priority.ts` | Kjerne | `priority-v1`: poeng, rekkefølge med 4 nøkler, «hvorfor»-tekster, neste handling (ren, heltall i cent) | `scoreClaim`, `compareWorklist`, `buildWhy`, `nextAction` | ny |
+| `api/src/intelligence/similarity.ts` | Kjerne | `similar-v1`: normalisering av transportør, poeng, regel for inkludering, rangering (ren) | `scoreSimilarity`, `rankSimilar`, `normalizeCarrier` | ny |
+| `api/src/intelligence/{service,routes}.ts` | API | R70-R73: flaggkontroll først (av = 404), lesing i tenanttransaksjonen, komponenttelemetri, revisjonshendelsen `intelligence.viewed` | `buildWorklist`, `findSimilar`, `provenanceFor` | ny |
+| `api/src/db/intelligence.ts` | Data | Parametrisert rå SQL for arbeidsliste, likhetstrekk og proveniens, kjørt i innringerens tenanttransaksjon (rå SQL holdes i `db/`, DV-1) | `worklistPage`, `similarityFeatures`, `provenanceRows` | ny |
+| `api/src/db/system.ts` | Data | Legger til `platformPipelineStats` (kaller `fr_platform_pipeline_stats`) og `lockFeatureFlag` | | endret |
+| `api/src/observability/metrics.ts` | API | `MetricsRegistry`: 11 faste varighetsbøtter, høyst 200 rutenøkler, bøttegrenser etter nærmeste rang, komponentstatistikk; ingen I/O | `MetricsRegistry`, `DURATION_BOUNDS` | ny |
+| `api/src/observability/ring-buffer.ts`, `api/src/logging.ts` | API | Loggeren tappes inn i en begrenset ring av avledede poster med 8 felt; `route` i `serializeRes`; maskering av `fr_live_` | `LogRingBuffer`, `deriveRecord`, `safeEvent` | ny / endret |
+| `api/src/eval/{manifest,runner,canonical,record,cli,git-sha}.ts` | Verktøy | Manifestvakter, k kjøringer gjennom den ekte sandkassen, kanoniske digester, statistikk, `--record` (eneste DB-skriver, systemtransaksjon) | `loadSet`, `runEval`, `EVAL_STAGES`, `recordRun` | ny |
+| `api/eval/sets/extraction-v1/` | Data | 30 syntetiske saker (9 Python-orakel, 9 avvist, 12 håndskrevne) og en README | | ny |
+| `api/prisma/migrations/20261010000000_intelligence/` | Data | `feature_flags`, `eval_runs`, `eval_case_results`, `api_keys`, `fr_platform_pipeline_stats`, RLS FORCE, tildelinger, triggere | | ny |
+| `web/src/features/dev/*`, `features/intelligence/*`, `features/apikeys/ApiKeysPage.tsx`, `api/client.ts`, `AppShell.tsx` | Web | Utviklerdashbord (6 latlastede faner), Intelligence-siden, fanene Similar/Provenance i kravpanelet, siden for API-nøkler, rollebevisst navigasjon | sider | ny / endret |
+| `.github/workflows/web-ci.yml`, `compose.web.yml`, `.env.example`, `infra/{ecs,iam,locals,variables}.tf` | Drift | Evalueringsterskel i CI og offentlig CI-pepper, gjennomsending av innstillinger, Secrets Manager-beholder og -referanse `api-key-pepper` | | endret |
+
+## Forespørselsflyt: API-nøkkel mot informasjonskapsel/JWT
+
+Begge typer forespørsler deler forhåndsbehandleren i `api/src/http/security.ts`. Grenen velges bare ut fra
+`Authorization`-headeren: `Bearer fr_live_...` er en nøkkelforespørsel, enhver annen bearer-verdi er et
+tilgangstoken for en bruker, nøyaktig som før. En nøkkelforespørsel ser aldri på en informasjonskapsel,
+trenger aldri CSRF-token og får aldri en informasjonskapsel.
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    Req["HTTPS request"] --> Url{"fr_live_ in URL?"}
+    Url -- yes --> E400["400, value not logged"]
+    Url -- no --> Rate{"Global rate limit ok?"}
+    Rate -- no --> E429a["429"]
+    Rate -- yes --> Kind{"Bearer fr_live_?"}
+    Kind -- no --> Csrf{"Unsafe: Origin + CSRF ok?"}
+    Csrf -- no --> E403a["403"]
+    Csrf -- yes --> Jwt{"JWT valid, user live?"}
+    Jwt -- no --> E401a["401"]
+    Jwt -- yes --> Perm{"Permission?"}
+    Kind -- yes --> Org{"Origin absent or APP_ORIGIN?"}
+    Org -- no --> E403b["403"]
+    Org -- yes --> Gate{"IP failure budget left?"}
+    Gate -- no --> E429b["429 before verify"]
+    Gate -- yes --> Ver{"Key known, HMAC equal, live?"}
+    Ver -- no --> E401b["401 identical + count IP"]
+    Ver -- yes --> Scope{"Route opted in + scope?"}
+    Scope -- no --> E403c["403 + use_denied"]
+    Scope -- yes --> Creator{"Creator still holds perm?"}
+    Creator -- no --> E401c["401 + use_denied"]
+    Creator -- yes --> KLim{"Per-key limit ok?"}
+    KLim -- no --> E429c["429"]
+    KLim -- yes --> Perm
+    Perm -- no --> E403d["403 + authz.denied"]
+    Perm -- yes --> Tx["withTenantTx: RLS context"]
+    Tx --> H["Handler + audit (viaApiKey)"]
+
+    style Gate fill:#1e90ff,stroke:#1565c0,color:#fff
+    style Ver fill:#1e90ff,stroke:#1565c0,color:#fff
+    style Scope fill:#1e90ff,stroke:#1565c0,color:#fff
+    style Creator fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Detaljer i nøkkelveien (`ApiKeyAuthenticator.authenticate`):
+
+- **Oppslag og sammenligning.** Nøkkelen parses med `^fr_live_[0-9a-f]{16}_[A-Za-z0-9_-]{43}$`. Raden
+  finnes via `key_id` i en systemtransaksjon (RLS-policyen på `api_keys` tillater systemmodus). Den
+  presenterte hemmeligheten hashes med `HMAC-SHA-256(API_KEY_PEPPER, secret)` og sammenlignes med
+  `timingSafeEqual`; en ukjent nøkkel-id sammenlignes mot en fast dummy-digest, så arbeidet er det samme.
+  Ukjent, feil format, feil hemmelighet, tilbakekalt og utløpt gir alle den identiske 401.
+- **Tilstand ved hver forespørsel.** Tilbakekalling, utløp, suspensjon av tenanten og skaperens status
+  leses fra databasen ved hver forespørsel; ingenting om nøkkeltilstand bufres, så en tilbakekalling
+  virker fra neste forespørsel på alle instanser.
+- **Ruter velger selv.** Bare ruter deklarert med `access.apiKeyScope` godtar nøkler. En arkitekturtest
+  går gjennom alle ruter og krever at mengden er nøyaktig R26, R27, R53 (`claims.read`), R54
+  (`exports.claims`) og R40-R44 (`imports.write`). Alle andre ruter svarer 403 etter en vellykket
+  nøkkelautentisering, slik at avslaget kan revideres (`apikey.use_denied` med årsak `route`).
+- **Vern mot forvirret stedfortreder.** Nøkkelens tillatelser er `SCOPE_PERMISSION[scope]` for omfangene
+  dens, og skaperens **nåværende** rolle må fortsatt ha hver av dem; ellers 401 (årsak `creator`).
+  Tenanten kommer bare fra nøkkelraden; tenant-id-er i headere, spørrestreng eller body ignoreres.
+- **Misbruksgrenser.** Mislykkede autentiseringer telles per klientadresse i det delte lageret for
+  ratebegrensning. Når `RATE_LIMIT_API_KEY_FAIL_MAX` (30) feil er nådd innen 10 minutter, avvises adressen
+  med 429 før all verifisering til vinduet er over (grenserettingen D-4: det 31. forsøket avvises, ved
+  hjelp av tallet `remaining` fra begrenseren). Bufferen for «avvis tidlig» er per instans; tellingene er
+  delte. Vellykkede forespørsler går deretter gjennom grensen per nøkkel (`RATE_LIMIT_API_KEY_MAX`, 300 per
+  60 s).
+- **Tilskriving.** Konteksten er `{tenantId: key.tenant_id, actor: creator, role: 'API_KEY',
+  viaApiKey: keyId}`, og forespørselen fortsetter gjennom den samme `withTenantTx`-veien som en
+  brukerforespørsel. `appendAudit` legger til `viaApiKey` fra et register over forespørsler (DV-7).
+  `last_used_at` oppdateres høyst én gang per 60 sekunder, etter beste evne.
+
+### Funksjonskall (steg 4)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R71["R71 worklist handler"] --> FL["FlagService.isEnabled"]
+    R72["R72 similar handler"] --> FL
+    R71 --> BW["buildWorklist"]
+    BW --> WP["worklistPage (SQL)"]
+    BW --> SC["scoreClaim / buildWhy"]
+    R72 --> FS2["findSimilar"]
+    FS2 --> SF["similarityFeatures (SQL)"]
+    FS2 --> RS["rankSimilar"]
+    RS --> SS["scoreSimilarity"]
+    SS --> NC["normalizeCarrier"]
+    R71 --> OC["observeComponent"]
+    R72 --> OC
+    R71 --> AA["appendAudit intelligence.viewed"]
+    PRE["security pipeline"] --> AUTH["ApiKeyAuthenticator"]
+    AUTH --> FG["FailureGate.check"]
+    AUTH --> VS["verifySecret (timingSafeEqual)"]
+    R60["R60 pipeline"] --> PS["platformPipelineStats"]
+    PS --> FN["fr_platform_pipeline_stats"]
+    R62["R62 logs"] --> LRB["LogRingBuffer.query"]
+    CLI["eval cli"] --> RE["runEval"]
+    RE --> CPS["computePassStats"]
+    CLI --> REC["recordRun (--record)"]
+
+    style AUTH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style VS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FN fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalles av | Formål |
+| --- | --- | --- | --- |
+| `scoreClaim`, `compareWorklist`, `buildWhy`, `nextAction` | `api/src/intelligence/priority.ts` | `buildWorklist` | aritmetikk, rekkefølge og forklaring for `priority-v1`; SQL-ens `ORDER BY` må stemme med `compareWorklist` (integrasjonstest på 48 tilfeldige krav) |
+| `scoreSimilarity`, `rankSimilar`, `normalizeCarrier` | `api/src/intelligence/similarity.ts` | `findSimilar` | poeng, inkludering (anker + minimum 30) og rekkefølge for `similar-v1`; ingen bufring av noe slag |
+| `worklistPage`, `similarityFeatures`, `provenanceRows` | `api/src/db/intelligence.ts` | intelligence-tjenesten | parametrisert SQL i innringerens tenanttransaksjon, pluss eksplisitte predikater `tenant_id = fr_current_tenant()` |
+| `FlagService.isEnabled` / `change` | `api/src/platform/flags.ts` | intelligence-rutene, R63/R64 | lesing med TTL-buffer, feiler lukket; låst, versjonert endring med revisjonsspor |
+| `ApiKeyAuthenticator.authenticate` | `api/src/auth/api-key-auth.ts` | sikkerhetspipelinen | maskinautentisering (se ovenfor) |
+| `MetricsRegistry.observeRequest` / `observeComponent` / `snapshot` | `api/src/observability/metrics.ts` | `onResponse`-kroken, R71/R72, R61 | telemetri i prosessen |
+| `LogRingBuffer.ingest` / `query` | `api/src/observability/ring-buffer.ts` | loggertappen, R62 | avledede loggposter |
+| `platformPipelineStats` | `api/src/db/system.ts` | R60 | kaller `SECURITY DEFINER`-funksjonen i en systemtransaksjon |
+| `runEval`, `computePassStats`, `recordRun` | `api/src/eval/runner.ts`, `packages/shared/src/eval-stats.ts`, `api/src/eval/record.ts` | eval-CLI-en | k kjøringer per sak, statistikk, valgfri registrering |
+
+## Tillegg i datamodellen (steg 4)
+
+| Objekt | Formål | Viktige regler |
+| --- | --- | --- |
+| `feature_flags(key, enabled, version, updated_by_id, updated_at, last_reason)` | Globale flagg; migreringen setter inn de 3 radene fra registeret | Ikke tenant-avgrenset (inneholder ingen tenantdata). RLS FORCE; SELECT for alle, UPDATE bare i systemmodus; `freight_app` har bare `SELECT` og `UPDATE` på kolonnenivå; en trigger krever uendret `key` og `version = gammel + 1`; DELETE og TRUNCATE feiler for alle roller |
+| `eval_runs`, `eval_case_results` | Registrerte evalueringskjøringer og resultater per sak (uten dokumentinnhold, verdier eller filnavn) | RLS FORCE med en policy bare for systemmodus (en rå tilkobling ser null rader og kan ikke sette inn); bare `SELECT, INSERT`; UPDATE, DELETE og TRUNCATE feiler i alle moduser; CHECK-er binder tallene sammen (`runs_passed <= runs_total`, `pass_hat_k_count <= pass_at_least_one_count <= case_count`, kurvelengde = k, `passed_all = (runs_passed = k)`) |
+| `api_keys(id, tenant_id, key_id, name, secret_hash, scopes, created_by_id, created_at, expires_at, last_used_at, revoked_at, revoked_by_id, revoke_reason)` | Tenantenes API-nøkler | Tenant-avgrenset, i `TENANT_MODELS`; policy `tenant_id = fr_current_tenant() OR fr_system_mode()` (systemmodus for oppslag via `key_id`); CHECK-er på `key_id` (16 hex), `secret_hash` (64 hex), 1-3 omfang blant de tre, navnelengde, lengde på begrunnelse for tilbakekalling og alt-eller-ingenting for tilbakekallingskolonnene; bare `last_used_at` og tilbakekallingskolonnene kan oppdateres, tilbakekalling settes én gang og fjernes aldri; DELETE/TRUNCATE feiler |
+| `fr_platform_pipeline_stats(window_seconds, stale_seconds)` | Aggregat på tvers av tenanter for R60 | `SECURITY DEFINER`, låst `search_path`, feiler utenfor systemmodus, områdesjekker inndata, `EXECUTE` bare for `freight_app`; returnerer rader `(metric, label, n, p50_ms, p95_ms)` og velger aldri tenant-id, bruker-id, navn, filnavn, lagringsnøkkel, hash eller kravnummer |
+| indeks `claims (tenant_id, status, updated_at DESC, id)` | Spørringer for arbeidsliste og likhet | planer registrert i kjøringens `implementation.md` (ingen tider påstått) |
+
+## Flaggbuffer
+
+`FlagService.isEnabled(key)` har en buffer per instans nøklet på flagg, med TTL `FLAGS_CACHE_TTL_MS`
+(standard 5000 ms, produksjonstak 30000 ms, 0 slår den av). En lesefeil gir **false** (feiler lukket) og
+bufres ikke lenger enn 1 sekund. En endring (`PUT /platform/flags/:key`) kjører i én systemtransaksjon:
+kontroll mot registeret (ukjent nøkkel = 404 før all databasetilgang), `SELECT ... FOR UPDATE`,
+versjonssammenligning (409 `stale_revision`), samme verdi (409 `conflict`, ingenting skrives), oppdatering
+med `version + 1`, revisjonshendelsen `platform.flag_changed`; den lokale bufferen tømmes etter commit.
+Andre instanser ser endringen innen sin TTL. Flagg styrer bare de tre intelligence-funksjonene; de kan ikke
+nå kode for autentisering, CSRF, RLS eller revisjonsspor (arkitekturtest).
+
+## Observerbarhet: telemetriregister og loggring
+
+- **Telemetri.** En Fastify-krok `onResponse` (registrert før rutene, så helseruter telles) registrerer
+  rute**mønsteret** (`routeOptions.url`, eller `(unmatched)`), metoden (ukjente metoder blir `OTHER`),
+  statusen og `reply.elapsedTime`. Den leser aldri URL, spørrestreng, headere eller body. Minnet er
+  begrenset: høyst 200 rutenøkler (overløp til `(other)`) ganger 11 bøtter. Persentiler rapporteres som
+  øvre grense for bøtta som inneholder nærmeste rang. Tellerne for parserens utfører og de to
+  komponentstatistikkene legges til når øyeblikksbildet tas. Ingenting rører databasen.
+- **Loggring.** `createLogger` tapper hver formatert (allerede maskert) linje inn i
+  `LogRingBuffer(LOG_BUFFER_SIZE)`. `ingest` parser linjen i try/catch og beholder bare en avledet post med
+  8 felt (tid, nivå, forespørsels-id hvis UUID, metode hvis standard, rute hvis den starter med `/`, ikke
+  har `?` og er høyst 200 tegn, status 100-599, endelig varighet, hendelse hvis den består
+  meldingsregelen); alt annet kastes, og bufferen kaster aldri feil inn i loggeren. Loggeren erstatter i
+  tillegg enhver `fr_live_...`-streng på alle nivåer med `[REDACTED]`. Telemetri og logger er **per
+  instans og flyktige**, og brukergrensesnittet sier det.
+
+## Evalueringsverktøy (dataflyt)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    C["npm run eval -- --set dir"] --> M{"Manifest valid, paths inside dir?"}
+    M -- no --> X2["exit 2, nothing recorded"]
+    M -- yes --> K["Each case: k runs"]
+    K --> P["Pre-store checks + sandboxed parse"]
+    P --> J["Compare exactly with expect"]
+    J --> I{"Infrastructure error?"}
+    I -- yes --> X3["exit 3, nothing recorded"]
+    I -- no --> S["computePassStats + digests"]
+    S --> R{"--record?"}
+    R -- yes --> W["One system tx: run + cases + audit"]
+    R -- no --> O["Print table or JSON"]
+    W --> O
+    O --> T{"pass^k >= threshold?"}
+    T -- no --> X1["exit 1"]
+    T -- yes --> X0["exit 0"]
+
+    style P fill:#1e90ff,stroke:#1565c0,color:#fff
+    style W fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Stegregisteret `EVAL_STAGES` inneholder foreløpig bare `extraction`; steg 5 registrerer `rules`.
+Sett-hashen `evalSetSha256` dekker manifestet og hver saksfil i rekkefølge; testdataene holdes byte-like av
+`.gitattributes` (`api/eval/sets/** -text`).
+
+## Grensesnitt for steg 5
+
+1. Intelligence-funksjonene leser bare lagrede kolonner (`claims` beløp, status, transportør,
+   perspektiv, `updated_at`; siste revisjon av `evidence_packets`; `packet_findings.rule_id` og
+   `needs_human_review`; `packet_sources.doc_type`; `approvals.created_at`). Når steg 5 lager pakkerevisjon
+   1 (`AWAITING_ANALYSIS -> PENDING_REVIEW`), fylles arbeidsliste, likhet og proveniens uten endringer i
+   steg 4. Steg 5 må holde `rule_id` stabil og ikke-tom.
+2. Steg 5 registrerer et `rules`-steg i `EVAL_STAGES` (og utvider `stage`-CHECK-en med en migrering), og
+   gjenbruker `computePassStats`, registreringen og dashbordet; Python-funksjonen `run_pipeline` er
+   oraklet.
+3. Telemetri: steg 5 legger til `observeComponent('rules-v1', ...)`. Flagg: steg 5 kan legge til en
+   registernøkkel.
+
+## Merknader (steg 4)
+
+- Avvik registrert av byggeren (DV-1..DV-11), de viktigste: rå SQL ligger i `db/` (DV-1); rutetabellen
+  har 199 nøkler pluss `(other)` (DV-2); lesinger med revisjonsspor skriver hendelsen i sin egen
+  transaksjon etter at dataene er beregnet, og en mislykket skriving gir fortsatt 500 uten data (DV-3);
+  `API_KEY_PEPPER` har en offentlig standardverdi utenfor produksjon (DV-4); en nøkkel på en rute uten
+  nøkkelstøtte får 403, også for `/healthz`, og `Origin` på en nøkkelforespørsel kontrolleres for alle
+  metoder (DV-5); bufferen for «avvis tidlig» per IP er per instans (DV-6); plattformbrukere havner på
+  `/dev` (DV-11).
+- Utsatt (kun design, ikke bygget): IP-tillatelseslister per nøkkel, hjelpere for nøkkelrotasjon
+  (opprett-så-tilbakekall er den manuelle veien), HMAC-signering av forespørsler, bruksdashbord per nøkkel,
+  flere omfang, firøyeprinsipp for flaggendringer, telemetri og logger for hele klyngen, enhver lært
+  rangering.
 - Ikke verifisert: container-images, compose-stacken, Playwright-ende-til-ende-tester, enhver
   AWS-utrulling.

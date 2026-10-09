@@ -18,7 +18,9 @@ deliberate human step after review.
   access logs.
 - ElastiCache Redis 7 (rate-limit store): TLS in transit, encrypted at rest, AUTH token set out of band (never in state).
 - Secrets Manager containers (no values): `jwt-secret`, `csrf-secret`, `refresh-pepper`, `mfa-enc-key`,
-  `database-url`, `redis-url`, `redis-auth-token`.
+  `database-url`, `redis-url`, `redis-auth-token`, and (step 4) `api-key-pepper`. The full inventory of
+  every secret, how to generate and rotate each one, and the buyer handover checklist are in
+  [docs/secrets.md](../docs/secrets.md).
 - IAM: execution role (pull this image, read these secrets, write this log group) and task role (documents
   bucket `t/*` prefix + data key only).
 - ECS Fargate: read-only root filesystem, uid 10001, all capabilities dropped, secrets from Secrets Manager.
@@ -35,7 +37,9 @@ deliberate human step after review.
 2. `terraform apply -target=aws_secretsmanager_secret.app` to create the secret containers, then set every
    value out of band, e.g. `aws secretsmanager put-secret-value --secret-id <arn> --secret-string "$(openssl rand -hex 32)"`
    (or `openssl rand -base64 48`; both formats pass the API's production entropy check).
-   `mfa-enc-key` must be base64 of 32 random bytes. `redis-auth-token` must be 16-128 printable characters.
+   `mfa-enc-key` must be base64 of 32 random bytes. `api-key-pepper` (step 4) must carry at least 256 bits
+   (`openssl rand -hex 32` or `openssl rand -base64 32`) and differ from every other secret; rotating it
+   later invalidates every tenant API key. `redis-auth-token` must be 16-128 printable characters.
 3. `terraform plan` / `terraform apply` for the rest. Terraform never reads any secret value: no secret
    material is in state or plan output.
 3a. Redis AUTH (out of band, before the API is deployed): generate a token, store it in `redis-auth-token`,

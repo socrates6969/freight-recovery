@@ -14,7 +14,7 @@
 | Evidence | `evidence/` (`packet.py`, `letter.py`) | Markdown-bevispakke og utkast til kravbrev; tvistevindu satt til 90 dager (konfigurerbar konstant) | Uavhengig verifikator, henvisningsspenn kontrollert mot kilder, transportør-/kontraktsspesifikke frister |
 | Output | `api/main.py`, `cli.py`, `pipeline.py` | `POST /v1/analyze`, `POST /v1/analyze/text`, `/health`; CLI skriver ut pakken | Saksoppfølging, påminnelser, tvistestatus, arbeidsflyt for menneskelig godkjenning, uforanderlig revisjonsspor |
 
-Fraværende er også pass^k-eval-rammeverket og fasitsettet (beskrevet i avsnitt 2 som planen). De eksisterende testene bruker små syntetiske fixtures (`tests/fixtures/ld5001`, `ld5002`) og beviser aritmetikken og rørleggerarbeidet, ikke treffsikkerhet i virkeligheten.
+Fraværende i Python-tjenesten er også pass^k-eval-rammeverket og fasitsettet (beskrevet i avsnitt 2 som planen). TypeScript-nettplattformen (byggesteg 4) har nå et første pass^k-verktøy bare for **uttrekkssteget**, kjørt på 30 syntetiske testfiler (`npm run eval`, se README); det er en regresjonskontroll, ikke et mål på treffsikkerhet, og det finnes ikke noe fasitsett med ekte dokumenter. De eksisterende testene bruker små syntetiske fixtures (`tests/fixtures/ld5001`, `ld5002`) og beviser aritmetikken og rørleggerarbeidet, ikke treffsikkerhet i virkeligheten.
 
 ## 1. Pipelinen i klartekst
 

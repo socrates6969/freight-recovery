@@ -76,8 +76,10 @@ AWS. Build-order steps 1 and 2 are implemented: authN (argon2id, access JWT plus
 cookie, TOTP MFA, lockout), RBAC across 8 roles, 3-layer tenant isolation, app hardening, a hash-chained
 append-only audit trail, the claims list, the evidence-packet viewer and the approvals human gate.
 Step 3 (import and export) is described in its own section below:
-[Web platform: import and export (step 3)](#web-platform-import-and-export-step-3). The dev dashboard,
-AI features and the TS port of the Python rules are later steps. The seeded claims and packets come from
+[Web platform: import and export (step 3)](#web-platform-import-and-export-step-3). Step 4 (Dev
+dashboard, Recovery intelligence, tenant API keys and the evaluation tool) has its own section too:
+[Web platform: Dev dashboard, Recovery intelligence and API keys (step 4)](#web-platform-dev-dashboard-recovery-intelligence-and-api-keys-step-4).
+The TS port of the Python rules is a later step (step 5). There is no learned model and no LLM call. The seeded claims and packets come from
 the Python CLI output on `tests/fixtures/` (synthetic).
 
 ## Module Structure
@@ -263,8 +265,11 @@ on every request. The web app imports the same frozen data only to hide controls
 | `export:packets`, `export:outcomes` (step 3) | x | x | x | x | | | | |
 | `users:read`, `users:manage`, `audit:read`, `settings:manage`, `integrations:manage` | x | x | | | | | | |
 | `admins:manage`, `billing:manage`, `tenant:delete` | x | | | | | | | |
-| `platform:health` | | | | | | | x | x |
+| `apikeys:manage` (step 4: create, list and revoke tenant API keys) | x | x | | | | | | |
+| `platform:health` (step 4: also pipeline health and telemetry) | | | | | | | x | x |
 | `platform:flags`, `platform:logs` | | | | | | | x | |
+| `platform:eval` (step 4: evaluation runs) | | | | | | | x | |
+| `platform:audit` (step 4: platform audit chain) | | | | | | | | x |
 | `platform:tenants:list`, `platform:cross_tenant_read` | | | | | | | | x |
 
 Platform roles have no tenant and no tenant data permission. A SUPER_ADMIN cross-tenant read is
@@ -812,4 +817,386 @@ PostgreSQL, MinIO with KMS, and Python for parity.
   important two: the worker is not started with `--no-experimental-fetch` (the guard deletes the network
   globals instead), and the WAF Content-Length rule has a dedicated exception for the upload route.
 - Concurrency gates (uploads, exports, parse slots) are per API instance, not distributed.
+- Not verified: container images, the compose stack, Playwright end-to-end tests, any AWS deployment.
+
+---
+
+# Web platform: Dev dashboard, Recovery intelligence and API keys (step 4)
+
+> Written by scriber for run `REQ-20261009-step4-intelligence` on 2026-10-09 (branch
+> `feat/intelligence`). **Pre-product, synthetic data only, never deployed.** Threat rows for this step are
+> T32-T45 in [technical/web-platform-security.md](technical/web-platform-security.md). Every secret is
+> listed in [docs/secrets.md](docs/secrets.md). User-facing description:
+> [README, step 4](README.md#dev-dashboard-recovery-intelligence-and-api-keys-step-4).
+
+## Overview (step 4)
+
+Step 4 adds four things on top of steps 1-3:
+
+1. **Dev dashboard** (`/dev`, routes R60-R68) for `PLATFORM_DEV` and `SUPER_ADMIN`: pipeline health
+   aggregated over all tenants, request telemetry and a filtered log view of the serving API instance,
+   feature flags, read-only evaluation runs, and the platform audit chain. Platform responses carry
+   aggregates and telemetry only.
+2. **Recovery intelligence** (routes R70-R73) for tenant users: a prioritised worklist (`priority-v1`),
+   similar past claims (`similar-v1`) and a provenance summary per claim. All three are deterministic
+   functions of persisted columns of the caller's own tenant.
+3. **Tenant API keys** (routes R80-R82 plus a machine-authentication path): HMAC-hashed, shown once,
+   three scopes over exactly nine opted-in routes.
+4. **Evaluation tool** (`api/src/eval/`, a command-line program): pass^k over the synthetic set
+   `api/eval/sets/extraction-v1`, run through the real sandboxed parse pipeline; the only writer of
+   evaluation data.
+
+Binding rule for all of it (the **honest-labeling rule**): nothing is shown that is not computed from data
+held by the system at request time or recorded by a measuring tool, every figure names its basis, and no
+accuracy, speed-up, learning or "AI" claim appears. The fixed texts live in
+`packages/shared/src/honest-copy.ts`; the UI renders them verbatim. An architecture test fails the build
+if the strings "neural mesh", "Hebbian", "solved-problems cache", "AI-powered", "faster than" or an
+"Nx faster" pattern appear in `api/src`, `packages/shared/src` or `web/src`.
+
+## Brief terms vs what is built
+
+The product brief uses vocabulary that this code does **not** implement. None of the following exists in
+the repository, and no figure from the brief has been measured:
+
+| Brief term | Status | What is built instead (honest equivalent) |
+| --- | --- | --- |
+| "Hebbian router" (ranks claims/lanes by expected recoverable value) | **Not implemented.** A Hebbian or any learned ranker needs recorded recovery outcomes (paid, short-paid, denied), and none exist. Lanes are not modelled. | `priority-v1`: a fixed formula `recoverable + floor(pending_review * W / 100)` with W = 25% as stated policy, explicit tie-breaks and a "why" list per row. Not called "expected value" (there are no probabilities). |
+| "Neural mesh" (panel / metrics) | **Not implemented.** There is no neural component in the product. (`src/freight_recovery/forecast/neural.py` is optional, unvalidated roadmap scaffolding for the Python service and is wired to nothing.) | The "Intelligence components" table on the Telemetry tab: the two components `priority-v1` and `similar-v1` with measured calls, errors, duration bounds and candidate counts from real requests, labeled Method "Fixed rules" and Learned model "None". |
+| "Solved-problems cache" with "~250x" | **Not implemented.** There is no cache of any kind, and the ~250x figure was never measured. "Winning evidence pattern" would need outcomes that do not exist. | `similar-v1`: explainable integer similarity (same carrier 35, shared rules up to 40, similar amount up to 15, same perspective 10; anchor required; minimum 30) over the tenant's own decided claims, showing how the team handled each one. It shows the measured `computeMs` of that single request and nothing resembling a speed-up ratio. |
+| "AI extraction with provenance" | Exists since step 3 as **deterministic, rule-based** extraction with source pointers (no LLM). | Step 4 adds the per-claim provenance summary (field counts by review status, lowest rule-based confidence). |
+| "pass^k metrics" | **Built, on synthetic fixtures only.** | The evaluation tool and the read-only Evaluation tab. With this deterministic pipeline pass^k equals pass^1, and the UI says so. Never presented as accuracy on customer documents. |
+
+What a learned ranker would need (deferred, design only): recorded outcomes per claim; an offline
+comparison against `priority-v1` on a held-out period with a pre-registered metric (for example captured
+dollars at fixed review capacity) and an interval; and shipping only behind a new flag if it beats the
+fixed formula with the interval excluding zero. The seam is the pure `scoreClaim`/`compareWorklist` pair
+plus the `formula.version` field.
+
+## Module Structure (step 4)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/ (SPA)"]
+        WD["features/dev (6 tabs)"]
+        WI["features/intelligence"]
+        WK["features/apikeys"]
+        WC["api/client (strict parse)"]
+    end
+
+    subgraph Shared["packages/shared"]
+        SR["rbac (+3 permissions)"]
+        SF["feature-flags registry"]
+        SH["honest-copy texts"]
+        SE["eval-stats computePassStats"]
+        SD["platform/intel/key DTOs"]
+    end
+
+    subgraph Http["api/src/http + auth"]
+        SP["security.ts pipeline"]
+        AK["auth/api-key-auth.ts"]
+    end
+
+    subgraph Plat["api/src/platform"]
+        PR["dashboard-routes R60-R68"]
+        FS["flags.ts FlagService"]
+        PP["pipeline.ts + eval-read"]
+    end
+
+    subgraph Intel["api/src/intelligence"]
+        IR["routes R70-R73"]
+        IS["service.ts"]
+        PRI["priority.ts (pure)"]
+        SIM["similarity.ts (pure)"]
+    end
+
+    subgraph Keys["api/src/apikeys"]
+        KR["routes R80-R82"]
+        KM["key-material HMAC"]
+    end
+
+    subgraph Obs["api/src/observability"]
+        MR["metrics.ts registry"]
+        RB["ring-buffer.ts"]
+    end
+
+    subgraph Data["db + eval"]
+        DI["db/intelligence.ts SQL"]
+        DS["db/system.ts stats fn"]
+        EV["eval CLI + record"]
+    end
+
+    WD --> WC
+    WI --> WC
+    WK --> WC
+    WC --> SD
+    WC --> SP
+    SP --> AK
+    AK --> KM
+    SP --> PR
+    SP --> IR
+    SP --> KR
+    PR --> FS
+    PR --> PP
+    PR --> MR
+    PR --> RB
+    PP --> DS
+    IR --> FS
+    IR --> IS
+    IS --> PRI
+    IS --> SIM
+    IS --> DI
+    KR --> KM
+    EV --> SE
+    PP --> SE
+    FS --> SF
+    WI --> SH
+
+    style AK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style KM fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PRI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SIM fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+> Everything in this diagram is new or changed in step 4. Blue marks the security-relevant modules (key
+> authentication, key hashing, the flag cache, log derivation, the cross-tenant aggregate function) and
+> the two scoring cores.
+
+### Module Reference (step 4)
+
+| Module / File | Layer | Purpose | Key Exports | Changed |
+| --- | --- | --- | --- | --- |
+| `packages/shared/src/rbac.ts` | Shared | Adds `platform:eval` (PLATFORM_DEV), `platform:audit` (SUPER_ADMIN), `apikeys:manage` (OWNER, ADMIN) | `PERMISSION_MATRIX`, `can` | changed |
+| `packages/shared/src/feature-flags.ts` | Shared | The flag registry: exactly `intelligence.provenance`, `intelligence.similar_claims`, `intelligence.worklist` (architecture test) | `FEATURE_FLAGS`, `isKnownFlag` | new |
+| `packages/shared/src/honest-copy.ts` | Shared | The fixed honest texts (worklist, similar, provenance, no-accuracy, eval, telemetry, logs, pipeline notes) | `WORKLIST_NOTE`, `worklistNote`, `EVAL_NOTE`, ... | new |
+| `packages/shared/src/eval-stats.ts` | Shared | pass^k statistics: per-run rate, pass^k, unbiased pass^j curve, flaky counts, Wilson 95% interval (z = 1.959964) | `computePassStats`, `binomial`, `wilsonInterval` | new |
+| `packages/shared/src/{platform,intelligence,api-key}-dto.ts` | Shared | Strict Zod schemas for every step 4 request and response; the web client and the API both parse with them | schemas, `API_KEY_SCOPES`, `SCOPE_PERMISSION` | new |
+| `api/src/http/security.ts`, `http/route.ts`, `http/context.ts` | API | URL guard (`fr_live_` in a URL = 400), the key branch of the pre-handler, `apiKeyScope` on route access, `RequestCtx.role = 'API_KEY'` with `viaApiKey` | `registerSecurityPipeline`, `defineRoute` | changed |
+| `api/src/auth/api-key-auth.ts` | API | Machine authentication: per-IP failure gate, format, lookup, constant-time HMAC compare, state checks, route and scope checks, creator re-check, per-key limit, context | `ApiKeyAuthenticator`, `FailureGate` | new |
+| `api/src/apikeys/{key-material,service,routes}.ts` | API | Key generation (`randomBytes`), HMAC-SHA-256 with the pepper, quota under a tenant lock, R80-R82 | `generateKey`, `verifySecret`, `createApiKey`, `revokeApiKey` | new |
+| `api/src/audit/attribution.ts` | API | Adds `viaApiKey` and actor role `API_KEY` centrally in `appendAudit` for key-authenticated requests (DV-7) | `registerApiKeyRequest`, `apiKeyFor` | new |
+| `api/src/platform/dashboard-routes.ts` | API | R60-R68: audited platform reads, strict outgoing schemas (`strictBody`), `platform` rate group | `registerPlatformDashboardRoutes` | new |
+| `api/src/platform/flags.ts` | API | `FlagService`: per-instance TTL cache, fail closed, row lock + optimistic version + audit in one system transaction | `FlagService`, `validFlagReason` | new |
+| `api/src/platform/pipeline.ts`, `eval-read.ts` | API | Assemble `PipelineHealth` from the SQL function (zero-fill, rates); read eval runs | `assemblePipelineHealth`, `listEvalRuns`, `getEvalRun` | new |
+| `api/src/intelligence/priority.ts` | Core | `priority-v1`: score, 4-key order, "why" texts, next action (pure, integer cents) | `scoreClaim`, `compareWorklist`, `buildWhy`, `nextAction` | new |
+| `api/src/intelligence/similarity.ts` | Core | `similar-v1`: carrier normalization, point scoring, inclusion rule, ranking (pure) | `scoreSimilarity`, `rankSimilar`, `normalizeCarrier` | new |
+| `api/src/intelligence/{service,routes}.ts` | API | R70-R73: flag check first (off = 404), tenant-tx reads, component telemetry, `intelligence.viewed` audit | `buildWorklist`, `findSimilar`, `provenanceFor` | new |
+| `api/src/db/intelligence.ts` | Data | Parameterized raw SQL for worklist, similarity features and provenance, run on the caller's tenant transaction (raw SQL stays in `db/`, DV-1) | `worklistPage`, `similarityFeatures`, `provenanceRows` | new |
+| `api/src/db/system.ts` | Data | Adds `platformPipelineStats` (calls `fr_platform_pipeline_stats`) and `lockFeatureFlag` | | changed |
+| `api/src/observability/metrics.ts` | API | `MetricsRegistry`: 11 fixed duration buckets, at most 200 route keys, nearest-rank bucket bounds, component stats; no I/O | `MetricsRegistry`, `DURATION_BOUNDS` | new |
+| `api/src/observability/ring-buffer.ts`, `api/src/logging.ts` | API | Logger tee into a bounded ring of derived 8-field records; `route` in `serializeRes`; `fr_live_` scrubbing | `LogRingBuffer`, `deriveRecord`, `safeEvent` | new / changed |
+| `api/src/eval/{manifest,runner,canonical,record,cli,git-sha}.ts` | Tool | Manifest guards, k runs through the real sandbox, canonical digests, stats, `--record` (only DB writer, system tx) | `loadSet`, `runEval`, `EVAL_STAGES`, `recordRun` | new |
+| `api/eval/sets/extraction-v1/` | Data | 30 synthetic cases (9 Python-oracle, 9 rejected, 12 hand-authored) and a README | | new |
+| `api/prisma/migrations/20261010000000_intelligence/` | Data | `feature_flags`, `eval_runs`, `eval_case_results`, `api_keys`, `fr_platform_pipeline_stats`, RLS FORCE, grants, triggers | | new |
+| `web/src/features/dev/*`, `features/intelligence/*`, `features/apikeys/ApiKeysPage.tsx`, `api/client.ts`, `AppShell.tsx` | Web | Dev dashboard (6 lazy tabs), Intelligence page, claim-sheet Similar/Provenance tabs, API keys page, role-aware navigation | pages | new / changed |
+| `.github/workflows/web-ci.yml`, `compose.web.yml`, `.env.example`, `infra/{ecs,iam,locals,variables}.tf` | Ops | CI eval gate and public CI pepper, knob passthrough, Secrets Manager container and reference `api-key-pepper` | | changed |
+
+## Request flow: API key vs cookie/JWT authentication
+
+Both kinds of request share the pre-handler in `api/src/http/security.ts`. The branch is chosen only by
+the `Authorization` header: `Bearer fr_live_...` is a key request, any other bearer value is a user
+access token exactly as before. A key request never consults a cookie, never needs a CSRF token and never
+receives a cookie.
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    Req["HTTPS request"] --> Url{"fr_live_ in URL?"}
+    Url -- yes --> E400["400, value not logged"]
+    Url -- no --> Rate{"Global rate limit ok?"}
+    Rate -- no --> E429a["429"]
+    Rate -- yes --> Kind{"Bearer fr_live_?"}
+    Kind -- no --> Csrf{"Unsafe: Origin + CSRF ok?"}
+    Csrf -- no --> E403a["403"]
+    Csrf -- yes --> Jwt{"JWT valid, user live?"}
+    Jwt -- no --> E401a["401"]
+    Jwt -- yes --> Perm{"Permission?"}
+    Kind -- yes --> Org{"Origin absent or APP_ORIGIN?"}
+    Org -- no --> E403b["403"]
+    Org -- yes --> Gate{"IP failure budget left?"}
+    Gate -- no --> E429b["429 before verify"]
+    Gate -- yes --> Ver{"Key known, HMAC equal, live?"}
+    Ver -- no --> E401b["401 identical + count IP"]
+    Ver -- yes --> Scope{"Route opted in + scope?"}
+    Scope -- no --> E403c["403 + use_denied"]
+    Scope -- yes --> Creator{"Creator still holds perm?"}
+    Creator -- no --> E401c["401 + use_denied"]
+    Creator -- yes --> KLim{"Per-key limit ok?"}
+    KLim -- no --> E429c["429"]
+    KLim -- yes --> Perm
+    Perm -- no --> E403d["403 + authz.denied"]
+    Perm -- yes --> Tx["withTenantTx: RLS context"]
+    Tx --> H["Handler + audit (viaApiKey)"]
+
+    style Gate fill:#1e90ff,stroke:#1565c0,color:#fff
+    style Ver fill:#1e90ff,stroke:#1565c0,color:#fff
+    style Scope fill:#1e90ff,stroke:#1565c0,color:#fff
+    style Creator fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Details of the key path (`ApiKeyAuthenticator.authenticate`):
+
+- **Lookup and compare.** The key is parsed with `^fr_live_[0-9a-f]{16}_[A-Za-z0-9_-]{43}$`. The row is
+  found by `key_id` in a system transaction (the `api_keys` RLS policy allows system mode). The presented
+  secret is hashed with `HMAC-SHA-256(API_KEY_PEPPER, secret)` and compared with `timingSafeEqual`; an
+  unknown key id is compared against a fixed dummy digest, so the work is the same. Unknown, malformed,
+  wrong secret, revoked and expired all answer the identical 401.
+- **State on every request.** Revocation, expiry, tenant suspension and the creator's status are read
+  from the database on every request; nothing about key state is cached, so a revocation is effective on
+  the next request on every instance.
+- **Route opt-in.** Only routes declared with `access.apiKeyScope` accept keys. An architecture test
+  enumerates every route and requires the set to be exactly R26, R27, R53 (`claims.read`), R54
+  (`exports.claims`) and R40-R44 (`imports.write`). Any other route answers 403 after a successful key
+  authentication, so the denial can be audited (`apikey.use_denied` reason `route`).
+- **Confused-deputy guard.** The key's permissions are `SCOPE_PERMISSION[scope]` for its scopes, and the
+  creator's **current** role must still hold each one; otherwise 401 (reason `creator`). The tenant comes
+  only from the key row; tenant ids in headers, query or body are ignored.
+- **Abuse limits.** Failed authentications count per client address in the shared limiter store. Once
+  `RATE_LIMIT_API_KEY_FAIL_MAX` (30) failures are reached in 10 minutes, the address is refused with 429
+  before any verification until the window ends (the boundary fix D-4: the 31st attempt is refused, using
+  the limiter's `remaining` count). The "refuse early" cache is per instance; the counts are shared.
+  Successful requests then pass the per-key limiter (`RATE_LIMIT_API_KEY_MAX`, 300 per 60 s).
+- **Attribution.** The context is `{tenantId: key.tenant_id, actor: creator, role: 'API_KEY',
+  viaApiKey: keyId}`, and the request continues through the same `withTenantTx` path as a user request.
+  `appendAudit` adds `viaApiKey` from a request registry (DV-7). `last_used_at` is updated at most once
+  per 60 seconds, best effort.
+
+### Function call graph (step 4)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R71["R71 worklist handler"] --> FL["FlagService.isEnabled"]
+    R72["R72 similar handler"] --> FL
+    R71 --> BW["buildWorklist"]
+    BW --> WP["worklistPage (SQL)"]
+    BW --> SC["scoreClaim / buildWhy"]
+    R72 --> FS2["findSimilar"]
+    FS2 --> SF["similarityFeatures (SQL)"]
+    FS2 --> RS["rankSimilar"]
+    RS --> SS["scoreSimilarity"]
+    SS --> NC["normalizeCarrier"]
+    R71 --> OC["observeComponent"]
+    R72 --> OC
+    R71 --> AA["appendAudit intelligence.viewed"]
+    PRE["security pipeline"] --> AUTH["ApiKeyAuthenticator"]
+    AUTH --> FG["FailureGate.check"]
+    AUTH --> VS["verifySecret (timingSafeEqual)"]
+    R60["R60 pipeline"] --> PS["platformPipelineStats"]
+    PS --> FN["fr_platform_pipeline_stats"]
+    R62["R62 logs"] --> LRB["LogRingBuffer.query"]
+    CLI["eval cli"] --> RE["runEval"]
+    RE --> CPS["computePassStats"]
+    CLI --> REC["recordRun (--record)"]
+
+    style AUTH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style VS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FN fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Function | Defined In | Called By | Purpose |
+| --- | --- | --- | --- |
+| `scoreClaim`, `compareWorklist`, `buildWhy`, `nextAction` | `api/src/intelligence/priority.ts` | `buildWorklist` | `priority-v1` arithmetic, order and explanation; the SQL `ORDER BY` must agree with `compareWorklist` (integration test on 48 random claims) |
+| `scoreSimilarity`, `rankSimilar`, `normalizeCarrier` | `api/src/intelligence/similarity.ts` | `findSimilar` | `similar-v1` points, inclusion (anchor + minimum 30), order; no caching of any kind |
+| `worklistPage`, `similarityFeatures`, `provenanceRows` | `api/src/db/intelligence.ts` | intelligence service | parameterized SQL on the caller's tenant transaction, plus explicit `tenant_id = fr_current_tenant()` predicates |
+| `FlagService.isEnabled` / `change` | `api/src/platform/flags.ts` | intelligence routes, R63/R64 | TTL-cached read, fail closed; locked, versioned, audited change |
+| `ApiKeyAuthenticator.authenticate` | `api/src/auth/api-key-auth.ts` | security pipeline | machine authentication (see above) |
+| `MetricsRegistry.observeRequest` / `observeComponent` / `snapshot` | `api/src/observability/metrics.ts` | `onResponse` hook, R71/R72, R61 | in-process telemetry |
+| `LogRingBuffer.ingest` / `query` | `api/src/observability/ring-buffer.ts` | logger tee, R62 | derived log records |
+| `platformPipelineStats` | `api/src/db/system.ts` | R60 | calls the `SECURITY DEFINER` function in a system transaction |
+| `runEval`, `computePassStats`, `recordRun` | `api/src/eval/runner.ts`, `packages/shared/src/eval-stats.ts`, `api/src/eval/record.ts` | eval CLI | k runs per case, statistics, optional recording |
+
+## Data model additions (step 4)
+
+| Object | Purpose | Notable rules |
+| --- | --- | --- |
+| `feature_flags(key, enabled, version, updated_by_id, updated_at, last_reason)` | Global flags; the migration inserts the 3 registry rows | Not tenant-scoped (holds no tenant data). RLS FORCE; SELECT for all, UPDATE only in system mode; `freight_app` has `SELECT` and column-level `UPDATE` only; a trigger requires `key` unchanged and `version = old + 1`; DELETE and TRUNCATE raise for every role |
+| `eval_runs`, `eval_case_results` | Recorded evaluation runs and per-case results (no document content, values or file names) | RLS FORCE with a system-mode-only policy (a raw connection sees zero rows and cannot insert); `SELECT, INSERT` grants only; UPDATE, DELETE and TRUNCATE raise in every mode; CHECKs tie the counts together (`runs_passed <= runs_total`, `pass_hat_k_count <= pass_at_least_one_count <= case_count`, curve length = k, `passed_all = (runs_passed = k)`) |
+| `api_keys(id, tenant_id, key_id, name, secret_hash, scopes, created_by_id, created_at, expires_at, last_used_at, revoked_at, revoked_by_id, revoke_reason)` | Tenant API keys | Tenant-scoped, in `TENANT_MODELS`; policy `tenant_id = fr_current_tenant() OR fr_system_mode()` (system mode for the lookup by `key_id`); CHECKs on `key_id` (16 hex), `secret_hash` (64 hex), 1-3 scopes from the three, name length, revoke-reason length and all-or-nothing revoke columns; only `last_used_at` and the revoke columns are updatable, revocation is set once and never cleared; DELETE/TRUNCATE raise |
+| `fr_platform_pipeline_stats(window_seconds, stale_seconds)` | Cross-tenant aggregate for R60 | `SECURITY DEFINER`, `search_path` pinned, raises unless system mode, range-checks its inputs, `EXECUTE` granted to `freight_app` only; returns `(metric, label, n, p50_ms, p95_ms)` rows and never selects a tenant id, user id, name, file name, storage key, hash or claim number |
+| index `claims (tenant_id, status, updated_at DESC, id)` | Worklist and similarity queries | plans recorded in the run's `implementation.md` (no timings claimed) |
+
+## Flag cache
+
+`FlagService.isEnabled(key)` keeps a per-instance cache keyed by flag with TTL `FLAGS_CACHE_TTL_MS`
+(default 5000 ms, production ceiling 30000 ms, 0 disables it). A read error returns **false** (fail
+closed) and is not cached for more than 1 second. A change (`PUT /platform/flags/:key`) runs in one system
+transaction: registry check (unknown key = 404 before any DB access), `SELECT ... FOR UPDATE`, version
+compare (409 `stale_revision`), same value (409 `conflict`, nothing written), update with `version + 1`,
+`platform.flag_changed` audit; the local cache is invalidated after commit. Other instances see the change
+within their TTL. Flags gate only the three intelligence features; they cannot reach auth, CSRF, RLS or
+audit code paths (architecture test).
+
+## Observability: telemetry registry and log ring buffer
+
+- **Telemetry.** A Fastify `onResponse` hook (registered before the routes, so health routes count)
+  records the route **pattern** (`routeOptions.url`, or `(unmatched)`), the method (unknown methods
+  become `OTHER`), the status and `reply.elapsedTime`. It never reads the URL, query, headers or body.
+  Memory is bounded: at most 200 route keys (overflow into `(other)`) times 11 buckets. Percentiles are
+  reported as the upper bound of the bucket that holds the nearest rank. The parser executor counters and
+  the two component stats are added at snapshot time. Nothing touches the database.
+- **Log ring buffer.** `createLogger` tees every formatted (already redacted) line into
+  `LogRingBuffer(LOG_BUFFER_SIZE)`. `ingest` parses the line inside try/catch and keeps only a derived
+  record of 8 fields (time, level, request id if a UUID, method if standard, route if it starts with `/`,
+  has no `?` and is at most 200 characters, status 100-599, finite duration, event if it passes the
+  message rule); everything else is discarded, and the buffer never throws into the logger. The logger
+  additionally replaces any `fr_live_...` string at any depth with `[REDACTED]`. Telemetry and logs are
+  **per instance and ephemeral**, and the UI says so.
+
+## Evaluation tool (data flow)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    C["npm run eval -- --set dir"] --> M{"Manifest valid, paths inside dir?"}
+    M -- no --> X2["exit 2, nothing recorded"]
+    M -- yes --> K["Each case: k runs"]
+    K --> P["Pre-store checks + sandboxed parse"]
+    P --> J["Compare exactly with expect"]
+    J --> I{"Infrastructure error?"}
+    I -- yes --> X3["exit 3, nothing recorded"]
+    I -- no --> S["computePassStats + digests"]
+    S --> R{"--record?"}
+    R -- yes --> W["One system tx: run + cases + audit"]
+    R -- no --> O["Print table or JSON"]
+    W --> O
+    O --> T{"pass^k >= threshold?"}
+    T -- no --> X1["exit 1"]
+    T -- yes --> X0["exit 0"]
+
+    style P fill:#1e90ff,stroke:#1565c0,color:#fff
+    style W fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+The stage registry `EVAL_STAGES` currently holds `extraction` only; step 5 registers `rules`. The set
+hash `evalSetSha256` covers the manifest and every case file in order; fixtures are kept byte-exact by
+`.gitattributes` (`api/eval/sets/** -text`).
+
+## Interfaces for step 5
+
+1. The intelligence features read only persisted columns (`claims` amounts, status, carrier,
+   perspective, `updated_at`; the latest `evidence_packets` revision; `packet_findings.rule_id` and
+   `needs_human_review`; `packet_sources.doc_type`; `approvals.created_at`). When step 5 creates packet
+   revision 1 (`AWAITING_ANALYSIS -> PENDING_REVIEW`), the worklist, similarity and provenance light up
+   without a step 4 change. Step 5 must keep `rule_id` stable and non-empty.
+2. Step 5 registers a `rules` stage in `EVAL_STAGES` (and widens the `stage` CHECK by migration), reusing
+   `computePassStats`, the recorder and the dashboard; the Python `run_pipeline` is the oracle.
+3. Telemetry: step 5 adds `observeComponent('rules-v1', ...)`. Flags: step 5 may add a registry key.
+
+## Notes (step 4)
+
+- Deviations recorded by the builder (DV-1..DV-11), most relevant: raw SQL lives in `db/` (DV-1); the
+  route table has 199 keys plus `(other)` (DV-2); audited reads append in their own transaction after
+  the data is computed, and a failed append still returns 500 with no data (DV-3); `API_KEY_PEPPER` has
+  a public default outside production (DV-4); a key on a non-key route gets 403 even for `/healthz`, and
+  an `Origin` on a key request is checked for every method (DV-5); the per-IP "refuse early" cache is per
+  instance (DV-6); platform users land on `/dev` (DV-11).
+- Deferred (design only, not built): per-key IP allow-lists, key rotation helpers (create-then-revoke is
+  the manual path), HMAC request signing, per-key usage dashboards, more scopes, four-eyes on flag
+  changes, cluster-wide telemetry and logs, any learned ranker.
 - Not verified: container images, the compose stack, Playwright end-to-end tests, any AWS deployment.

@@ -28,6 +28,11 @@ Incumbents could move down-market; invoice-error % figures are vendor-grade. Val
 - hiring/ — role specs + how to source an operator/CEO in Norway (recruiters & official channels).
 - web/, api/, packages/shared/, infra/ — the new TypeScript web platform (pre-product, synthetic data only); see [Web platform](#web-platform-typescript-pre-product-synthetic-data-only) below.
 - docs/design/ — design documents for features that are not built yet (email-forward ingestion: design only).
+- docs/secrets.md — every secret and credential of the web platform, rotation, and the buyer handover checklist.
+
+## Secrets & handover
+Every secret the web platform uses (env var, purpose, how to generate it, start-up rules, rotation and its impact, where it lives in production), the public dev/CI values that must never be used for real, and the **buyer handover checklist** (seller revokes and rotates everything, buyer generates their own, how to prove that no secret is in the git history, why Terraform state holds no secret values) are in **[docs/secrets.md](docs/secrets.md)** (Norwegian: [docs/secrets.no.md](docs/secrets.no.md)). Read it before any deployment and before any sale or transfer of the code.
+
 ## Build plan
 Follows the 12-prompt playbook: eval set first → verified tool layer → draft + independent verifier (measured pass^k) → retrieval/memory → routing/cost control → red-team → audit trail + human approval → measured recovery rate → pilot one-pager → seed deck grounded only in measured results.
 
@@ -169,8 +174,8 @@ The software foundation above is necessary, not sufficient. Still required:
 > [technical/web-platform-security.md](technical/web-platform-security.md). Architecture:
 > [ARCHITECTURE.md, "Web platform"](ARCHITECTURE.md#web-platform-typescript-steps-1-2).
 
-A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1, 2
-and 3 are done:
+A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 to 4
+are done:
 
 - **Step 1:** email + password login (argon2id), a short-lived access token plus a rotating refresh
   cookie, TOTP MFA for Owner/Admin/platform roles, lockout with exponential backoff, CSRF protection,
@@ -182,10 +187,16 @@ and 3 are done:
   in an isolated worker process, deterministic field extraction with source pointers, a human review
   queue and commit to claims; plus CSV and Excel export of claims, packets and approval decisions with
   formula neutralization. See [Import and export (step 3)](#import-and-export-step-3).
+- **Step 4:** an internal **Dev dashboard** for platform staff (pipeline health, request telemetry,
+  filtered logs, feature flags, evaluation runs, platform audit; aggregates only, never customer data),
+  **Recovery intelligence** for tenant users (a prioritised worklist, similar past claims and a
+  provenance summary, all computed by fixed, documented rules over the tenant's own data), **tenant API
+  keys** for machine access to nine routes, and a command-line **evaluation tool** (pass^k on synthetic
+  fixtures). See [Dev dashboard, Recovery intelligence and API keys (step 4)](#dev-dashboard-recovery-intelligence-and-api-keys-step-4).
 
 "Send" only marks a demand send-ready and audits it. No email is sent and no money moves. The seeded claims and
 packets are synthetic and are transcribed from the Python CLI output on `tests/fixtures/`. Claims created
-by import have no amounts or packet yet. The dev dashboard, AI features, OCR, email-forward ingestion and
+by import have no amounts or packet yet. OCR, email-forward ingestion, any learned model or LLM call, and
 the TS port of the Python rules (build step 5, which will analyse imported claims) are later steps.
 
 **The Python service and the `webapp/` pilot dashboard are unchanged and remain.** The web platform has
@@ -226,6 +237,7 @@ openssl rand -hex 32        # JWT_SECRET      (hex is valid ...)
 openssl rand -hex 32        # CSRF_SECRET
 openssl rand -base64 48     # REFRESH_PEPPER  (... and so is base64)
 openssl rand -base64 32     # MFA_ENC_KEY     (must be base64 of exactly 32 random bytes)
+openssl rand -hex 32        # API_KEY_PEPPER  (step 4; optional outside production, required in production)
 #   no openssl? node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 set -a; . ./.env; set +a    # the API and the seed read process.env only (no .env loader)
 
@@ -240,9 +252,14 @@ npm run dev -w web          # http://127.0.0.1:5173 (proxies /api to the API)
 ```
 
 Secret rules: `JWT_SECRET`, `CSRF_SECRET` and `REFRESH_PEPPER` must each be at least 43 characters and
-must all differ. Placeholder-looking values are refused in every environment. In production the
-documented dev/CI values are refused as well, and every secret must pass an entropy check. Random hex
-(`openssl rand -hex 32`) and base64 (`openssl rand -base64 48`) both pass it.
+must all differ. `API_KEY_PEPPER` (step 4), when set, must be at least 43 characters and differ from every
+other secret; set but empty is refused everywhere, and when it is unset outside production the public
+dev value is used. Placeholder-looking values are refused in every environment. In production the
+documented dev/CI values are refused as well, and every secret must pass an entropy check whose
+"one character dominates" rule is an exact binomial bound, so a truly random secret is wrongly refused
+with probability below 10^-12. Random hex (`openssl rand -hex 32`) and base64 (`openssl rand -base64 48`)
+both pass it. The full inventory, rotation procedures and the handover checklist are in
+[docs/secrets.md](docs/secrets.md).
 
 Seed accounts (synthetic, local only): `owner@acme.test`, `admin@acme.test`, `manager@acme.test`,
 `reviewer@acme.test`, `analyst@acme.test`, `viewer@acme.test`, a second tenant `*@globex.test`, and the
@@ -430,6 +447,216 @@ differences. The full register, with the rationale for each, is in
 - **D7:** only ASCII digits in dates and times, and only an ASCII `USD` suffix.
 - **D8:** PNG and JPEG are accepted but yield no fields (no OCR); they go to manual review.
 
+## Dev dashboard, Recovery intelligence and API keys (step 4)
+
+Step 4 adds an internal dashboard for platform staff, explainable work aids for tenant users, tenant API
+keys and an evaluation tool. Architecture:
+[ARCHITECTURE.md, step 4](ARCHITECTURE.md#web-platform-dev-dashboard-recovery-intelligence-and-api-keys-step-4).
+Threats: section 7 of [technical/web-platform-security.md](technical/web-platform-security.md). Secrets:
+[docs/secrets.md](docs/secrets.md).
+
+**Honesty rule.** Every number on these screens is computed from data the system holds at request time
+(database rows, in-process counters of this API instance, or evaluation runs recorded by the tool), and
+every number says what it is based on. There is **no learned model, no neural network, no cache, no
+LLM or other "AI" call, and no accuracy or speed-up figure** anywhere. The brief's "Hebbian router",
+"neural mesh" and "solved-problems cache (~250x)" are **not implemented**; what ships instead is listed in
+[ARCHITECTURE.md, "Brief terms vs what is built"](ARCHITECTURE.md#brief-terms-vs-what-is-built).
+
+### Who can see what
+
+| Feature | OWNER | ADMIN | MANAGER | REVIEWER | ANALYST | VIEWER | PLATFORM_DEV | SUPER_ADMIN |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Dev dashboard: Pipeline health, Telemetry (`platform:health`) | - | - | - | - | - | - | yes | yes |
+| Dev dashboard: Logs, Feature flags, Evaluation (`platform:logs`, `platform:flags`, `platform:eval`) | - | - | - | - | - | - | yes | - |
+| Dev dashboard: Audit, the platform audit chain (`platform:audit`) | - | - | - | - | - | - | - | yes |
+| Recovery intelligence: worklist, similar claims, provenance (`claims:read`) | yes | yes | yes | yes | yes | yes | - | - |
+| API keys: create, list, revoke (`apikeys:manage`) | yes | yes | - | - | - | - | - | - |
+
+Platform users land on `/dev` and get no tenant links; a tenant user who opens `/dev` is sent to
+`/claims`. The API enforces the same matrix (`packages/shared/src/rbac.ts`): a tenant route answers 403
+to a platform user and a platform route answers 403 to a tenant user. Platform staff never see customer
+data, and they can never see, create or revoke a tenant's API keys.
+
+### Dev dashboard (`/dev`)
+
+Every dashboard read is recorded in the platform audit chain (`platform.dashboard_viewed` or
+`platform.logs_viewed`) **before** the data is returned; if that write fails, the request fails with no
+data. The dashboard never refreshes by itself: each view is a deliberate click on "Refresh". Reads are
+limited to `RATE_LIMIT_PLATFORM_MAX` (120) per user per 10 minutes.
+
+- **Pipeline health** (`GET /api/v1/platform/pipeline?window=1h|24h|7d`). Counts across **all tenants**,
+  read from the database at request time: documents by status and by detected type, rejections by
+  reason, the rejected/failed/needs-review rates, upload-to-parse time (p50 and p95, interpolated over
+  the documents of the window), review queue depth and oldest waiting time, documents stuck in
+  `RECEIVED` longer than `IMPORT_STALE_SECONDS`, and claims awaiting analysis. A `SECURITY DEFINER`
+  SQL function returns counts only: no tenant, user, file name or claim number. Files refused before
+  storage (413/415) have no database row and show up only in Telemetry.
+- **Telemetry** (`/dev/telemetry`). Counters of **this API instance since it started** (they reset on
+  restart; with several instances each one has its own): requests by status class, 401/403/429 counts,
+  and per route pattern (at most 200 patterns, the rest under `(other)`, unknown URLs under
+  `(unmatched)`) a duration histogram with bucket bounds 5, 10, 25, 50, 100, 250, 500, 1000, 2500 and
+  5000 ms. p50 and p95 are shown as the **upper bound of the bucket** they fall into, never as a point
+  estimate. Also the parser sandbox counters and the **Intelligence components** table: `priority-v1`
+  and `similar-v1`, each with Method "Fixed rules", Learned model "None", the flag state, calls, errors
+  and duration bounds.
+- **Logs** (`/dev/logs`). The most recent `LOG_BUFFER_SIZE` (500) log records of **this instance**, kept
+  in memory and lost on restart. Only eight fields derived from the already-redacted log line are kept:
+  time, level, request id, method, route **pattern**, status, duration and event. The event text is shown
+  only when it matches `^[A-Za-z0-9 _.:/()-]{1,80}$`, contains no `@` and no run of 20 or more
+  token-like characters; anything else shows as `(message withheld)`. No query string, concrete path,
+  header, cookie, body, IP address, e-mail address, token, API key, file name or document value is ever
+  shown. Filters: minimum level and an exact request id. Central log search stays with the cloud
+  provider (the ECS log group in CloudWatch).
+- **Feature flags** (`/dev/flags`). Exactly three global flags, all on by default:
+  `intelligence.worklist`, `intelligence.similar_claims` and `intelligence.provenance`. They can switch
+  off these three features only, never a security control, and there are no per-tenant overrides. A
+  change needs a reason of at least 10 characters and the current version (a stale version answers
+  409), and is written together with a `platform.flag_changed` audit event. It takes effect within
+  `FLAGS_CACHE_TTL_MS` (5 seconds by default, per instance). If the flag table cannot be read, the flag
+  counts as off.
+- **Evaluation** (`/dev/evaluation`). Read-only list of the runs recorded by the evaluation tool (below),
+  with per-case results.
+- **Audit** (`/dev/audit`, SUPER_ADMIN only). The platform audit chain and a "Verify chain" button.
+
+### Recovery intelligence (tenant users)
+
+The "Intelligence" page (`/intelligence`) and two new claim-sheet tabs, "Similar" and "Provenance". All
+three use **only this tenant's own data**, every view is recorded as `intelligence.viewed` in the
+tenant's audit chain, they are limited to `RATE_LIMIT_INTELLIGENCE_MAX` (120) requests per user per 10
+minutes, and a feature switched off by its flag answers 404.
+
+**Prioritised worklist (`priority-v1`).** Claims in `PENDING_REVIEW` or `APPROVED` that have an evidence
+packet are sorted by money. Confirmed recoverable dollars count in full; dollars still pending human
+review count at **W = 25%**. W is a stated policy, not something learned from data (no recovery outcomes
+exist to learn from); it is set by `INTELLIGENCE_PENDING_WEIGHT_PERCENT` and shown with every result.
+
+```
+priority score (cents) = recoverable + floor(pending_review * W / 100)      W = 25 by default
+order: score (high first), then recoverable (high first), then waiting longest first, then claim id
+```
+
+Example: $1,000.00 confirmed and $400.00 pending gives $1,000.00 + $100.00 = **$1,100.00**. Each row
+lists why it is where it is ("Confirmed recoverable $1,000.00 (counted at 100%)", "Pending human review
+$400.00 (counted at 25%)", how many findings still need review, and "Waiting 3 days (not part of the
+score)") and a next action (Resolve findings, Review and approve, Mark send-ready). The page states:
+"This is a work-order aid, not a forecast of what will be recovered." Claims still `AWAITING_ANALYSIS`
+are not ranked; the page counts them ("Not ranked: n claims awaiting analysis"). Until build step 5
+analyses imported claims, a real tenant's worklist is empty; only the seeded demo claims rank.
+
+**Similar past claims (`similar-v1`).** The open claim is compared with the 500 most recently updated
+claims of the same tenant (`SIMILAR_CANDIDATE_LIMIT`) that the team has already decided (`APPROVED`,
+`SEND_READY` or `REJECTED`) and that have a packet. Points (fixed weights, total 0-100):
+
+| Signal | Points |
+| --- | --- |
+| Same carrier (case and extra spaces ignored) | 35 |
+| Shared rules: 40 x (rules in both) / (rules in either), rounded down | 0-40 |
+| Similar amount: 15 x (smaller total) / (larger total), rounded down | 0-15 |
+| Same perspective (shipper or carrier) | 10 |
+
+A claim is shown only with at least 30 points **and** the same carrier or at least one shared rule; the
+best matches come first (ties: most recently updated). Each match lists its reasons, how the team
+handled it (final status, rule ids, source document types, decision date) and the line "Computed in X ms
+over N claims", which is the measured time of **that** request. There is no cache and no speed-up claim.
+"Final status shows how your team handled the claim, not whether the carrier paid."
+
+**Provenance.** For each document linked to the claim: extracted and manual field counts by review
+status, unresolved flagged fields and the lowest confidence. "Confidence is a rule-based parse score, not
+an accuracy measure."
+
+### API keys (machine access)
+
+- **Who.** OWNER and ADMIN manage keys under Settings > "API keys" (`/settings/api-keys`). A key belongs
+  to one tenant; the tenant is taken from the key, never from the request.
+- **Create.** Name, at least one scope, and an expiry of 30, 90, 180 or 365 days (**default 90**,
+  `API_KEY_DEFAULT_TTL_DAYS`). Production never allows keys without expiry. You can only grant scopes
+  whose permission you hold yourself. At most `API_KEY_MAX_ACTIVE` (20) active keys per tenant.
+- **Shown once.** The full key appears only in the "API key created" dialog, with a Copy button.
+  Closing the dialog clears it; the server stores only an HMAC-SHA-256 hash keyed with `API_KEY_PEPPER`,
+  so nobody can show it again. A lost key is replaced by a new one. The list shows the public prefix
+  `fr_live_<16 hex>` only.
+- **Use.** Format `fr_live_<16 hex>_<43 characters>`, sent **only** as a header:
+  ```bash
+  curl -H "Authorization: Bearer $FR_API_KEY" http://127.0.0.1:3001/api/v1/claims
+  ```
+  Never put a key in a URL, query string, cookie or body: any request whose URL contains `fr_live_` is
+  refused with 400 before anything else happens, and the value is never logged (the logger also
+  replaces any `fr_live_...` string with `[REDACTED]`). Key requests need no CSRF token and never get
+  cookies; if they carry an `Origin` header it must equal `APP_ORIGIN`.
+- **Scopes and the nine routes that accept a key.** All other routes refuse a key with 403, even if it
+  holds every scope: packets, approvals, review, commit, original download, packet and decision exports,
+  users, audit, intelligence, `/features`, `/me`, auth, the platform routes, the key routes, and health.
+
+  | Scope | Routes (under `/api/v1`) | Permission re-checked on every request |
+  | --- | --- | --- |
+  | `claims.read` | `GET /claims`, `GET /claims/:id`, `GET /claims/:id/documents` | `claims:read` |
+  | `exports.claims` | `GET /exports/claims` | `export:claims` |
+  | `imports.write` | `POST /imports`, `GET /imports`, `GET /imports/:batchId`, `POST /imports/:batchId/documents`, `GET /imports/:batchId/documents/:docId` | `import:run` |
+
+- **Same rules as a user.** A key request runs through the same tenant isolation, permission checks,
+  rate limits, flags and audit as a user of that tenant. Audit events show the actor role `API_KEY` and
+  `viaApiKey: <key id>`; ownership columns get the creator's id. The **creator's current role** is checked
+  on every request: if the creator is disabled or no longer holds the scope's permission, or the tenant
+  is suspended, the key gets 401.
+- **Failures.** Unknown key, wrong secret, malformed, revoked or expired: an identical 401 (nothing tells
+  them apart). A valid key on a route it may not use: 403.
+- **Revoke.** "Revoke <name>" with a reason of at least 10 characters. It takes effect on the very next
+  request on every instance (key state is read from the database on every request, never cached).
+- **Rotate.** Create a new key, switch the client, then revoke the old one. Rotating `API_KEY_PEPPER`
+  invalidates every key at once (see [docs/secrets.md](docs/secrets.md)).
+- **Rate limits.** `RATE_LIMIT_API_KEY_MAX` (300) requests per key per 60 seconds. Failed key
+  authentications: `RATE_LIMIT_API_KEY_FAIL_MAX` (30) per client address per 10 minutes; after the 30th
+  failure every further key request from that address, even with a valid key, gets 429 **before** any
+  verification until the window ends. The step 3 upload and export limits apply too. "Last used" is
+  updated at most once per minute.
+
+### Evaluation tool (pass^k on synthetic fixtures)
+
+```bash
+npm run build      # the tool runs the built parser worker
+npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1   # the CI gate
+npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --json               # machine-readable output
+npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --record             # also store the run (needs DATABASE_URL)
+```
+
+Each case runs k times (1-20, default 3) through the **same** pre-store checks and the **same** sandboxed
+parse job as the API, with no network and no database. A run counts as correct only if the result
+matches the expected answer exactly (document type and every field, or the exact rejection reason).
+
+- **pass^k** = the share of cases whose **all k runs** were correct. It punishes flaky behaviour: a case
+  that is right 9 times out of 10 fails pass^k far more often than pass^1. The tool also reports the
+  per-run pass rate, the pass^j curve for j = 1..k (an unbiased estimate), flaky and always-failing
+  cases, how many cases gave byte-identical output on every run, and a Wilson 95% interval for pass^k.
+- This extraction stage is deterministic, so pass^k equals pass^1 here, and the dashboard says so.
+- **Synthetic fixtures only.** The set `api/eval/sets/extraction-v1` has 30 synthetic cases (9 with
+  expected values from the Python reference, 9 expected rejections, 12 hand-written). Results are **not
+  an accuracy measure** on real documents. The latest run: 30 of 30 cases passed all 3 runs, all
+  deterministic, Wilson 95% interval 88.6%-100%. That only says the stage reproduces 30 known answers
+  consistently.
+- Exit codes: 0 success (and threshold met), 1 `--min-pass-hat-k` not met, 2 usage or manifest error, 3
+  infrastructure error. Without `--record` nothing is written anywhere. `--record` writes the run and its
+  case results in one transaction and appends `eval.run_recorded` to the platform audit chain; it never
+  prints the database URL. CI runs the gate on every build.
+
+### Configuration (step 4)
+
+All knobs are read once at start-up and range-checked; production limits apply only with
+`NODE_ENV=production`. `.env.example`, `compose.web.yml` and `infra/ecs.tf` list them.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `LOG_BUFFER_SIZE` | 500 | log records kept in memory for the Logs tab (50..5000) |
+| `FLAGS_CACHE_TTL_MS` | 5000 | per-instance flag cache (0..60000; production ceiling 30000; 0 = no cache) |
+| `INTELLIGENCE_PENDING_WEIGHT_PERCENT` | 25 | W, the weight of pending-review dollars in the worklist (0..100) |
+| `SIMILAR_CANDIDATE_LIMIT` | 500 | past claims compared per "Similar" request (10..2000) |
+| `RATE_LIMIT_PLATFORM_MAX` / `RATE_LIMIT_INTELLIGENCE_MAX` | 120 / 120 | dashboard / intelligence requests per user per 10 minutes |
+| `API_KEY_PEPPER` | dev value outside production | HMAC key for stored API key hashes; **secret**, required in production (see [docs/secrets.md](docs/secrets.md)) |
+| `API_KEY_MAX_ACTIVE` | 20 | active keys per tenant (1..200) |
+| `API_KEY_DEFAULT_TTL_DAYS` | 90 | default expiry (1..365) |
+| `API_KEY_ALLOW_NON_EXPIRING` | true outside production | keys without expiry; must be false in production |
+| `RATE_LIMIT_API_KEY_MAX` | 300 | requests per key per 60 seconds |
+| `RATE_LIMIT_API_KEY_FAIL_MAX` | 30 | failed key authentications per client address per 10 minutes |
+
 ## Tests and checks
 
 ```bash
@@ -443,6 +670,7 @@ npm run test:integration     # api, against a migrated + seeded test DB (TEST_DA
                              # and the same MFA_ENC_KEY the seed used), S3 (MinIO) and Python (PYTHON=...) for the
                              # parity suite; see the env block in .github/workflows/web-ci.yml
 npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
+npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1   # step 4: after npm run build
 npm run audit && npm audit signatures
 terraform -chdir=infra fmt -check -recursive && terraform -chdir=infra init -backend=false && terraform -chdir=infra validate
 ```
@@ -461,3 +689,12 @@ reference: zero unregistered differences. Independent acceptance run (round 2): 
 passed (1 Playwright skip), api 500 passed; the 3 api failures were this documentation (since added) and
 two test bugs that were fixed and re-run. **Not run:** container images and the compose stack,
 Playwright, the forced audit-failure export test, encrypted-PDF tests (no `qpdf`), any AWS deployment.
+
+Step 4 (2026-10-09, run `REQ-20261009-step4-intelligence`, Windows, Node 22.23.3 (the CI version) and
+Node 24.21.0, portable PostgreSQL 16, portable MinIO with SSE-KMS, Python for parity, in the
+`web-ci.yml` step order with its environment): lint, typecheck, unit tests (shared 134, api 346, web
+62), migrate + seed, `ensure-bucket`, build, the evaluation gate (30 of 30 cases pass all 3 runs),
+integration (85 passed, 2 placeholder skips). Independent acceptance run (round 2): shared 33/33, web
+138 passed (1 skip), api 651 passed (9 skipped for missing tools or declared skips, 2 todo). Round 1 had
+found six defects (D-1..D-6); all were fixed and re-verified. **Not run:** container images and the
+compose stack, Playwright, terraform in the test run (the builder ran fmt/validate), any AWS deployment.

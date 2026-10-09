@@ -12,7 +12,7 @@
 | Evidence | `evidence/` (`packet.py`, `letter.py`) | Markdown evidence packet and demand-letter draft; dispute window set to 90 days (configurable constant) | Independent verifier, citation spans checked against sources, carrier/contract-specific deadlines |
 | Output | `api/main.py`, `cli.py`, `pipeline.py` | `POST /v1/analyze`, `POST /v1/analyze/text`, `/health`; CLI prints the packet | Case tracking, reminders, dispute status, human approval workflow, immutable audit trail |
 
-Also absent: the pass^k eval harness and gold set (described in section 2 as the plan). The existing tests use small synthetic fixtures (`tests/fixtures/ld5001`, `ld5002`) and prove the arithmetic and plumbing, not real-world accuracy.
+Also absent in the Python service: the pass^k eval harness and gold set (described in section 2 as the plan). The TypeScript web platform (build step 4) now has a first pass^k tool for its **extraction** stage only, run on 30 synthetic fixtures (`npm run eval`, see the README); it is a regression check, not an accuracy measure, and no gold set of real documents exists. The existing tests use small synthetic fixtures (`tests/fixtures/ld5001`, `ld5002`) and prove the arithmetic and plumbing, not real-world accuracy.
 
 ## 1. The pipeline in plain language
 

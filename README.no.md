@@ -30,6 +30,10 @@ De etablerte aktørene kan gå ned i markedet; tall for feilprosent på fakturae
 - hiring/ — rollebeskrivelser + hvordan finne en operatør/daglig leder i Norge (rekrutterere og offisielle kanaler).
 - web/, api/, packages/shared/, infra/ — den nye TypeScript-nettplattformen (før produkt, kun syntetiske data); se [Nettplattform](#nettplattform-typescript-før-produkt-kun-syntetiske-data) nedenfor.
 - docs/design/ — designdokumenter for funksjoner som ikke er bygget ennå (e-postvideresending: kun design).
+- docs/secrets.no.md — alle hemmeligheter og all legitimasjon i nettplattformen, rotasjon, og sjekklisten for overlevering til kjøper.
+
+## Hemmeligheter og overlevering
+Alle hemmeligheter nettplattformen bruker (miljøvariabel, formål, hvordan den lages, oppstartsregler, rotasjon og konsekvenser, hvor den ligger i produksjon), de offentlige utviklings-/CI-verdiene som aldri må brukes i noe ekte, og **sjekklisten for overlevering til kjøper** (selger tilbakekaller og roterer alt, kjøper lager sine egne, hvordan man beviser at ingen hemmelighet ligger i git-historikken, hvorfor Terraform-tilstanden ikke inneholder hemmelige verdier) står i **[docs/secrets.no.md](docs/secrets.no.md)** (engelsk original: [docs/secrets.md](docs/secrets.md)). Les den før enhver utrulling og før ethvert salg eller overdragelse av koden.
 
 ## Byggeplan
 Følger spillboken med 12 prompter: eval-sett først → verifisert verktøylag → utkast + uavhengig verifikator (målt pass^k) → henting/minne → ruting/kostnadskontroll → red-team → revisjonsspor + menneskelig godkjenning → målt innkrevingsrate → pilot-enpager → seed-deck som kun bygger på målte resultater.
@@ -173,7 +177,7 @@ Programvarefundamentet ovenfor er nødvendig, ikke tilstrekkelig. Fortsatt påkr
 > [ARCHITECTURE.no.md, «Nettplattform»](ARCHITECTURE.no.md#nettplattform-typescript-steg-1-2).
 
 En nettapplikasjon med flere tenants for arbeidsflyten rundt bevispakker, bygget med sikkerhet først.
-Byggesteg 1, 2 og 3 er ferdige:
+Byggesteg 1 til 4 er ferdige:
 
 - **Steg 1:** innlogging med e-post og passord (argon2id), et kortlivet tilgangstoken pluss en roterende
   refresh-informasjonskapsel, TOTP-MFA for eier, administrator og plattformroller, utestenging med
@@ -188,11 +192,18 @@ Byggesteg 1, 2 og 3 er ferdige:
   menneskelig gjennomgang og opprettelse av krav; pluss eksport av krav, bevispakker og
   godkjenningsbeslutninger til CSV og Excel med formelnøytralisering. Se
   [Import og eksport (steg 3)](#import-og-eksport-steg-3).
+- **Steg 4:** et internt **utviklerdashbord** for plattformansatte (pipelinehelse, telemetri for
+  forespørsler, filtrerte logger, funksjonsflagg, evalueringskjøringer, plattformens revisjonsspor; bare
+  aggregater, aldri kundedata), **Recovery intelligence** for tenantbrukere (en prioritert arbeidsliste,
+  lignende tidligere krav og et sammendrag av proveniens, alt beregnet med faste, dokumenterte regler på
+  tenantens egne data), **API-nøkler for tenanter** for maskintilgang til ni ruter, og et
+  **evalueringsverktøy** på kommandolinjen (pass^k på syntetiske testdata). Se
+  [Utviklerdashbord, Recovery intelligence og API-nøkler (steg 4)](#utviklerdashbord-recovery-intelligence-og-api-nøkler-steg-4).
 
 «Send» merker bare et krav som klart til sending og logger det i revisjonssporet. Ingen e-post sendes, og
 ingen penger flyttes. De seedede kravene og bevispakkene er syntetiske og er transkribert fra
 Python-CLI-ens utdata på `tests/fixtures/`. Krav som opprettes ved import, har ennå ingen beløp eller
-pakke. Utviklerdashbordet, AI-funksjoner, OCR, mottak av videresendt e-post og TS-porten av
+pakke. OCR, mottak av videresendt e-post, enhver lært modell eller LLM-kall og TS-porten av
 Python-reglene (byggesteg 5, som skal analysere importerte krav) er senere steg.
 
 **Python-tjenesten og pilotdashbordet `webapp/` er uendret og blir værende.** Nettplattformen har sin
@@ -233,6 +244,7 @@ openssl rand -hex 32        # JWT_SECRET      (hex is valid ...)
 openssl rand -hex 32        # CSRF_SECRET
 openssl rand -base64 48     # REFRESH_PEPPER  (... and so is base64)
 openssl rand -base64 32     # MFA_ENC_KEY     (must be base64 of exactly 32 random bytes)
+openssl rand -hex 32        # API_KEY_PEPPER  (step 4; optional outside production, required in production)
 #   no openssl? node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
 set -a; . ./.env; set +a    # the API and the seed read process.env only (no .env loader)
 
@@ -247,9 +259,14 @@ npm run dev -w web          # http://127.0.0.1:5173 (proxies /api to the API)
 ```
 
 Regler for hemmeligheter: `JWT_SECRET`, `CSRF_SECRET` og `REFRESH_PEPPER` må hver være minst 43 tegn og
-må være forskjellige fra hverandre. Verdier som ser ut som plassholdere avvises i alle miljøer. I
-produksjon avvises i tillegg de dokumenterte dev-/CI-verdiene, og hver hemmelighet må bestå en
-entropisjekk. Tilfeldig hex (`openssl rand -hex 32`) og base64 (`openssl rand -base64 48`) består begge.
+må være forskjellige fra hverandre. `API_KEY_PEPPER` (steg 4) må, når den er satt, være minst 43 tegn og
+forskjellig fra alle andre hemmeligheter; satt men tom avvises overalt, og når den ikke er satt utenfor
+produksjon, brukes den offentlige utviklingsverdien. Verdier som ser ut som plassholdere avvises i alle
+miljøer. I produksjon avvises i tillegg de dokumenterte dev-/CI-verdiene, og hver hemmelighet må bestå en
+entropisjekk der regelen «ett tegn dominerer» er en eksakt binomisk grense, slik at en virkelig tilfeldig
+hemmelighet feilaktig avvises med sannsynlighet under 10^-12. Tilfeldig hex (`openssl rand -hex 32`) og
+base64 (`openssl rand -base64 48`) består begge. Full oversikt, rotasjon og sjekklisten for overlevering
+står i [docs/secrets.no.md](docs/secrets.no.md).
 
 Seed-kontoer (syntetiske, kun lokalt): `owner@acme.test`, `admin@acme.test`, `manager@acme.test`,
 `reviewer@acme.test`, `analyst@acme.test`, `viewer@acme.test`, en andre tenant `*@globex.test`, og
@@ -423,6 +440,220 @@ forskjellene. Hele registeret med begrunnelser står i
 - **D7:** bare ASCII-sifre i datoer og klokkeslett, og bare en ASCII-endelse `USD`.
 - **D8:** PNG og JPEG godtas, men gir ingen felt (ingen OCR); de går til manuell gjennomgang.
 
+## Utviklerdashbord, Recovery intelligence og API-nøkler (steg 4)
+
+Steg 4 legger til et internt dashbord for plattformansatte, forklarbare arbeidshjelpemidler for
+tenantbrukere, API-nøkler for tenanter og et evalueringsverktøy. Arkitektur:
+[ARCHITECTURE.no.md, steg 4](ARCHITECTURE.no.md#nettplattform-utviklerdashbord-recovery-intelligence-og-api-nøkler-steg-4).
+Trusler (engelsk): avsnitt 7 i [technical/web-platform-security.md](technical/web-platform-security.md).
+Hemmeligheter: [docs/secrets.no.md](docs/secrets.no.md).
+
+**Ærlighetsregel.** Hvert tall på disse skjermene er beregnet fra data systemet har når forespørselen
+kommer (databaserader, tellere i denne API-instansen eller evalueringskjøringer registrert av verktøyet),
+og hvert tall sier hva det bygger på. Det finnes **ingen lært modell, ikke noe nevralt nettverk, ingen
+cache, ingen LLM eller annet «AI»-kall, og ingen tall for treffsikkerhet eller hastighetsgevinst** noe
+sted. Briefens «Hebbian router», «neural mesh» og «solved-problems cache (~250x)» er **ikke
+implementert**; hva som leveres i stedet, står i
+[ARCHITECTURE.no.md, «Begreper i briefen mot det som er bygget»](ARCHITECTURE.no.md#begreper-i-briefen-mot-det-som-er-bygget).
+
+### Hvem ser hva
+
+| Funksjon | OWNER | ADMIN | MANAGER | REVIEWER | ANALYST | VIEWER | PLATFORM_DEV | SUPER_ADMIN |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Utviklerdashbord: Pipeline health, Telemetry (`platform:health`) | - | - | - | - | - | - | ja | ja |
+| Utviklerdashbord: Logs, Feature flags, Evaluation (`platform:logs`, `platform:flags`, `platform:eval`) | - | - | - | - | - | - | ja | - |
+| Utviklerdashbord: Audit, plattformens revisjonskjede (`platform:audit`) | - | - | - | - | - | - | - | ja |
+| Recovery intelligence: arbeidsliste, lignende krav, proveniens (`claims:read`) | ja | ja | ja | ja | ja | ja | - | - |
+| API-nøkler: opprette, liste, tilbakekalle (`apikeys:manage`) | ja | ja | - | - | - | - | - | - |
+
+Plattformbrukere havner på `/dev` og får ingen tenantlenker; en tenantbruker som åpner `/dev`, sendes til
+`/claims`. API-et håndhever den samme matrisen (`packages/shared/src/rbac.ts`): en tenantrute svarer 403
+til en plattformbruker, og en plattformrute svarer 403 til en tenantbruker. Plattformansatte ser aldri
+kundedata, og de kan aldri se, opprette eller tilbakekalle en tenants API-nøkler.
+
+### Utviklerdashbord (`/dev`)
+
+Hver lesing i dashbordet registreres i plattformens revisjonskjede (`platform.dashboard_viewed` eller
+`platform.logs_viewed`) **før** dataene returneres; feiler den skrivingen, feiler forespørselen uten data.
+Dashbordet oppdaterer seg aldri av seg selv: hver visning er et bevisst klikk på «Refresh». Lesinger er
+begrenset til `RATE_LIMIT_PLATFORM_MAX` (120) per bruker per 10 minutter.
+
+- **Pipeline health** (`GET /api/v1/platform/pipeline?window=1h|24h|7d`). Tellinger på tvers av **alle
+  tenanter**, lest fra databasen ved forespørselen: dokumenter per status og per gjenkjent type,
+  avvisninger per årsak, andelen avviste/feilede/til gjennomgang, tid fra opplasting til parsing (p50 og
+  p95, interpolert over vinduets dokumenter), dybden på gjennomgangskøen og eldste ventetid, dokumenter
+  som har stått i `RECEIVED` lenger enn `IMPORT_STALE_SECONDS`, og krav som venter på analyse. En
+  `SECURITY DEFINER`-funksjon i SQL returnerer bare tellinger: ingen tenant, bruker, filnavn eller
+  kravnummer. Filer som avvises før lagring (413/415), har ingen databaserad og vises bare i Telemetry.
+- **Telemetry** (`/dev/telemetry`). Tellere for **denne API-instansen siden den startet** (de nullstilles
+  ved omstart; med flere instanser har hver sine): forespørsler per statusklasse, antall 401/403/429, og
+  per rutemønster (høyst 200 mønstre, resten under `(other)`, ukjente URL-er under `(unmatched)`) et
+  varighetshistogram med bøttegrensene 5, 10, 25, 50, 100, 250, 500, 1000, 2500 og 5000 ms. p50 og p95
+  vises som **øvre grense for bøtta** de faller i, aldri som et punktanslag. I tillegg tellerne for
+  parsersandkassen og tabellen **Intelligence components**: `priority-v1` og `similar-v1`, hver med
+  Method «Fixed rules», Learned model «None», flaggstatus, kall, feil og varighetsgrenser.
+- **Logs** (`/dev/logs`). De siste `LOG_BUFFER_SIZE` (500) loggpostene fra **denne instansen**, holdt i
+  minnet og tapt ved omstart. Bare åtte felt avledet fra den allerede maskerte logglinjen beholdes: tid,
+  nivå, forespørsels-id, metode, rute**mønster**, status, varighet og hendelse. Hendelsesteksten vises
+  bare når den samsvarer med `^[A-Za-z0-9 _.:/()-]{1,80}$`, ikke inneholder `@` og ikke har en rekke på 20
+  eller flere tokenlignende tegn; alt annet vises som `(message withheld)`. Ingen spørrestreng, konkret
+  sti, header, informasjonskapsel, body, IP-adresse, e-postadresse, token, API-nøkkel, filnavn eller
+  dokumentverdi vises noen gang. Filtre: minimumsnivå og en eksakt forespørsels-id. Sentralt loggsøk
+  ligger fortsatt hos skyleverandøren (ECS-logggruppen i CloudWatch).
+- **Feature flags** (`/dev/flags`). Nøyaktig tre globale flagg, alle på som standard:
+  `intelligence.worklist`, `intelligence.similar_claims` og `intelligence.provenance`. De kan bare slå av
+  disse tre funksjonene, aldri en sikkerhetskontroll, og det finnes ingen overstyring per tenant. En
+  endring krever en begrunnelse på minst 10 tegn og gjeldende versjon (en utdatert versjon gir 409), og
+  skrives sammen med en `platform.flag_changed`-hendelse i revisjonssporet. Den virker innen
+  `FLAGS_CACHE_TTL_MS` (5 sekunder som standard, per instans). Kan flaggtabellen ikke leses, regnes flagget
+  som av.
+- **Evaluation** (`/dev/evaluation`). Skrivebeskyttet liste over kjøringene evalueringsverktøyet (nedenfor)
+  har registrert, med resultater per sak.
+- **Audit** (`/dev/audit`, bare SUPER_ADMIN). Plattformens revisjonskjede og knappen «Verify chain».
+
+### Recovery intelligence (tenantbrukere)
+
+Siden «Intelligence» (`/intelligence`) og to nye faner i kravpanelet, «Similar» og «Provenance». Alle tre
+bruker **bare tenantens egne data**, hver visning registreres som `intelligence.viewed` i tenantens
+revisjonskjede, de er begrenset til `RATE_LIMIT_INTELLIGENCE_MAX` (120) forespørsler per bruker per 10
+minutter, og en funksjon som er slått av med flagget sitt, svarer 404.
+
+**Prioritert arbeidsliste (`priority-v1`).** Krav i `PENDING_REVIEW` eller `APPROVED` som har en
+bevispakke, sorteres etter penger. Bekreftet innkrevbare dollar teller fullt; dollar som fortsatt venter
+på menneskelig gjennomgang, teller med **W = 25 %**. W er en uttalt policy, ikke noe som er lært fra data
+(det finnes ingen innkrevingsutfall å lære av); den settes med `INTELLIGENCE_PENDING_WEIGHT_PERCENT` og
+vises sammen med hvert resultat.
+
+```
+priority score (cents) = recoverable + floor(pending_review * W / 100)      W = 25 by default
+order: score (high first), then recoverable (high first), then waiting longest first, then claim id
+```
+
+Eksempel: $1,000.00 bekreftet og $400.00 til gjennomgang gir $1,000.00 + $100.00 = **$1,100.00**. Hver rad
+forklarer plasseringen («Confirmed recoverable $1,000.00 (counted at 100%)», «Pending human review
+$400.00 (counted at 25%)», hvor mange funn som fortsatt trenger gjennomgang, og «Waiting 3 days (not part
+of the score)») og neste handling (Resolve findings, Review and approve, Mark send-ready). Siden sier:
+«This is a work-order aid, not a forecast of what will be recovered.» Krav som fortsatt er
+`AWAITING_ANALYSIS`, rangeres ikke; siden teller dem («Not ranked: n claims awaiting analysis»). Til
+byggesteg 5 analyserer importerte krav, er arbeidslisten for en ekte tenant tom; bare de seedede
+demokravene rangeres.
+
+**Lignende tidligere krav (`similar-v1`).** Det åpne kravet sammenlignes med de 500 sist oppdaterte
+kravene i samme tenant (`SIMILAR_CANDIDATE_LIMIT`) som teamet allerede har avgjort (`APPROVED`,
+`SEND_READY` eller `REJECTED`) og som har en bevispakke. Poeng (faste vekter, totalt 0-100):
+
+| Signal | Poeng |
+| --- | --- |
+| Samme transportør (store/små bokstaver og ekstra mellomrom ignoreres) | 35 |
+| Felles regler: 40 x (regler i begge) / (regler i minst ett), rundet ned | 0-40 |
+| Lignende beløp: 15 x (minste total) / (største total), rundet ned | 0-15 |
+| Samme perspektiv (avsender eller transportør) | 10 |
+
+Et krav vises bare med minst 30 poeng **og** samme transportør eller minst én felles regel; de beste
+treffene kommer først (likt: sist oppdatert). Hvert treff viser grunnene, hvordan teamet behandlet kravet
+(endelig status, regel-id-er, dokumenttyper i kildene, beslutningsdato) og linjen «Computed in X ms over N
+claims», som er den målte tiden for **akkurat den** forespørselen. Det finnes ingen cache og ingen påstand
+om hastighetsgevinst. «Final status shows how your team handled the claim, not whether the carrier paid.»
+
+**Proveniens.** For hvert dokument knyttet til kravet: antall uttrukne og manuelle felt per
+gjennomgangsstatus, uavklarte flaggede felt og laveste konfidens. «Confidence is a rule-based parse score,
+not an accuracy measure.»
+
+### API-nøkler (maskintilgang)
+
+- **Hvem.** OWNER og ADMIN forvalter nøkler under Innstillinger > «API keys» (`/settings/api-keys`). En
+  nøkkel tilhører én tenant; tenanten hentes fra nøkkelen, aldri fra forespørselen.
+- **Opprette.** Navn, minst ett omfang (scope) og en utløpstid på 30, 90, 180 eller 365 dager
+  (**standard 90**, `API_KEY_DEFAULT_TTL_DAYS`). Produksjon tillater aldri nøkler uten utløp. Du kan bare
+  gi omfang du selv har tillatelsen til. Høyst `API_KEY_MAX_ACTIVE` (20) aktive nøkler per tenant.
+- **Vises én gang.** Hele nøkkelen vises bare i dialogen «API key created», med en kopieringsknapp. Når
+  dialogen lukkes, slettes den; serveren lagrer bare en HMAC-SHA-256-hash nøklet med `API_KEY_PEPPER`, så
+  ingen kan vise den igjen. En tapt nøkkel erstattes med en ny. Listen viser bare det offentlige prefikset
+  `fr_live_<16 hex>`.
+- **Bruk.** Formatet er `fr_live_<16 hex>_<43 tegn>`, og nøkkelen sendes **bare** som header:
+  ```bash
+  curl -H "Authorization: Bearer $FR_API_KEY" http://127.0.0.1:3001/api/v1/claims
+  ```
+  Legg aldri en nøkkel i en URL, spørrestreng, informasjonskapsel eller body: en forespørsel med
+  `fr_live_` i URL-en avvises med 400 før noe annet skjer, og verdien logges aldri (loggeren erstatter
+  også enhver `fr_live_...`-streng med `[REDACTED]`). Nøkkelforespørsler trenger ikke CSRF-token og får
+  aldri informasjonskapsler; har de en `Origin`-header, må den være lik `APP_ORIGIN`.
+- **Omfang og de ni rutene som godtar en nøkkel.** Alle andre ruter avviser en nøkkel med 403, selv om den
+  har alle omfang: bevispakker, godkjenninger, gjennomgang, commit, nedlasting av originaler, eksport av
+  pakker og beslutninger, brukere, revisjonsspor, intelligence, `/features`, `/me`, autentisering,
+  plattformrutene, nøkkelrutene og helsesjekken.
+
+  | Omfang | Ruter (under `/api/v1`) | Tillatelse som kontrolleres på nytt ved hver forespørsel |
+  | --- | --- | --- |
+  | `claims.read` | `GET /claims`, `GET /claims/:id`, `GET /claims/:id/documents` | `claims:read` |
+  | `exports.claims` | `GET /exports/claims` | `export:claims` |
+  | `imports.write` | `POST /imports`, `GET /imports`, `GET /imports/:batchId`, `POST /imports/:batchId/documents`, `GET /imports/:batchId/documents/:docId` | `import:run` |
+
+- **Samme regler som en bruker.** En nøkkelforespørsel går gjennom samme tenant-isolasjon,
+  tillatelseskontroller, ratebegrensninger, flagg og revisjonsspor som en bruker i den tenanten.
+  Revisjonshendelser viser aktørrollen `API_KEY` og `viaApiKey: <nøkkel-id>`; eierkolonner får skaperens
+  id. **Skaperens nåværende rolle** sjekkes ved hver forespørsel: er skaperen deaktivert eller har ikke
+  lenger tillatelsen omfanget krever, eller er tenanten suspendert, får nøkkelen 401.
+- **Feil.** Ukjent nøkkel, feil hemmelighet, feil format, tilbakekalt eller utløpt: en identisk 401
+  (ingenting skiller dem). En gyldig nøkkel på en rute den ikke får bruke: 403.
+- **Tilbakekalle.** «Revoke <name>» med en begrunnelse på minst 10 tegn. Det virker fra neste forespørsel på
+  alle instanser (nøkkelstatus leses fra databasen ved hver forespørsel og bufres aldri).
+- **Rotere.** Lag en ny nøkkel, bytt klienten over, og tilbakekall deretter den gamle. Å rotere
+  `API_KEY_PEPPER` gjør alle nøkler ugyldige på én gang (se [docs/secrets.no.md](docs/secrets.no.md)).
+- **Ratebegrensning.** `RATE_LIMIT_API_KEY_MAX` (300) forespørsler per nøkkel per 60 sekunder. Mislykket
+  nøkkelautentisering: `RATE_LIMIT_API_KEY_FAIL_MAX` (30) per klientadresse per 10 minutter; etter den 30.
+  feilen får hver videre nøkkelforespørsel fra den adressen, også med gyldig nøkkel, 429 **før** noen
+  verifisering til vinduet er over. Grensene for opplasting og eksport fra steg 3 gjelder også. «Last
+  used» oppdateres høyst én gang i minuttet.
+
+### Evalueringsverktøy (pass^k på syntetiske testdata)
+
+```bash
+npm run build      # the tool runs the built parser worker
+npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1   # the CI gate
+npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --json               # machine-readable output
+npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --record             # also store the run (needs DATABASE_URL)
+```
+
+Hver sak kjøres k ganger (1-20, standard 3) gjennom de **samme** kontrollene før lagring og den **samme**
+sandkasseparsingen som API-et, uten nettverk og uten database. En kjøring regnes som riktig bare hvis
+resultatet er nøyaktig likt fasiten (dokumenttype og hvert felt, eller nøyaktig samme avvisningsårsak).
+
+- **pass^k** = andelen saker der **alle k kjøringer** var riktige. Det straffer ustabil oppførsel: en sak
+  som er riktig 9 av 10 ganger, feiler pass^k langt oftere enn pass^1. Verktøyet rapporterer også andelen
+  riktige kjøringer, pass^j-kurven for j = 1..k (et forventningsrett anslag), ustabile saker og saker som
+  alltid feiler, hvor mange saker som ga byte-identisk utdata i alle kjøringer, og et Wilson
+  95 %-intervall for pass^k.
+- Dette uttrekkssteget er deterministisk, så pass^k er lik pass^1 her, og dashbordet sier det.
+- **Bare syntetiske testdata.** Settet `api/eval/sets/extraction-v1` har 30 syntetiske saker (9 med
+  fasit fra Python-referansen, 9 forventede avvisninger, 12 håndskrevne). Resultatene er **ikke et mål på
+  treffsikkerhet** på ekte dokumenter. Siste kjøring: 30 av 30 saker besto alle 3 kjøringene, alle
+  deterministiske, Wilson 95 %-intervall 88,6 %-100 %. Det sier bare at steget gjenskaper 30 kjente svar
+  konsekvent.
+- Avslutningskoder: 0 suksess (og terskel nådd), 1 `--min-pass-hat-k` ikke nådd, 2 bruks- eller
+  manifestfeil, 3 infrastrukturfeil. Uten `--record` skrives ingenting noe sted. `--record` skriver
+  kjøringen og saksresultatene i én transaksjon og legger `eval.run_recorded` til plattformens
+  revisjonskjede; den skriver aldri ut database-URL-en. CI kjører terskelen ved hver bygging.
+
+### Konfigurasjon (steg 4)
+
+Alle innstillinger leses én gang ved oppstart og områdesjekkes; produksjonsgrenser gjelder bare med
+`NODE_ENV=production`. `.env.example`, `compose.web.yml` og `infra/ecs.tf` lister dem.
+
+| Variabel | Standard | Betydning |
+| --- | --- | --- |
+| `LOG_BUFFER_SIZE` | 500 | loggposter holdt i minnet for Logs-fanen (50..5000) |
+| `FLAGS_CACHE_TTL_MS` | 5000 | flaggbuffer per instans (0..60000; produksjonstak 30000; 0 = ingen buffer) |
+| `INTELLIGENCE_PENDING_WEIGHT_PERCENT` | 25 | W, vekten på dollar til gjennomgang i arbeidslisten (0..100) |
+| `SIMILAR_CANDIDATE_LIMIT` | 500 | tidligere krav som sammenlignes per «Similar»-forespørsel (10..2000) |
+| `RATE_LIMIT_PLATFORM_MAX` / `RATE_LIMIT_INTELLIGENCE_MAX` | 120 / 120 | forespørsler til dashbord / intelligence per bruker per 10 minutter |
+| `API_KEY_PEPPER` | utviklingsverdi utenfor produksjon | HMAC-nøkkel for lagrede hasher av API-nøkler; **hemmelig**, påkrevd i produksjon (se [docs/secrets.no.md](docs/secrets.no.md)) |
+| `API_KEY_MAX_ACTIVE` | 20 | aktive nøkler per tenant (1..200) |
+| `API_KEY_DEFAULT_TTL_DAYS` | 90 | standard utløpstid (1..365) |
+| `API_KEY_ALLOW_NON_EXPIRING` | true utenfor produksjon | nøkler uten utløp; må være false i produksjon |
+| `RATE_LIMIT_API_KEY_MAX` | 300 | forespørsler per nøkkel per 60 sekunder |
+| `RATE_LIMIT_API_KEY_FAIL_MAX` | 30 | mislykkede nøkkelautentiseringer per klientadresse per 10 minutter |
+
 ## Tester og kontroller
 
 ```bash
@@ -436,6 +667,7 @@ npm run test:integration     # api, against a migrated + seeded test DB (TEST_DA
                              # and the same MFA_ENC_KEY the seed used), S3 (MinIO) and Python (PYTHON=...) for the
                              # parity suite; see the env block in .github/workflows/web-ci.yml
 npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
+npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1   # step 4: after npm run build
 npm run audit && npm audit signatures
 terraform -chdir=infra fmt -check -recursive && terraform -chdir=infra init -backend=false && terraform -chdir=infra validate
 ```
@@ -455,3 +687,13 @@ Python-referansen: null uregistrerte forskjeller. Uavhengig akseptansekjøring (
 til) og to testfeil som ble rettet og kjørt på nytt. **Ikke kjørt:** container-images og compose-stacken,
 Playwright, eksporttesten med tvunget revisjonsfeil, tester for krypterte PDF-er (ingen `qpdf`), enhver
 AWS-utrulling.
+
+Steg 4 (2026-10-09, kjøringen `REQ-20261009-step4-intelligence`, Windows, Node 22.23.3 (CI-versjonen) og
+Node 24.21.0, portabel PostgreSQL 16, portabel MinIO med SSE-KMS, Python for paritet, i stegrekkefølgen
+og med miljøet fra `web-ci.yml`): lint, typecheck, enhetstester (shared 134, api 346, web 62), migrering
++ seed, `ensure-bucket`, build, evalueringsterskelen (30 av 30 saker besto alle 3 kjøringene),
+integrasjon (85 bestått, 2 plassholdere hoppet over). Uavhengig akseptansekjøring (runde 2): shared
+33/33, web 138 bestått (1 hoppet over), api 651 bestått (9 hoppet over på grunn av manglende verktøy eller
+erklærte unntak, 2 todo). Runde 1 fant seks feil (D-1..D-6); alle ble rettet og verifisert på nytt.
+**Ikke kjørt:** container-images og compose-stacken, Playwright, terraform i testkjøringen (byggeren kjørte
+fmt/validate), enhver AWS-utrulling.
