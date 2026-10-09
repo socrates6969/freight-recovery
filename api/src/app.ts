@@ -62,14 +62,14 @@ export interface BuildAppOptions {
   };
 }
 
-type RateLimitFn = (req: FastifyRequest) => Promise<{ isAllowed: boolean; isExceeded: boolean; ttlInSeconds: number }>;
+type RateLimitFn = (req: FastifyRequest) => Promise<{ isAllowed: boolean; isExceeded: boolean; ttlInSeconds: number; remaining: number }>;
 
 function wrapLimiter(fn: RateLimitFn): Limiter {
   return async (req) => {
     const r = await fn(req);
     // `isAllowed` means "on the allow-list"; a request is blocked only when the bucket is exceeded.
     const blocked = !r.isAllowed && r.isExceeded;
-    return { allowed: !blocked, retryAfterSeconds: Math.max(1, Math.ceil(r.ttlInSeconds || 1)) };
+    return { allowed: !blocked, retryAfterSeconds: Math.max(1, Math.ceil(r.ttlInSeconds || 1)), remaining: r.isAllowed ? Number.POSITIVE_INFINITY : r.remaining };
   };
 }
 

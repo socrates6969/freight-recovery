@@ -15,6 +15,7 @@ vi.mock('node:crypto', async (orig) => {
 
 const { generateKey, hashSecret, parseKey, verifySecret } = await import('../src/apikeys/key-material.js');
 const { buildApp } = await import('../src/app.js');
+const { ApiKeyAuthenticator } = await import('../src/auth/api-key-auth.js');
 
 const PEPPER = 'unit-pepper-for-api-keys-0123456789abcdef0123456789';
 
@@ -87,13 +88,13 @@ describe('pipeline (no database)', () => {
     }
   });
 
-  it('malformed keys are 401 without a lookup; the failure budget turns into 429; unknown URLs stay 404', async () => {
+  it('malformed keys are 401 without a lookup; FAIL_MAX=3 allows 3 failures and refuses the 4th; unknown URLs stay 404', async () => {
     app = await buildApp(ENV);
     const codes = [];
     for (let i = 0; i < 5; i += 1) {
       codes.push((await app.inject({ method: 'GET', url: '/api/v1/claims', headers: { authorization: 'Bearer fr_live_malformed' } })).statusCode);
     }
-    expect(codes).toEqual([401, 401, 401, 401, 429]);
+    expect(codes).toEqual([401, 401, 401, 429, 429]);
     expect((await app.inject({ method: 'GET', url: '/api/v1/nope', headers: { authorization: 'Bearer fr_live_malformed' } })).statusCode).toBe(404);
   });
 
@@ -102,5 +103,55 @@ describe('pipeline (no database)', () => {
     const r = await app.inject({ method: 'GET', url: '/api/v1/claims', headers: { authorization: 'Bearer fr_live_x', origin: 'https://evil.example' } });
     expect(r.statusCode).toBe(403);
     expect(r.json()).toMatchObject({ error: { code: 'origin_not_allowed' } });
+  });
+});
+
+describe('per-address failed-key limiter boundary (RATE_LIMIT_API_KEY_FAIL_MAX)', () => {
+  /** Fake limiter store with the @fastify/rate-limit semantics: hit n is exceeded when n > max. */
+  function fakeStore(max: number, reportRemaining: boolean) {
+    const hits = new Map<string, number>();
+    return async (req: { ip: string }) => {
+      const n = (hits.get(req.ip) ?? 0) + 1;
+      hits.set(req.ip, n);
+      return { allowed: n <= max, retryAfterSeconds: 600, ...(reportRemaining ? { remaining: Math.max(0, max - n) } : {}) };
+    };
+  }
+  async function attempt(auth: InstanceType<typeof ApiKeyAuthenticator>, ip: string): Promise<number> {
+    const req = { ip, frRequestId: 'r', method: 'GET' } as never;
+    try {
+      await auth.authenticate(req, 'fr_live_malformed', undefined);
+      return 200;
+    } catch (e) {
+      return (e as { statusCode: number }).statusCode;
+    }
+  }
+  for (const max of [1, 3, 30]) {
+    it(`max ${max}: ${max} failures answer 401, attempt ${max + 1} is refused 429 before verification`, async () => {
+      const auth = new ApiKeyAuthenticator({
+        base: {} as never,
+        pepper: PEPPER,
+        rateLimitEnabled: true,
+        failLimiter: fakeStore(max, true) as never,
+        keyLimiter: null,
+        now: () => new Date('2026-10-09T12:00:00Z'),
+      });
+      const codes: number[] = [];
+      for (let i = 0; i < max + 2; i += 1) codes.push(await attempt(auth, '198.51.100.7'));
+      expect(codes).toEqual([...Array<number>(max).fill(401), 429, 429]);
+      expect(await attempt(auth, '198.51.100.8')).toBe(401);
+    });
+  }
+  it('a limiter that reports no remaining count still blocks once it refuses', async () => {
+    const auth = new ApiKeyAuthenticator({
+      base: {} as never,
+      pepper: PEPPER,
+      rateLimitEnabled: true,
+      failLimiter: fakeStore(2, false) as never,
+      keyLimiter: null,
+      now: () => new Date('2026-10-09T12:00:00Z'),
+    });
+    const codes: number[] = [];
+    for (let i = 0; i < 4; i += 1) codes.push(await attempt(auth, '198.51.100.9'));
+    expect(codes).toEqual([401, 401, 401, 429]);
   });
 });

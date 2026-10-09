@@ -303,6 +303,20 @@ describe('config: step 3 import/export knobs (N3)', () => {
       }
       expect(loadConfig({ ...dev, FLAGS_CACHE_TTL_MS: '0' }).flags.cacheTtlMs).toBe(0);
     });
+    it('API_KEY_PEPPER set but empty or whitespace refuses to start in every environment; unset outside production uses the dev default', () => {
+      for (const env of [dev, { ...dev, NODE_ENV: 'test' }, prodOk]) {
+        for (const blank of ['', ' ', '   	  ', ' '.repeat(64)]) {
+          expect([env.NODE_ENV, JSON.stringify(blank), problems({ ...env, API_KEY_PEPPER: blank })]).toEqual([
+            env.NODE_ENV,
+            JSON.stringify(blank),
+            expect.arrayContaining(['API_KEY_PEPPER is set but empty']),
+          ]);
+        }
+      }
+      expect('API_KEY_PEPPER' in dev).toBe(false);
+      expect(loadConfig(dev).apiKeys.pepper).toBe(DEV_API_KEY_PEPPER);
+      expect(loadConfig({ ...dev, NODE_ENV: 'test' }).apiKeys.pepper).toBe(DEV_API_KEY_PEPPER);
+    });
     it('production guards: pepper required, not a dev default, distinct, strong; no non-expiring keys; flag TTL ceiling', () => {
       const { API_KEY_PEPPER: _p, ...noPepper } = prodOk;
       expect(problems(noPepper)).toContain('API_KEY_PEPPER is required in production');

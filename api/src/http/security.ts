@@ -17,6 +17,8 @@ export const UNSAFE_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATC
 export interface RateCheck {
   allowed: boolean;
   retryAfterSeconds: number;
+  /** Hits still allowed in the current window after this one (absent when the limiter does not report it). */
+  remaining?: number;
 }
 
 /** A rate limiter bucket: `check(req)` counts one hit and reports whether it is allowed. */

@@ -517,9 +517,13 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
   const allowNonExpiring = parseBool(get('API_KEY_ALLOW_NON_EXPIRING'), !prod, 'API_KEY_ALLOW_NON_EXPIRING', problems);
   if (prod && allowNonExpiring) problems.push('API_KEY_ALLOW_NON_EXPIRING=true is not allowed in production');
   const pepperRaw = get('API_KEY_PEPPER');
+  // Set-but-blank (empty or whitespace only) is a misconfiguration in EVERY environment; only an UNSET
+  // pepper outside production falls back to the documented public dev value.
+  const pepperSetButBlank = env['API_KEY_PEPPER'] !== undefined && env['API_KEY_PEPPER'].trim() === '';
+  if (pepperSetButBlank) problems.push('API_KEY_PEPPER is set but empty');
   if (prod && pepperRaw === undefined) problems.push('API_KEY_PEPPER is required in production');
   const apiKeyPepper = pepperRaw ?? (prod ? '' : DEV_API_KEY_PEPPER);
-  if (pepperRaw !== undefined) {
+  if (pepperRaw !== undefined && !pepperSetButBlank) {
     if (pepperRaw.length < MIN_SECRET_CHARS) problems.push(`API_KEY_PEPPER must be at least ${MIN_SECRET_CHARS} characters`);
     if (looksLikePlaceholder(pepperRaw)) problems.push('API_KEY_PEPPER looks like a placeholder, not a secret');
     if (prod && DOCUMENTED_DEV_SECRETS.includes(pepperRaw)) problems.push('API_KEY_PEPPER must not be a documented dev default');

@@ -15,6 +15,7 @@ import {
   FeatureFlagList,
   FeaturesResponse,
   ImportDocumentDetail,
+  LogRecord,
   LogView,
   PipelineHealth,
   PlatformAuditPage,
@@ -28,7 +29,7 @@ import {
   type LogLevelName,
   type PipelineWindow,
 } from '@fr/shared';
-import type { z } from 'zod';
+import { z } from 'zod';
 
 import type { SessionStore } from '../auth/session-store';
 
@@ -180,7 +181,7 @@ export class ApiClient {
   platformLogs(q: { level: LogLevelName; limit: number; requestId?: string }) {
     const params = new URLSearchParams({ level: q.level, limit: String(q.limit) });
     if (q.requestId) params.set('requestId', q.requestId);
-    return this.get(`/api/v1/platform/logs?${params.toString()}`, LogView);
+    return this.get(`/api/v1/platform/logs?${params.toString()}`, ClientLogView);
   }
 
   platformFlags() {
@@ -365,6 +366,29 @@ export class ApiClient {
     }
   }
 }
+
+/**
+ * Display-side ceiling for one log string accepted from R62 (the server already limits `event` to 80
+ * characters; this only bounds what the browser will hold if a record is ever longer).
+ */
+export const LOG_STRING_ACCEPT_MAX = 100_000;
+const LenientLogText = z.string().max(LOG_STRING_ACCEPT_MAX);
+
+/**
+ * R62 response as accepted by the browser: the shared strict shape (no extra keys, same types), except
+ * that over-long strings are accepted and clipped at render time (LogsPanel) instead of failing the whole
+ * panel. Everything is still rendered as inert text.
+ */
+export const ClientLogView = LogView.extend({
+  items: z.array(
+    LogRecord.extend({
+      event: LenientLogText,
+      requestId: LenientLogText.nullable(),
+      method: LenientLogText.nullable(),
+      route: LenientLogText.nullable(),
+    }),
+  ),
+});
 
 /** Fixed user-facing texts for failed step 4 requests (server messages are never displayed). */
 export function step4ErrorText(e: unknown): string {

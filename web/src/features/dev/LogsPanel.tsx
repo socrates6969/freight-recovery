@@ -8,6 +8,16 @@ import { formatDateTime } from '../../lib/format';
 
 import { DEV_QUERY, ErrorState, Loading, RefreshButton } from './dev-common';
 
+/** Longest string shown per cell; longer values are clipped with an ellipsis (never crash, never markup). */
+export const LOG_CELL_MAX_CHARS = 200;
+const REQUEST_ID_MAX_CHARS = 64;
+
+/** Clip an untrusted string to at most `max` code points, appending an ellipsis when shortened. */
+export function clipText(value: string, max: number): string {
+  const cps = Array.from(value);
+  return cps.length <= max ? value : `${cps.slice(0, max).join('')}…`;
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const LEVEL_CHIP: Record<LogLevelName, string> = {
   trace: 'badge',
@@ -90,15 +100,15 @@ export function LogsPanel() {
                   <span className={LEVEL_CHIP[r.level]}>{r.level}</span>
                 </td>
                 <td className="break-anywhere font-mono text-xs">
-                  <SafeText value={r.requestId ?? '—'} />
+                  <SafeText value={r.requestId === null ? '—' : clipText(r.requestId, REQUEST_ID_MAX_CHARS)} />
                 </td>
                 <td className="break-anywhere font-mono text-xs">
-                  <SafeText value={r.route ? `${r.method ?? ''} ${r.route}`.trim() : '—'} />
+                  <SafeText value={r.route ? clipText(`${r.method ?? ''} ${r.route}`.trim(), LOG_CELL_MAX_CHARS) : '—'} />
                 </td>
                 <td className="num">{r.statusCode ?? '—'}</td>
                 <td className="num">{r.durationMs === null ? '—' : `${r.durationMs.toFixed(1)} ms`}</td>
-                <td className="break-anywhere">
-                  <SafeText value={r.event} />
+                <td className="break-anywhere" title={r.event.length > LOG_CELL_MAX_CHARS ? 'Message shortened for display' : undefined}>
+                  <SafeText value={clipText(r.event, LOG_CELL_MAX_CHARS)} />
                 </td>
               </tr>
             ))}

@@ -10,6 +10,13 @@ export const appUrl = process.env['TEST_DATABASE_URL'];
 export const adminUrl = process.env['TEST_ADMIN_DATABASE_URL'];
 export const canRunDb = Boolean(appUrl && adminUrl);
 
+/**
+ * Explicit API key pepper for the integration apps. buildApp merges process.env underneath the passed
+ * env, and CI exports its own job-level API_KEY_PEPPER, so tests that compute key hashes must pin the
+ * pepper here instead of assuming the dev default.
+ */
+export const STEP4_TEST_API_KEY_PEPPER = 'integration-test-api-key-pepper-not-for-production-0123456789';
+
 export function step4Env(extra: Record<string, string> = {}): Record<string, string> {
   return {
     DATABASE_URL: appUrl ?? '',
@@ -20,6 +27,7 @@ export function step4Env(extra: Record<string, string> = {}): Record<string, str
     RATE_LIMIT_PLATFORM_MAX: '1000',
     RATE_LIMIT_INTELLIGENCE_MAX: '1000',
     FLAGS_CACHE_TTL_MS: '0',
+    API_KEY_PEPPER: STEP4_TEST_API_KEY_PEPPER,
     ...extra,
   };
 }

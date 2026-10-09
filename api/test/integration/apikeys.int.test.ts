@@ -13,9 +13,8 @@ import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../../src/app.js';
-import { DEV_API_KEY_PEPPER } from '../../src/config.js';
 
-import { Client, adminUrl, canRunDb, step4Env } from './step4-helpers.js';
+import { Client, STEP4_TEST_API_KEY_PEPPER, adminUrl, canRunDb, step4Env } from './step4-helpers.js';
 
 const logLines: string[] = [];
 const sink = () =>
@@ -56,14 +55,14 @@ async function denials(keyId: string): Promise<string[]> {
   return r.rows.map((x) => x.metadata.reason);
 }
 
-/** Owner-inserted key with a known secret (hash computed with the PUBLIC dev pepper). */
+/** Owner-inserted key with a known secret (hash computed with the pinned integration pepper). */
 async function insertRawKey(tenantId: string, createdById: string, scopes: string[]): Promise<{ id: string; keyId: string; key: string }> {
   const keyId = randomBytes(8).toString('hex');
   const secret = randomBytes(32).toString('base64url');
   const id = randomUUID();
   await admin.query(
     `INSERT INTO api_keys (id, tenant_id, key_id, name, secret_hash, scopes, created_by_id, expires_at) VALUES ($1, $2, $3, 'raw', $4, $5, $6, now() + interval '1 day')`,
-    [id, tenantId, keyId, createHmac('sha256', DEV_API_KEY_PEPPER).update(secret).digest('hex'), scopes, createdById],
+    [id, tenantId, keyId, createHmac('sha256', STEP4_TEST_API_KEY_PEPPER).update(secret).digest('hex'), scopes, createdById],
   );
   createdKeyIds.push(id);
   return { id, keyId, key: `fr_live_${keyId}_${secret}` };
@@ -110,7 +109,7 @@ describe.skipIf(!canRunDb)('tenant API keys (PostgreSQL)', () => {
     expect(days).toBe(90);
     const secretPart = created.secret.slice(25);
     const row = (await admin.query<{ secret_hash: string }>(`SELECT secret_hash FROM api_keys WHERE id = $1`, [created.key.id])).rows[0];
-    expect(row?.secret_hash).toBe(createHmac('sha256', DEV_API_KEY_PEPPER).update(secretPart).digest('hex'));
+    expect(row?.secret_hash).toBe(createHmac('sha256', STEP4_TEST_API_KEY_PEPPER).update(secretPart).digest('hex'));
     const leak = await admin.query(
       `SELECT count(*)::int AS n FROM (SELECT row_to_json(k)::text AS t FROM api_keys k UNION ALL SELECT row_to_json(a)::text FROM audit_events a) x WHERE t LIKE $1`,
       [`%${secretPart}%`],
@@ -198,6 +197,11 @@ describe.skipIf(!canRunDb)('tenant API keys (PostgreSQL)', () => {
     expect(new Set(outcomes.map((o) => JSON.stringify(o))).size).toBe(1);
     expect(outcomes[0]?.[0]).toBe(401);
     expect(await denials(keyId)).toEqual(['bad_secret']);
+    const meta = await admin.query<{ metadata: Record<string, unknown> }>(
+      `SELECT metadata FROM audit_events WHERE action = 'apikey.use_denied' AND metadata->>'keyId' = $1`,
+      [keyId],
+    );
+    expect(meta.rows.map((m) => m.metadata)).toEqual([{ keyId, reason: 'bad_secret' }]);
     expect(await denials(unknown.slice(8, 24))).toEqual([]);
 
     // Revocation: effective on the very next request; second revoke 409; other tenant's id 404.
@@ -291,7 +295,7 @@ describe.skipIf(!canRunDb)('tenant API keys (PostgreSQL)', () => {
       for (let i = 0; i < 3; i += 1) codes.push((await limited.inject({ method: 'GET', url: '/api/v1/claims', headers: bearer(bad), remoteAddress: ip })).statusCode);
       codes.push((await limited.inject({ method: 'GET', url: '/api/v1/claims', headers: bearer(k.key), remoteAddress: ip })).statusCode);
       codes.push((await limited.inject({ method: 'GET', url: '/api/v1/claims', headers: bearer(k.key), remoteAddress: '203.0.113.10' })).statusCode);
-      expect(codes).toEqual([401, 401, 401, 429, 200]);
+      expect(codes).toEqual([401, 401, 429, 429, 200]);
     });
   });
 });

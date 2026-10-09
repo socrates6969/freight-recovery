@@ -9,8 +9,10 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 
 import { ApiError, step4ErrorText } from '../src/api/client';
+import { NEVER_USED_LABEL, NO_EXPIRY_LABEL } from '../src/features/apikeys/ApiKeysPage';
 import { AppRoot } from '../src/app-root';
 import { computeMsText } from '../src/features/intelligence/ClaimIntelligenceTabs';
+import { LOG_CELL_MAX_CHARS, clipText } from '../src/features/dev/LogsPanel';
 import { notRankedText } from '../src/features/intelligence/IntelligencePage';
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
@@ -179,6 +181,39 @@ describe('Dev dashboard', () => {
     await user.type(screen.getByRole('textbox', { name: 'Request ID' }), 'not-a-uuid');
     expect(await screen.findByRole('alert')).toHaveTextContent('Enter a valid request ID.');
     expect(calls.filter((c) => c.url.startsWith('/api/v1/platform/logs')).length).toBe(before);
+  });
+
+  it('logs: a 10,000-character event (and long route/request values) render clipped as inert text, never crash', async () => {
+    const longEvent = `<script>alert(1)</script><img src=x onerror=alert(1)>${'E'.repeat(10_000)}`;
+    const rec = (event: string, extra: Record<string, unknown> = {}) => ({
+      time: '2026-10-09T12:00:00.000Z',
+      level: 'info',
+      requestId: null,
+      method: 'GET',
+      route: '/api/v1/claims',
+      statusCode: 200,
+      durationMs: 1.5,
+      event,
+      ...extra,
+    });
+    const items = [rec(longEvent), rec('request completed', { requestId: 'R'.repeat(5000), route: `/${'p'.repeat(5000)}` })];
+    const { fetchImpl } = appFor('PLATFORM_DEV', (u) =>
+      u.startsWith('/api/v1/platform/logs') ? json(200, { scope: 'this_instance_recent_window', bufferCapacity: 500, returned: 2, oldestTime: items[0]?.time, items }) : undefined,
+    );
+    const { container } = render(<AppRoot fetchImpl={fetchImpl} initialEntries={['/dev/logs']} />);
+    const table = await screen.findByRole('table', { name: 'Log records' });
+    expect(screen.queryByText(/Reload the page to continue/u)).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+    const cells = within(table).getAllByRole('row').slice(1).map((r) => within(r).getAllByRole('cell'));
+    const eventText = cells[0]?.[6]?.textContent ?? '';
+    expect(Array.from(eventText).length).toBe(LOG_CELL_MAX_CHARS + 1);
+    expect(eventText.endsWith('…')).toBe(true);
+    expect(eventText.startsWith('<script>alert(1)</script>')).toBe(true);
+    expect(container.querySelector('script, img')).toBeNull();
+    expect(Array.from(cells[1]?.[2]?.textContent ?? '').length).toBeLessThanOrEqual(65);
+    expect(Array.from(cells[1]?.[3]?.textContent ?? '').length).toBe(LOG_CELL_MAX_CHARS + 1);
+    expect(clipText('abc', 3)).toBe('abc');
+    expect(clipText('abcd', 3)).toBe('abc…');
   });
 
   it('flags: confirm needs a 10-character reason, stale version shows the fixed alert, success toasts', async () => {
@@ -422,6 +457,34 @@ describe('claim sheet Similar and Provenance tabs', () => {
 });
 
 describe('API keys page', () => {
+  it('Last used shows "Never" for a never-used key; Expires has its own label for a non-expiring key', async () => {
+    const base = {
+      scopes: ['claims.read'],
+      createdBy: { id: U(1), name: 'Test User' },
+      createdAt: '2026-10-09T12:00:00.000Z',
+      revokedAt: null,
+      revokedBy: null,
+      revokeReason: null,
+      status: 'ACTIVE',
+    };
+    const items = [
+      { ...base, id: U(710), keyId: `fr_live_${'b'.repeat(16)}`, name: 'unused', expiresAt: null, lastUsedAt: null },
+      { ...base, id: U(711), keyId: `fr_live_${'c'.repeat(16)}`, name: 'used', expiresAt: '2027-01-07T12:00:00.000Z', lastUsedAt: '2026-10-09T13:00:00.000Z' },
+    ];
+    const { fetchImpl } = appFor('OWNER', (u) => (u === '/api/v1/api-keys' ? json(200, { items }) : undefined));
+    render(<AppRoot fetchImpl={fetchImpl} initialEntries={['/settings/api-keys']} />);
+    const table = await screen.findByRole('table', { name: 'API keys' });
+    const headers = within(table).getAllByRole('columnheader').map((h) => h.textContent);
+    const col = (name: string) => headers.indexOf(name);
+    const rows = within(table).getAllByRole('row').slice(1).map((r) => within(r).getAllByRole('cell').map((c) => c.textContent));
+    expect(rows[0]?.[col('Last used')]).toBe(NEVER_USED_LABEL);
+    expect(NEVER_USED_LABEL).toBe('Never');
+    expect(rows[0]?.[col('Expires')]).toBe(NO_EXPIRY_LABEL);
+    expect(rows[1]?.[col('Last used')]).toMatch(/2026.*UTC/u);
+    expect(rows[1]?.[col('Expires')]).toMatch(/2027.*UTC/u);
+    expect(rows.flat().some((t) => t === '—')).toBe(false);
+  });
+
   it('shows the secret once, never in storage or cache, and clears it on Done', async () => {
     const secret = `fr_live_${'a'.repeat(16)}_${'S'.repeat(43)}`;
     const view = {

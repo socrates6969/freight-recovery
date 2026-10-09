@@ -91,7 +91,9 @@ export class ApiKeyAuthenticator {
   private async recordFailure(req: FastifyRequest): Promise<void> {
     if (!this.deps.rateLimitEnabled || !this.deps.failLimiter) return;
     const r = await this.deps.failLimiter(req);
-    if (!r.allowed) this.gate.block(req.ip, this.deps.now().getTime() + r.retryAfterSeconds * 1000);
+    // RATE_LIMIT_API_KEY_FAIL_MAX failures are allowed per window; once this failure used up the budget
+    // (remaining 0) the NEXT attempt from the address is already refused, before any verification work.
+    if (!r.allowed || r.remaining === 0) this.gate.block(req.ip, this.deps.now().getTime() + r.retryAfterSeconds * 1000);
   }
 
   private async deny(req: FastifyRequest, row: KeyRow, reason: DenyReason, status: 401 | 403): Promise<never> {
@@ -103,7 +105,7 @@ export class ApiKeyAuthenticator {
         actorRole: null,
         targetType: 'api_key',
         targetId: row.id,
-        metadata: { keyId: row.keyId, reason, route: req.routeOptions.url ?? 'unknown', method: req.method },
+        metadata: { keyId: row.keyId, reason },
         ip: req.ip,
         requestId: req.frRequestId,
       }),

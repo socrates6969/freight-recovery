@@ -18,6 +18,10 @@ export const SCOPE_OPTIONS = [
   { scope: 'exports.claims', label: 'Export claims' },
   { scope: 'imports.write', label: 'Upload documents' },
 ] as const;
+/** "Last used" cell for a key that has never authenticated a request (Q13 lastUsedAt = null). */
+export const NEVER_USED_LABEL = 'Never';
+/** "Expires" cell for a non-expiring key (Q13 expiresAt = null); a separate label from NEVER_USED_LABEL. */
+export const NO_EXPIRY_LABEL = 'Never';
 const EXPIRY_OPTIONS = [30, 90, 180, 365] as const;
 const STATUS_TEXT: Record<string, string> = { ACTIVE: 'Active', REVOKED: 'Revoked', EXPIRED: 'Expired' };
 export const COPY_FALLBACK = 'Copy is not available. Select the key and copy it manually.';
@@ -251,8 +255,8 @@ export function ApiKeysPage() {
                 <td className="font-mono text-xs">{k.keyId}</td>
                 <td>{k.scopes.map((s) => SCOPE_OPTIONS.find((o) => o.scope === s)?.label ?? s).join(', ')}</td>
                 <td>{formatDateTime(k.createdAt)}</td>
-                <td>{formatDateTime(k.lastUsedAt)}</td>
-                <td>{k.expiresAt ? formatDateTime(k.expiresAt) : 'Never'}</td>
+                <td>{k.lastUsedAt ? formatDateTime(k.lastUsedAt) : NEVER_USED_LABEL}</td>
+                <td>{k.expiresAt ? formatDateTime(k.expiresAt) : NO_EXPIRY_LABEL}</td>
                 <td>
                   <span className="mr-2">{STATUS_TEXT[k.status] ?? k.status}</span>
                   {k.status === 'ACTIVE' ? (
