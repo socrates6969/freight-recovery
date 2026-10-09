@@ -267,11 +267,21 @@ export const MIN_SECRET_ENTROPY_BITS = 160;
  *    other printable 6.5) x length must be >= 160 bits;
  *  - the string must not be a repetition of a shorter unit (period <= half the length), e.g.
  *    "aaaa...", "abab...", "0123456789abcdef" repeated;
- *  - at least 8 distinct characters, and no single character above 25% of the string.
- * For 64 random hex chars each condition fails with probability far below 1e-6.
+ *  - at least 8 distinct characters;
+ *  - no single character more frequent than chance plausibly allows for the detected alphabet and
+ *    length: with n symbols (base64 `=` padding excluded) drawn uniformly from an alphabet of size A
+ *    (hex 16, base64/base64url 64, other printable 94), the string is rejected when
+ *    A * P(Binomial(n, 1/A) >= maxCount) < DOMINANCE_FALSE_REJECT_BOUND (1e-12). The left side is a
+ *    union bound on "some character occurs maxCount or more times", so a truly random secret is refused
+ *    by this rule with probability below 1e-12. Resulting minimum refused counts: hex-64 25, hex-40 20,
+ *    base64-48 (64 chars) 16, base64-32 / base64url-32 (43 chars) 14.
+ * (A normal approximation such as mean + 8 sd is NOT used: for p = 1/64 it under-estimates the tail by
+ * orders of magnitude, e.g. it would refuse 9 of one character in 64 base64 symbols, p ~ 4.5e-5.)
  */
 export function secretEntropyProblem(value: string): string | null {
-  const bitsPerChar = /^[0-9a-fA-F]+$/u.test(value) ? 4 : /^[A-Za-z0-9+/_-]+={0,2}$/u.test(value) ? 6 : 6.5;
+  const isHex = /^[0-9a-fA-F]+$/u.test(value);
+  const isBase64 = !isHex && /^[A-Za-z0-9+/_-]+={0,2}$/u.test(value);
+  const bitsPerChar = isHex ? 4 : isBase64 ? 6 : 6.5;
   if (value.length * bitsPerChar < MIN_SECRET_ENTROPY_BITS) return 'is too short for its alphabet';
   for (let p = 1; p <= value.length / 2; p += 1) {
     let periodic = true;
@@ -286,8 +296,48 @@ export function secretEntropyProblem(value: string): string | null {
   const counts = new Map<string, number>();
   for (const c of value) counts.set(c, (counts.get(c) ?? 0) + 1);
   if (counts.size < 8) return 'uses too few distinct characters';
-  if (Math.max(...counts.values()) > value.length / 4) return 'is dominated by one character';
+  const symbols = isBase64 ? value.replace(/=+$/u, '') : value;
+  const symbolCounts = [...counts.entries()].filter(([c]) => !(isBase64 && c === '=')).map(([, n]) => n);
+  const alphabetSize = isHex ? HEX_ALPHABET_SIZE : isBase64 ? BASE64_ALPHABET_SIZE : PRINTABLE_ALPHABET_SIZE;
+  if (Math.max(...symbolCounts) >= dominanceRejectCount(Array.from(symbols).length, alphabetSize)) return 'is dominated by one character';
   return null;
+}
+
+const HEX_ALPHABET_SIZE = 16;
+const BASE64_ALPHABET_SIZE = 64;
+/** Printable ASCII without space (the "other" alphabet of secretEntropyProblem). */
+const PRINTABLE_ALPHABET_SIZE = 94;
+/** Upper bound on the probability that a uniformly random secret is refused by the dominance rule. */
+export const DOMINANCE_FALSE_REJECT_BOUND = 1e-12;
+
+/**
+ * Union bound A * P(Binomial(n, 1/A) >= k): probability that some character of an A-symbol alphabet
+ * occurs at least k times among n uniform random symbols. Computed exactly in log space (no underflow
+ * for long strings).
+ */
+export function dominanceTailBound(n: number, alphabetSize: number, k: number): number {
+  if (k <= 0) return alphabetSize;
+  if (k > n) return 0;
+  const p = 1 / alphabetSize;
+  const logRatio = Math.log(p) - Math.log1p(-p);
+  // log of the Binomial pmf at j, built iteratively from j = 0.
+  let logPmf = n * Math.log1p(-p);
+  const logs: number[] = [];
+  for (let j = 0; j <= n; j += 1) {
+    if (j >= k) logs.push(logPmf);
+    logPmf += Math.log(n - j) - Math.log(j + 1) + logRatio;
+  }
+  const top = Math.max(...logs);
+  const sum = logs.reduce((acc, l) => acc + Math.exp(l - top), 0);
+  return Math.min(1, alphabetSize * Math.exp(top) * sum);
+}
+
+/** Smallest single-character count that the dominance rule refuses for n symbols over an A-symbol alphabet. */
+export function dominanceRejectCount(n: number, alphabetSize: number): number {
+  for (let k = 1; k <= n; k += 1) {
+    if (dominanceTailBound(n, alphabetSize, k) < DOMINANCE_FALSE_REJECT_BOUND) return k;
+  }
+  return n + 1;
 }
 
 /**

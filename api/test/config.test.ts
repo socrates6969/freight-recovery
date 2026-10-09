@@ -1,11 +1,22 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { ConfigError, DEFAULT_RUNTIME, DEV_API_KEY_PEPPER, DOCUMENTED_DEV_SECRETS, PRODUCTION_MAIL_TRANSPORTS, loadConfig, secretEntropyProblem } from '../src/config.js';
+import {
+  ConfigError,
+  DEFAULT_RUNTIME,
+  DEV_API_KEY_PEPPER,
+  DOCUMENTED_DEV_SECRETS,
+  DOMINANCE_FALSE_REJECT_BOUND,
+  PRODUCTION_MAIL_TRANSPORTS,
+  dominanceRejectCount,
+  dominanceTailBound,
+  loadConfig,
+  secretEntropyProblem,
+} from '../src/config.js';
 
 const SES_PROBLEM = 'MAIL_TRANSPORT=ses is not implemented (stub); production start is refused until a real mail transport exists';
 
@@ -147,11 +158,66 @@ describe('config', () => {
     expect(problems(env)).toEqual([SES_PROBLEM]);
   });
 
+  it('accepts a seeded deterministic set of 1000 hex-64, base64-48, base64-32 and base64url-32 secrets', () => {
+    // Deterministic byte stream: SHA-256 in counter mode over a fixed seed (same bytes on every run).
+    const seeded = (label: string, i: number, bytes: number): Buffer => {
+      const out: Buffer[] = [];
+      for (let block = 0; out.length * 32 < bytes; block += 1) out.push(createHash('sha256').update(`fr-secret-seed:${label}:${i}:${block}`).digest());
+      return Buffer.concat(out).subarray(0, bytes);
+    };
+    for (let i = 0; i < 1000; i += 1) {
+      for (const s of [
+        seeded('hex', i, 32).toString('hex'),
+        seeded('b64-48', i, 48).toString('base64'),
+        seeded('b64-32', i, 32).toString('base64'),
+        seeded('b64url-32', i, 32).toString('base64url'),
+      ]) {
+        expect([s, secretEntropyProblem(s)]).toEqual([s, null]);
+      }
+    }
+  });
+
+  it('dominance rule: alphabet- and length-aware threshold with false-reject bound < 1e-12', () => {
+    // Independent exact binomial tail (rational recurrence in doubles) for the four standard encodings.
+    const tail = (n: number, a: number, k: number) => {
+      const p = 1 / a;
+      let pmf = (1 - p) ** n;
+      let sum = 0;
+      for (let j = 0; j <= n; j += 1) {
+        if (j >= k) sum += pmf;
+        pmf = (pmf * (n - j) * p) / ((j + 1) * (1 - p));
+      }
+      return a * sum;
+    };
+    const cases: [string, number, number, number][] = [
+      ['hex-64', 64, 16, 25],
+      ['hex-40', 40, 16, 20],
+      ['base64-48 (64 chars)', 64, 64, 16],
+      ['base64-32 / base64url-32 (43 chars)', 43, 64, 14],
+    ];
+    for (const [name, n, a, k] of cases) {
+      expect([name, dominanceRejectCount(n, a)]).toEqual([name, k]);
+      expect([name, tail(n, a, k) < DOMINANCE_FALSE_REJECT_BOUND]).toEqual([name, true]);
+      expect([name, tail(n, a, k - 1) >= DOMINANCE_FALSE_REJECT_BOUND]).toEqual([name, true]);
+      expect(Math.abs(dominanceTailBound(n, a, k) - tail(n, a, k)) / tail(n, a, k)).toBeLessThan(1e-9);
+    }
+    expect(dominanceTailBound(64, 16, 0)).toBe(16);
+    expect(dominanceTailBound(64, 16, 65)).toBe(0);
+    expect(dominanceRejectCount(10_000, 16)).toBeGreaterThan(625);
+    // Boundary: 24 of one hex character among 64 is accepted, 25 refused (other chars varied, aperiodic).
+    const filler = '0123456789abcde';
+    const mk = (count: number) => 'f'.repeat(count) + Array.from({ length: 64 - count }, (_, i) => filler[(i * 7) % filler.length]).join('');
+    expect(secretEntropyProblem(mk(24))).toBeNull();
+    expect(secretEntropyProblem(mk(25))).toBe('is dominated by one character');
+  });
+
   it('rejects low-entropy, repeated and short secrets in production only', () => {
     const cases: [string, string][] = [
       ['a'.repeat(64), 'is a repeated pattern'],
       ['ab'.repeat(32), 'is a repeated pattern'],
       ['0123456789abcdef'.repeat(4), 'is a repeated pattern'],
+      ['0123456789'.repeat(7), 'is a repeated pattern'],
+      ['changeme'.repeat(8), 'is a repeated pattern'],
       ['Synthetic-Pass-2026!'.repeat(3), 'is a repeated pattern'],
       ['0a1b2c3d4e5f6789abcdef0123456798', 'is too short for its alphabet'],
       ['deadbeef'.repeat(5) + '0', 'uses too few distinct characters'],
