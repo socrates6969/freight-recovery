@@ -23,6 +23,7 @@
     "db:seed": "npm run seed -w api --",
     "ensure-bucket": "npm run ensure-bucket -w api",
     "build": "npm run build -w packages/shared && npm run build -w api && npm run build -w web",
+    "eval": "npm run eval -w api --",
     "audit": "npm audit --omit=dev --audit-level=high",
     "verify:no-install-scripts": "node tools/verify-no-install-scripts.mjs"
   },

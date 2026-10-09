@@ -1,0 +1,9 @@
+DOCUMENT: FREIGHT INVOICE
+Invoice Number: INV-9001
+Load Number: LD-9001
+Carrier: Synthetic Carrier Inc
+Shipper: Synthetic Shipper LLC
+Invoice Date: 2025-04-01
+Charge: Linehaul | 900.00
+Charge: Detention | 75.50
+Total: 975.50

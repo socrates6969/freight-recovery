@@ -1,0 +1,5 @@
+DOCUMENT: BILL OF LADING
+Load Number: LD-7008
+Appointment: 03/04/2025 08:00
+Arrival: 2025-03-04 07:55:30
+Departure: 2025-03-04T12:10

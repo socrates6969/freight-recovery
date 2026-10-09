@@ -1,0 +1,903 @@
+{
+  "evalSetId": "extraction-v1",
+  "version": "1",
+  "stage": "extraction",
+  "description": "Synthetic regression set for the deterministic extraction stage (pre-store checks + sandboxed parse). Not an accuracy measure.",
+  "cases": [
+    {
+      "id": "oracle_ld5001_invoice",
+      "category": "python_oracle_fixture",
+      "file": "cases/ld5001_invoice.txt",
+      "filename": "invoice.txt",
+      "expectedBasis": "python_oracle",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "INVOICE",
+        "fields": [
+          {
+            "key": "invoice.invoice_number",
+            "groupIndex": null,
+            "value": "INV-1001"
+          },
+          {
+            "key": "invoice.load_number",
+            "groupIndex": null,
+            "value": "LD-5001"
+          },
+          {
+            "key": "invoice.carrier",
+            "groupIndex": null,
+            "value": "Acme Freight LLC"
+          },
+          {
+            "key": "invoice.shipper",
+            "groupIndex": null,
+            "value": "Widget Co"
+          },
+          {
+            "key": "invoice.invoice_date",
+            "groupIndex": null,
+            "value": "2025-03-10"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 0,
+            "value": "Linehaul"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 0,
+            "value": "1500.00"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 1,
+            "value": "Fuel Surcharge"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 1,
+            "value": "168.00"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 2,
+            "value": "Detention"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 2,
+            "value": "300.00"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 3,
+            "value": "Lumper"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 3,
+            "value": "150.00"
+          },
+          {
+            "key": "invoice.total",
+            "groupIndex": null,
+            "value": "2118.00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oracle_ld5001_bol",
+      "category": "python_oracle_fixture",
+      "file": "cases/ld5001_bol.txt",
+      "filename": "bol.txt",
+      "expectedBasis": "python_oracle",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "BILL_OF_LADING",
+        "fields": [
+          {
+            "key": "bol.load_number",
+            "groupIndex": null,
+            "value": "LD-5001"
+          },
+          {
+            "key": "bol.facility",
+            "groupIndex": null,
+            "value": "Widget Co DC 4"
+          },
+          {
+            "key": "bol.appointment_time",
+            "groupIndex": null,
+            "value": "2025-03-03T08:00:00"
+          },
+          {
+            "key": "bol.arrival_time",
+            "groupIndex": null,
+            "value": "2025-03-03T07:45:00"
+          },
+          {
+            "key": "bol.departure_time",
+            "groupIndex": null,
+            "value": "2025-03-03T11:30:00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oracle_ld5001_rate_confirmation",
+      "category": "python_oracle_fixture",
+      "file": "cases/ld5001_rate_confirmation.txt",
+      "filename": "rate_confirmation.txt",
+      "expectedBasis": "python_oracle",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "RATE_CONFIRMATION",
+        "fields": [
+          {
+            "key": "rate_confirmation.load_number",
+            "groupIndex": null,
+            "value": "LD-5001"
+          },
+          {
+            "key": "rate_confirmation.carrier",
+            "groupIndex": null,
+            "value": "Acme Freight LLC"
+          },
+          {
+            "key": "rate_confirmation.linehaul_rate",
+            "groupIndex": null,
+            "value": "1400.00"
+          },
+          {
+            "key": "rate_confirmation.fuel_surcharge",
+            "groupIndex": null,
+            "value": "168.00"
+          },
+          {
+            "key": "rate_confirmation.detention_free_hours",
+            "groupIndex": null,
+            "value": "2"
+          },
+          {
+            "key": "rate_confirmation.detention_rate_per_hour",
+            "groupIndex": null,
+            "value": "50.00"
+          },
+          {
+            "key": "rate_confirmation.detention_max_hours",
+            "groupIndex": null,
+            "value": "8"
+          },
+          {
+            "key": "rate_confirmation.authorized_accessorials",
+            "groupIndex": null,
+            "value": "[\"Detention\"]"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oracle_ld5002_invoice",
+      "category": "python_oracle_fixture",
+      "file": "cases/ld5002_invoice.csv",
+      "filename": "invoice.csv",
+      "expectedBasis": "python_oracle",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "INVOICE",
+        "fields": [
+          {
+            "key": "invoice.invoice_number",
+            "groupIndex": null,
+            "value": "INV-2002"
+          },
+          {
+            "key": "invoice.load_number",
+            "groupIndex": null,
+            "value": "LD-5002"
+          },
+          {
+            "key": "invoice.carrier",
+            "groupIndex": null,
+            "value": "Acme Freight LLC"
+          },
+          {
+            "key": "invoice.shipper",
+            "groupIndex": null,
+            "value": "Widget Co"
+          },
+          {
+            "key": "invoice.invoice_date",
+            "groupIndex": null,
+            "value": "2025-03-12"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 0,
+            "value": "Linehaul"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 0,
+            "value": "1400.00"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 1,
+            "value": "Fuel Surcharge"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 1,
+            "value": "168.00"
+          },
+          {
+            "key": "invoice.total",
+            "groupIndex": null,
+            "value": "1568.00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oracle_ld5002_bol",
+      "category": "python_oracle_fixture",
+      "file": "cases/ld5002_bol.csv",
+      "filename": "bol.csv",
+      "expectedBasis": "python_oracle",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "BILL_OF_LADING",
+        "fields": [
+          {
+            "key": "bol.load_number",
+            "groupIndex": null,
+            "value": "LD-5002"
+          },
+          {
+            "key": "bol.facility",
+            "groupIndex": null,
+            "value": "Widget Co DC 4"
+          },
+          {
+            "key": "bol.appointment_time",
+            "groupIndex": null,
+            "value": "2025-03-04T09:00:00"
+          },
+          {
+            "key": "bol.arrival_time",
+            "groupIndex": null,
+            "value": "2025-03-04T09:00:00"
+          },
+          {
+            "key": "bol.departure_time",
+            "groupIndex": null,
+            "value": "2025-03-04T14:20:00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oracle_ld5002_ratecon",
+      "category": "python_oracle_fixture",
+      "file": "cases/ld5002_ratecon.csv",
+      "filename": "ratecon.csv",
+      "expectedBasis": "python_oracle",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "RATE_CONFIRMATION",
+        "fields": [
+          {
+            "key": "rate_confirmation.load_number",
+            "groupIndex": null,
+            "value": "LD-5002"
+          },
+          {
+            "key": "rate_confirmation.carrier",
+            "groupIndex": null,
+            "value": "Acme Freight LLC"
+          },
+          {
+            "key": "rate_confirmation.linehaul_rate",
+            "groupIndex": null,
+            "value": "1400.00"
+          },
+          {
+            "key": "rate_confirmation.fuel_surcharge",
+            "groupIndex": null,
+            "value": "168.00"
+          },
+          {
+            "key": "rate_confirmation.detention_free_hours",
+            "groupIndex": null,
+            "value": "2"
+          },
+          {
+            "key": "rate_confirmation.detention_rate_per_hour",
+            "groupIndex": null,
+            "value": "50.00"
+          },
+          {
+            "key": "rate_confirmation.detention_max_hours",
+            "groupIndex": null,
+            "value": "8"
+          },
+          {
+            "key": "rate_confirmation.authorized_accessorials",
+            "groupIndex": null,
+            "value": "[\"Detention\"]"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oracle_oracle_invoice_simple",
+      "category": "python_oracle_simple",
+      "file": "cases/oracle_invoice_simple.txt",
+      "filename": "invoice.txt",
+      "expectedBasis": "python_oracle",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "INVOICE",
+        "fields": [
+          {
+            "key": "invoice.invoice_number",
+            "groupIndex": null,
+            "value": "INV-9001"
+          },
+          {
+            "key": "invoice.load_number",
+            "groupIndex": null,
+            "value": "LD-9001"
+          },
+          {
+            "key": "invoice.carrier",
+            "groupIndex": null,
+            "value": "Synthetic Carrier Inc"
+          },
+          {
+            "key": "invoice.shipper",
+            "groupIndex": null,
+            "value": "Synthetic Shipper LLC"
+          },
+          {
+            "key": "invoice.invoice_date",
+            "groupIndex": null,
+            "value": "2025-04-01"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 0,
+            "value": "Linehaul"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 0,
+            "value": "900.00"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 1,
+            "value": "Detention"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 1,
+            "value": "75.50"
+          },
+          {
+            "key": "invoice.total",
+            "groupIndex": null,
+            "value": "975.50"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oracle_oracle_bol_simple",
+      "category": "python_oracle_simple",
+      "file": "cases/oracle_bol_simple.txt",
+      "filename": "bol.txt",
+      "expectedBasis": "python_oracle",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "BILL_OF_LADING",
+        "fields": [
+          {
+            "key": "bol.load_number",
+            "groupIndex": null,
+            "value": "LD-9002"
+          },
+          {
+            "key": "bol.facility",
+            "groupIndex": null,
+            "value": "Synthetic DC 9"
+          },
+          {
+            "key": "bol.appointment_time",
+            "groupIndex": null,
+            "value": "2025-04-02T09:00:00"
+          },
+          {
+            "key": "bol.arrival_time",
+            "groupIndex": null,
+            "value": "2025-04-02T08:40:00"
+          },
+          {
+            "key": "bol.departure_time",
+            "groupIndex": null,
+            "value": "2025-04-02T13:15:00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "oracle_oracle_ratecon_simple",
+      "category": "python_oracle_simple",
+      "file": "cases/oracle_ratecon_simple.txt",
+      "filename": "rate_confirmation.txt",
+      "expectedBasis": "python_oracle",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "RATE_CONFIRMATION",
+        "fields": [
+          {
+            "key": "rate_confirmation.load_number",
+            "groupIndex": null,
+            "value": "LD-9003"
+          },
+          {
+            "key": "rate_confirmation.carrier",
+            "groupIndex": null,
+            "value": "Synthetic Carrier Inc"
+          },
+          {
+            "key": "rate_confirmation.linehaul_rate",
+            "groupIndex": null,
+            "value": "1250.00"
+          },
+          {
+            "key": "rate_confirmation.fuel_surcharge",
+            "groupIndex": null,
+            "value": "140.00"
+          },
+          {
+            "key": "rate_confirmation.detention_free_hours",
+            "groupIndex": null,
+            "value": "2"
+          },
+          {
+            "key": "rate_confirmation.detention_rate_per_hour",
+            "groupIndex": null,
+            "value": "60.00"
+          },
+          {
+            "key": "rate_confirmation.detention_max_hours",
+            "groupIndex": null,
+            "value": "6"
+          },
+          {
+            "key": "rate_confirmation.authorized_accessorials",
+            "groupIndex": null,
+            "value": "[\"Detention\",\"Lumper\"]"
+          }
+        ]
+      }
+    },
+    {
+      "id": "rej_empty",
+      "category": "rejected",
+      "file": "cases/rej_empty__empty.txt",
+      "filename": "empty.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "rejected",
+        "reason": "empty_file"
+      }
+    },
+    {
+      "id": "rej_markup",
+      "category": "rejected",
+      "file": "cases/rej_markup__markup.txt",
+      "filename": "markup.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "rejected",
+        "reason": "markup_content"
+      }
+    },
+    {
+      "id": "rej_binary",
+      "category": "rejected",
+      "file": "cases/rej_binary__binary.txt",
+      "filename": "binary.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "rejected",
+        "reason": "binary_content"
+      }
+    },
+    {
+      "id": "rej_unsupported_ext",
+      "category": "rejected",
+      "file": "cases/rej_unsupported_ext__notes.docx",
+      "filename": "notes.docx",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "rejected",
+        "reason": "unsupported_type"
+      }
+    },
+    {
+      "id": "rej_type_mismatch",
+      "category": "rejected",
+      "file": "cases/rej_type_mismatch__invoice.pdf",
+      "filename": "invoice.pdf",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "rejected",
+        "reason": "type_mismatch"
+      }
+    },
+    {
+      "id": "rej_zip_signature",
+      "category": "rejected",
+      "file": "cases/rej_zip_signature__archive.txt",
+      "filename": "archive.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "rejected",
+        "reason": "unsupported_type"
+      }
+    },
+    {
+      "id": "rej_truncated_pdf",
+      "category": "rejected",
+      "file": "cases/rej_truncated_pdf__truncated.pdf",
+      "filename": "truncated.pdf",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "rejected",
+        "reason": "malformed_pdf"
+      }
+    },
+    {
+      "id": "rej_png_trailing",
+      "category": "rejected",
+      "file": "cases/rej_png_trailing__scan.png",
+      "filename": "scan.png",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "rejected",
+        "reason": "trailing_data"
+      }
+    },
+    {
+      "id": "rej_csv_bare_cr",
+      "category": "rejected",
+      "file": "cases/rej_csv_bare_cr__invoice.csv",
+      "filename": "invoice.csv",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "rejected",
+        "reason": "malformed_csv"
+      }
+    },
+    {
+      "id": "hand_missing_load_number",
+      "category": "hand_authored",
+      "file": "cases/hand_missing_load_number__invoice.txt",
+      "filename": "invoice.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "INVOICE",
+        "fields": [
+          {
+            "key": "invoice.invoice_number",
+            "groupIndex": null,
+            "value": "INV-7001"
+          },
+          {
+            "key": "invoice.carrier",
+            "groupIndex": null,
+            "value": "Synthetic Carrier Inc"
+          },
+          {
+            "key": "invoice.total",
+            "groupIndex": null,
+            "value": "100.00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hand_duplicate_keys_last_wins",
+      "category": "hand_authored",
+      "file": "cases/hand_duplicate_keys_last_wins__invoice.txt",
+      "filename": "invoice.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "INVOICE",
+        "fields": [
+          {
+            "key": "invoice.load_number",
+            "groupIndex": null,
+            "value": "LD-2"
+          },
+          {
+            "key": "invoice.total",
+            "groupIndex": null,
+            "value": "10.00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hand_unreadable_charge_amount",
+      "category": "hand_authored",
+      "file": "cases/hand_unreadable_charge_amount__invoice.txt",
+      "filename": "invoice.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "INVOICE",
+        "fields": [
+          {
+            "key": "invoice.load_number",
+            "groupIndex": null,
+            "value": "LD-7003"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 0,
+            "value": "Linehaul"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 0,
+            "value": "500.00"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 1,
+            "value": "Detention"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 1,
+            "value": "50.00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hand_parenthesised_negative",
+      "category": "hand_authored",
+      "file": "cases/hand_parenthesised_negative__invoice.txt",
+      "filename": "invoice.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "INVOICE",
+        "fields": [
+          {
+            "key": "invoice.load_number",
+            "groupIndex": null,
+            "value": "LD-7004"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 0,
+            "value": "Credit"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 0,
+            "value": "-25.00"
+          },
+          {
+            "key": "invoice.total",
+            "groupIndex": null,
+            "value": "-25.00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hand_money_forms",
+      "category": "hand_authored",
+      "file": "cases/hand_money_forms__invoice.txt",
+      "filename": "invoice.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "INVOICE",
+        "fields": [
+          {
+            "key": "invoice.load_number",
+            "groupIndex": null,
+            "value": "LD-7005"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 0,
+            "value": "Linehaul"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 0,
+            "value": "1250.00"
+          },
+          {
+            "key": "invoice.charge.description",
+            "groupIndex": 1,
+            "value": "Fuel"
+          },
+          {
+            "key": "invoice.charge.amount",
+            "groupIndex": 1,
+            "value": "99.10"
+          },
+          {
+            "key": "invoice.total",
+            "groupIndex": null,
+            "value": "1349.10"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hand_crlf_bom",
+      "category": "hand_authored",
+      "file": "cases/hand_crlf_bom__bol.txt",
+      "filename": "bol.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "BILL_OF_LADING",
+        "fields": [
+          {
+            "key": "bol.load_number",
+            "groupIndex": null,
+            "value": "LD-7006"
+          },
+          {
+            "key": "bol.facility",
+            "groupIndex": null,
+            "value": "Synthetic DC 6"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hand_ratecon_accessorials",
+      "category": "hand_authored",
+      "file": "cases/hand_ratecon_accessorials__ratecon.txt",
+      "filename": "ratecon.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "RATE_CONFIRMATION",
+        "fields": [
+          {
+            "key": "rate_confirmation.load_number",
+            "groupIndex": null,
+            "value": "LD-7007"
+          },
+          {
+            "key": "rate_confirmation.authorized_accessorials",
+            "groupIndex": null,
+            "value": "[\"Detention\",\"Lumper\",\"Layover\"]"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hand_bol_us_and_iso_datetimes",
+      "category": "hand_authored",
+      "file": "cases/hand_bol_us_and_iso_datetimes__bol.txt",
+      "filename": "bol.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "BILL_OF_LADING",
+        "fields": [
+          {
+            "key": "bol.load_number",
+            "groupIndex": null,
+            "value": "LD-7008"
+          },
+          {
+            "key": "bol.appointment_time",
+            "groupIndex": null,
+            "value": "2025-03-04T08:00:00"
+          },
+          {
+            "key": "bol.arrival_time",
+            "groupIndex": null,
+            "value": "2025-03-04T07:55:30"
+          },
+          {
+            "key": "bol.departure_time",
+            "groupIndex": null,
+            "value": "2025-03-04T12:10:00"
+          }
+        ]
+      }
+    },
+    {
+      "id": "hand_unknown_type_no_keys",
+      "category": "hand_authored",
+      "file": "cases/hand_unknown_type_no_keys__notes.txt",
+      "filename": "notes.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "OTHER",
+        "fields": []
+      }
+    },
+    {
+      "id": "hand_unparseable_total",
+      "category": "hand_authored",
+      "file": "cases/hand_unparseable_total__invoice.txt",
+      "filename": "invoice.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "INVOICE",
+        "fields": [
+          {
+            "key": "invoice.load_number",
+            "groupIndex": null,
+            "value": "LD-7010"
+          },
+          {
+            "key": "invoice.total",
+            "groupIndex": null,
+            "value": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "hand_valid_png_no_ocr",
+      "category": "hand_authored",
+      "file": "cases/hand_valid_png_no_ocr__scan.png",
+      "filename": "scan.png",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "OTHER",
+        "fields": []
+      }
+    },
+    {
+      "id": "hand_equals_delimiter",
+      "category": "hand_authored",
+      "file": "cases/hand_equals_delimiter__invoice.txt",
+      "filename": "invoice.txt",
+      "expectedBasis": "hand_authored",
+      "expect": {
+        "outcome": "parsed",
+        "docType": "INVOICE",
+        "fields": [
+          {
+            "key": "invoice.invoice_number",
+            "groupIndex": null,
+            "value": "INV-7012"
+          },
+          {
+            "key": "invoice.total",
+            "groupIndex": null,
+            "value": "42.00"
+          }
+        ]
+      }
+    }
+  ]
+}

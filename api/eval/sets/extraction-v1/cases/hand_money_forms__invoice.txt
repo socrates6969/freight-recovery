@@ -1,0 +1,5 @@
+DOCUMENT: INVOICE
+Load Number: LD-7005
+Charge: Linehaul | $1,250.00
+Charge: Fuel | USD 99.10
+Total: $1,349.10

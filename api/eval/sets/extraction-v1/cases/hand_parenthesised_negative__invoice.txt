@@ -1,0 +1,4 @@
+DOCUMENT: INVOICE
+Load Number: LD-7004
+Charge: Credit | (25.00)
+Total: (25.00)

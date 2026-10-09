@@ -136,6 +136,13 @@ export default tseslint.config(
     },
   },
   {
+    // Step 4 carve-out: the evaluation recorder is the only eval writer (system transaction).
+    files: ['api/src/eval/record.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { paths: [CHILD_PROCESS, CHILD_PROCESS_BARE], patterns: [PRISMA_IMPORTS, WEB_IMPORTS] }],
+    },
+  },
+  {
     files: ['api/scripts/**/*.ts'],
     rules: {
       'no-restricted-imports': ['error', { patterns: [WEB_IMPORTS] }],

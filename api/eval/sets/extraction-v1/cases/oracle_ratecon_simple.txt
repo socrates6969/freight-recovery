@@ -1,0 +1,9 @@
+DOCUMENT: RATE CONFIRMATION
+Load Number: LD-9003
+Carrier: Synthetic Carrier Inc
+Linehaul Rate: 1250.00
+Fuel Surcharge: 140.00
+Detention Free Hours: 2
+Detention Rate Per Hour: 60.00
+Detention Max Hours: 6
+Authorized Accessorials: Detention, Lumper

@@ -1,0 +1,3 @@
+﻿DOCUMENT: BILL OF LADING
+Load Number: LD-7006
+Facility: Synthetic DC 6

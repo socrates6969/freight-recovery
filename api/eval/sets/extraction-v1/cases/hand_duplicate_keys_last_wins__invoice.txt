@@ -1,0 +1,4 @@
+DOCUMENT: INVOICE
+Load Number: LD-1
+Load Number: LD-2
+Total: 10.00

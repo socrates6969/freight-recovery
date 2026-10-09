@@ -1,0 +1,3 @@
+DOCUMENT: INVOICE
+Load Number: LD-7010
+Total: N/A

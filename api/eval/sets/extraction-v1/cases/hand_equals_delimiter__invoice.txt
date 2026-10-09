@@ -1,0 +1,3 @@
+DOCUMENT: INVOICE
+Invoice No = INV-7012
+Amount Due = 42.00

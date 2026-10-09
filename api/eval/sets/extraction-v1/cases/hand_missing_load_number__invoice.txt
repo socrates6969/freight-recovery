@@ -1,0 +1,4 @@
+DOCUMENT: INVOICE
+Invoice Number: INV-7001
+Carrier: Synthetic Carrier Inc
+Total: 100.00

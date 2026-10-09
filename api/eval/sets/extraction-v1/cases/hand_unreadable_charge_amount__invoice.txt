@@ -1,0 +1,5 @@
+DOCUMENT: INVOICE
+Load Number: LD-7003
+Charge: Linehaul | 500.00
+Charge: Lumper | twelve dollars
+Charge: Detention | 50.00

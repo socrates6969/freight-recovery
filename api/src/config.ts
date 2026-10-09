@@ -326,6 +326,59 @@ function isValidCidr(value: string): boolean {
   return family === 4 ? n <= 32 : n <= 128;
 }
 
+/** Step 3 import/export knobs (N3), shared by loadConfig and the evaluation CLI (same defaults/guards). */
+function parseImportKnobs(
+  get: (k: string) => string | undefined,
+  prod: boolean,
+  runtime: ConfigRuntime,
+  problems: string[],
+): { imports: ImportConfig; sse: 'aws:kms' | 'none'; kmsKeyId: string | null } {
+  const imp = {} as Record<keyof typeof IMPORT_KNOBS, number>;
+  for (const [name, k] of Object.entries(IMPORT_KNOBS) as [keyof typeof IMPORT_KNOBS, ImportKnob][]) {
+    const v = parseIntStrict(get(k.key), k.key, problems) ?? k.def;
+    if (v < k.min || v > k.max) problems.push(`${k.key} must be between ${k.min} and ${k.max}`);
+    if (prod && k.floor !== undefined && v < k.floor) problems.push(`${k.key} is below its production floor (${k.floor})`);
+    if (prod && k.ceiling !== undefined && v > k.ceiling) problems.push(`${k.key} is above its production ceiling (${k.ceiling})`);
+    imp[name] = v;
+  }
+  const thresholdRaw = get('REVIEW_CONFIDENCE_THRESHOLD');
+  let reviewConfidenceThreshold = 0.9;
+  if (thresholdRaw !== undefined) {
+    if (THRESHOLD_RE.test(thresholdRaw.trim())) reviewConfidenceThreshold = Number(thresholdRaw.trim());
+    else problems.push('REVIEW_CONFIDENCE_THRESHOLD must be a decimal between 0.50 and 1.00');
+  }
+  const sseRaw = get('S3_SSE') ?? 'aws:kms';
+  let sse: 'aws:kms' | 'none' = 'aws:kms';
+  if (sseRaw === 'aws:kms' || sseRaw === 'none') sse = sseRaw;
+  else problems.push('S3_SSE must be aws:kms or none');
+  const kmsKeyId = get('S3_KMS_KEY_ID') ?? null;
+  if (kmsKeyId !== null && !/^[A-Za-z0-9:/_.-]{1,2048}$/u.test(kmsKeyId)) problems.push('S3_KMS_KEY_ID contains invalid characters');
+  if (prod && sse !== 'aws:kms') problems.push('S3_SSE must be aws:kms in production');
+  if (prod && sse === 'aws:kms' && !kmsKeyId) problems.push('S3_KMS_KEY_ID is required in production');
+  const workerEntry = get('PARSE_WORKER_ENTRY') ?? defaultWorkerEntry();
+  if (prod && !runtime.permissionFlagAvailable) problems.push('Node permission model (--permission) is required in production for the parse sandbox');
+  // Fail closed in every environment: without it every parse would fail at the worker's guard.
+  if (!runtime.moduleHooksAvailable) problems.push('Node.js >= 22.15.0 is required (module.registerHooks, used by the parse sandbox guard)');
+  if (prod && !runtime.fileExists(workerEntry)) problems.push('PARSE_WORKER_ENTRY does not exist (build the API first)');
+
+  return { imports: { ...imp, reviewConfidenceThreshold, workerEntry }, sse, kmsKeyId };
+}
+
+/**
+ * Parse-related settings only (PARSE_*, REVIEW_CONFIDENCE_THRESHOLD, PARSE_WORKER_ENTRY) with the API's
+ * defaults, for tools that run the sandboxed parser without the API's secrets (the evaluation CLI).
+ */
+export function loadImportConfig(env: Record<string, string | undefined>, runtime: ConfigRuntime = DEFAULT_RUNTIME): ImportConfig {
+  const problems: string[] = [];
+  const get = (k: string): string | undefined => {
+    const v = env[k];
+    return v === undefined || v === '' ? undefined : v;
+  };
+  const { imports } = parseImportKnobs(get, false, runtime, problems);
+  if (problems.length > 0) throw new ConfigError(problems);
+  return imports;
+}
+
 /** Parse and validate configuration from an env map. Throws ConfigError listing every problem. */
 export function loadConfig(env: Record<string, string | undefined>, runtime: ConfigRuntime = DEFAULT_RUNTIME): AppConfig {
   const problems: string[] = [];
@@ -450,34 +503,7 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
   }
 
   // ---- Step 3 knobs (N3) ----
-  const imp = {} as Record<keyof typeof IMPORT_KNOBS, number>;
-  for (const [name, k] of Object.entries(IMPORT_KNOBS) as [keyof typeof IMPORT_KNOBS, ImportKnob][]) {
-    const v = parseIntStrict(get(k.key), k.key, problems) ?? k.def;
-    if (v < k.min || v > k.max) problems.push(`${k.key} must be between ${k.min} and ${k.max}`);
-    if (prod && k.floor !== undefined && v < k.floor) problems.push(`${k.key} is below its production floor (${k.floor})`);
-    if (prod && k.ceiling !== undefined && v > k.ceiling) problems.push(`${k.key} is above its production ceiling (${k.ceiling})`);
-    imp[name] = v;
-  }
-  const thresholdRaw = get('REVIEW_CONFIDENCE_THRESHOLD');
-  let reviewConfidenceThreshold = 0.9;
-  if (thresholdRaw !== undefined) {
-    if (THRESHOLD_RE.test(thresholdRaw.trim())) reviewConfidenceThreshold = Number(thresholdRaw.trim());
-    else problems.push('REVIEW_CONFIDENCE_THRESHOLD must be a decimal between 0.50 and 1.00');
-  }
-  const sseRaw = get('S3_SSE') ?? 'aws:kms';
-  let sse: 'aws:kms' | 'none' = 'aws:kms';
-  if (sseRaw === 'aws:kms' || sseRaw === 'none') sse = sseRaw;
-  else problems.push('S3_SSE must be aws:kms or none');
-  const kmsKeyId = get('S3_KMS_KEY_ID') ?? null;
-  if (kmsKeyId !== null && !/^[A-Za-z0-9:/_.-]{1,2048}$/u.test(kmsKeyId)) problems.push('S3_KMS_KEY_ID contains invalid characters');
-  if (prod && sse !== 'aws:kms') problems.push('S3_SSE must be aws:kms in production');
-  if (prod && sse === 'aws:kms' && !kmsKeyId) problems.push('S3_KMS_KEY_ID is required in production');
-  const workerEntry = get('PARSE_WORKER_ENTRY') ?? defaultWorkerEntry();
-  if (prod && !runtime.permissionFlagAvailable) problems.push('Node permission model (--permission) is required in production for the parse sandbox');
-  // Fail closed in every environment: without it every parse would fail at the worker's guard.
-  if (!runtime.moduleHooksAvailable) problems.push('Node.js >= 22.15.0 is required (module.registerHooks, used by the parse sandbox guard)');
-  if (prod && !runtime.fileExists(workerEntry)) problems.push('PARSE_WORKER_ENTRY does not exist (build the API first)');
-
+  const { imports: importCfg, sse, kmsKeyId } = parseImportKnobs(get, prod, runtime, problems);
   // ---- Step 4 knobs (Q9, Q13) ----
   const s4 = {} as Record<keyof typeof STEP4_KNOBS, number>;
   for (const [name, k] of Object.entries(STEP4_KNOBS) as [keyof typeof STEP4_KNOBS, ImportKnob][]) {
@@ -537,7 +563,7 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
       sse,
       kmsKeyId,
     },
-    imports: { ...imp, reviewConfidenceThreshold, workerEntry },
+    imports: importCfg,
     mailTransport,
     enableDevOutbox,
     totpIssuer,

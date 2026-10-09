@@ -1,0 +1,11 @@
+DOCUMENT: FREIGHT INVOICE
+Invoice Number: INV-1001
+Carrier: Acme Freight LLC
+Shipper: Widget Co
+Load Number: LD-5001
+Invoice Date: 2025-03-10
+Charge: Linehaul | 1500.00
+Charge: Fuel Surcharge | 168.00
+Charge: Detention | 300.00
+Charge: Lumper | 150.00
+Total: $2,118.00

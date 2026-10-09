@@ -1,0 +1,6 @@
+DOCUMENT: BILL OF LADING
+Load Number: LD-9002
+Facility: Synthetic DC 9
+Appointment: 2025-04-02 09:00
+Arrival: 2025-04-02 08:40
+Departure: 2025-04-02 13:15
