@@ -151,6 +151,27 @@ const METADATA_KEYS = new Set([
   'byteLength',
   'sha256',
   'durationMs',
+  // Step 4 (Q3, Q7, Q13): dashboard sections/filters, flag changes, eval runs, intelligence reads and
+  // API key lifecycle. Never names, document strings or key material (keyId is the public identifier).
+  'section',
+  'window',
+  'level',
+  'limit',
+  'returned',
+  'key',
+  'from',
+  'to',
+  'version',
+  'kind',
+  'runId',
+  'evalSetId',
+  'k',
+  'cases',
+  'passHatKCount',
+  'keyId',
+  'scopes',
+  'expiresAt',
+  'viaApiKey',
 ]);
 const MAX_STRING = 2000;
 

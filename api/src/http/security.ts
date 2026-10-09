@@ -9,7 +9,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppConfig } from '../config.js';
 import { checkCsrf } from '../security/csrf.js';
 
-import type { RequestCtx, RouteAccess } from './context.js';
+import type { RequestCtx, RouteAccess, UserRateGroup } from './context.js';
 import { errors } from './errors.js';
 
 export const UNSAFE_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -28,7 +28,15 @@ export interface PipelineDeps {
    * global/auth: per client address, before anything else. upload/export: per authenticated user, a
    * second stage right after authentication (keyed by user id).
    */
-  limiters: { global: Limiter | null; auth: Limiter | null; upload?: Limiter | null; export?: Limiter | null };
+  limiters: {
+    global: Limiter | null;
+    auth: Limiter | null;
+    upload?: Limiter | null;
+    export?: Limiter | null;
+    /** Step 4: R60-R68 (RATE_LIMIT_PLATFORM_MAX) and R71-R73 (RATE_LIMIT_INTELLIGENCE_MAX), per user. */
+    platform?: Limiter | null;
+    intelligence?: Limiter | null;
+  };
   authenticate: (token: string, meta: { ip: string; requestId: string }) => Promise<RequestCtx | null>;
   onForbidden: (req: FastifyRequest, ctx: RequestCtx, access: RouteAccess) => Promise<void>;
 }
@@ -51,6 +59,10 @@ function bearerToken(req: FastifyRequest): string | null {
   if (!h) return null;
   const m = /^Bearer ([A-Za-z0-9._~+/=-]+)$/u.exec(h);
   return m?.[1] ?? null;
+}
+
+function userRateGroup(group: string | undefined): UserRateGroup | null {
+  return group === 'upload' || group === 'export' || group === 'platform' || group === 'intelligence' ? group : null;
 }
 
 export function registerSecurityPipeline(app: FastifyInstance, deps: PipelineDeps): void {
@@ -99,9 +111,11 @@ export function registerSecurityPipeline(app: FastifyInstance, deps: PipelineDep
     if (!ctx) throw errors.unauthenticated();
     req.ctx = ctx;
 
-    // 4b. Per-user rate limit for upload/export routes (second stage; needs the authenticated user).
-    if (deps.cfg.rateLimitEnabled && (config?.rateGroup === 'upload' || config?.rateGroup === 'export')) {
-      const limiter = config.rateGroup === 'upload' ? deps.limiters.upload : deps.limiters.export;
+    // 4b. Per-user rate limit for upload/export/platform/intelligence routes (second stage; needs the
+    // authenticated user).
+    const userGroup = userRateGroup(config?.rateGroup);
+    if (deps.cfg.rateLimitEnabled && userGroup) {
+      const limiter = deps.limiters[userGroup];
       if (limiter) {
         const r = await limiter(req);
         if (!r.allowed) throw errors.rateLimited(r.retryAfterSeconds);

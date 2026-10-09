@@ -49,3 +49,26 @@ export async function pingDb(base: BaseClient): Promise<boolean> {
     return false;
   }
 }
+
+/** One aggregate row of fr_platform_pipeline_stats (no tenant, user or file identifiers exist in it). */
+export interface PipelineStatRow {
+  metric: string;
+  label: string;
+  n: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+}
+
+/** Step 4 R60: cross-tenant pipeline aggregates. Must run inside a system transaction. */
+export async function platformPipelineStats(tx: SystemTx, windowSeconds: number, staleSeconds: number): Promise<PipelineStatRow[]> {
+  const rows = await tx.$queryRaw<{ metric: string; label: string; n: bigint; p50_ms: number | null; p95_ms: number | null }[]>`
+    SELECT metric, label, n, p50_ms, p95_ms FROM fr_platform_pipeline_stats(${windowSeconds}::int, ${staleSeconds}::int)`;
+  return rows.map((r) => ({ metric: r.metric, label: r.label, n: Number(r.n), p50Ms: r.p50_ms, p95Ms: r.p95_ms }));
+}
+
+/** Step 4 R64: row-lock one feature flag inside a system transaction (null when the row is missing). */
+export async function lockFeatureFlag(tx: SystemTx, key: string): Promise<{ key: string; enabled: boolean; version: number } | null> {
+  const rows = await tx.$queryRaw<{ key: string; enabled: boolean; version: number }[]>`
+    SELECT key, enabled, version FROM feature_flags WHERE key = ${key} FOR UPDATE`;
+  return rows[0] ?? null;
+}

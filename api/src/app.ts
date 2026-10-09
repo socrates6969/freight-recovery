@@ -38,8 +38,10 @@ import { ERROR_MESSAGES, HttpError, errors } from './http/errors.js';
 import { enforceRouteAccess, zodDetails } from './http/route.js';
 import { registerSecurityHeaders, registerSecurityPipeline, type Limiter } from './http/security.js';
 import { createLogger } from './logging.js';
-import { MetricsRegistry, UNMATCHED_ROUTE } from './observability/metrics.js';
+import { MetricsRegistry, UNMATCHED_ROUTE, ZERO_PARSER_COUNTERS } from './observability/metrics.js';
 import { LogRingBuffer } from './observability/ring-buffer.js';
+import { registerPlatformDashboardRoutes } from './platform/dashboard-routes.js';
+import { FlagService } from './platform/flags.js';
 import { registerHealthRoutes, registerPlatformRoutes } from './platform/routes.js';
 import { emailHash } from './security/crypto.js';
 import { JwtService } from './security/jwt.js';
@@ -108,6 +110,7 @@ declare module 'fastify' {
     metrics: MetricsRegistry;
     logRing: LogRingBuffer;
     startedAt: Date;
+    flags: FlagService;
   }
 }
 
@@ -213,6 +216,8 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   const userKey = (prefix: string) => (req: FastifyRequest) => `${prefix}:${req.ctx?.user.id ?? req.ip}`;
   const uploadLimiter = wrapLimiter(createRateLimit({ max: cfg.imports.rateLimitUploadMax, timeWindow: tenMinutes, keyGenerator: userKey('u') }));
   const exportLimiter = wrapLimiter(createRateLimit({ max: cfg.imports.rateLimitExportMax, timeWindow: tenMinutes, keyGenerator: userKey('e') }));
+  const platformLimiter = wrapLimiter(createRateLimit({ max: cfg.rateLimitPlatformMax, timeWindow: tenMinutes, keyGenerator: userKey('p') }));
+  const intelligenceLimiter = wrapLimiter(createRateLimit({ max: cfg.rateLimitIntelligenceMax, timeWindow: tenMinutes, keyGenerator: userKey('i') }));
 
   const deps: AuthDeps = {
     cfg,
@@ -224,10 +229,19 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   };
 
   const onForbidden = makeOnForbidden(base);
+  const flags = new FlagService(base, cfg.flags.cacheTtlMs);
+  app.decorate('flags', flags);
 
   registerSecurityPipeline(app, {
     cfg,
-    limiters: { global: globalLimiter, auth: authLimiter, upload: uploadLimiter, export: exportLimiter },
+    limiters: {
+      global: globalLimiter,
+      auth: authLimiter,
+      upload: uploadLimiter,
+      export: exportLimiter,
+      platform: platformLimiter,
+      intelligence: intelligenceLimiter,
+    },
     authenticate: (token, meta) => authenticateAccessToken(deps, token, meta),
     onForbidden,
   });
@@ -281,6 +295,16 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   };
   registerImportRoutes(app, importDeps);
   registerExportRoutes(app, importDeps);
+
+  // Step 4: Dev dashboard (platform) routes R60-R68.
+  const now = opts.overrides?.now ?? (() => new Date());
+  registerPlatformDashboardRoutes(app, {
+    base,
+    flags,
+    staleSeconds: imp.staleSeconds,
+    parserCounters: () => (parseExecutor instanceof ChildProcessExecutor ? parseExecutor.counters : ZERO_PARSER_COUNTERS),
+    now,
+  });
 
   app.addHook('onClose', async () => {
     await base.$disconnect();

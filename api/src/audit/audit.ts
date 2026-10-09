@@ -184,10 +184,10 @@ export interface AuditEventView {
   hash: string;
 }
 
-/** Newest-first page of a tenant's events (R24). */
+/** Newest-first page of a chain's events: a tenant's (R24) or, with `null`, the platform chain (R67). */
 export async function listAuditEvents(
   txIn: AnyTx,
-  tenantId: string,
+  tenantId: string | null,
   q: { before?: number | undefined; limit: number; action?: string | undefined },
 ): Promise<{ items: AuditEventView[]; nextBefore: number | null }> {
   const tx = toRaw(txIn);
