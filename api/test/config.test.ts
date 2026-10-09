@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
 
-import { ConfigError, DOCUMENTED_DEV_SECRETS, PRODUCTION_MAIL_TRANSPORTS, loadConfig, secretEntropyProblem } from '../src/config.js';
+import { ConfigError, DEFAULT_RUNTIME, DOCUMENTED_DEV_SECRETS, PRODUCTION_MAIL_TRANSPORTS, loadConfig, secretEntropyProblem } from '../src/config.js';
 
 const SES_PROBLEM = 'MAIL_TRANSPORT=ses is not implemented (stub); production start is refused until a real mail transport exists';
 
@@ -249,12 +249,26 @@ describe('config: step 3 import/export knobs (N3)', () => {
   it('refuses production without the Node permission model', () => {
     const ps = (() => {
       try {
-        loadConfig(prodOk, { permissionFlagAvailable: false, fileExists: () => true });
+        loadConfig(prodOk, { permissionFlagAvailable: false, moduleHooksAvailable: true, fileExists: () => true });
         return [];
       } catch (e) {
         return e instanceof ConfigError ? [...e.problems] : [];
       }
     })();
     expect(ps).toContain('Node permission model (--permission) is required in production for the parse sandbox');
+  });
+
+  it('fix round 2 (F-03): refuses to start, in every environment, on a Node without module.registerHooks', () => {
+    const NEED = 'Node.js >= 22.15.0 is required (module.registerHooks, used by the parse sandbox guard)';
+    for (const env of [prodOk, { ...prodOk, NODE_ENV: 'development' }, { ...prodOk, NODE_ENV: 'test' }]) {
+      let ps: string[] = [];
+      try {
+        loadConfig(env, { permissionFlagAvailable: true, moduleHooksAvailable: false, fileExists: () => true });
+      } catch (e) {
+        ps = e instanceof ConfigError ? [...e.problems] : [];
+      }
+      expect([env.NODE_ENV, ps]).toEqual([env.NODE_ENV, expect.arrayContaining([NEED])]);
+    }
+    expect(DEFAULT_RUNTIME.moduleHooksAvailable).toBe(true);
   });
 });

@@ -57,9 +57,34 @@ describe('worker response validation (untrusted output)', () => {
     ['wrong provider', async () => mutate(await goodResponse(), (r) => (r.providerName = 'llm'))],
     ['unknown reject reason', () => ({ ok: false, reason: 'reviewer_rejected' })],
     ['too much text', async () => mutate(await goodResponse(), (r) => (r.text = 'x'.repeat(LIMITS.textChars + 1)))],
+    // Fix round 2 (F-04): control characters / lone surrogates in the document text.
+    ['NUL in the text', async () => mutate(await goodResponse(), (r) => (r.text += '\u{0}'))],
+    ['ESC in the text', async () => mutate(await goodResponse(), (r) => (r.text += 'a\u{1b}b'))],
+    ['BEL in the text', async () => mutate(await goodResponse(), (r) => (r.text += '\u{7}'))],
+    ['DEL in the text', async () => mutate(await goodResponse(), (r) => (r.text += '\u{7f}'))],
+    ['C1 control in the text', async () => mutate(await goodResponse(), (r) => (r.text += '\u{90}'))],
+    ['lone surrogate in the text', async () => mutate(await goodResponse(), (r) => (r.text += '\ud800'))],
   ])('rejects %s as parse_failed', async (_name, make) => {
     const v = await make();
     expect(validateWorkerResponse(typeof v === 'string' ? v : JSON.stringify(v), CTX)).toEqual({ ok: false, reason: 'parse_failed' });
+  });
+
+  it('F-04: allows HT and the splitlines separators in the text; the worker strips disallowed controls itself', async () => {
+    const ok = validateWorkerResponse(JSON.stringify(mutate(await goodResponse(), (r) => (r.text += 'a\tb\fc\u{85}d\u{b}e\u{1c}f\r'))), CTX);
+    expect(ok.ok).toBe(true);
+    const r = await parseDocument({
+      bytes: new TextEncoder().encode('Document: Invoice\nLoad Number: L1\u{81}\nTotal: 5\n'),
+      filename: 'a.txt',
+      detectedType: 'TXT',
+      limits: LIMITS,
+      threshold: 0.9,
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.text.includes('\u{81}')).toBe(false);
+      expect(r.warnings).toContain('DECODE_REPLACEMENTS');
+      expect(validateWorkerResponse(JSON.stringify({ ok: true, result: r }), CTX).ok).toBe(true);
+    }
   });
 
   it('passes allow-listed rejections through', () => {

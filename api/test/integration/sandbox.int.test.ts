@@ -176,6 +176,14 @@ describe.skipIf(!built)('parse sandbox (built worker)', () => {
         'evalString',
         'newFunction',
         'webSocket',
+        // Fix round 2 (F-01)
+        'stdinCtorConnect',
+        'stdoutCtorConnect',
+        'stdinProtoConnectCall',
+        'activeHandleCtorConnect',
+        'pipeHandleOpen',
+        'pipeHandleConnect',
+        'restoreConnect',
       ]) {
         expect([key, String(r[key]).startsWith('denied')]).toEqual([key, true]);
       }

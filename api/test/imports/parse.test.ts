@@ -280,6 +280,8 @@ describe('PDF layout', () => {
     const item = (str: string, x: number, y: number, w: number) => ({ str, transform: [12, 0, 0, 12, x, y], width: w, height: 12 });
     expect(layoutLines([item('B', 50, 700, 10), item('Total:', 50, 720, 30), item('$5', 90, 721, 10), item('A', 60, 700, 5)])).toEqual(['Total: $5', 'BA']);
     expect(layoutLines([item('ab', 10, 10, 10), item('cd', 21, 10, 10), item('  ', 40, 10, 5)])).toEqual(['abcd']);
+    // Fix round 2 (F-04): control characters from glyph mapping are stripped; a control-only item vanishes.
+    expect(layoutLines([item('a\u{0}b\u{1b}', 10, 10, 10), item('\u{0}\u{3}', 30, 10, 5), item('c\u{9f}', 21, 10, 10)])).toEqual(['abc']);
   });
 });
 

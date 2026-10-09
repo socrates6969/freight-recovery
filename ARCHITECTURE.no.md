@@ -572,8 +572,11 @@ graph TD
 4. **Isolert parsearbeider.** `ChildProcessExecutor` tar en plass fra en semafor per instans. Den
    starter `node` med `--permission`, som bare gir lesetilgang til arbeiderens filer. Arbeideren får
    ingen skrive-, barneprosess-, worker-, addon- eller WASI-tillatelse. Den får også
-   `--max-old-space-size`, et **tomt miljø** og en tom arbeidsmappe. En vaktmodul sletter `fetch`,
-   `WebSocket`, `EventSource` og `XMLHttpRequest`, og blokkerer nettverks-, prosess- og VM-modulene.
+   `--max-old-space-size`, et **tomt miljø** og en tom arbeidsmappe. En vaktmodul (beste innsats, i
+   samme prosess) sletter `fetch`, `WebSocket`, `EventSource` og `XMLHttpRequest`, blokkerer nettverks-,
+   prosess- og VM-modulene og låser `connect` på socket-klassene som kan nås via stdio-strømmene. Den er
+   ingen sikkerhetsgrense: den reelle nettverkskontrollen er et nettverk uten utgående trafikk (i AWS
+   oppgavenettverket uten NAT), og en egen parseroppgave uten utgående trafikk er et krav før lansering.
    Forelderprosessen håndhever veggklokke, utdatagrense og (på Linux) en RSS-grense. Den behandler
    arbeideren som upålitelig: hele svaret valideres på nytt, og et ugyldig svar blir `parse_failed`.
 5. **PDF-forhåndsskanning.** `pdf-prescan.ts` går gjennom PDF-strukturen med faste grenser før pdf.js

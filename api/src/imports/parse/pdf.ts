@@ -13,7 +13,7 @@
  * parity is claimed only for simple single-column text-layer PDFs.
  */
 import { PDF_PAGE_TREE_SLACK, prescanPdf } from './pdf-prescan.js';
-import { cpLength } from './text.js';
+import { cpLength, stripDisallowedTextControls } from './text.js';
 import { ParseRejection } from './types.js';
 
 const Y_TOLERANCE = 2;
@@ -34,6 +34,7 @@ function isTextItem(x: unknown): x is TextItemLike {
 /** Build the page's lines from pdf.js text items (pure; unit-tested). */
 export function layoutLines(items: readonly TextItemLike[]): string[] {
   const placed = items
+    .map((it) => ({ ...it, str: stripDisallowedTextControls(it.str) }))
     .filter((it) => it.str.trim() !== '')
     .map((it, i) => ({
       str: it.str,

@@ -206,8 +206,9 @@ its own compose file (`compose.web.yml`), CI workflow (`.github/workflows/web-ci
 
 ## Local quickstart (without Docker: the path that was actually verified)
 
-Prerequisites: Node 22 (`.nvmrc`; `engines` allows `>=22.13 <25`; step 3 needs 22.13+ for pdf.js and the
-Node permission flag), PostgreSQL 16, and `openssl` (or Node, see below). Import/export also needs an
+Prerequisites: Node 22 (`.nvmrc` pins 22.23.3, the version in the digest-pinned `node:22-alpine` images;
+`engines` allows `>=22.15.0 <23 || >=23.5.0 <25`: step 3 needs `module.registerHooks`, added in Node 22.15.0 /
+23.5.0, for the parse sandbox guard, and the API refuses to start without it), PostgreSQL 16, and `openssl` (or Node, see below). Import/export also needs an
 S3-compatible store (MinIO locally) and, for the parity tests, Python: see
 [Local verification without Docker](#local-verification-without-docker).
 

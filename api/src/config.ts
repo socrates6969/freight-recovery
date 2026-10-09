@@ -3,6 +3,7 @@
  * they never contain a secret value.
  */
 import { existsSync } from 'node:fs';
+import * as nodeModule from 'node:module';
 import { isIP } from 'node:net';
 import { fileURLToPath } from 'node:url';
 
@@ -89,11 +90,17 @@ export interface ImportConfig {
 export interface ConfigRuntime {
   /** Whether this Node binary supports the permission model flag (`--permission`). */
   permissionFlagAvailable: boolean;
+  /**
+   * Whether `module.registerHooks` exists (Node >= 22.15.0 / 23.5.0, per the Node docs). The parse
+   * worker's guard needs it; the worker runs this same Node binary.
+   */
+  moduleHooksAvailable: boolean;
   fileExists: (path: string) => boolean;
 }
 
 export const DEFAULT_RUNTIME: ConfigRuntime = {
   permissionFlagAvailable: process.allowedNodeEnvironmentFlags.has('--permission'),
+  moduleHooksAvailable: typeof (nodeModule as { registerHooks?: unknown }).registerHooks === 'function',
   fileExists: (p) => existsSync(p),
 };
 
@@ -422,6 +429,8 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
   if (prod && sse === 'aws:kms' && !kmsKeyId) problems.push('S3_KMS_KEY_ID is required in production');
   const workerEntry = get('PARSE_WORKER_ENTRY') ?? defaultWorkerEntry();
   if (prod && !runtime.permissionFlagAvailable) problems.push('Node permission model (--permission) is required in production for the parse sandbox');
+  // Fail closed in every environment: without it every parse would fail at the worker's guard.
+  if (!runtime.moduleHooksAvailable) problems.push('Node.js >= 22.15.0 is required (module.registerHooks, used by the parse sandbox guard)');
   if (prod && !runtime.fileExists(workerEntry)) problems.push('PARSE_WORKER_ENTRY does not exist (build the API first)');
 
   const totpIssuer = get('TOTP_ISSUER') ?? 'FreightRecovery';

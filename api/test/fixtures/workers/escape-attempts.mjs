@@ -4,6 +4,8 @@
 import { createRequire } from 'node:module';
 
 const results = {};
+// Captured before stdin is consumed (the handle is released at end of input).
+const stdinHandleCtor = process.stdin._handle ? process.stdin._handle.constructor : null;
 const chunks = [];
 for await (const c of process.stdin) chunks.push(c);
 const input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -48,5 +50,50 @@ await attempt('vm', async () => (await import('node:vm')).runInNewContext('1+1')
 await attempt('evalString', async () => eval('1+1'));
 await attempt('newFunction', async () => new Function('return 1')());
 await attempt('webSocket', async () => new globalThis.WebSocket(`ws://127.0.0.1:${input.port}/`));
+// Fix round 2 (F-01): socket / native handle classes reachable without any import.
+const tcpVia = (Ctor) =>
+  withTimeout(
+    new Promise((res, rej) => {
+      const sock = new Ctor();
+      sock.on('error', rej);
+      sock.connect(input.port, '127.0.0.1', res);
+    }),
+  );
+await attempt('stdinCtorConnect', async () => tcpVia(process.stdin.constructor));
+await attempt('stdoutCtorConnect', async () => tcpVia(process.stdout.constructor));
+await attempt('stdinProtoConnectCall', async () =>
+  withTimeout(
+    new Promise((res, rej) => {
+      const sock = new process.stdin.constructor();
+      sock.on('error', rej);
+      Object.getPrototypeOf(process.stdin).connect.call(sock, { port: input.port, host: '127.0.0.1' }, res);
+    }),
+  ),
+);
+await attempt('activeHandleCtorConnect', async () => {
+  const handles = typeof process._getActiveHandles === 'function' ? process._getActiveHandles() : [];
+  const h = handles.find((x) => x && typeof x.constructor === 'function' && typeof x.constructor.prototype.connect === 'function');
+  if (!h) throw Object.assign(new Error('none'), { code: 'NO_HANDLE' });
+  return tcpVia(h.constructor);
+});
+await attempt('pipeHandleOpen', async () => {
+  const H = stdinHandleCtor;
+  if (!H) throw Object.assign(new Error('none'), { code: 'NO_HANDLE' });
+  return new H(0).open(0);
+});
+await attempt('pipeHandleConnect', async () => {
+  const H = stdinHandleCtor;
+  if (!H) throw Object.assign(new Error('none'), { code: 'NO_HANDLE' });
+  return new H(0).connect({}, process.platform === 'win32' ? '\\\\.\\pipe\\fr-escape' : '/tmp/fr-escape.sock', () => undefined);
+});
+await attempt('restoreConnect', async () => {
+  let owner = Object.getPrototypeOf(process.stdin);
+  while (owner && !Object.prototype.hasOwnProperty.call(owner, 'connect')) owner = Object.getPrototypeOf(owner);
+  if (owner) {
+    delete owner.connect;
+    owner.connect = () => 'restored';
+  }
+  return tcpVia(process.stdin.constructor);
+});
 
 process.stdout.write(JSON.stringify(results));

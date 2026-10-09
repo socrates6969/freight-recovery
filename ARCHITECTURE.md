@@ -589,8 +589,11 @@ The steps in detail:
 4. **Isolated parse worker.** `ChildProcessExecutor` takes a slot from a per-instance semaphore. It
    starts `node` with `--permission`, which grants read access to the worker files only. The worker gets
    no write, child-process, worker, addon or WASI permission. It also gets `--max-old-space-size`, an
-   **empty environment** and an empty working directory. A guard module deletes `fetch`, `WebSocket`,
-   `EventSource` and `XMLHttpRequest`, and blocks the network, process and VM modules. The parent
+   **empty environment** and an empty working directory. A best-effort, in-process guard module deletes
+   `fetch`, `WebSocket`, `EventSource` and `XMLHttpRequest`, blocks the network, process and VM modules,
+   and locks socket `connect` on the classes reachable from the stdio streams. It is not a security
+   boundary: the real network control is a no-egress network (in AWS the no-NAT task network), and a
+   dedicated no-egress parser task is a launch gate. The parent
    enforces the wall clock, the output cap and (on Linux) an RSS limit. The parent also treats the
    worker as untrusted. It re-validates the whole response (allowed keys, counts, pointer bounds,
    re-sanitized strings), and an invalid response becomes `parse_failed`.

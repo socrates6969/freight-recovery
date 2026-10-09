@@ -11,7 +11,7 @@ import { validateJpeg, validatePng } from './image.js';
 import { pdfToText } from './pdf.js';
 import { getProvider } from './provider.js';
 import { documentReviewReasons } from './reasons.js';
-import { cpLength, decodeUtf8, pySplitlinesWithOffsets } from './text.js';
+import { cpLength, decodeUtf8, pySplitlinesWithOffsets, stripDisallowedTextControls } from './text.js';
 import {
   MAX_LINES,
   PARSER_VERSION,
@@ -96,7 +96,11 @@ async function parseUnsafe(input: ParseInput): Promise<ParseSuccess> {
     }
     case 'CSV':
     case 'TXT': {
-      const decoded = decodeUtf8(input.bytes);
+      const raw = decodeUtf8(input.bytes);
+      // F-04: C1 controls (other than NEL) can survive a valid UTF-8 decode; they are removed and
+      // reported like decode replacements (registered divergence D4: control bytes).
+      const cleaned = stripDisallowedTextControls(raw.text);
+      const decoded = { text: cleaned, replacements: raw.replacements || cleaned !== raw.text };
       assertTextSize(decoded.text, input.limits);
       decodeReplacements = decoded.replacements;
       if (decodeReplacements) {

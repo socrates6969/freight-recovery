@@ -29,6 +29,7 @@ import { z } from 'zod';
 
 import { milli } from '../parse/confidence.js';
 import { PASSTHROUGH_REASONS, documentReviewReasons } from '../parse/reasons.js';
+import { hasDisallowedTextControls } from '../parse/text.js';
 import {
   MAX_FIELDS,
   MAX_LINES,
@@ -160,6 +161,10 @@ function normalizeSuccess(r: z.infer<typeof successSchema>, ctx: { detectedType:
   const isImage = ctx.detectedType === 'PNG' || ctx.detectedType === 'JPEG';
   const isPdf = ctx.detectedType === 'PDF';
   check(cpLength(r.text) <= ctx.limits.textChars);
+  // F-04: the document text follows the same control policy the worker applies (no NUL, no C0 other
+  // than HT and line separators, no DEL, no C1 other than NEL, no lone surrogates); anything else means
+  // the worker misbehaved.
+  check(!hasDisallowedTextControls(r.text));
   const lines = pySplitlinesWithOffsets(r.text);
   check(lines.length <= MAX_LINES);
   if (isImage) check(r.text === '' && r.fields.length === 0 && r.docType === 'OTHER' && r.pageCount === null);

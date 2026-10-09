@@ -213,8 +213,9 @@ egen Terraform (`infra/`, som erstatter `deploy/terraform/` kun for nettstacken)
 
 ## Lokal hurtigstart (uten Docker: veien som faktisk ble verifisert)
 
-Forutsetninger: Node 22 (`.nvmrc`; `engines` tillater `>=22.13 <25`; steg 3 trenger 22.13+ for pdf.js og
-Nodes tillatelsesflagg), PostgreSQL 16, og `openssl` (eller Node, se nedenfor). Import/eksport trenger i
+Forutsetninger: Node 22 (`.nvmrc` låser 22.23.3, versjonen i de digest-låste `node:22-alpine`-bildene;
+`engines` tillater `>=22.15.0 <23 || >=23.5.0 <25`: steg 3 trenger `module.registerHooks`, lagt til i Node
+22.15.0 / 23.5.0, for vakten i parse-sandkassen, og API-et nekter å starte uten den), PostgreSQL 16, og `openssl` (eller Node, se nedenfor). Import/eksport trenger i
 tillegg en S3-kompatibel lagring (MinIO lokalt) og, for paritetstestene, Python: se
 [Lokal verifisering uten Docker](#lokal-verifisering-uten-docker).
 

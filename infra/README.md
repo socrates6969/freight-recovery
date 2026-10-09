@@ -75,8 +75,9 @@ implemented and allow-listed in `PRODUCTION_MAIL_TRANSPORTS` (`api/src/config.ts
   bodies; watch the `aws-common` metrics for false positives on binary documents before launch.
 - **Parser sandbox.** Documents are parsed in a child Node process (`--permission`, memory and time
   limits, empty working directory under `/tmp`). It inherits this task's network posture: private
-  subnets, no NAT, egress only to the VPC endpoints. A dedicated no-egress parser task (separate task
-  definition and security group with no egress rules) is the planned hardening.
+  subnets, no NAT, egress only to the VPC endpoints. The worker's in-process network guard is best
+  effort only, not a boundary. A dedicated no-egress parser task (separate task definition and security
+  group with no egress rules) is a **launch gate**.
 - **Image.** The API image contains the built worker (`/app/api/dist/src/imports/sandbox/worker-main.js`,
   set as `PARSE_WORKER_ENTRY`) and the `pdfjs-dist` production dependency; `/tmp` is the task's writable
   volume while the root filesystem stays read-only.
