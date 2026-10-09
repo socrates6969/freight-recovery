@@ -3,7 +3,7 @@
  * unsafe methods, single-flight refresh on 401 (serialized across tabs with the Web Locks API when
  * available), and Zod parsing of EVERY response (a parse failure never renders raw data).
  */
-import { CsrfResponse, ErrorBody, RefreshResponse } from '@fr/shared';
+import { CsrfResponse, ErrorBody, ImportDocumentDetail, RefreshResponse, type ImportDocumentDetailDto } from '@fr/shared';
 import type { z } from 'zod';
 
 import type { SessionStore } from '../auth/session-store';
@@ -41,6 +41,21 @@ export function readCookie(name: string): string | null {
   return null;
 }
 
+export interface UploadOptions {
+  onProgress?: (percent: number) => void;
+  signal?: AbortSignal;
+}
+
+interface RawResult {
+  status: number;
+  body: string;
+  retryAfter: string | null;
+}
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+/** Only our own export/download names are honored from Content-Disposition. */
+const SAFE_DOWNLOAD_NAME = /^attachment; filename="((?:freight-recovery-[a-z]+-\d{8}T\d{6}Z|document-[0-9a-f]{8})\.(?:csv|xlsx|pdf|png|jpg|txt))"$/u;
+
 export class ApiClient {
   private csrfFallback: string | null = null;
   private refreshInFlight: Promise<boolean> | null = null;
@@ -49,6 +64,7 @@ export class ApiClient {
     private readonly fetchImpl: typeof fetch,
     private readonly session: SessionStore,
     private readonly onAuthLost: () => void,
+    private readonly xhrImpl: typeof XMLHttpRequest | undefined = typeof XMLHttpRequest === 'undefined' ? undefined : XMLHttpRequest,
   ) {}
 
   /** Ensure a CSRF token exists (cookie set by the server); returns the value to echo. */
@@ -122,6 +138,108 @@ export class ApiClient {
 
   post<S extends z.ZodType | undefined = undefined>(path: string, body: unknown, schema?: S, auth = true): Promise<Result<S>> {
     return this.request('POST', path, { body, ...(schema ? { schema } : {}), auth } as RequestOptions<S>);
+  }
+
+  private static errorFrom(status: number, body: string, retryAfter: string | null): ApiError {
+    const retry = retryAfter && /^\d+$/u.test(retryAfter) ? Number(retryAfter) : null;
+    let json: unknown = null;
+    try {
+      json = JSON.parse(body);
+    } catch {
+      json = null;
+    }
+    const parsed = ErrorBody.safeParse(json);
+    if (parsed.success) return new ApiError(status, parsed.data.error.code, parsed.data.error.message, retry);
+    return new ApiError(status, 'http_error', GENERIC, retry);
+  }
+
+  /**
+   * Upload one file's raw bytes (R43) with XMLHttpRequest so upload progress events exist. Same-origin
+   * only; Bearer + CSRF headers; `Content-Type: application/octet-stream`; single-flight refresh and one
+   * retry on 401; the response is parsed with the shared schema (callers map statuses to fixed texts).
+   */
+  async upload(batchId: string, file: Blob, filename: string, opts: UploadOptions = {}): Promise<ImportDocumentDetailDto> {
+    if (!UUID_RE.test(batchId)) throw new Error('invalid batch id');
+    const Xhr = this.xhrImpl;
+    if (!Xhr) throw new ApiError(0, 'unsupported', GENERIC);
+    const url = `/api/v1/imports/${batchId}/documents?filename=${encodeURIComponent(filename)}`;
+    const send = async (): Promise<RawResult> => {
+      const token = this.session.getState().accessToken;
+      const csrf = await this.csrfToken();
+      return new Promise<RawResult>((resolve, reject) => {
+        const xhr = new Xhr();
+        xhr.open('POST', url);
+        xhr.setRequestHeader('accept', 'application/json');
+        xhr.setRequestHeader('content-type', 'application/octet-stream');
+        xhr.setRequestHeader('x-csrf-token', csrf);
+        if (token) xhr.setRequestHeader('authorization', `Bearer ${token}`);
+        xhr.upload.onprogress = (e: ProgressEvent) => {
+          if (e.lengthComputable && e.total > 0) opts.onProgress?.(Math.min(100, Math.round((e.loaded / e.total) * 100)));
+        };
+        xhr.onload = () => resolve({ status: xhr.status, body: String(xhr.responseText ?? ''), retryAfter: xhr.getResponseHeader('retry-after') });
+        xhr.onerror = () => reject(new ApiError(0, 'network', GENERIC));
+        xhr.onabort = () => reject(new ApiError(0, 'aborted', GENERIC));
+        opts.signal?.addEventListener('abort', () => xhr.abort(), { once: true });
+        xhr.send(file);
+      });
+    };
+    let res = await send();
+    if (res.status === 401) {
+      if (!(await this.refresh())) {
+        this.onAuthLost();
+        throw ApiClient.errorFrom(res.status, res.body, res.retryAfter);
+      }
+      res = await send();
+      if (res.status === 401) {
+        this.onAuthLost();
+        throw ApiClient.errorFrom(res.status, res.body, res.retryAfter);
+      }
+    }
+    if (res.status < 200 || res.status >= 300) throw ApiClient.errorFrom(res.status, res.body, res.retryAfter);
+    let json: unknown = null;
+    try {
+      json = JSON.parse(res.body);
+    } catch {
+      json = null;
+    }
+    const parsed = ImportDocumentDetail.safeParse(json);
+    if (!parsed.success) throw new ApiError(0, 'bad_response', GENERIC);
+    return parsed.data;
+  }
+
+  /**
+   * Download a file response (exports, originals): fetch with the Bearer token, then save it through a
+   * temporary object URL and an anchor with `download`. The URL is revoked immediately afterwards.
+   */
+  async download(path: string, fallbackName: string): Promise<void> {
+    if (!path.startsWith('/api/')) throw new Error('same-origin API paths only');
+    const get = () => {
+      const token = this.session.getState().accessToken;
+      return this.fetchImpl(path, { method: 'GET', credentials: 'same-origin', headers: token ? { authorization: `Bearer ${token}` } : {} });
+    };
+    let res = await get();
+    if (res.status === 401) {
+      if (!(await this.refresh())) {
+        this.onAuthLost();
+        throw await ApiClient.toError(res);
+      }
+      res = await get();
+    }
+    if (!res.ok) throw await ApiClient.toError(res);
+    const blob = await res.blob();
+    const name = SAFE_DOWNLOAD_NAME.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;
+    const href = URL.createObjectURL(blob);
+    try {
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = name;
+      a.rel = 'noopener';
+      document.body.append(a);
+      a.click();
+      a.remove();
+    } finally {
+      URL.revokeObjectURL(href);
+    }
   }
 
   /** Single-flight refresh shared by concurrent callers; serialized across tabs via Web Locks. */

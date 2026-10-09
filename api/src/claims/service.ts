@@ -4,7 +4,7 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import type { ApprovalItemDto, ClaimDetailDto, ClaimSummaryDto, ClaimsQueryInput, PacketDto, Role } from '@fr/shared';
+import type { ApprovalItemDto, ClaimDetailDto, ClaimSummaryDto, ClaimsQueryInput, PacketDto, PacketStatus, Role } from '@fr/shared';
 
 import { appendAudit } from '../audit/audit.js';
 import { isUuid } from '../db/errors.js';
@@ -36,7 +36,7 @@ interface SummaryRow {
   carrierName: string;
   shipperName: string;
   perspective: 'SHIPPER' | 'CARRIER';
-  status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SEND_READY';
+  status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'SEND_READY' | 'AWAITING_ANALYSIS';
   amountClaimedCents: number;
   recoverableCents: number;
   pendingReviewCents: number;
@@ -63,7 +63,7 @@ export function toClaimSummary(c: SummaryRow): ClaimSummaryDto {
     pendingReviewCents: c.pendingReviewCents,
     currency: 'USD',
     assignee: c.assignee ? { id: c.assignee.id, name: c.assignee.name } : null,
-    latestPacket: p ? { revision: p.revision, status: p.status as ClaimSummaryDto['status'] } : null,
+    latestPacket: p ? { revision: p.revision, status: p.status as PacketStatus } : null,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
   };
@@ -314,7 +314,9 @@ async function lockAndLoadLatest(tx: TenantTx, claimId: string): Promise<LockedS
     where: { claimId, status: { not: 'SUPERSEDED' } },
     include: PACKET_INCLUDE,
   });
-  if (!latest) throw errors.notFound();
+  // A claim without a packet (AWAITING_ANALYSIS, created from imports) cannot be edited, approved,
+  // rejected or sent: 409 invalid_state (never 500). Step 5 adds AWAITING_ANALYSIS -> PENDING_REVIEW.
+  if (!latest) throw errors.invalidState();
   return { claimId, tenantId: latest.tenantId, latest };
 }
 

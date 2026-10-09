@@ -39,6 +39,9 @@ function resolves(fromFile: string, spec: string): string {
 }
 
 const inDir = (p: string, dirs: string[]) => dirs.some((d) => p.startsWith(d));
+/** The single file allowed to import node:child_process (A1.4). */
+const SPAWN_FILE = 'src/imports/sandbox/spawn.ts';
+const GUARD_FILE = 'src/imports/sandbox/guard.ts';
 
 describe('architecture', () => {
   it('scans a non-trivial source tree', () => {
@@ -76,10 +79,54 @@ describe('architecture', () => {
     }
   });
 
-  it('bans child_process and eval-like APIs in api/src', () => {
+  it('bans child_process (except the one sandbox launcher) and eval-like APIs in api/src', () => {
     for (const f of files) {
-      expect([f.path, /node:child_process|['"]child_process['"]/u.test(f.text)]).toEqual([f.path, false]);
+      // The guard names child_process only in its block list; it must not import it (checked below).
+      if (f.path !== SPAWN_FILE && f.path !== GUARD_FILE) expect([f.path, /node:child_process|['"]child_process['"]/u.test(f.text)]).toEqual([f.path, false]);
+      if (f.path === GUARD_FILE) expect(imports(f.text).filter((s) => /child_process|^(node:)?(net|http|https|vm)$/u.test(s))).toEqual([]);
       expect([f.path, /\beval\s*\(|new\s+Function\s*\(/u.test(f.text)]).toEqual([f.path, false]);
+    }
+  });
+
+  it('the sandbox launcher spawns exactly one process: process.execPath, no shell, allow-listed env', () => {
+    const f = files.find((x) => x.path === SPAWN_FILE);
+    expect(f, SPAWN_FILE).toBeDefined();
+    const text = f?.text ?? '';
+    const calls = [...text.matchAll(/\bspawn\(/gu)];
+    expect(calls).toHaveLength(1);
+    expect(/\bspawn\(process\.execPath,/u.test(text)).toBe(true);
+    expect(/shell:\s*false/u.test(text)).toBe(true);
+    expect(/shell:\s*true/u.test(text)).toBe(false);
+    expect(/env:\s*workerEnv\(\)/u.test(text)).toBe(true);
+    expect(/process\.env\b(?!\))/u.test(text.replace(/source: NodeJS\.ProcessEnv = process\.env/u, ''))).toBe(false);
+    for (const banned of ['--allow-fs-write', '--allow-child-process', '--allow-worker', '--allow-addons', '--allow-wasi']) {
+      expect([banned, text.includes(banned)]).toEqual([banned, false]);
+    }
+  });
+
+  it('the parse sandbox code reaches no network, file system, process, vm or service module', () => {
+    const banned = /^(node:)?(net|http|https|http2|dns|dns\/promises|tls|dgram|child_process|cluster|worker_threads|fs|fs\/promises|vm)$|^@aws-sdk\/|^fastify$|^@prisma\//u;
+    const sandboxed = files.filter((f) => f.path.startsWith('src/imports/parse/') || f.path === 'src/imports/sandbox/worker-main.ts');
+    expect(sandboxed.length).toBeGreaterThan(8);
+    for (const f of sandboxed) {
+      for (const spec of imports(f.text)) {
+        const target = resolves(f.path, spec);
+        expect([f.path, spec, banned.test(spec)]).toEqual([f.path, spec, false]);
+        expect([f.path, spec, /^src\/(db|storage|http|audit|auth|claims|platform|exports)\//u.test(`${target}/`)]).toEqual([f.path, spec, false]);
+        // Zod-free shared subpaths only (keeps the sandbox's loaded code minimal).
+        expect([f.path, spec, spec === '@fr/shared']).toEqual([f.path, spec, false]);
+        if (spec.startsWith('pdfjs-dist')) expect([f.path, spec]).toEqual(['src/imports/parse/pdf.ts', spec]);
+        if (spec.startsWith('node:') && f.path === 'src/imports/sandbox/worker-main.ts') {
+          expect([spec, ['node:process', 'node:stream', 'node:buffer', 'node:zlib'].includes(spec)]).toEqual([spec, true]);
+        }
+      }
+    }
+  });
+
+  it('signed URLs are not used in step 3 (presignGet has no caller outside tests)', () => {
+    for (const f of files) {
+      if (f.path === 'src/storage/s3.ts') continue;
+      expect([f.path, /presignGet\s*\(/u.test(f.text)]).toEqual([f.path, false]);
     }
   });
 

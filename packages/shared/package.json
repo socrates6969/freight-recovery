@@ -8,6 +8,26 @@
       "types": "./dist/index.d.ts",
       "source": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./decimal": {
+      "types": "./dist/decimal.d.ts",
+      "source": "./src/decimal.ts",
+      "default": "./dist/decimal.js"
+    },
+    "./text-sanitize": {
+      "types": "./dist/text-sanitize.d.ts",
+      "source": "./src/text-sanitize.ts",
+      "default": "./dist/text-sanitize.js"
+    },
+    "./import-fields": {
+      "types": "./dist/import-fields.d.ts",
+      "source": "./src/import-fields.ts",
+      "default": "./dist/import-fields.js"
+    },
+    "./extraction": {
+      "types": "./dist/extraction.d.ts",
+      "source": "./src/extraction.ts",
+      "default": "./dist/extraction.js"
     }
   },
   "scripts": {

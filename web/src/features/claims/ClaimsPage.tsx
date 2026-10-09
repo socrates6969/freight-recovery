@@ -4,7 +4,8 @@ import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, Outlet, useSearchParams } from 'react-router-dom';
 
-import { useApi } from '../../app-context';
+import { useApi, useCan } from '../../app-context';
+import { ExportMenu } from '../../components/ui/ExportMenu';
 import { SafeText } from '../../components/ui/SafeText';
 import { formatDateTime, formatUsdCents, STATUS_LABEL } from '../../lib/format';
 
@@ -16,7 +17,7 @@ const COLUMNS: { label: string; field: ClaimSortField }[] = [
   { label: 'Recoverable', field: 'recoverableCents' },
   { label: 'Updated', field: 'updatedAt' },
 ];
-const STATUSES = ['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'SEND_READY'] as const;
+const STATUSES = ['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'SEND_READY', 'AWAITING_ANALYSIS'] as const;
 const DEFAULT_SORT = 'createdAt:desc';
 const PAGE_SIZE = 25;
 const DEBOUNCE_MS = 300;
@@ -38,8 +39,18 @@ export function claimsApiQuery(params: URLSearchParams): string {
   return out.toString();
 }
 
+/** Export request for the current list: the same whitelisted q/status/perspective/sort, no paging. */
+export function claimsExportPath(params: URLSearchParams, format: 'csv' | 'xlsx'): string {
+  const q = new URLSearchParams(claimsApiQuery(params));
+  q.delete('page');
+  q.delete('pageSize');
+  q.set('format', format);
+  return `/api/v1/exports/claims?${q.toString()}`;
+}
+
 export function ClaimsPage() {
   const api = useApi();
+  const canExport = useCan('export:claims');
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get('q') ?? '');
   const apiQuery = claimsApiQuery(params);
@@ -84,7 +95,10 @@ export function ClaimsPage() {
     <div className="flex flex-col gap-4">
       <div className="flex items-end justify-between gap-4">
         <h1 className="text-xl font-semibold">Claims</h1>
-        <p className="muted num text-sm">{claims.data ? `${total} claims` : ''}</p>
+        <div className="flex items-start gap-3">
+          <p className="muted num pt-2 text-sm">{claims.data ? `${total} claims` : ''}</p>
+          {canExport ? <ExportMenu label="Export" fallbackName="freight-recovery-claims" pathFor={(f) => claimsExportPath(params, f)} /> : null}
+        </div>
       </div>
       <div className="flex flex-wrap gap-3">
         <input

@@ -24,7 +24,11 @@ export type Limiter = (req: FastifyRequest) => Promise<RateCheck>;
 
 export interface PipelineDeps {
   cfg: AppConfig;
-  limiters: { global: Limiter | null; auth: Limiter | null };
+  /**
+   * global/auth: per client address, before anything else. upload/export: per authenticated user, a
+   * second stage right after authentication (keyed by user id).
+   */
+  limiters: { global: Limiter | null; auth: Limiter | null; upload?: Limiter | null; export?: Limiter | null };
   authenticate: (token: string, meta: { ip: string; requestId: string }) => Promise<RequestCtx | null>;
   onForbidden: (req: FastifyRequest, ctx: RequestCtx, access: RouteAccess) => Promise<void>;
 }
@@ -94,6 +98,15 @@ export function registerSecurityPipeline(app: FastifyInstance, deps: PipelineDep
     const ctx = await deps.authenticate(token, { ip: req.ip, requestId: req.frRequestId });
     if (!ctx) throw errors.unauthenticated();
     req.ctx = ctx;
+
+    // 4b. Per-user rate limit for upload/export routes (second stage; needs the authenticated user).
+    if (deps.cfg.rateLimitEnabled && (config?.rateGroup === 'upload' || config?.rateGroup === 'export')) {
+      const limiter = config.rateGroup === 'upload' ? deps.limiters.upload : deps.limiters.export;
+      if (limiter) {
+        const r = await limiter(req);
+        if (!r.allowed) throw errors.rateLimited(r.retryAfterSeconds);
+      }
+    }
 
     // 5. Permission.
     if (access.kind === 'permission' && !ctx.permissions.has(access.permission)) {

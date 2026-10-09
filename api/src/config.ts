@@ -2,7 +2,10 @@
  * Configuration: read once at startup, validated, fail-fast (C5). Errors name the offending keys only;
  * they never contain a secret value.
  */
+import { existsSync } from 'node:fs';
+import * as nodeModule from 'node:module';
 import { isIP } from 'node:net';
+import { fileURLToPath } from 'node:url';
 
 export type NodeEnv = 'development' | 'test' | 'production';
 
@@ -30,7 +33,12 @@ export interface AppConfig {
     forcePathStyle: boolean;
     accessKeyId: string | null;
     secretAccessKey: string | null;
+    /** Server-side encryption for every object write (N8). */
+    sse: 'aws:kms' | 'none';
+    kmsKeyId: string | null;
   };
+  /** Step 3 import/export knobs (N3). */
+  imports: ImportConfig;
   mailTransport: 'outbox' | 'ses';
   enableDevOutbox: boolean;
   totpIssuer: string;
@@ -51,6 +59,59 @@ export interface AppConfig {
   rateLimitForgotWindowSeconds: number;
   argon2MemoryKib: number;
   argon2TimeCost: number;
+}
+
+export interface ImportConfig {
+  maxFileBytes: number;
+  maxFilesPerBatch: number;
+  tenantStorageQuotaBytes: number;
+  uploadRequestTimeoutSeconds: number;
+  uploadIdleTimeoutSeconds: number;
+  uploadMaxConcurrentPerTenant: number;
+  parseTimeoutMs: number;
+  parseMemoryMb: number;
+  parseMaxConcurrency: number;
+  parseQueueTimeoutMs: number;
+  parseMaxOutputBytes: number;
+  parseMaxPdfPages: number;
+  parseMaxTextChars: number;
+  parseMaxImagePixels: number;
+  reviewConfidenceThreshold: number;
+  exportMaxRows: number;
+  exportMaxConcurrentPerTenant: number;
+  rateLimitUploadMax: number;
+  rateLimitExportMax: number;
+  staleSeconds: number;
+  /** Absolute path of the built parse worker entry (dist/src/imports/sandbox/worker-main.js). */
+  workerEntry: string;
+}
+
+/** Runtime facts the production guards depend on (injectable for tests). */
+export interface ConfigRuntime {
+  /** Whether this Node binary supports the permission model flag (`--permission`). */
+  permissionFlagAvailable: boolean;
+  /**
+   * Whether `module.registerHooks` exists (Node >= 22.15.0 / 23.5.0, per the Node docs). The parse
+   * worker's guard needs it; the worker runs this same Node binary.
+   */
+  moduleHooksAvailable: boolean;
+  fileExists: (path: string) => boolean;
+}
+
+export const DEFAULT_RUNTIME: ConfigRuntime = {
+  permissionFlagAvailable: process.allowedNodeEnvironmentFlags.has('--permission'),
+  moduleHooksAvailable: typeof (nodeModule as { registerHooks?: unknown }).registerHooks === 'function',
+  fileExists: (p) => existsSync(p),
+};
+
+/**
+ * Default worker entry: the compiled worker next to the compiled config (dist/src/...). When the API
+ * runs from source (tsx/vitest), the built worker under api/dist is used (`npm run build` first).
+ */
+export function defaultWorkerEntry(moduleUrl: string = import.meta.url): string {
+  const here = fileURLToPath(moduleUrl);
+  if (/[\\/]dist[\\/]src[\\/]config\.js$/u.test(here)) return fileURLToPath(new URL('./imports/sandbox/worker-main.js', moduleUrl));
+  return fileURLToPath(new URL('../dist/src/imports/sandbox/worker-main.js', moduleUrl));
 }
 
 export class ConfigError extends Error {
@@ -102,6 +163,44 @@ const KNOBS = {
   argon2MemoryKib: { key: 'ARGON2_MEMORY_KIB', def: 19456, min: 8, max: 1048576, floor: 19456 },
   argon2TimeCost: { key: 'ARGON2_TIME_COST', def: 2, min: 1, max: 20, floor: 2 },
 } as const satisfies Record<string, Knob>;
+
+/**
+ * Import/export knobs (N3). `floor`/`ceiling` apply in production only; min/max always. The absolute
+ * upload maximum equals the DB CHECK on import_documents.size_bytes (25 MiB).
+ */
+interface ImportKnob {
+  key: string;
+  def: number;
+  min: number;
+  max: number;
+  floor?: number;
+  ceiling?: number;
+}
+
+const IMPORT_KNOBS = {
+  maxFileBytes: { key: 'IMPORT_MAX_FILE_BYTES', def: 10485760, min: 1, max: 26214400, ceiling: 26214400 },
+  maxFilesPerBatch: { key: 'IMPORT_MAX_FILES_PER_BATCH', def: 10, min: 1, max: 1000 },
+  tenantStorageQuotaBytes: { key: 'TENANT_STORAGE_QUOTA_BYTES', def: 1073741824, min: 1, max: 1099511627776 },
+  uploadRequestTimeoutSeconds: { key: 'UPLOAD_REQUEST_TIMEOUT_SECONDS', def: 60, min: 1, max: 3600, ceiling: 120 },
+  uploadIdleTimeoutSeconds: { key: 'UPLOAD_IDLE_TIMEOUT_SECONDS', def: 10, min: 1, max: 600, ceiling: 30 },
+  uploadMaxConcurrentPerTenant: { key: 'UPLOAD_MAX_CONCURRENT_PER_TENANT', def: 4, min: 1, max: 1000 },
+  parseTimeoutMs: { key: 'PARSE_TIMEOUT_MS', def: 20000, min: 50, max: 600000, floor: 1000, ceiling: 60000 },
+  parseMemoryMb: { key: 'PARSE_MEMORY_MB', def: 256, min: 16, max: 8192, floor: 64, ceiling: 1024 },
+  parseMaxConcurrency: { key: 'PARSE_MAX_CONCURRENCY', def: 2, min: 1, max: 64 },
+  parseQueueTimeoutMs: { key: 'PARSE_QUEUE_TIMEOUT_MS', def: 5000, min: 0, max: 600000 },
+  parseMaxOutputBytes: { key: 'PARSE_MAX_OUTPUT_BYTES', def: 25165824, min: 1024, max: 268435456 },
+  parseMaxPdfPages: { key: 'PARSE_MAX_PDF_PAGES', def: 50, min: 1, max: 1000 },
+  parseMaxTextChars: { key: 'PARSE_MAX_TEXT_CHARS', def: 2000000, min: 1, max: 5000000, ceiling: 5000000 },
+  parseMaxImagePixels: { key: 'PARSE_MAX_IMAGE_PIXELS', def: 50000000, min: 1, max: 400000000 },
+  exportMaxRows: { key: 'EXPORT_MAX_ROWS', def: 50000, min: 1, max: 200000 },
+  exportMaxConcurrentPerTenant: { key: 'EXPORT_MAX_CONCURRENT_PER_TENANT', def: 2, min: 1, max: 1000 },
+  rateLimitUploadMax: { key: 'RATE_LIMIT_UPLOAD_MAX', def: 60, min: 1, max: 100000 },
+  rateLimitExportMax: { key: 'RATE_LIMIT_EXPORT_MAX', def: 10, min: 1, max: 100000 },
+  staleSeconds: { key: 'IMPORT_STALE_SECONDS', def: 600, min: 1, max: 86400 },
+} as const satisfies Record<string, ImportKnob>;
+
+/** REVIEW_CONFIDENCE_THRESHOLD: decimal 0.50..1.00 (at most 3 fraction digits). */
+const THRESHOLD_RE = /^(0\.[5-9][0-9]{0,2}|1(\.0{1,3})?)$/u;
 
 const MIN_SECRET_CHARS = 43;
 
@@ -183,7 +282,7 @@ function isValidCidr(value: string): boolean {
 }
 
 /** Parse and validate configuration from an env map. Throws ConfigError listing every problem. */
-export function loadConfig(env: Record<string, string | undefined>): AppConfig {
+export function loadConfig(env: Record<string, string | undefined>, runtime: ConfigRuntime = DEFAULT_RUNTIME): AppConfig {
   const problems: string[] = [];
   const get = (k: string): string | undefined => {
     const v = env[k];
@@ -305,6 +404,35 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
     problems.push('LOCKOUT_MAX_SECONDS must be >= LOCKOUT_BASE_SECONDS');
   }
 
+  // ---- Step 3 knobs (N3) ----
+  const imp = {} as Record<keyof typeof IMPORT_KNOBS, number>;
+  for (const [name, k] of Object.entries(IMPORT_KNOBS) as [keyof typeof IMPORT_KNOBS, ImportKnob][]) {
+    const v = parseIntStrict(get(k.key), k.key, problems) ?? k.def;
+    if (v < k.min || v > k.max) problems.push(`${k.key} must be between ${k.min} and ${k.max}`);
+    if (prod && k.floor !== undefined && v < k.floor) problems.push(`${k.key} is below its production floor (${k.floor})`);
+    if (prod && k.ceiling !== undefined && v > k.ceiling) problems.push(`${k.key} is above its production ceiling (${k.ceiling})`);
+    imp[name] = v;
+  }
+  const thresholdRaw = get('REVIEW_CONFIDENCE_THRESHOLD');
+  let reviewConfidenceThreshold = 0.9;
+  if (thresholdRaw !== undefined) {
+    if (THRESHOLD_RE.test(thresholdRaw.trim())) reviewConfidenceThreshold = Number(thresholdRaw.trim());
+    else problems.push('REVIEW_CONFIDENCE_THRESHOLD must be a decimal between 0.50 and 1.00');
+  }
+  const sseRaw = get('S3_SSE') ?? 'aws:kms';
+  let sse: 'aws:kms' | 'none' = 'aws:kms';
+  if (sseRaw === 'aws:kms' || sseRaw === 'none') sse = sseRaw;
+  else problems.push('S3_SSE must be aws:kms or none');
+  const kmsKeyId = get('S3_KMS_KEY_ID') ?? null;
+  if (kmsKeyId !== null && !/^[A-Za-z0-9:/_.-]{1,2048}$/u.test(kmsKeyId)) problems.push('S3_KMS_KEY_ID contains invalid characters');
+  if (prod && sse !== 'aws:kms') problems.push('S3_SSE must be aws:kms in production');
+  if (prod && sse === 'aws:kms' && !kmsKeyId) problems.push('S3_KMS_KEY_ID is required in production');
+  const workerEntry = get('PARSE_WORKER_ENTRY') ?? defaultWorkerEntry();
+  if (prod && !runtime.permissionFlagAvailable) problems.push('Node permission model (--permission) is required in production for the parse sandbox');
+  // Fail closed in every environment: without it every parse would fail at the worker's guard.
+  if (!runtime.moduleHooksAvailable) problems.push('Node.js >= 22.15.0 is required (module.registerHooks, used by the parse sandbox guard)');
+  if (prod && !runtime.fileExists(workerEntry)) problems.push('PARSE_WORKER_ENTRY does not exist (build the API first)');
+
   const totpIssuer = get('TOTP_ISSUER') ?? 'FreightRecovery';
   if (!/^[A-Za-z0-9 ._-]{1,64}$/u.test(totpIssuer)) problems.push('TOTP_ISSUER contains invalid characters');
 
@@ -334,7 +462,10 @@ export function loadConfig(env: Record<string, string | undefined>): AppConfig {
       forcePathStyle: parseBool(get('S3_FORCE_PATH_STYLE'), false, 'S3_FORCE_PATH_STYLE', problems),
       accessKeyId: get('S3_ACCESS_KEY_ID') ?? null,
       secretAccessKey: get('S3_SECRET_ACCESS_KEY') ?? null,
+      sse,
+      kmsKeyId,
     },
+    imports: { ...imp, reviewConfidenceThreshold, workerEntry },
     mailTransport,
     enableDevOutbox,
     totpIssuer,

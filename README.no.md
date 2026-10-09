@@ -29,6 +29,7 @@ De etablerte aktørene kan gå ned i markedet; tall for feilprosent på fakturae
 - marketing/ — B2B SEO + innhold + kanalplan (`seo-and-growth.md`, norsk: `seo-and-growth.no.md`) og en landingssideskisse (`landing/`); kun plan, ingen live nettside ennå.
 - hiring/ — rollebeskrivelser + hvordan finne en operatør/daglig leder i Norge (rekrutterere og offisielle kanaler).
 - web/, api/, packages/shared/, infra/ — den nye TypeScript-nettplattformen (før produkt, kun syntetiske data); se [Nettplattform](#nettplattform-typescript-før-produkt-kun-syntetiske-data) nedenfor.
+- docs/design/ — designdokumenter for funksjoner som ikke er bygget ennå (e-postvideresending: kun design).
 
 ## Byggeplan
 Følger spillboken med 12 prompter: eval-sett først → verifisert verktøylag → utkast + uavhengig verifikator (målt pass^k) → henting/minne → ruting/kostnadskontroll → red-team → revisjonsspor + menneskelig godkjenning → målt innkrevingsrate → pilot-enpager → seed-deck som kun bygger på målte resultater.
@@ -172,7 +173,7 @@ Programvarefundamentet ovenfor er nødvendig, ikke tilstrekkelig. Fortsatt påkr
 > [ARCHITECTURE.no.md, «Nettplattform»](ARCHITECTURE.no.md#nettplattform-typescript-steg-1-2).
 
 En nettapplikasjon med flere tenants for arbeidsflyten rundt bevispakker, bygget med sikkerhet først.
-Byggesteg 1 og 2 er ferdige:
+Byggesteg 1, 2 og 3 er ferdige:
 
 - **Steg 1:** innlogging med e-post og passord (argon2id), et kortlivet tilgangstoken pluss en roterende
   refresh-informasjonskapsel, TOTP-MFA for eier, administrator og plattformroller, utestenging med
@@ -182,11 +183,17 @@ Byggesteg 1 og 2 er ferdige:
 - **Steg 2:** en kravliste (filtrering, sortering, søk), et detaljpanel for kravet med visning av
   bevispakken, og godkjenningsporten med menneske i løkken (godkjenn / rediger / avvis / send, hver med
   begrunnelse).
+- **Steg 3:** import av dokumenter (PDF, CSV, TXT, PNG, JPEG) med typegjenkjenning, kryptert lagring,
+  parsing i en isolert arbeiderprosess, deterministisk uttrekk av felt med kildepekere, en kø for
+  menneskelig gjennomgang og opprettelse av krav; pluss eksport av krav, bevispakker og
+  godkjenningsbeslutninger til CSV og Excel med formelnøytralisering. Se
+  [Import og eksport (steg 3)](#import-og-eksport-steg-3).
 
 «Send» merker bare et krav som klart til sending og logger det i revisjonssporet. Ingen e-post sendes, og
-ingen penger flyttes. Krav og bevispakker er syntetiske og er transkribert fra Python-CLI-ens utdata på
-`tests/fixtures/`. Import/eksport, utviklerdashbordet, AI-funksjoner og TS-porten av Python-reglene er
-senere steg.
+ingen penger flyttes. De seedede kravene og bevispakkene er syntetiske og er transkribert fra
+Python-CLI-ens utdata på `tests/fixtures/`. Krav som opprettes ved import, har ennå ingen beløp eller
+pakke. Utviklerdashbordet, AI-funksjoner, OCR, mottak av videresendt e-post og TS-porten av
+Python-reglene (byggesteg 5, som skal analysere importerte krav) er senere steg.
 
 **Python-tjenesten og pilotdashbordet `webapp/` er uendret og blir værende.** Nettplattformen har sin
 egen compose-fil (`compose.web.yml`), sin egen CI-arbeidsflyt (`.github/workflows/web-ci.yml`) og sin
@@ -206,8 +213,11 @@ egen Terraform (`infra/`, som erstatter `deploy/terraform/` kun for nettstacken)
 
 ## Lokal hurtigstart (uten Docker: veien som faktisk ble verifisert)
 
-Forutsetninger: Node 22 (`.nvmrc`; `engines` tillater `>=22.12 <25`), PostgreSQL 16, og `openssl` (eller
-Node, se nedenfor).
+Forutsetninger: Node 22 (`.nvmrc` låser 22.23.3, versjonen i de digest-låste `node:22-alpine`-bildene;
+`engines` tillater `>=22.15.0 <23 || >=23.5.0 <25`: steg 3 trenger `module.registerHooks`, lagt til i Node
+22.15.0 / 23.5.0, for vakten i parse-sandkassen, og API-et nekter å starte uten den), PostgreSQL 16, og `openssl` (eller Node, se nedenfor). Import/eksport trenger i
+tillegg en S3-kompatibel lagring (MinIO lokalt) og, for paritetstestene, Python: se
+[Lokal verifisering uten Docker](#lokal-verifisering-uten-docker).
 
 ```bash
 npm ci --ignore-scripts                 # install scripts stay disabled (.npmrc)
@@ -254,16 +264,178 @@ utvikling: den finnes bare med `ENABLE_DEV_OUTBOX=true` utenfor produksjon.
 Filen består `docker compose config`, men imagene har aldri vært bygget. Behandle første kjøring som en
 test.
 
+## Import og eksport (steg 3)
+
+Steg 3 lar ansatte laste opp fraktdokumenter, kontrollere hva som ble lest ut av dem, gjøre godtatte
+dokumenter om til krav, og eksportere krav, bevispakker og godkjenningsbeslutninger. Hver opplastet fil
+behandles som fiendtlig. Arkitektur: [ARCHITECTURE.no.md, steg 3](ARCHITECTURE.no.md#nettplattform-import-og-eksport-steg-3).
+Trusler: avsnitt 6 i [technical/web-platform-security.md](technical/web-platform-security.md) (engelsk).
+
+**Ikke med i steg 3:** OCR, AI- eller LLM-kall, utgående e-post og mottak av videresendt e-post.
+E-postvideresending er **kun et design** (design-only); se
+[docs/design/email-ingest.md](docs/design/email-ingest.md) (engelsk).
+
+### Hvem kan gjøre hva
+
+| Rolle | Import (laste opp, se, laste ned, opprette krav) | Gjennomgang (avgjøre felt, godta eller avvise) | Eksportere krav | Eksportere pakker og beslutninger |
+| --- | --- | --- | --- | --- |
+| OWNER, ADMIN, MANAGER, REVIEWER | ja | ja | ja | ja |
+| ANALYST | ja | nei | ja | nei |
+| VIEWER, PLATFORM_DEV, SUPER_ADMIN | nei | nei | nei | nei |
+
+Tillatelsene er `import:run`, `import:review`, `export:claims`, `export:packets` og `export:outcomes`,
+definert i `packages/shared/src/rbac.ts`. API-et håndhever dem på hver forespørsel. Brukergrensesnittet
+skjuler bare kontrollene.
+
+### Formater og grenser
+
+- **Godtatte filer:** PDF (bare tekstlaget), CSV, TXT, PNG og JPEG. Typen leses fra filens bytes, ikke fra
+  nettleserens medietype, og filendelsen må stemme med den. Bilder strukturkontrolleres og lagres, men det
+  leses ingen tekst fra dem (ingen OCR), så de går alltid til gjennomgang for manuell registrering.
+- **Avvist før lagring:** filer over 10 MiB (`413`); ukjente eller feilmerkede typer; tekstfiler med binære
+  kontrollbytes; HTML, SVG, XML eller PHP forkledd som tekst; tomme filer (`415` med en grunnkode). Ingenting
+  lagres for en avvist fil.
+- **Avvist etter parsing** (dokumentet får status `REJECTED`, og den lagrede kopien slettes): ødelagte
+  eller krypterte PDF-er, PDF-er over 50 sider, mer enn 2 000 000 tegn tekst, ødelagt CSV, ødelagte eller
+  for store bilder, og parsing som treffer tids- eller minnegrensen.
+- **Batcher:** opptil 10 filer per batch. Samme fil to ganger i samme batch gir `409`. Lagringskvoten er
+  1 GiB per tenant (`422 quota_exceeded`).
+- **Opplasting** sender filens rå bytes (`POST /api/v1/imports/:batchId/documents?filename=...`,
+  `Content-Type: application/octet-stream`). Nettleseren laster opp 2 filer om gangen og viser fremdrift.
+
+### Hva som skjer med en opplasting
+
+1. API-et strømmer innholdet med en hard størrelsesgrense og beregner SHA-256.
+2. Det kontrollerer filtypen ut fra bytene.
+3. Det lagrer originalen i S3 under `t/<tenantId>/imports/...`, kryptert med SSE-KMS.
+4. En egen, avlåst arbeiderprosess parser filen. Prosessen har ikke miljøvariabler, hemmeligheter,
+   nettverksmoduler eller databasetilgang.
+5. Deterministiske regler trekker ut felt fra `Nøkkel: verdi`-linjer. Hvert felt registrerer hvor det
+   kom fra (side, linje, tegn, CSV-rad og et utdrag).
+6. Dokumentet ender som `ACCEPTED` (ingenting å kontrollere), `NEEDS_REVIEW`, `REJECTED` eller `FAILED`
+   (infrastrukturfeil). Svaret på opplastingen inneholder allerede denne endelige tilstanden.
+
+### Gjennomgang
+
+- Et dokument går til **gjennomgangskøen** (`/import/review`) når et felt er flagget, typen er ukjent, det
+  ikke ble funnet felt eller lastnummer, det er et bilde, det er et duplikat av en tidligere opplasting,
+  eller noe innhold ikke kunne brukes.
+- En gjennomgåer (`import:review`) bekrefter, korrigerer eller avviser hvert flagget felt. For bilder kan
+  gjennomgåeren også sette dokumenttypen og skrive inn felt for hånd. Deretter godtar eller avviser
+  gjennomgåeren hele dokumentet. Hver beslutning krever en begrunnelse på minst 10 tegn og lagres i en
+  tabell som bare kan utvides, og i revisjonssporet. Godtatte dokumenter kan ikke endres.
+- **Opprett krav fra godtatte dokumenter** (på importsiden; du velger avsender eller transportør)
+  grupperer de godtatte dokumentene etter lastnummer. Det oppretter et nytt krav med status **Venter på
+  analyse** (`AWAITING_ANALYSIS`), eller kobler dokumentene til et eksisterende krav. Et nytt krav har
+  ingen beløp og ingen bevispakke før analysesteget (byggesteg 5) finnes. Har kravet allerede en pakke,
+  kobles dokumentene bare til, og pakken endres ikke.
+
+**Konfidens er en regelbasert parsepoengsum, ikke et mål på nøyaktighet.** Den sier hvordan verdien ble
+lest (for eksempel 0,95 for en eksplisitt `Nøkkel: verdi`-linje i en tekst- eller CSV-fil, 0,85 for en
+PDF, lavere for en gjettet dokumenttype eller et tvetydig datoformat). Den sier ikke hvor sannsynlig det
+er at verdien er riktig, og produktet presenterer den aldri som nøyaktighet. Felt under 90 %
+(`REVIEW_CONFIDENCE_THRESHOLD`) må gjennomgås, så alle PDF-felt gjennomgås som standard.
+
+### Eksport
+
+- **Kravliste** (`Export` på `/claims`): den gjeldende filtrerte listen. **Bevispakker** (`Export packet`
+  på et krav): én rad per funn i den nyeste pakken. **Beslutninger** (`Export decisions` på `/approvals`):
+  én rad per godkjenningspost.
+- **Formater:** CSV (UTF-8 med BOM, CRLF, tekstceller i anførselstegn) eller Excel `.xlsx` (ett ark, fet
+  fastfrosset overskriftsrad, typede tall). Filene strømmes; ingenting lagres på serveren. Grensen er
+  50 000 rader per fil (`422`).
+- **Formelnøytralisering:** en tekstcelle som ville startet med `=`, `+`, `-` eller `@` (også
+  fullbreddeformene), etter eventuelt ledende mellomrom, får en `'` foran, slik at et regneark viser den
+  som tekst i stedet for å kjøre den. Kontrolltegn og usynlige tegn fjernes først. Tall forblir tall
+  (`-12.50` endres ikke). `.xlsx`-filene inneholder ingen formler, lenker eller makroer.
+- **Innhold:** ingen brukernavn, e-postadresser eller bruker-id-er, og ingen tekst fra kravbrev. Beløp er
+  i USD med to desimaler. `Invoice Date` er `YYYY-MM-DD`; andre tidsstempler er ISO-8601 UTC.
+- **Revisjon:** `export.started` skrives før første byte. `export.completed` registrerer antall rader,
+  størrelse og SHA-256 av nøyaktig den filen som ble sendt. En avbrutt nedlasting registreres som
+  `export.aborted`.
+
+### Konfigurasjon (steg 3)
+
+Tabellen over alle innstillinger (navn, standardverdier, grenser i produksjon) står i den engelske
+README-en under «Configuration (step 3)», og `.env.example` lister dem. De viktigste: `IMPORT_MAX_FILE_BYTES`
+(10485760), `IMPORT_MAX_FILES_PER_BATCH` (10), `TENANT_STORAGE_QUOTA_BYTES` (1073741824), `PARSE_TIMEOUT_MS`
+(20000), `PARSE_MEMORY_MB` (256), `PARSE_MAX_PDF_PAGES` (50), `PARSE_MAX_TEXT_CHARS` (2000000),
+`REVIEW_CONFIDENCE_THRESHOLD` (0.90), `EXPORT_MAX_ROWS` (50000), `S3_SSE` (`aws:kms`) og `S3_KMS_KEY_ID`.
+Samtidighetsgrensene for opplasting, eksport og parsing gjelder **per API-instans**.
+
+### Lokal verifisering uten Docker
+
+Docker-motoren virket ikke på byggemaskinen, så steg 3 ble verifisert med portable programmer. CI
+(`.github/workflows/web-ci.yml`) er autoriteten for container-bygg. Hold alle programfiler utenfor repoet,
+og commit dem aldri.
+
+1. **PostgreSQL 16:** en portabel PostgreSQL 16 på en ledig loopback-port (bygget brukte
+   `127.0.0.1:55433`). Kjør `api/db/init/00-roles.sql`, og migrer og seed som i hurtigstarten.
+2. **MinIO med KMS:** last ned Windows-filen `minio.exe` fra MinIOs offisielle GitHub-utgivelse, og
+   kontroller den publiserte SHA-256 før første kjøring (bygget brukte `RELEASE.2025-09-07T16-13-09Z`).
+   Start den på loopback med en statisk KMS-nøkkel, slik at SSE-KMS virker lokalt:
+   ```bash
+   export MINIO_ROOT_USER=localdev MINIO_ROOT_PASSWORD=localdev-minio-password   # public dev values
+   export MINIO_KMS_SECRET_KEY="fr-dev-key:$(openssl rand -base64 32)"          # <key name>:<base64 of 32 bytes>
+   ./minio.exe server ./minio-data --address 127.0.0.1:59000
+   ```
+3. **API-miljø for S3** (i skallet som kjører testene):
+   ```bash
+   export S3_ENDPOINT=http://127.0.0.1:59000 S3_FORCE_PATH_STYLE=true S3_REGION=us-east-1
+   export S3_BUCKET=fr-documents-dev S3_ACCESS_KEY_ID=localdev S3_SECRET_ACCESS_KEY=localdev-minio-password
+   export S3_SSE=aws:kms S3_KMS_KEY_ID=fr-dev-key      # S3_SSE=none is the dev-only fallback
+   npm run ensure-bucket                               # creates the bucket, enables versioning
+   ```
+   `ensure-bucket` kjører bare med `NODE_ENV=development` eller `test`. Den nekter i produksjon og når
+   `NODE_ENV` ikke er satt, fordi AWS-bucketen styres av Terraform.
+4. **Python-paritet:** paritetstestene kjører Python-referansekoden. Sett `PYTHON` til en tolk med
+   repoets kjøretidsavhengigheter (for eksempel Python-tjenestens `.venv`). Testen setter
+   `PYTHONPATH=<repo>/src` selv. I CI (`CI=true`) feiler testene hvis Python mangler; lokalt hoppes de
+   over med en melding.
+   ```bash
+   export PYTHON=/path/to/.venv/Scripts/python    # Linux/macOS: .venv/bin/python
+   ```
+5. **Bygg, deretter test:** parsearbeideren er et byggeprodukt, så bygg før testene som bruker databasen.
+   ```bash
+   npm run build
+   npm run test:integration
+   npm run test:acceptance
+   ```
+
+Stopp de portable tjenestene etterpå. Med Docker starter `compose.web.yml` MinIO med samme KMS-nøkkelnavn
+(`fr-dev-key`) og slår på versjonering (ikke verifisert lokalt).
+
+### Python-paritet og registrerte avvik
+
+TypeScript-parseren er en port av Python-koden i `ingest/` og `extraction/`. Paritetstestene
+(`api/test/parity/`, kjøres av `npm run test:integration`) sammenligner begge på testfiler, genererte
+tekst- og CSV-filer og genererte PDF-er med tekstlag. Disse registrerte avvikene er de eneste tillatte
+forskjellene. Hele registeret med begrunnelser står i
+[ARCHITECTURE.no.md](ARCHITECTURE.no.md#python-paritet-registrerte-avvik-d1-d8).
+
+- **D1:** PDF-signaturen må stå på byte 0 (Python tåler 1024 søppelbytes).
+- **D2:** PDF-tekst kommer fra pdf.js i stedet for pdfplumber. Paritet gjelder bare enkle PDF-er med tekstlag.
+- **D3:** filendelsen må stemme med den gjenkjente typen (Python ser bare på endelsen).
+- **D4:** ugyldig UTF-8 gir `DECODE_REPLACEMENTS`. NUL, C0-kontrollbytes (unntatt tab, LF, CR, FF) og
+  DEL (0x7F) avviser filen som `binary_content`; Python ville fortsatt.
+- **D5:** tekst over 2 000 000 tegn avvises (Python: 5 000 000).
+- **D6:** tekstverdier renses og kuttes ved 200 tegn (`SANITIZED_VALUE`).
+- **D7:** bare ASCII-sifre i datoer og klokkeslett, og bare en ASCII-endelse `USD`.
+- **D8:** PNG og JPEG godtas, men gir ingen felt (ingen OCR); de går til manuell gjennomgang.
+
 ## Tester og kontroller
 
 ```bash
 npm run typecheck
 npm run lint                 # --max-warnings 0
 npm test                     # unit tests (shared, api, web); no database needed
+npm run ensure-bucket        # step 3: create the dev/test bucket in MinIO (S3_* env; refuses production)
+npm run build                # shared + api + web (+ dist check: no inline script/style, no sourcemaps);
+                             # builds the parser worker, so run it BEFORE the integration/acceptance suites
 npm run test:integration     # api, against a migrated + seeded test DB (TEST_DATABASE_URL, TEST_ADMIN_DATABASE_URL,
-                             # and the same MFA_ENC_KEY the seed used); see the env block in .github/workflows/web-ci.yml
+                             # and the same MFA_ENC_KEY the seed used), S3 (MinIO) and Python (PYTHON=...) for the
+                             # parity suite; see the env block in .github/workflows/web-ci.yml
 npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
-npm run build                # shared + api + web (+ dist check: no inline script/style, no sourcemaps)
 npm run audit && npm audit signatures
 terraform -chdir=infra fmt -check -recursive && terraform -chdir=infra init -backend=false && terraform -chdir=infra validate
 ```
@@ -273,3 +445,13 @@ enhetstester (shared 30, api 83, web 29), integrasjon (3/3), build, `npm audit` 
 `npm audit signatures`, migrering + seed, og terraform fmt/validate (portabel 1.16.5). Den uavhengige
 akseptansekjøringen ga 334 bestått, 0 feilet, 5 hoppet over, 2 todo. **Ikke kjørt:** Docker-imagene eller
 compose-stacken, Playwright-ende-til-ende-tester og enhver AWS-utrulling.
+
+Steg 3 (2026-10-09, Windows, Node 24 pluss en kontroll av arbeideren på Node 22.23, portabel PostgreSQL
+16.15, portabel MinIO med SSE-KMS, Python 3.14 og 3.12 for paritet): typecheck, lint, enhetstester (shared
+113, api 279, web 46), migrering + seed, `ensure-bucket`, build, integrasjon (55 bestått, 2 plassholdere
+hoppet over), `npm audit` (0 sårbarheter), `npm audit signatures`, terraform fmt/validate. Paritet med
+Python-referansen: null uregistrerte forskjeller. Uavhengig akseptansekjøring (runde 2): shared 22/22, web
+87 bestått (1 Playwright hoppet over), api 500 bestått; de 3 api-feilene var denne dokumentasjonen (nå lagt
+til) og to testfeil som ble rettet og kjørt på nytt. **Ikke kjørt:** container-images og compose-stacken,
+Playwright, eksporttesten med tvunget revisjonsfeil, tester for krypterte PDF-er (ingen `qpdf`), enhver
+AWS-utrulling.

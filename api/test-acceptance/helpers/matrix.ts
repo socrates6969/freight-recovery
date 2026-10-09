@@ -3,11 +3,11 @@ export const ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER', 'ANALYST', 'VIEWE
 export type Role = (typeof ROLES)[number];
 
 export const EXPECTED: Record<Role, string[]> = {
-  OWNER: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'admins:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'billing:manage', 'tenant:delete', 'import:run'],
-  ADMIN: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'import:run'],
-  MANAGER: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'import:run'],
-  REVIEWER: ['claims:read', 'packets:edit', 'packets:approve', 'import:run'],
-  ANALYST: ['claims:read', 'import:run'],
+  OWNER: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'admins:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'billing:manage', 'tenant:delete', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes'],
+  ADMIN: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes'],
+  MANAGER: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes'],
+  REVIEWER: ['claims:read', 'packets:edit', 'packets:approve', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes'],
+  ANALYST: ['claims:read', 'import:run', 'export:claims'],
   VIEWER: ['claims:read'],
   PLATFORM_DEV: ['platform:health', 'platform:flags', 'platform:logs'],
   SUPER_ADMIN: ['platform:health', 'platform:tenants:list', 'platform:cross_tenant_read'],

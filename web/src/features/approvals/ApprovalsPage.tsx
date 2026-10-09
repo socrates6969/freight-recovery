@@ -6,6 +6,7 @@ import { useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../api/client';
 import { useApi, useCan, useToast } from '../../app-context';
 import { Dialog } from '../../components/ui/Dialog';
+import { ExportMenu } from '../../components/ui/ExportMenu';
 import { SafeText } from '../../components/ui/SafeText';
 import { formatDateTime, formatUsdCents, STATUS_LABEL } from '../../lib/format';
 
@@ -153,6 +154,7 @@ export function ApprovalsPage() {
   const canApprove = useCan('packets:approve');
   const canEdit = useCan('packets:edit');
   const canSend = useCan('demands:send');
+  const canExport = useCan('export:outcomes');
   const [open, setOpen] = useState<{ action: Action; item: ApprovalItemDto } | null>(null);
   const page = Math.max(1, Number(params.get('page') ?? '1') || 1);
 
@@ -167,7 +169,12 @@ export function ApprovalsPage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-xl font-semibold">Approvals</h1>
+      <div className="flex items-start justify-between gap-4">
+        <h1 className="text-xl font-semibold">Approvals</h1>
+        {canExport ? (
+          <ExportMenu label="Export decisions" fallbackName="freight-recovery-outcomes" pathFor={(f) => `/api/v1/exports/outcomes?format=${f}`} />
+        ) : null}
+      </div>
       {queue.isError ? (
         <div className="card flex items-center justify-between gap-3 p-4">
           <p role="alert" className="text-[var(--color-danger)]">

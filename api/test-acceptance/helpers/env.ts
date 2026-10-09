@@ -22,6 +22,18 @@ export const SECRETS = {
     process.env.MFA_ENC_KEY ?? Buffer.from(det('mfa'), 'hex').subarray(0, 32).toString('base64'),
 };
 
+// Object storage for step 3 (MinIO or any S3-compatible endpoint; CI/local export S3_* to override).
+export const S3_DEFAULTS: Record<string, string> = {
+  S3_ENDPOINT: process.env.S3_ENDPOINT ?? 'http://127.0.0.1:9000',
+  S3_REGION: process.env.S3_REGION ?? 'us-east-1',
+  S3_BUCKET: process.env.S3_BUCKET ?? 'fr-documents-dev',
+  S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID ?? 'localdev',
+  S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY ?? 'localdev-minio-password',
+  S3_FORCE_PATH_STYLE: process.env.S3_FORCE_PATH_STYLE ?? 'true',
+  S3_SSE: process.env.S3_SSE ?? 'none',
+  ...(process.env.S3_KMS_KEY_ID ? { S3_KMS_KEY_ID: process.env.S3_KMS_KEY_ID } : {}),
+};
+
 /** Fast, deterministic defaults for acceptance runs. Overrides win. */
 export function baseEnv(overrides: Record<string, string> = {}): Record<string, string> {
   return {
@@ -33,6 +45,7 @@ export function baseEnv(overrides: Record<string, string> = {}): Record<string, 
     ENABLE_DEV_OUTBOX: 'true',
     RATE_LIMIT_ENABLED: 'false',
     ARGON2_MEMORY_KIB: '8192',
+    ...S3_DEFAULTS,
     COOKIE_SECURE: 'true', // CI exports COOKIE_SECURE=false; tests assert the secure default and override per app
     ...overrides,
   };
