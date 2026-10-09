@@ -14,3 +14,4 @@ export * from './eval-stats.js';
 export * from './platform-dto.js';
 export * from './intelligence-dto.js';
 export * from './api-key-dto.js';
+export * from './four-eyes.js';

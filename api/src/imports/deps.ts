@@ -40,5 +40,10 @@ export interface Actor {
   requestId: string;
 }
 
-/** Who ingests a document: a signed-in user (upload) or a system worker (future email ingest). */
+/**
+ * Who ingests a document: a signed-in user (upload) or a system worker (future email ingest).
+ * Four-eyes attribution (D5): a `user` ingest stores `uploaded_by_id = id` - for API-key uploads that is the
+ * key creator, who therefore cannot accept the document. The `system` kind (no caller today) stores
+ * `uploaded_by_id = NULL`, which excludes no uploader; CORRECT/ADD editors are still excluded.
+ */
 export type IngestActor = { kind: 'user'; id: string; role: string; ip: string; requestId: string } | { kind: 'system'; name: string; requestId: string };

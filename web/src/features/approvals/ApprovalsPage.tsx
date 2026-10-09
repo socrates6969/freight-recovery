@@ -1,4 +1,11 @@
-import { ApprovalsPage as ApprovalsPageSchema, Packet, TransitionResponse, type ApprovalItemDto } from '@fr/shared';
+import {
+  ApprovalsPage as ApprovalsPageSchema,
+  FOUR_EYES_CLAIM_TEXT,
+  FOUR_EYES_ERROR_CODE,
+  Packet,
+  TransitionResponse,
+  type ApprovalItemDto,
+} from '@fr/shared';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useId, useState, type FormEvent } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -75,7 +82,11 @@ function ActionDialog({ action, item, onClose }: { action: Action; item: Approva
       onClose();
     },
     onError: async (e) => {
-      if (e instanceof ApiError && e.status === 409) {
+      if (e instanceof ApiError && e.code === FOUR_EYES_ERROR_CODE) {
+        // Four-eyes (stale screen / second tab): the viewer authored a revision of this claim.
+        setError(FOUR_EYES_CLAIM_TEXT);
+        await queryClient.invalidateQueries({ queryKey: ['approvals'] });
+      } else if (e instanceof ApiError && e.status === 409) {
         setError(STALE_MESSAGE);
         await queryClient.invalidateQueries({ queryKey: ['approvals'] });
       } else if (e instanceof ApiError && e.status === 422) setError(UNPROCESSABLE_MESSAGE);
@@ -219,7 +230,10 @@ export function ApprovalsPage() {
                   <td className="num muted whitespace-nowrap">{formatDateTime(item.waitingSince)}</td>
                   <td>
                     <div className="flex flex-wrap gap-1">
-                      {item.status === 'PENDING_REVIEW' && canApprove ? (
+                      {item.status === 'PENDING_REVIEW' && canApprove && item.selfAuthored ? (
+                        <span className="muted text-sm">{FOUR_EYES_CLAIM_TEXT}</span>
+                      ) : null}
+                      {item.status === 'PENDING_REVIEW' && canApprove && !item.selfAuthored ? (
                         <>
                           <button type="button" className="btn" onClick={() => setOpen({ action: 'Approve', item })}>
                             Approve

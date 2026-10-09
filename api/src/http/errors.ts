@@ -30,6 +30,8 @@ export const ERROR_MESSAGES = {
   quota_exceeded: 'Storage quota reached.',
   export_too_large: 'Too many rows to export. Narrow your filters.',
   parser_busy: 'The parser is busy. Try again shortly.',
+  // Four-eyes (REQ-20261009-four-eyes)
+  four_eyes_required: 'A different person must make this decision.',
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;
@@ -54,6 +56,23 @@ export class HttpError extends Error {
   }
 
   readonly details: ErrorDetail[] | undefined;
+}
+
+/** Audit context carried by a four-eyes refusal; the error handler writes `authz.four_eyes_denied` from it
+ * in a separate tenant transaction (the business transaction has already rolled back). */
+export interface FourEyesAudit {
+  tenantId: string;
+  targetType: 'claim' | 'import_document';
+  targetId: string;
+  metadata: Record<string, unknown>;
+}
+
+/** 403 four_eyes_required raised by a service check (an author/editor tried to decide on their own work). */
+export class FourEyesRefusal extends HttpError {
+  constructor(readonly audit: FourEyesAudit) {
+    super(403, 'four_eyes_required');
+    this.name = 'FourEyesRefusal';
+  }
 }
 
 export const errors = {
@@ -83,6 +102,7 @@ export const errors = {
   unresolvedFields: () => new HttpError(409, 'unresolved_fields'),
   quotaExceeded: () => new HttpError(422, 'quota_exceeded'),
   exportTooLarge: () => new HttpError(422, 'export_too_large'),
+  fourEyes: (audit: FourEyesAudit) => new FourEyesRefusal(audit),
   parserBusy: () => new HttpError(503, 'parser_busy', { retryAfterSeconds: 5 }),
   accountLocked: (retryAfterSeconds: number) => new HttpError(429, 'account_locked', { retryAfterSeconds }),
 };

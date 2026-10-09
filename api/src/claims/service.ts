@@ -93,9 +93,20 @@ export async function getClaim(tx: TenantTx, id: string): Promise<ClaimDetailDto
   return { ...toClaimSummary(c), invoiceDate: c.invoiceDate ? c.invoiceDate.toISOString() : null };
 }
 
+/**
+ * Four-eyes (REQ-20261009-four-eyes, policy D1): transitions refused to any author of any revision of the
+ * claim. `send` is deliberately absent (D2: the approver, or an author, may mark send-ready).
+ */
+export const FOUR_EYES_GUARDED_TRANSITIONS: ReadonlySet<Exclude<Transition, 'edit'>> = new Set(['approve', 'reject']);
+
+/**
+ * Approval queue page. `viewerId` is the requesting user: each item carries `selfAuthored`, true iff the
+ * viewer created any revision (current or superseded) of that claim (four-eyes; no other user's data).
+ */
 export async function listApprovalQueue(
   tx: TenantTx,
   q: { status: readonly ('PENDING_REVIEW' | 'APPROVED')[]; page: number; pageSize: number; sort: ClaimSort },
+  viewerId: string,
 ): Promise<{ items: ApprovalItemDto[]; page: number; pageSize: number; total: number }> {
   const where = buildClaimWhere({ status: q.status as ClaimFilter['status'] });
   const include = {
@@ -113,6 +124,16 @@ export async function listApprovalQueue(
   };
   const total = await tx.claim.count({ where });
   const rows = await tx.claim.findMany({ where, orderBy: buildClaimOrderBy(q.sort), ...pageArgs(q.page, q.pageSize), include });
+  const pageIds = rows.map((r) => r.id);
+  const authored =
+    pageIds.length === 0
+      ? []
+      : await tx.evidencePacket.findMany({
+          where: { claimId: { in: pageIds }, createdById: viewerId },
+          select: { claimId: true },
+          distinct: ['claimId'],
+        });
+  const authoredSet = new Set(authored.map((a) => a.claimId));
   const items = rows.map((r) => {
     const p = r.packets[0];
     const summary = toClaimSummary(r as unknown as SummaryRow);
@@ -121,6 +142,7 @@ export async function listApprovalQueue(
       packetRevision: p?.revision ?? 0,
       pendingFindingsCount: p?._count.findings ?? 0,
       waitingSince: (p?.createdAt ?? r.updatedAt).toISOString(),
+      selfAuthored: authoredSet.has(r.id),
     };
   });
   return { items, page: q.page, pageSize: q.pageSize, total };
@@ -338,6 +360,20 @@ export async function transition(
   if (input.packetRevision !== latest.revision) throw errors.staleRevision();
   const from = latest.status as LiveStatus;
   if (!canTransition(kind, from)) throw errors.invalidState();
+  // Four-eyes (P1/P2): after the stale/state checks, before the acknowledgement check. Runs under the
+  // claim row lock taken by lockAndLoadLatest, so no revision can be added concurrently. All revisions
+  // count, superseded included; a null creator (seeded revision 1) excludes nobody.
+  if (FOUR_EYES_GUARDED_TRANSITIONS.has(kind)) {
+    const authored = await tx.evidencePacket.findFirst({ where: { claimId, createdById: actor.userId }, select: { id: true } });
+    if (authored) {
+      throw errors.fourEyes({
+        tenantId,
+        targetType: 'claim',
+        targetId: claimId,
+        metadata: { claimId, packetId: latest.id, packetRevision: latest.revision, action: ACTION_FOR[kind], basis: 'revision_author' },
+      });
+    }
+  }
 
   if (kind === 'approve' && latest.findings.some((f) => f.needsHumanReview) && input.acknowledgePendingFindings !== true) {
     throw errors.unprocessable(UNPROCESSABLE.acknowledgePending);

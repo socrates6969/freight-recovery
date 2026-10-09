@@ -104,7 +104,7 @@ export function registerImportRoutes(app: FastifyInstance, deps: ImportDeps): vo
     handler: async (req, _reply, { params }) => {
       const ctx = requireTenant(req);
       await reapStale(deps, ctx.db, params.batchId, actorOf(req));
-      return ctx.db.tx((tx) => documentDetail(tx, params.batchId, params.docId, deps.cfg.imports.reviewConfidenceThreshold));
+      return ctx.db.tx((tx) => documentDetail(tx, params.batchId, params.docId, deps.cfg.imports.reviewConfidenceThreshold, ctx.user.id));
     },
   });
 
@@ -218,6 +218,10 @@ export function registerImportRoutes(app: FastifyInstance, deps: ImportDeps): vo
   });
 }
 
+/**
+ * R43 upload. Uploads are attributed to the signed-in user; for API-key requests, to the key creator
+ * (four-eyes: that user cannot accept the document). Always ingests as `kind: 'user'`, never `system`.
+ */
 async function uploadHandler(deps: ImportDeps, req: FastifyRequest, reply: FastifyReply, batchId: string, filename: string) {
   const ctx = requireTenant(req);
   const actor = actorOf(req);

@@ -6,6 +6,8 @@
  */
 import {
   ExtractedField,
+  FOUR_EYES_DOCUMENT_TEXT,
+  FOUR_EYES_ERROR_CODE,
   ImportDocumentDetail,
   ReviewQueuePage as ReviewQueueSchema,
   fieldKeysFor,
@@ -33,6 +35,7 @@ const MANUAL_REASONS = new Set(['IMAGE_NO_TEXT_LAYER', 'NO_FIELDS', 'UNKNOWN_DOC
 
 function errorText(e: unknown): string {
   if (e instanceof ApiError) {
+    if (e.code === FOUR_EYES_ERROR_CODE) return FOUR_EYES_DOCUMENT_TEXT;
     if (e.status === 409) return STALE_TEXT;
     if (e.status === 400 || e.status === 422) return INVALID_VALUE_TEXT;
   }
@@ -151,7 +154,7 @@ function ReviewDialog({ item, onClose }: { item: ReviewQueueItemDto; onClose: ()
   };
   const onError = async (e: unknown) => {
     setError(errorText(e));
-    if (e instanceof ApiError && e.status === 409) await refresh();
+    if (e instanceof ApiError && (e.status === 409 || e.code === FOUR_EYES_ERROR_CODE)) await refresh();
   };
 
   if (decision && doc.data) {
@@ -236,9 +239,13 @@ function ReviewDialog({ item, onClose }: { item: ReviewQueueItemDto; onClose: ()
                 <button type="button" className="btn btn-danger" onClick={() => setDecision('reject')}>
                   Reject document
                 </button>
-                <button type="button" className="btn btn-primary" onClick={() => setDecision('accept')}>
-                  Accept document
-                </button>
+                {d.selfAuthored ? (
+                  <p className="muted text-sm">{FOUR_EYES_DOCUMENT_TEXT}</p>
+                ) : (
+                  <button type="button" className="btn btn-primary" onClick={() => setDecision('accept')}>
+                    Accept document
+                  </button>
+                )}
               </>
             ) : null}
           </div>
@@ -419,6 +426,7 @@ function DecisionDialog({
   onDone: (text: string) => Promise<void>;
 }) {
   const api = useApi();
+  const queryClient = useQueryClient();
   const reasonId = useId();
   const confirmAllId = useId();
   const [reason, setReason] = useState('');
@@ -432,7 +440,16 @@ function DecisionDialog({
         ImportDocumentDetail,
       ),
     onSuccess: () => onDone(kind === 'accept' ? 'Document accepted.' : 'Document rejected.'),
-    onError: (e) => setError(e instanceof ApiError && e.status === 409 ? STALE_TEXT : FAILED_TEXT),
+    onError: async (e) => {
+      if (e instanceof ApiError && e.code === FOUR_EYES_ERROR_CODE) {
+        // Four-eyes (stale screen / second tab): the viewer uploaded or edited this document.
+        setError(FOUR_EYES_DOCUMENT_TEXT);
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['import-doc', doc.id] }),
+          queryClient.invalidateQueries({ queryKey: ['reviews'] }),
+        ]);
+      } else setError(e instanceof ApiError && e.status === 409 ? STALE_TEXT : FAILED_TEXT);
+    },
   });
   const ok = reason.trim().length >= 10 && !mutation.isPending;
   return (

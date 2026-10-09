@@ -48,6 +48,7 @@ export interface DecisionRow {
   action: 'CONFIRM' | 'CORRECT' | 'REJECT' | 'ADD' | 'SET_TYPE' | 'ACCEPT' | 'REJECT_DOC';
   fieldId: string | null;
   reason: string;
+  actorId: string;
   actorRole: string;
   createdAt: Date;
   actor: { id: string; name: string };
@@ -159,7 +160,29 @@ export function toSummaryDto(d: DocumentRow, fields: readonly FieldRow[]): Impor
   };
 }
 
-export function toDetailDto(d: DocumentRow, fields: readonly FieldRow[], decisions: readonly DecisionRow[], threshold: number): ImportDocumentDetailDto {
+/**
+ * Four-eyes (REQ-20261009-four-eyes, policy D3): decision actions that make the actor a document editor.
+ * CONFIRM, field REJECT, SET_TYPE and acceptance's own bulk CONFIRM do not.
+ */
+export const EDITOR_DECISIONS: ReadonlySet<DecisionRow['action']> = new Set(['CORRECT', 'ADD']);
+
+/**
+ * True iff `viewerId` is a document editor: the uploader (if recorded) or the actor of a CORRECT/ADD
+ * decision. A null viewer (system ingest) is never an editor; a null uploader excludes nobody.
+ */
+export function isDocumentEditor(uploadedById: string | null, decisions: readonly Pick<DecisionRow, 'action' | 'actorId'>[], viewerId: string | null): boolean {
+  if (viewerId === null) return false;
+  return uploadedById === viewerId || decisions.some((x) => x.actorId === viewerId && EDITOR_DECISIONS.has(x.action));
+}
+
+/** `selfAuthored`: whether the requesting user is a document editor (computed by the caller). */
+export function toDetailDto(
+  d: DocumentRow,
+  fields: readonly FieldRow[],
+  decisions: readonly DecisionRow[],
+  threshold: number,
+  selfAuthored: boolean,
+): ImportDocumentDetailDto {
   const newestFirst = [...decisions].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || (a.id < b.id ? 1 : -1));
   return {
     ...toSummaryDto(d, fields),
@@ -176,6 +199,7 @@ export function toDetailDto(d: DocumentRow, fields: readonly FieldRow[], decisio
       actor: { id: x.actor.id, name: x.actor.name, role: x.actorRole },
       createdAt: x.createdAt.toISOString(),
     })),
+    selfAuthored,
   };
 }
 

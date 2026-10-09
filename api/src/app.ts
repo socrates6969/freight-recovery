@@ -19,6 +19,7 @@ import { ZodError } from 'zod';
 
 import { registerApiKeyRoutes } from './apikeys/routes.js';
 import { registerApiKeyRequest, releaseApiKeyRequest } from './audit/attribution.js';
+import { appendAudit } from './audit/audit.js';
 import { registerAuditRoutes } from './audit/routes.js';
 import { ApiKeyAuthenticator } from './auth/api-key-auth.js';
 import { makeOnForbidden } from './auth/authz-denied.js';
@@ -37,8 +38,8 @@ import { registerImportRoutes } from './imports/routes.js';
 import { ChildProcessExecutor, type ParseExecutor } from './imports/sandbox/executor.js';
 import { KeyedGate } from './imports/sandbox/semaphore.js';
 import { TenantScopeError } from './db/errors.js';
-import { ERROR_MESSAGES, HttpError, errors } from './http/errors.js';
-import { enforceRouteAccess, zodDetails } from './http/route.js';
+import { ERROR_MESSAGES, FourEyesRefusal, HttpError, errors } from './http/errors.js';
+import { enforceRouteAccess, requireTenant, zodDetails } from './http/route.js';
 import { registerSecurityHeaders, registerSecurityPipeline, type Limiter } from './http/security.js';
 import { registerIntelligenceRoutes } from './intelligence/routes.js';
 import { createLogger } from './logging.js';
@@ -82,10 +83,43 @@ function sendError(reply: FastifyReply, req: FastifyRequest, err: HttpError): vo
   void reply.code(err.statusCode).type('application/json; charset=utf-8').send(body);
 }
 
+/** SQLSTATE and exact message raised by the four-eyes guard triggers (migration 20261011000000_four_eyes). */
+const FOUR_EYES_SQLSTATE = 'P0001';
+const FOUR_EYES_DB_MESSAGE = 'four_eyes_required';
+/** Bound on how far the error chain is followed (cause / meta / driverAdapterError links). */
+const MAX_ERROR_CHAIN_DEPTH = 5;
+const ERROR_CHAIN_LINKS = ['cause', 'meta', 'driverAdapterError'] as const;
+
+function isFourEyesDbNode(o: Record<string, unknown>): boolean {
+  // Prisma 7 + @prisma/adapter-pg: PrismaClientKnownRequestError (P2039/P2010) carries
+  // meta.driverAdapterError.cause = { kind: 'postgres', originalCode, originalMessage, code, message }.
+  if (o.originalCode === FOUR_EYES_SQLSTATE && o.originalMessage === FOUR_EYES_DB_MESSAGE) return true;
+  // A plain pg DatabaseError (raw driver) carries the SQLSTATE in `code` and the exact raise text in `message`.
+  return o.code === FOUR_EYES_SQLSTATE && o.message === FOUR_EYES_DB_MESSAGE;
+}
+
+/**
+ * True iff the error, or an error linked from it within MAX_ERROR_CHAIN_DEPTH hops, is the four-eyes
+ * trigger raise: SQLSTATE P0001 AND message exactly `four_eyes_required` (never a substring match).
+ */
+export function isFourEyesDbError(err: unknown): boolean {
+  const seen = new Set<object>();
+  const walk = (v: unknown, depth: number): boolean => {
+    if (depth > MAX_ERROR_CHAIN_DEPTH || typeof v !== 'object' || v === null || seen.has(v)) return false;
+    seen.add(v);
+    const o = v as Record<string, unknown>;
+    if (isFourEyesDbNode(o)) return true;
+    return ERROR_CHAIN_LINKS.some((k) => walk(o[k], depth + 1));
+  };
+  return walk(err, 0);
+}
+
 /** Map any thrown value to a fixed-shape HttpError (never forwards unknown messages). */
 export function toHttpError(err: unknown): HttpError {
   if (err instanceof HttpError) return err;
   if (err instanceof ZodError) return errors.validation(zodDetails(err));
+  // Four-eyes DB guard reached the API: a service check was bypassed. Plain 403 (no audit context).
+  if (isFourEyesDbError(err)) return new HttpError(403, 'four_eyes_required');
   const fe = err as Partial<FastifyError> & { code?: string; statusCode?: number };
   switch (fe.code) {
     case 'FST_ERR_CTP_BODY_TOO_LARGE':
@@ -273,13 +307,40 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   });
   registerSecurityHeaders(app, cfg);
 
-  app.setErrorHandler((err: unknown, req, reply) => {
-    const httpErr = toHttpError(err);
-    if (httpErr.statusCode >= 500) {
+  app.setErrorHandler(async (err: unknown, req, reply) => {
+    let httpErr = toHttpError(err);
+    if (err instanceof FourEyesRefusal) {
+      // Four-eyes refusal (P4): the route's business transaction has already rolled back, so the
+      // `authz.four_eyes_denied` event is appended in its own tenant transaction. Fail closed (500) if the
+      // audit cannot be written, like authz.denied. No authz.denied event for this error.
+      try {
+        const ctx = requireTenant(req);
+        await ctx.db.tx((tx) =>
+          appendAudit(tx, {
+            tenantId: err.audit.tenantId,
+            action: 'authz.four_eyes_denied',
+            actorId: ctx.user.id,
+            actorRole: ctx.role,
+            targetType: err.audit.targetType,
+            targetId: err.audit.targetId,
+            metadata: err.audit.metadata,
+            ip: req.ip,
+            requestId: req.frRequestId,
+          }),
+        );
+      } catch {
+        req.log.error({ errorKind: 'four_eyes_audit_failed' }, 'request failed');
+        httpErr = new HttpError(500, 'internal_error');
+      }
+    } else if (httpErr.code === 'four_eyes_required') {
+      req.log.error({ errorKind: 'four_eyes_db_guard' }, 'four-eyes database guard refused a write');
+    }
+    if (httpErr.statusCode >= 500 && !(err instanceof FourEyesRefusal)) {
       const kind = err instanceof TenantScopeError ? 'tenant_scope_violation' : (err as Error | undefined)?.name ?? 'unknown';
       req.log.error({ errorKind: kind, code: (err as { code?: unknown } | undefined)?.code }, 'request failed');
     }
     sendError(reply, req, httpErr);
+    return reply;
   });
   app.setNotFoundHandler((req, reply) => sendError(reply, req, errors.notFound()));
 

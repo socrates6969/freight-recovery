@@ -10,14 +10,14 @@ import { Transform, type Readable, type TransformCallback } from 'node:stream';
 import { DOC_REVIEW_REASONS, type DetectedType, type DocReviewReason, type ImportBatchDto, type ImportDocumentDetailDto } from '@fr/shared';
 
 import { appendAudit } from '../audit/audit.js';
-import { isUuid } from '../db/errors.js';
+import { TenantScopeError, isUuid } from '../db/errors.js';
 import { lockImportBatch } from '../db/import-locks.js';
 import type { TenantDb, TenantTx } from '../db/tenant.js';
 import { errors } from '../http/errors.js';
 import { isKeyInTenant, tenantKey } from '../storage/s3.js';
 
 import type { Actor, ImportDeps, IngestActor } from './deps.js';
-import { toBatchDto, toDetailDto, toSummaryDto, type DecisionRow, type DocumentRow, type FieldRow } from './dto.js';
+import { isDocumentEditor, toBatchDto, toDetailDto, toSummaryDto, type DecisionRow, type DocumentRow, type FieldRow } from './dto.js';
 import { PARSER_VERSION, PROVIDER_NAME, PROVIDER_VERSION } from './parse/types.js';
 import { ParserBusyError } from './sandbox/executor.js';
 
@@ -31,6 +31,7 @@ export const DOC_SELECT = {
   sha256: true,
   storageKey: true,
   textKey: true,
+  uploadedById: true,
   docType: true,
   docTypeBasis: true,
   status: true,
@@ -46,7 +47,8 @@ export const DOC_SELECT = {
   parsedAt: true,
 } as const;
 
-export type StoredDocument = DocumentRow & { tenantId: string; storageKey: string | null; textKey: string | null };
+/** `uploadedById` is internal (four-eyes check); no DTO exposes it. */
+export type StoredDocument = DocumentRow & { tenantId: string; storageKey: string | null; textKey: string | null; uploadedById: string | null };
 
 const BATCH_INCLUDE = { createdBy: { select: { id: true, name: true } }, _count: { select: { documents: true } } } as const;
 
@@ -129,10 +131,17 @@ export async function loadFieldsAndDecisions(tx: TenantTx, docId: string): Promi
   return { fields, decisions };
 }
 
-export async function documentDetail(tx: TenantTx, batchId: string, docId: string, threshold: number): Promise<ImportDocumentDetailDto> {
+/** Document detail for `viewerId` (the requesting user; null for system ingest): sets `selfAuthored`. */
+export async function documentDetail(
+  tx: TenantTx,
+  batchId: string,
+  docId: string,
+  threshold: number,
+  viewerId: string | null,
+): Promise<ImportDocumentDetailDto> {
   const d = await loadDocument(tx, batchId, docId);
   const { fields, decisions } = await loadFieldsAndDecisions(tx, d.id);
-  return toDetailDto(d, fields, decisions, threshold);
+  return toDetailDto(d, fields, decisions, threshold, isDocumentEditor(d.uploadedById, decisions, viewerId));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -259,6 +268,11 @@ function sortDocReasons(rs: Iterable<string>): DocReviewReason[] {
  */
 export async function ingestDocument(deps: ImportDeps, db: TenantDb, input: IngestInput): Promise<ImportDocumentDetailDto> {
   const { tenantId, batchId, actor } = input;
+  // Four-eyes attribution (D5): a user ingest (session or API key -> key creator) must carry a real user
+  // id, which becomes uploaded_by_id and excludes that user from accepting the document. Anything else is a
+  // bug (500), never a silent null uploader. Only the `system` kind stores NULL.
+  if (actor.kind === 'user' && !isUuid(actor.id)) throw new TenantScopeError('ingest actor must be a user id');
+  const uploadedById = actor.kind === 'user' ? actor.id : null;
   const cfg = deps.cfg.imports;
   const docId = randomUUID();
   const storageKey = tenantKey(tenantId, 'imports', batchId, docId, 'original');
@@ -303,7 +317,7 @@ export async function ingestDocument(deps: ImportDeps, db: TenantDb, input: Inge
         id: docId,
         tenantId,
         batchId,
-        uploadedById: actor.kind === 'user' ? actor.id : null,
+        uploadedById,
         source: input.source,
         sourceRef: input.sourceRef ?? null,
         displayName: input.displayName,
@@ -336,7 +350,7 @@ export async function ingestDocument(deps: ImportDeps, db: TenantDb, input: Inge
   if (pre.kind === 'conflict') throw errors.conflict();
   if (pre.kind === 'quota') throw errors.quotaExceeded();
 
-  const detail = () => db.tx((tx) => documentDetail(tx, batchId, docId, cfg.reviewConfidenceThreshold));
+  const detail = () => db.tx((tx) => documentDetail(tx, batchId, docId, cfg.reviewConfidenceThreshold, actor.kind === 'user' ? actor.id : null));
 
   // Store the original (SSE, checksum; verified in production).
   try {

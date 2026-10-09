@@ -172,6 +172,8 @@ const METADATA_KEYS = new Set([
   'scopes',
   'expiresAt',
   'viaApiKey',
+  // Four-eyes (REQ-20261009-four-eyes): fixed refusal basis code (revision_author | uploader | field_editor).
+  'basis',
 ]);
 const MAX_STRING = 2000;
 

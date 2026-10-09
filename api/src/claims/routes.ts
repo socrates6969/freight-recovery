@@ -103,6 +103,9 @@ export function registerClaimRoutes(app: FastifyInstance): void {
     url: `${P}/approvals`,
     access: { kind: 'permission', permission: 'claims:read' },
     schema: { query: ApprovalsQuery },
-    handler: async (req, _reply, { query }) => requireTenant(req).db.tx((tx) => listApprovalQueue(tx, query)),
+    handler: async (req, _reply, { query }) => {
+      const ctx = requireTenant(req);
+      return ctx.db.tx((tx) => listApprovalQueue(tx, query, ctx.user.id));
+    },
   });
 }

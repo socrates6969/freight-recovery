@@ -299,6 +299,8 @@ export const ApprovalItem = ClaimSummary.extend({
   packetRevision: z.int(),
   pendingFindingsCount: z.int(),
   waitingSince: isoDate,
+  /** Four-eyes: true iff the requesting user authored any revision of this claim. */
+  selfAuthored: z.boolean(),
 });
 export type ApprovalItemDto = z.infer<typeof ApprovalItem>;
 export const ApprovalsPage = paged(ApprovalItem);

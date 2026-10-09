@@ -24,7 +24,7 @@ import type { TenantDb, TenantTx } from '../db/tenant.js';
 import { HttpError, errors } from '../http/errors.js';
 
 import type { Actor, ImportDeps } from './deps.js';
-import { effectiveValue, toReviewQueueItem, type FieldRow } from './dto.js';
+import { EDITOR_DECISIONS, effectiveValue, toReviewQueueItem, type FieldRow } from './dto.js';
 import { PASSTHROUGH_REASONS, documentReviewReasons } from './parse/reasons.js';
 import { DOC_SELECT, deleteObjectQuietly, documentDetail, loadDocument, type StoredDocument } from './service.js';
 import { validateManualValue } from './values.js';
@@ -56,6 +56,23 @@ async function lockReviewable(tx: TenantTx, batchId: string, docId: string): Pro
   const doc = await loadDocument(tx, batchId, docId);
   if (doc.status !== 'NEEDS_REVIEW') throw errors.invalidState();
   return doc;
+}
+
+/** Refuse acceptance by the uploader or by a CORRECT/ADD editor of the document (403 four_eyes_required). */
+async function assertNotDocumentEditor(tx: TenantTx, doc: StoredDocument, actor: Actor): Promise<void> {
+  const refuse = (basis: 'uploader' | 'field_editor') =>
+    errors.fourEyes({
+      tenantId: doc.tenantId,
+      targetType: 'import_document',
+      targetId: doc.id,
+      metadata: { documentId: doc.id, batchId: doc.batchId, action: 'ACCEPT', basis },
+    });
+  if (doc.uploadedById !== null && doc.uploadedById === actor.userId) throw refuse('uploader');
+  const edited = await tx.importReviewDecision.findFirst({
+    where: { documentId: doc.id, actorId: actor.userId, action: { in: [...EDITOR_DECISIONS] } },
+    select: { id: true },
+  });
+  if (edited) throw refuse('field_editor');
 }
 
 async function liveFields(tx: TenantTx, docId: string): Promise<FieldRow[]> {
@@ -104,7 +121,7 @@ export async function setDocType(
     });
     await refreshReasons(tx, doc, docType);
     await audit(tx, doc, actor, 'review.doctype_set', { docType, action: 'SET_TYPE' });
-    return documentDetail(tx, batchId, docId, threshold);
+    return documentDetail(tx, batchId, docId, threshold, actor.userId);
   });
 }
 
@@ -176,7 +193,7 @@ export async function addField(
     });
     await refreshReasons(tx, doc, doc.docType);
     await audit(tx, doc, actor, 'review.field_added', { fieldId: id, fieldKey: input.key, groupIndex, action: 'ADD' });
-    const detail = await documentDetail(tx, batchId, docId, threshold);
+    const detail = await documentDetail(tx, batchId, docId, threshold, actor.userId);
     const f = detail.fields.find((x) => x.id === id);
     if (!f) throw new HttpError(500, 'internal_error');
     return f;
@@ -230,7 +247,7 @@ export async function resolveField(
     });
     await refreshReasons(tx, doc, doc.docType);
     await audit(tx, doc, actor, 'review.field_resolved', { fieldId: field.id, fieldKey: field.key, action: input.action });
-    const detail = await documentDetail(tx, batchId, docId, threshold);
+    const detail = await documentDetail(tx, batchId, docId, threshold, actor.userId);
     const f = detail.fields.find((x) => x.id === field.id);
     if (!f) throw new HttpError(500, 'internal_error');
     return f;
@@ -251,6 +268,9 @@ export async function acceptDocument(
 ): Promise<ImportDocumentDetailDto> {
   return db.tx(async (tx) => {
     const doc = await lockReviewable(tx, batchId, docId);
+    // Four-eyes (P1/P2): after 404/409 invalid_state, before the unresolved-field checks; under the
+    // document row lock, so no CORRECT/ADD by this user can commit concurrently.
+    await assertNotDocumentEditor(tx, doc, actor);
     const fields = await liveFields(tx, doc.id);
     const unresolved = fields.filter((f) => f.needsReview && f.status === 'PROPOSED');
     const hardBlocked = unresolved.some((f) => f.reviewReasons.some((r) => BLOCKING_FIELD_REASONS.has(r)));
@@ -292,7 +312,7 @@ export async function acceptDocument(
       toStatus: 'ACCEPTED',
       reason: input.reason,
     });
-    return documentDetail(tx, batchId, docId, threshold);
+    return documentDetail(tx, batchId, docId, threshold, actor.userId);
   });
 }
 
@@ -321,7 +341,7 @@ export async function rejectDocument(
       toStatus: 'REJECTED',
       reason: input.reason,
     });
-    return { detail: await documentDetail(tx, batchId, docId, threshold), keys: [doc.storageKey, doc.textKey], tenantId: doc.tenantId };
+    return { detail: await documentDetail(tx, batchId, docId, threshold, actor.userId), keys: [doc.storageKey, doc.textKey], tenantId: doc.tenantId };
   });
   for (const k of keys) await deleteObjectQuietly(deps, tenantId, k);
   return detail;
