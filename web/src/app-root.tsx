@@ -45,6 +45,22 @@ export const routes: RouteObject[] = [
       { path: 'approvals', lazy: async () => ({ Component: (await import('./features/approvals/ApprovalsPage')).ApprovalsPage }) },
       { path: 'import', lazy: async () => ({ Component: (await import('./features/imports/ImportPage')).ImportPage }) },
       { path: 'import/review', lazy: async () => ({ Component: (await import('./features/imports/ReviewQueuePage')).ReviewQueuePage }) },
+      // Step 4: Recovery intelligence, API keys and the Dev dashboard (each tab is its own chunk).
+      { path: 'intelligence', lazy: async () => ({ Component: (await import('./features/intelligence/IntelligencePage')).IntelligencePage }) },
+      { path: 'settings/api-keys', lazy: async () => ({ Component: (await import('./features/apikeys/ApiKeysPage')).ApiKeysPage }) },
+      {
+        path: 'dev',
+        lazy: async () => ({ Component: (await import('./features/dev/DevDashboard')).DevDashboard }),
+        children: [
+          { index: true, element: null },
+          { path: 'pipeline', lazy: async () => ({ Component: (await import('./features/dev/PipelinePanel')).PipelinePanel }) },
+          { path: 'telemetry', lazy: async () => ({ Component: (await import('./features/dev/TelemetryPanel')).TelemetryPanel }) },
+          { path: 'logs', lazy: async () => ({ Component: (await import('./features/dev/LogsPanel')).LogsPanel }) },
+          { path: 'flags', lazy: async () => ({ Component: (await import('./features/dev/FlagsPanel')).FlagsPanel }) },
+          { path: 'evaluation', lazy: async () => ({ Component: (await import('./features/dev/EvaluationPanel')).EvaluationPanel }) },
+          { path: 'audit', lazy: async () => ({ Component: (await import('./features/dev/AuditPanel')).AuditPanel }) },
+        ],
+      },
     ],
   },
   { path: '*', element: <NotFound /> },

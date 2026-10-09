@@ -3,7 +3,31 @@
  * unsafe methods, single-flight refresh on 401 (serialized across tabs with the Web Locks API when
  * available), and Zod parsing of EVERY response (a parse failure never renders raw data).
  */
-import { CsrfResponse, ErrorBody, ImportDocumentDetail, RefreshResponse, type ImportDocumentDetailDto } from '@fr/shared';
+import {
+  ApiKeyCreated,
+  ApiKeyList,
+  ApiKeyView,
+  CsrfResponse,
+  ErrorBody,
+  EvalRunDetail,
+  EvalRunList,
+  FeatureFlag,
+  FeatureFlagList,
+  FeaturesResponse,
+  ImportDocumentDetail,
+  LogView,
+  PipelineHealth,
+  PlatformAuditPage,
+  PlatformAuditVerify,
+  Provenance,
+  RefreshResponse,
+  SimilarResponse,
+  Telemetry,
+  Worklist,
+  type ImportDocumentDetailDto,
+  type LogLevelName,
+  type PipelineWindow,
+} from '@fr/shared';
 import type { z } from 'zod';
 
 import type { SessionStore } from '../auth/session-store';
@@ -140,6 +164,79 @@ export class ApiClient {
     return this.request('POST', path, { body, ...(schema ? { schema } : {}), auth } as RequestOptions<S>);
   }
 
+  // ---------------------------------------------------------------------------------------------
+  // Step 4: Dev dashboard, Recovery Intelligence, API keys. Every response is parsed with the shared
+  // strict schema; any mismatch is an error (never partial data).
+  // ---------------------------------------------------------------------------------------------
+
+  platformPipeline(window: PipelineWindow) {
+    return this.get(`/api/v1/platform/pipeline?window=${encodeURIComponent(window)}`, PipelineHealth);
+  }
+
+  platformTelemetry() {
+    return this.get('/api/v1/platform/telemetry', Telemetry);
+  }
+
+  platformLogs(q: { level: LogLevelName; limit: number; requestId?: string }) {
+    const params = new URLSearchParams({ level: q.level, limit: String(q.limit) });
+    if (q.requestId) params.set('requestId', q.requestId);
+    return this.get(`/api/v1/platform/logs?${params.toString()}`, LogView);
+  }
+
+  platformFlags() {
+    return this.get('/api/v1/platform/flags', FeatureFlagList);
+  }
+
+  setFlag(key: string, body: { enabled: boolean; expectedVersion: number; reason: string }) {
+    return this.request('PUT', `/api/v1/platform/flags/${encodeURIComponent(key)}`, { body, schema: FeatureFlag });
+  }
+
+  evalRuns() {
+    return this.get('/api/v1/platform/eval/runs', EvalRunList);
+  }
+
+  evalRun(id: string) {
+    return this.get(`/api/v1/platform/eval/runs/${encodeURIComponent(id)}`, EvalRunDetail);
+  }
+
+  platformAuditEvents(before?: number) {
+    return this.get(`/api/v1/platform/audit/events${before ? `?before=${before}` : ''}`, PlatformAuditPage);
+  }
+
+  platformAuditVerify() {
+    return this.get('/api/v1/platform/audit/verify', PlatformAuditVerify);
+  }
+
+  features() {
+    return this.get('/api/v1/features', FeaturesResponse);
+  }
+
+  worklist(q: { perspective?: 'SHIPPER' | 'CARRIER' | undefined; page: number; pageSize?: number }) {
+    const params = new URLSearchParams({ page: String(q.page), pageSize: String(q.pageSize ?? 25) });
+    if (q.perspective) params.set('perspective', q.perspective);
+    return this.get(`/api/v1/intelligence/worklist?${params.toString()}`, Worklist);
+  }
+
+  similar(claimId: string, limit = 5) {
+    return this.get(`/api/v1/claims/${encodeURIComponent(claimId)}/similar?limit=${limit}`, SimilarResponse);
+  }
+
+  provenance(claimId: string) {
+    return this.get(`/api/v1/claims/${encodeURIComponent(claimId)}/provenance`, Provenance);
+  }
+
+  apiKeys() {
+    return this.get('/api/v1/api-keys', ApiKeyList);
+  }
+
+  createApiKey(body: { name: string; scopes: string[]; expiresInDays: number }) {
+    return this.post('/api/v1/api-keys', body, ApiKeyCreated);
+  }
+
+  revokeApiKey(id: string, reason: string) {
+    return this.post(`/api/v1/api-keys/${encodeURIComponent(id)}/revoke`, { reason }, ApiKeyView);
+  }
+
   private static errorFrom(status: number, body: string, retryAfter: string | null): ApiError {
     const retry = retryAfter && /^\d+$/u.test(retryAfter) ? Number(retryAfter) : null;
     let json: unknown = null;
@@ -267,4 +364,13 @@ export class ApiClient {
       return false;
     }
   }
+}
+
+/** Fixed user-facing texts for failed step 4 requests (server messages are never displayed). */
+export function step4ErrorText(e: unknown): string {
+  if (e instanceof ApiError) {
+    if (e.status === 403 || e.status === 404) return 'Not available.';
+    if (e.status === 429) return 'Too many requests. Try again shortly.';
+  }
+  return 'Something went wrong.';
 }

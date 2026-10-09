@@ -1,7 +1,7 @@
 import { ClaimDetail, ClaimDocumentsResponse, ClaimSummary, Packet, displayText, type PacketDto } from '@fr/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
-import { useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError } from '../../api/client';
@@ -10,11 +10,13 @@ import { ExportMenu } from '../../components/ui/ExportMenu';
 import { SafeText } from '../../components/ui/SafeText';
 import { useFocusTrap } from '../../components/ui/use-focus-trap';
 import { formatDateTime, formatDay, formatUsdCents, STATUS_LABEL } from '../../lib/format';
+import { ProvenancePanel, SimilarPanel } from '../intelligence/ClaimIntelligenceTabs';
+import { useFeatures } from '../intelligence/use-features';
 
-const TABS = ['Summary', 'Evidence', 'History', 'Documents'] as const;
+const ALL_TABS = ['Summary', 'Evidence', 'History', 'Documents', 'Similar', 'Provenance'] as const;
 export const NO_PACKET_TEXT = 'No evidence packet yet. Analysis has not run for this claim.';
 const DOC_TYPE_LABEL: Record<string, string> = { INVOICE: 'Invoice', RATE_CONFIRMATION: 'Rate confirmation', BILL_OF_LADING: 'Bill of lading', OTHER: 'Other' };
-type Tab = (typeof TABS)[number];
+type Tab = (typeof ALL_TABS)[number];
 
 export const DISCLAIMER_TEXT = 'Draft for human review. Not legal advice. Nothing is sent from this app.';
 
@@ -179,6 +181,20 @@ export function ClaimSheet() {
   const canExportPackets = useCan('export:packets');
   const me = useSession((s) => s.user);
   const [tab, setTab] = useState<Tab>('Summary');
+  const features = useFeatures();
+  const [hidden, setHidden] = useState<readonly Tab[]>([]);
+  const hideSimilar = useCallback(() => {
+    setHidden((h) => (h.includes('Similar') ? h : [...h, 'Similar']));
+    setTab('Summary');
+  }, []);
+  const hideProvenance = useCallback(() => {
+    setHidden((h) => (h.includes('Provenance') ? h : [...h, 'Provenance']));
+    setTab('Summary');
+  }, []);
+  // Similar/Provenance appear only when their flag is on (fail closed) and the feature call did not 404.
+  const TABS = ALL_TABS.filter(
+    (t) => !hidden.includes(t) && (t === 'Similar' ? features.similar : t === 'Provenance' ? features.provenance : true),
+  );
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const tabIds = useId();
@@ -370,6 +386,8 @@ export function ClaimSheet() {
                     <div className="skeleton h-24" aria-hidden="true" />
                   )
                 ) : null}
+                {tab === 'Similar' && TABS.includes('Similar') ? <SimilarPanel claimId={id} onUnavailable={hideSimilar} /> : null}
+                {tab === 'Provenance' && TABS.includes('Provenance') ? <ProvenancePanel claimId={id} onUnavailable={hideProvenance} /> : null}
                 {tab === 'Documents' ? (
                   documents.isError ? (
                     <p role="alert">The documents could not be loaded.</p>

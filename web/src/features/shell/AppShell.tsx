@@ -1,6 +1,6 @@
 import { ApprovalsPage as ApprovalsPageSchema } from '@fr/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardCheck, Command as CommandIcon, FileText, ListChecks, LogOut, Upload, UserRound } from 'lucide-react';
+import { Activity, ClipboardCheck, Command as CommandIcon, FileText, KeyRound, ListChecks, ListOrdered, LogOut, Upload, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
@@ -8,6 +8,7 @@ import { useApi, useServices, useSession } from '../../app-context';
 import { SafeText } from '../../components/ui/SafeText';
 import { ToastRegion } from '../../components/ui/ToastRegion';
 import { signOut } from '../auth/session-actions';
+import { useFeatures } from '../intelligence/use-features';
 
 import { CommandPalette, type Command } from './CommandPalette';
 
@@ -77,6 +78,11 @@ export function AppShell() {
   const isTenantUser = Boolean(user?.tenant) && permissions.includes('claims:read');
   const canImport = permissions.includes('import:run');
   const canReview = permissions.includes('import:review');
+  const canManageKeys = isTenantUser && permissions.includes('apikeys:manage');
+  // Platform users (no tenant) with platform:health get the Dev dashboard and never tenant links.
+  const canDev = !user?.tenant && permissions.includes('platform:health');
+  const features = useFeatures();
+  const location = useLocation();
 
   const pending = useQuery({
     queryKey: ['approvals', 'pending-count'],
@@ -120,25 +126,47 @@ export function AppShell() {
       <aside className="w-56 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] p-3">
         <p className="mb-4 px-3 text-sm font-semibold">Freight Recovery</p>
         <nav aria-label="Main" className="flex flex-col gap-1">
-          <NavLink to="/claims" className={navClass}>
-            <FileText size={16} aria-hidden="true" />
-            Claims
-          </NavLink>
-          <NavLink to="/approvals" className={navClass}>
-            <ClipboardCheck size={16} aria-hidden="true" />
-            Approvals
-            {pending.data ? <span className="badge badge-accent num ml-auto">{pending.data.total}</span> : null}
-          </NavLink>
-          {canImport ? (
-            <NavLink to="/import" end className={navClass}>
-              <Upload size={16} aria-hidden="true" />
-              Import
+          {isTenantUser ? (
+            <>
+            <NavLink to="/claims" className={navClass}>
+              <FileText size={16} aria-hidden="true" />
+              Claims
             </NavLink>
+            <NavLink to="/approvals" className={navClass}>
+              <ClipboardCheck size={16} aria-hidden="true" />
+              Approvals
+              {pending.data ? <span className="badge badge-accent num ml-auto">{pending.data.total}</span> : null}
+            </NavLink>
+            {canImport ? (
+              <NavLink to="/import" end className={navClass}>
+                <Upload size={16} aria-hidden="true" />
+                Import
+              </NavLink>
+            ) : null}
+            {canReview ? (
+              <NavLink to="/import/review" className={navClass}>
+                <ListChecks size={16} aria-hidden="true" />
+                Review queue
+              </NavLink>
+            ) : null}
+              {features.worklist ? (
+                <NavLink to="/intelligence" className={navClass}>
+                  <ListOrdered size={16} aria-hidden="true" />
+                  Intelligence
+                </NavLink>
+              ) : null}
+              {canManageKeys ? (
+                <NavLink to="/settings/api-keys" className={navClass}>
+                  <KeyRound size={16} aria-hidden="true" />
+                  API keys
+                </NavLink>
+              ) : null}
+            </>
           ) : null}
-          {canReview ? (
-            <NavLink to="/import/review" className={navClass}>
-              <ListChecks size={16} aria-hidden="true" />
-              Review queue
+          {canDev ? (
+            <NavLink to="/dev" className={navClass}>
+              <Activity size={16} aria-hidden="true" />
+              Dev dashboard
             </NavLink>
           ) : null}
         </nav>
@@ -155,8 +183,10 @@ export function AppShell() {
           </div>
         </header>
         <main className="min-w-0 flex-1 px-6 py-5">
-          {isTenantUser ? (
+          {isTenantUser || (canDev && location.pathname.startsWith('/dev')) ? (
             <Outlet />
+          ) : canDev ? (
+            <Navigate to="/dev" replace />
           ) : (
             <section className="card p-6">
               <h1 className="mb-2 text-lg font-semibold">No tenant access</h1>
