@@ -608,7 +608,7 @@ export async function listen(app: FastifyInstance): Promise<number> {
   return (app.server.address() as net.AddressInfo).port;
 }
 export interface RawResp { status: number; headers: http.IncomingHttpHeaders; body: Buffer; error?: string | undefined; ms: number; chunks: number; firstChunkAt: number; lastChunkAt: number }
-export function rawHttp(port: number, o: { method?: string; path: string; headers?: Record<string, string>; body?: Buffer; drive?: (req: http.ClientRequest) => void; timeoutMs?: number; destroyAfterFirstChunk?: boolean; slowRead?: number }): Promise<RawResp> {
+export function rawHttp(port: number, o: { method?: string; path: string; headers?: Record<string, string>; body?: Buffer; drive?: (req: http.ClientRequest) => void; timeoutMs?: number; destroyAfterFirstChunk?: boolean; slowRead?: number; onFirst?: () => void; holdAfterFirst?: boolean }): Promise<RawResp> {
   return new Promise((resolveP) => {
     const t0 = Date.now();
     const chunks: Buffer[] = [];
@@ -618,6 +618,8 @@ export function rawHttp(port: number, o: { method?: string; path: string; header
       status = res.statusCode ?? 0; headers = res.headers;
       res.on('data', (c: Buffer) => {
         n++; last = Date.now() - t0; if (!first) first = last; chunks.push(c);
+        if (n === 1) o.onFirst?.();
+        if (o.holdAfterFirst) { res.pause(); return; }
         if (o.destroyAfterFirstChunk) { req.destroy(); res.destroy(); fin(); }
         else if (o.slowRead) { res.pause(); setTimeout(() => res.resume(), o.slowRead); }
       });

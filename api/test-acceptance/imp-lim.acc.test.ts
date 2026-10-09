@@ -113,7 +113,8 @@ describe('T-IMP-LIM 2-4 count, duplicates, quota', () => {
     expect(d.status).toBe('NEEDS_REVIEW');
   });
   it('5 concurrent identical uploads in one batch -> exactly one 201 and four 409, documentCount 1', async () => {
-    const a = await buildTestApp();
+    // five simultaneous uploads exceed the default UPLOAD_MAX_CONCURRENT_PER_TENANT=4 (a sixth-style 429 is correct then), so lift the cap for this scenario
+    const a = await buildTestApp({ UPLOAD_MAX_CONCURRENT_PER_TENANT: '20' });
     const s = H.wrap(await sessionFor(a, ACCOUNTS.ANALYST));
     const bytes = S(H.bolTxt(H.uniqLoad('CONC')));
     const b = await H.newBatch(s);

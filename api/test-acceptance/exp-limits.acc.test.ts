@@ -61,6 +61,18 @@ describe('EXP-04 row cap (EXPORT_MAX_ROWS=5)', () => {
   }, 300000);
 });
 
+async function insertPadded(n: number): Promise<boolean> {
+  return withAdmin(async (adm) => {
+    const t = (await adm.query(`select id from tenants where name like 'Globex%'`)).rows[0].id;
+    const cols = (await adm.query(`select column_name, data_type from information_schema.columns where table_schema='public' and table_name='claims' and is_generated <> 'ALWAYS' and column_name not in ('id','claim_number','load_number','invoice_number') order by ordinal_position`)).rows;
+    const names = cols.map((c: any) => '"' + c.column_name + '"').join(',');
+    const vals = cols.map((c: any) => (/carrier|shipper/.test(c.column_name) && /char|text/.test(c.data_type) ? `repeat('P', 190) || g::text` : '"' + c.column_name + '"')).join(',');
+    const sql = `insert into claims (id, claim_number, load_number, invoice_number, ${names}) select gen_random_uuid(), 'GLX-P' || lpad(g::text, 6, '0'), 'LD-PAD-' || g, 'INV-PAD-' || g, ${vals} from (select * from claims where tenant_id = $1 order by claim_number limit 1) c, generate_series(1, ${n}) g`;
+    const r = await tryQuery(adm, sql, [t]);
+    if (!r.ok) console.warn('[EXP-14] padded bulk insert failed:', r.error);
+    return r.ok;
+  });
+}
 async function insertBulk(n: number): Promise<boolean> {
   return withAdmin(async (adm) => {
     const t = (await adm.query(`select id from tenants where name like 'Globex%'`)).rows[0].id;
@@ -128,17 +140,22 @@ describe('EXP-14 limits', () => {
     expect(String(r.headers['retry-after'])).toMatch(/^\d+$/);
     expect((await b.get('/exports/claims?format=csv')).status).toBe(200);
   });
-  it('EXPORT_MAX_CONCURRENT_PER_TENANT=1: a second simultaneous export while the first is read slowly -> 429', async (ctx) => {
-    if (!ok) return ctx.skip('bulk data not available');
+  it('EXPORT_MAX_CONCURRENT_PER_TENANT=1: a second simultaneous export while the first is held unread -> 429', async (ctx) => {
+    // ~20 MB of padded rows exceed any kernel socket buffering, so a client that stops reading really keeps the first export in flight
+    const padded = await insertPadded(40000);
+    if (!padded) return ctx.skip('padded bulk data could not be inserted');
     const app = await buildTestApp({ EXPORT_MAX_CONCURRENT_PER_TENANT: '1' });
     const port = await H.listen(app);
     const s = H.wrap(await sessionFor(app, 'manager@globex.test'));
     const hdr = await H.authHdrs(s);
-    const first = H.rawHttp(port, { path: '/api/v1/exports/claims?format=csv', headers: hdr, slowRead: 300, timeoutMs: 60000, destroyAfterFirstChunk: false });
-    await H.sleep(1200);
+    let started: () => void = () => undefined;
+    const gotFirst = new Promise<void>((r) => { started = r; });
+    const first = H.rawHttp(port, { path: '/api/v1/exports/claims?format=csv', headers: hdr, holdAfterFirst: true, onFirst: () => started(), timeoutMs: 15000 });
+    await Promise.race([gotFirst, H.sleep(12000)]);
+    await H.sleep(300);
     const second = await s.get('/exports/claims?format=csv');
     expectError(second, 429, 'rate_limited');
-    const f = await first;
+    const f = await first; // ends by the client timeout; the first export had already answered 200
     expect(f.status).toBe(200);
   }, 120000);
 });
