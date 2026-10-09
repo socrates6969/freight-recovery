@@ -307,6 +307,11 @@ describe('config: step 3 import/export knobs (N3)', () => {
       const { API_KEY_PEPPER: _p, ...noPepper } = prodOk;
       expect(problems(noPepper)).toContain('API_KEY_PEPPER is required in production');
       expect(problems({ ...prodOk, API_KEY_PEPPER: DEV_API_KEY_PEPPER })).toContain('API_KEY_PEPPER must not be a documented dev default');
+      expect(problems({ ...prodOk, API_KEY_PEPPER: 'ci-only-api-key-pepper-not-for-production-0123456789abcdef' })).toContain(
+        'API_KEY_PEPPER must not be a documented dev default',
+      );
+      // The CI value (job-level env in web-ci.yml) is accepted outside production.
+      expect(loadConfig({ ...dev, API_KEY_PEPPER: 'ci-only-api-key-pepper-not-for-production-0123456789abcdef' }).apiKeys.pepper).toContain('ci-only');
       expect(problems({ ...prodOk, API_KEY_PEPPER: prodOk.JWT_SECRET })).toContain('API_KEY_PEPPER must differ from every other secret');
       expect(problems({ ...prodOk, API_KEY_PEPPER: 'ab'.repeat(32) }).some((p) => p.startsWith('API_KEY_PEPPER'))).toBe(true);
       expect(problems({ ...prodOk, API_KEY_PEPPER: '0123456789abcdef0123456789abcdef0123456789ab' }).some((p) => p.startsWith('API_KEY_PEPPER'))).toBe(true);

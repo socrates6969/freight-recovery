@@ -22,5 +22,5 @@ locals {
   public_subnets  = [for i, az in local.azs : cidrsubnet(var.vpc_cidr, 8, i)]
   private_subnets = [for i, az in local.azs : cidrsubnet(var.vpc_cidr, 8, i + 10)]
 
-  secret_names = ["jwt-secret", "csrf-secret", "refresh-pepper", "mfa-enc-key", "database-url", "redis-url", "redis-auth-token"]
+  secret_names = ["jwt-secret", "csrf-secret", "refresh-pepper", "mfa-enc-key", "database-url", "redis-url", "redis-auth-token", "api-key-pepper"]
 }

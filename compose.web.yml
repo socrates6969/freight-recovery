@@ -21,6 +21,8 @@ x-api-env: &api-env
   CSRF_SECRET: ${CSRF_SECRET:-local-dev-csrf-secret-not-for-production-0123456789abcdef}
   REFRESH_PEPPER: ${REFRESH_PEPPER:-local-dev-refresh-pepper-not-for-production-0123456789abc}
   MFA_ENC_KEY: ${MFA_ENC_KEY:-bG9jYWwtZGV2LW1mYS1rZXktbm90LWZvci1wcm9kISE=}
+  # Step 4: HMAC key for stored API key hashes (PUBLIC dev value; refused in production).
+  API_KEY_PEPPER: ${API_KEY_PEPPER:-local-dev-api-key-pepper-not-for-production-0123456789abcdef}
   APP_ORIGIN: http://127.0.0.1:8080
   COOKIE_SECURE: "false"          # dev only: http on loopback; refused in production
   ENABLE_DEV_OUTBOX: "true"       # dev only: GET /api/v1/dev/outbox shows reset/invite tokens
@@ -36,6 +38,18 @@ x-api-env: &api-env
   S3_SSE: aws:kms                 # MinIO's built-in KMS (static dev key below)
   S3_KMS_KEY_ID: fr-dev-key
   LOG_LEVEL: info
+  # Step 4 knobs (defaults; see api/src/config.ts).
+  LOG_BUFFER_SIZE: "${LOG_BUFFER_SIZE:-500}"
+  FLAGS_CACHE_TTL_MS: "${FLAGS_CACHE_TTL_MS:-5000}"
+  INTELLIGENCE_PENDING_WEIGHT_PERCENT: "${INTELLIGENCE_PENDING_WEIGHT_PERCENT:-25}"
+  SIMILAR_CANDIDATE_LIMIT: "${SIMILAR_CANDIDATE_LIMIT:-500}"
+  RATE_LIMIT_PLATFORM_MAX: "${RATE_LIMIT_PLATFORM_MAX:-120}"
+  RATE_LIMIT_INTELLIGENCE_MAX: "${RATE_LIMIT_INTELLIGENCE_MAX:-120}"
+  API_KEY_MAX_ACTIVE: "${API_KEY_MAX_ACTIVE:-20}"
+  API_KEY_DEFAULT_TTL_DAYS: "${API_KEY_DEFAULT_TTL_DAYS:-90}"
+  API_KEY_ALLOW_NON_EXPIRING: "${API_KEY_ALLOW_NON_EXPIRING:-true}"
+  RATE_LIMIT_API_KEY_MAX: "${RATE_LIMIT_API_KEY_MAX:-300}"
+  RATE_LIMIT_API_KEY_FAIL_MAX: "${RATE_LIMIT_API_KEY_FAIL_MAX:-30}"
 
 x-hardening: &hardening
   read_only: true

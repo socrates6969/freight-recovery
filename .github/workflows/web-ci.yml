@@ -80,6 +80,7 @@ jobs:
       CSRF_SECRET: ci-only-csrf-secret-not-for-production-0123456789abcdefghi
       REFRESH_PEPPER: ci-only-refresh-pepper-not-for-production-0123456789abcdef
       MFA_ENC_KEY: Y2ktb25seS1tZmEta2V5LW5vdC1mb3ItcHJvZHVjdCE=
+      API_KEY_PEPPER: ci-only-api-key-pepper-not-for-production-0123456789abcdef
       APP_ORIGIN: http://127.0.0.1:8080
       COOKIE_SECURE: "false"
       ENABLE_DEV_OUTBOX: "true"
@@ -134,6 +135,10 @@ jobs:
       - run: npm run ensure-bucket
       # The parse worker is a build artifact used by the integration and acceptance suites.
       - run: npm run build
+      # Step 4: extraction evaluation on the committed SYNTHETIC set (sandboxed parser, no database,
+      # nothing recorded). Fails the job unless every case passes all 3 runs. Not an accuracy measure.
+      - name: Evaluation (synthetic fixtures)
+        run: npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1 --json
       # The integration (extraction parity) and acceptance (packet parity) suites run the existing
       # Python code. Same setup as ci.yml: pinned setup-python, hash-locked runtime deps, PYTHONPATH=src.
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6

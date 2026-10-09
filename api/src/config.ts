@@ -160,6 +160,7 @@ export const DOCUMENTED_DEV_SECRETS: readonly string[] = Object.freeze([
   'Y2ktb25seS1tZmEta2V5LW5vdC1mb3ItcHJvZHVjdCE=',
   // Step 4: the PUBLIC dev/test API key pepper (used when API_KEY_PEPPER is unset outside production).
   'local-dev-api-key-pepper-not-for-production-0123456789abcdef',
+  'ci-only-api-key-pepper-not-for-production-0123456789abcdef',
 ]);
 
 /** Default API_KEY_PEPPER outside production (documented, public, refused in production). */

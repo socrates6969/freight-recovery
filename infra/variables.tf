@@ -144,3 +144,49 @@ variable "waf_rate_limit_per_5min" {
   type        = number
   default     = 2000
 }
+
+# --- Step 4 (Dev dashboard + Recovery Intelligence) ---
+
+variable "log_buffer_size" {
+  description = "API LOG_BUFFER_SIZE: derived log records kept per instance for the Dev dashboard (50..5000)."
+  type        = number
+  default     = 500
+
+  validation {
+    condition     = var.log_buffer_size >= 50 && var.log_buffer_size <= 5000
+    error_message = "log_buffer_size must be between 50 and 5000."
+  }
+}
+
+variable "flags_cache_ttl_ms" {
+  description = "API FLAGS_CACHE_TTL_MS: per-instance feature-flag cache (production ceiling 30000)."
+  type        = number
+  default     = 5000
+
+  validation {
+    condition     = var.flags_cache_ttl_ms >= 0 && var.flags_cache_ttl_ms <= 30000
+    error_message = "flags_cache_ttl_ms must be between 0 and 30000."
+  }
+}
+
+variable "intelligence_pending_weight_percent" {
+  description = "API INTELLIGENCE_PENDING_WEIGHT_PERCENT: W of the priority-v1 formula (stated policy, integer 0..100)."
+  type        = number
+  default     = 25
+
+  validation {
+    condition     = var.intelligence_pending_weight_percent >= 0 && var.intelligence_pending_weight_percent <= 100 && floor(var.intelligence_pending_weight_percent) == var.intelligence_pending_weight_percent
+    error_message = "intelligence_pending_weight_percent must be an integer between 0 and 100."
+  }
+}
+
+variable "similar_candidate_limit" {
+  description = "API SIMILAR_CANDIDATE_LIMIT: candidates scored per similar-claims request (10..2000)."
+  type        = number
+  default     = 500
+
+  validation {
+    condition     = var.similar_candidate_limit >= 10 && var.similar_candidate_limit <= 2000
+    error_message = "similar_candidate_limit must be between 10 and 2000."
+  }
+}

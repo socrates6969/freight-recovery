@@ -108,6 +108,19 @@ locals {
     { name = "EXPORT_MAX_CONCURRENT_PER_TENANT", value = "2" },
     { name = "RATE_LIMIT_UPLOAD_MAX", value = "60" },
     { name = "RATE_LIMIT_EXPORT_MAX", value = "10" },
+    # Step 4: Dev dashboard, Recovery Intelligence and tenant API keys (production guards in
+    # api/src/config.ts: FLAGS_CACHE_TTL_MS <= 30000, non-expiring keys refused, TTL <= 365 days).
+    { name = "LOG_BUFFER_SIZE", value = tostring(var.log_buffer_size) },
+    { name = "FLAGS_CACHE_TTL_MS", value = tostring(var.flags_cache_ttl_ms) },
+    { name = "INTELLIGENCE_PENDING_WEIGHT_PERCENT", value = tostring(var.intelligence_pending_weight_percent) },
+    { name = "SIMILAR_CANDIDATE_LIMIT", value = tostring(var.similar_candidate_limit) },
+    { name = "RATE_LIMIT_PLATFORM_MAX", value = "120" },
+    { name = "RATE_LIMIT_INTELLIGENCE_MAX", value = "120" },
+    { name = "API_KEY_MAX_ACTIVE", value = "20" },
+    { name = "API_KEY_DEFAULT_TTL_DAYS", value = "90" },
+    { name = "API_KEY_ALLOW_NON_EXPIRING", value = "false" },
+    { name = "RATE_LIMIT_API_KEY_MAX", value = "300" },
+    { name = "RATE_LIMIT_API_KEY_FAIL_MAX", value = "30" },
   ]
 
   api_secrets = [
@@ -117,6 +130,8 @@ locals {
     { name = "MFA_ENC_KEY", valueFrom = aws_secretsmanager_secret.app["mfa-enc-key"].arn },
     { name = "DATABASE_URL", valueFrom = aws_secretsmanager_secret.app["database-url"].arn },
     { name = "REDIS_URL", valueFrom = aws_secretsmanager_secret.app["redis-url"].arn },
+    # Step 4: HMAC key for stored API key hashes (Secrets Manager reference, never a literal value).
+    { name = "API_KEY_PEPPER", valueFrom = aws_secretsmanager_secret.app["api-key-pepper"].arn },
   ]
 }
 
