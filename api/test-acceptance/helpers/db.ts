@@ -108,6 +108,8 @@ export async function buildInsert(c: PgClient, table: string, overrides: Record<
     let v: string;
     switch (col.data_type) {
       case 'uuid': v = 'gen_random_uuid()'; break;
+      case 'double precision': case 'real': v = '0'; break;
+      case 'ARRAY': v = `'{}'`; break;
       case 'integer': case 'bigint': case 'smallint': case 'numeric': v = '0'; break;
       case 'boolean': v = 'false'; break;
       case 'jsonb': v = `'{}'::jsonb`; break;

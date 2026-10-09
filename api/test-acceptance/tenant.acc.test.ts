@@ -228,6 +228,8 @@ describe('T-DB-03 no tenant cross-talk through pooled connections', () => {
     const reviewerId = (await sessionFor(app, ACCOUNTS.REVIEWER)).user.id;
     const acmeC = acmeClaims.get('CLM-0012')!.id;
     const gxC = [...gxClaims.values()][0].id;
+    await acmeMgr.client.ensureCsrf(); // establish the CSRF cookie once: concurrent first calls would rotate it under each other
+    await gxMgr.client.ensureCsrf();
     try {
       const mixed = Array.from({ length: 20 }, (_, i) => {
         if (i % 4 === 0) return acmeMgr.post(`/claims/${acmeC}/assign`, { assigneeId: reviewerId }).then((r) => ['A', r] as const);

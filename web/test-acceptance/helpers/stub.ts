@@ -2,14 +2,14 @@
 // Scripted network for AppRoot. Serves DTOs shaped per Part 1 (C3/C4) and records every call.
 export type RoleName = 'OWNER' | 'ADMIN' | 'MANAGER' | 'REVIEWER' | 'ANALYST' | 'VIEWER' | 'PLATFORM_DEV' | 'SUPER_ADMIN';
 export const PERMS: Record<RoleName, string[]> = {
-  OWNER: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'admins:manage', 'audit:read', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes'],
-  ADMIN: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'audit:read', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes'],
+  OWNER: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'admins:manage', 'audit:read', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage'],
+  ADMIN: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'audit:read', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage'],
   MANAGER: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes'],
   REVIEWER: ['claims:read', 'packets:edit', 'packets:approve', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes'],
   ANALYST: ['claims:read', 'import:run', 'export:claims'],
   VIEWER: ['claims:read'],
-  PLATFORM_DEV: ['platform:health'],
-  SUPER_ADMIN: ['platform:health', 'platform:tenants:list', 'platform:cross_tenant_read'],
+  PLATFORM_DEV: ['platform:health', 'platform:logs', 'platform:flags', 'platform:eval'],
+  SUPER_ADMIN: ['platform:health', 'platform:tenants:list', 'platform:cross_tenant_read', 'platform:audit'],
 };
 
 export const ACCESS_A = 'ACCESS-TOKEN-AAAA-1111-aaaaBBBBccccDDDD';

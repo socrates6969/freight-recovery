@@ -22,6 +22,7 @@ const prod = () => ({
   CSRF_SECRET: b64(),
   REFRESH_PEPPER: b64(),
   MFA_ENC_KEY: randomBytes(32).toString('base64'),
+  API_KEY_PEPPER: b64(), // step 4 (Q13): required at every startup
   COOKIE_SECURE: 'true',
   MAIL_TRANSPORT: 'ses',
   REDIS_URL: 'redis://127.0.0.1:6399/0',
@@ -45,7 +46,7 @@ async function rejects(env: Record<string, string>) {
     return e as Error;
   }
 }
-const VARS = ['COOKIE_SECURE', 'APP_ORIGIN', 'ENABLE_DEV_OUTBOX', 'MAIL_TRANSPORT', 'REDIS_URL', 'DATABASE_URL', 'JWT_SECRET', 'CSRF_SECRET', 'REFRESH_PEPPER', 'MFA_ENC_KEY', 'RATE_LIMIT_ENABLED', 'ARGON2_MEMORY_KIB', 'LOCKOUT_THRESHOLD', 'TRUST_PROXY'];
+const VARS = ['COOKIE_SECURE', 'APP_ORIGIN', 'ENABLE_DEV_OUTBOX', 'MAIL_TRANSPORT', 'REDIS_URL', 'DATABASE_URL', 'JWT_SECRET', 'CSRF_SECRET', 'REFRESH_PEPPER', 'MFA_ENC_KEY', 'API_KEY_PEPPER', 'RATE_LIMIT_ENABLED', 'ARGON2_MEMORY_KIB', 'LOCKOUT_THRESHOLD', 'TRUST_PROXY'];
 
 /** Documented public dev/CI defaults for a secret: compose.web.yml (${X:-default}), web-ci.yml (X: value), .env.example (non-placeholder only). */
 function devDefaults(name: string): string[] {

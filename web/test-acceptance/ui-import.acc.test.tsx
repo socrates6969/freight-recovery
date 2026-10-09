@@ -45,7 +45,7 @@ describe('UI-01 navigation', () => {
     expect(screen.queryByRole('button', { name: 'Review' })).toBeNull();
     cleanup();
     await open('PLATFORM_DEV', '/import');
-    expect(await screen.findByText(/No tenant access/)).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Dev dashboard' })).toBeTruthy(); // step 4: platform users land on the Dev dashboard
   });
 });
 

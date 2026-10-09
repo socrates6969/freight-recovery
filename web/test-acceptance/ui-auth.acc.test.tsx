@@ -240,7 +240,8 @@ describe('T-UI-12 platform users', () => {
   it('SUPER_ADMIN (tenant null) sees "No tenant access" instead of claims', async () => {
     const stub = createStub({ role: 'SUPER_ADMIN' });
     await renderApp(stub, ['/claims']);
-    expect(await screen.findByText(/No tenant access/i, {}, WAIT)).toBeTruthy();
+    // step 4: platform accounts with platform:health land on the Dev dashboard instead of the old "No tenant access" card
+    expect(await screen.findByRole('heading', { name: 'Dev dashboard' }, WAIT)).toBeTruthy();
     expect(screen.queryByRole('heading', { name: 'Claims' })).toBeNull();
     expect(stub.count('GET', /\/claims$/)).toBe(0);
     void mkUser; void fireEvent; void act; void within;

@@ -20,6 +20,8 @@ export const SECRETS = {
   REFRESH_PEPPER: process.env.REFRESH_PEPPER ?? det('pepper'),
   MFA_ENC_KEY:
     process.env.MFA_ENC_KEY ?? Buffer.from(det('mfa'), 'hex').subarray(0, 32).toString('base64'),
+  // Step 4 (Q13): tenant API-key pepper. Public test-only value (64 hex chars = 32 bytes, differs from every other secret).
+  API_KEY_PEPPER: process.env.API_KEY_PEPPER ?? 'ci-only-api-key-pepper-not-for-production-0123456789abcdef',
 };
 
 // Object storage for step 3 (MinIO or any S3-compatible endpoint; CI/local export S3_* to override).

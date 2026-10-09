@@ -128,6 +128,7 @@ describe('T-LOG-01 / T-LOG-02', () => {
     expect(rl, `request log line: ${rl}`).toMatch(/200/);
     expect(rl).toMatch(/\/api\/v1\/claims/);
     expect(rl).toMatch(/durationMs|responseTime/);
+    expect(rl, 'step 4: request completion lines carry the route PATTERN').toMatch(/"route":"\/api\/v1\/claims"/);
     expect(rl).toContain(rid);
     expect(rl).not.toContain('q=');
     // T-LOG-02: failed-login emails are not clear text
