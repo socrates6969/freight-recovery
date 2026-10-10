@@ -30,6 +30,9 @@ const SITE_NAME = "scoup.ai";
 const TITLE_SEP = " – "; // en dash: "Page – scoup.ai"
 const MAX_TITLE = 60;
 const MAX_DESCRIPTION = 160;
+// Social preview card (static/og-card.png, rendered from og/og-card.html). Crawlers need an absolute URL.
+const OG_IMAGE = `${SITE_URL}/og-card.png`;
+const OG_IMAGE_ALT = "scoup.ai: Get paid for detention you can prove. Pre-product, looking for design partners.";
 const brandDir = join(root, "..", "..", "brand");
 // Horizontal lockup: viewBox 873.32 x 162.97. Header 28px tall, footer 20px (the minimum on screen).
 const LOCKUP_RATIO = 873.32 / 162.97;
@@ -111,9 +114,15 @@ function layout(meta, body) {
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(meta.description)}">
 <meta property="og:url" content="${esc(url)}">
-<meta name="twitter:card" content="summary">
+<meta property="og:image" content="${esc(OG_IMAGE)}">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="${esc(OG_IMAGE_ALT)}">
+<meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="${esc(title)}">
 <meta name="twitter:description" content="${esc(meta.description)}">
+<meta name="twitter:image" content="${esc(OG_IMAGE)}">
+<meta name="twitter:image:alt" content="${esc(OG_IMAGE_ALT)}">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/style.css">
 <script type="application/ld+json">${jsonLd(meta, url)}</script>

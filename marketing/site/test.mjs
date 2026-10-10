@@ -29,6 +29,10 @@ for (const p of pages) {
   check(/<link rel="canonical" href="https?:\/\//.test(h), `${rel}: canonical`);
   check((h.match(/<h1[ >]/g) || []).length === 1, `${rel}: exactly one h1`);
   check(/property="og:title"/.test(h) && /name="twitter:card"/.test(h), `${rel}: og/twitter`);
+  const ogImg = (h.match(/<meta property="og:image" content="([^"]+)">/) || [])[1] || "";
+  check(/^https?:\/\/[^"]+\/og-card\.png$/.test(ogImg), `${rel}: absolute og:image (${ogImg})`);
+  check(/<meta name="twitter:card" content="summary_large_image">/.test(h) && h.includes(`<meta name="twitter:image" content="${ogImg}">`), `${rel}: large twitter card with image`);
+  check(/<meta property="og:image:alt" content="[^"]{20,}">/.test(h), `${rel}: og:image alt text`);
   check(/Content-Security-Policy/.test(h), `${rel}: CSP meta`);
   // security: only the JSON-LD script; no inline handlers; no third-party URLs in src/href attrs
   const scripts = [...h.matchAll(/<script\b([^>]*)>/g)].map((m) => m[1]);
@@ -63,7 +67,7 @@ for (const p of pages) {
     check(org && org.name === "scoup.ai", `${rel}: JSON-LD Organization name`);
   }
 }
-for (const f of ["sitemap.xml", "robots.txt", "_headers", "style.css", "404.html", "favicon.svg", "brand/lockup-horizontal.svg", "brand/lockup-horizontal-on-dark.svg"]) check(existsSync(join(dist, f)), `${f} exists`);
+for (const f of ["sitemap.xml", "robots.txt", "_headers", "style.css", "404.html", "favicon.svg", "og-card.png", "brand/lockup-horizontal.svg", "brand/lockup-horizontal-on-dark.svg"]) check(existsSync(join(dist, f)), `${f} exists`);
 const css = readFileSync(join(dist, "style.css"), "utf8");
 check(!/\.brand[^{]*\{[^}]*text-transform/.test(css), "brand never uppercased via CSS");
 const csp = readFileSync(join(dist, "_headers"), "utf8");
