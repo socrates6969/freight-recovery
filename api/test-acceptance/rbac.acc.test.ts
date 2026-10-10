@@ -47,6 +47,10 @@ const ROUTES: Route[] = [
   { id: 'R35 platform health', perm: 'platform:health', method: 'GET', path: () => '/platform/health' },
   { id: 'R36 platform tenants', perm: 'platform:tenants:list', method: 'GET', path: () => '/platform/tenants' },
   { id: 'R37 cross-tenant claims', perm: 'platform:cross_tenant_read', method: 'GET', path: () => `/platform/tenants/${ctx.tenantId}/claims?reason=acceptance+rbac+probe` },
+  // REQ-20261010-step5-analysis (T13): analyze routes require claims:analyze (CLM-0008 is not AWAITING_ANALYSIS -> 409 for allowed roles).
+  { id: 'AN analyze', perm: 'claims:analyze', method: 'POST', path: () => `/claims/${ctx.claim}/analyze`, body: () => ({}) },
+  // [S] bulk route (should-have; ACC_SKIP_BULK=1 when cut). A reseeded tenant has no AWAITING_ANALYSIS claims.
+  ...(process.env.ACC_SKIP_BULK === '1' ? [] : [{ id: 'AN analyze-awaiting [S]', perm: 'claims:analyze', method: 'POST', path: () => '/claims/analyze-awaiting', body: () => ({ limit: 1 }) }]),
 ];
 
 async function snapshot() {
