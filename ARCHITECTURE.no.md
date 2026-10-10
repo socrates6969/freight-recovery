@@ -84,7 +84,9 @@ et eget avsnitt nedenfor: [Nettplattform: import og eksport (steg 3)](#nettplatt
 Steg 4 (utviklerdashbord, Recovery intelligence, API-nøkler for tenanter og evalueringsverktøyet) har
 også et eget avsnitt:
 [Nettplattform: utviklerdashbord, Recovery intelligence og API-nøkler (steg 4)](#nettplattform-utviklerdashbord-recovery-intelligence-og-api-nøkler-steg-4).
-TS-porten av Python-reglene er et senere steg (steg 5). Det finnes ingen lært modell og ingen LLM-kall. Krav og pakker seedes fra Python-CLI-ens
+Steg 5 (TS-porten av Python-reglene og kravbrevet, og analysehandlingen som gjør et importert krav om til
+pakkerevisjon 1) er beskrevet i
+[Nettplattform: kravanalyse (steg 5)](#nettplattform-kravanalyse-steg-5). Det finnes ingen lært modell og ingen LLM-kall. Krav og pakker seedes fra Python-CLI-ens
 utdata på `tests/fixtures/` (syntetisk).
 
 ## Modulstruktur
@@ -272,6 +274,7 @@ hver forespørsel. Nettappen importerer de samme frosne dataene bare for å skju
 | `users:read`, `users:manage`, `audit:read`, `settings:manage`, `integrations:manage` | x | x | | | | | | |
 | `admins:manage`, `billing:manage`, `tenant:delete` | x | | | | | | | |
 | `apikeys:manage` (steg 4: opprette, liste og tilbakekalle tenantenes API-nøkler) | x | x | | | | | | |
+| `claims:analyze` (steg 5: analysere ett krav, masseanalyse; ingen API-nøkkel-scope) | x | x | x | x | x | | | |
 | `platform:health` (steg 4: også pipelinehelse og telemetri) | | | | | | | x | x |
 | `platform:flags`, `platform:logs` | | | | | | | x | |
 | `platform:eval` (steg 4: evalueringskjøringer) | | | | | | | x | |
@@ -335,7 +338,8 @@ graph TD
 ```mermaid
 %%{init: {'theme': 'neutral'}}%%
 graph TD
-    P["PENDING_REVIEW"] -- "approve (reason)" --> A["APPROVED"]
+    W["AWAITING_ANALYSIS (claim)"] -- "analyze (step 5)" --> P["PENDING_REVIEW"]
+    P -- "approve (reason)" --> A["APPROVED"]
     P -- "reject (reason)" --> J["REJECTED"]
     A -- "send (reason, hash match)" --> S["SEND_READY (terminal)"]
     P -- "edit" --> N["new revision PENDING_REVIEW"]
@@ -344,7 +348,12 @@ graph TD
     N -. "old revision" .-> X["SUPERSEDED"]
 
     style S fill:#1e90ff,stroke:#1565c0,color:#fff
+    style W fill:#1e90ff,stroke:#1565c0,color:#fff
 ```
+
+`AWAITING_ANALYSIS` er bare en kravstatus (importerte krav uten pakke ennå). Siden kjøringen
+`REQ-20261010-step5-analysis` lager analysehandlingen pakkerevisjon 1 i `PENDING_REVIEW` og flytter kravet dit;
+ingenting går tilbake til `AWAITING_ANALYSIS`. Se [kravanalyse (steg 5)](#nettplattform-kravanalyse-steg-5).
 
 Hver handling krever en begrunnelse og skriver en `approvals`-rad (som bare kan utvides) pluss en
 revisjonshendelse i én transaksjon, med kravraden låst `FOR UPDATE`. Godkjenning lagrer pakkens kanoniske
@@ -440,7 +449,7 @@ Hovedbeslutninger:
 - API-et **videreformidler** originalene. Det finnes ingen signerte URL-er.
 - PDF-er leses bare fra tekstlaget. Bilder lagres og flagges for manuell registrering.
 - Krav som opprettes fra import, starter i den nye statusen `AWAITING_ANALYSIS`, uten beløp og uten
-  bevispakke. Steg 5 legger til analysen.
+  bevispakke. Steg 5 legger til analysen ([kravanalyse (steg 5)](#nettplattform-kravanalyse-steg-5)).
 
 ## Modulstruktur (steg 3)
 
@@ -725,28 +734,38 @@ felt. Avvikene nedenfor er de **eneste** tillatte forskjellene. Alle andre forsk
 | D8 | PNG og JPEG godtas og strukturvalideres, men gir **ingen felt** (ingen OCR). Status er `NEEDS_REVIEW` med grunnen `IMAGE_NO_TEXT_LAYER`. En gjennomgåer kan sette typen (R46) og legge inn felt (R47). | Python leser ikke bilder, og OCR er utenfor omfanget av steg 3. |
 
 Beslektede merknader (ikke nye avvik): `parseMoney` beholder CPython-paritet, så `"1,2,3"` blir `123` og
-`"$-5"` blir `-5` (avgjørelse SQ1; steg 5 kan gjøre dette strengere som et nytt registrert avvik).
+`"$-5"` blir `-5` (avgjørelse SQ1; et senere steg kan gjøre dette strengere som et nytt registrert avvik;
+steg 5 gjorde det ikke, men avviser et negativt resultat ved lagring, RD3, 422).
 Forhåndsskanningen avviser fiendtlige PDF-er utenfor D2-delmengden. Opptil 16 nullbytes etter `IEND` i
 PNG tåles, som for JPEG. `strptime`-paritet følger CPython 3.12 for et ledende mellomrom foran `%H` eller
 `%d`. Feltrekkefølgen følger N7-nøkkelrekkefølgen og deretter `groupIndex` (SQ4).
 
 ## Grensesnitt for steg 5 (port av regler og bevis)
 
+**Status: levert** i kjøringen `REQ-20261010-step5-analysis` (se
+[kravanalyse (steg 5)](#nettplattform-kravanalyse-steg-5)). Punkt 1-6 brukes som beskrevet nedenfor; punkt 7
+(en LLM-leverandør) og strengere tolking av beløp gjenstår.
+
 1. **Inndata.** `loadBundleForClaim(tx, claimId)` gir `{bundle, sources}`. `bundle` er TS-versjonen av
-   `ExtractedBundle`, bygget fra de effektive feltverdiene i kravets dokumenter. Den er inndata til den
-   fremtidige `analyze(bundle, perspective, settings) -> Packet`, motparten til Pythons `run_pipeline`
-   etter `extract_bundle`.
+   `ExtractedBundle`, bygget fra de effektive feltverdiene i kravets dokumenter. Steg 5 la til
+   `loadAnalysisInput(tx, claimId)` (samme utvalg og rekkefølge av dokumenter, pluss feltproveniens og
+   `sizeBytes`); `loadBundleForClaim` delegerer nå til den med uendret signatur. Inngangen til motoren er
+   `buildEvidence(docs, bundle, perspective, settings, now)` i `@fr/shared/analysis`, motparten til
+   Pythons `run_pipeline` etter `extract_bundle`.
 2. **Kildehenvisning.** `pointerToLocator(displayName, pointer)` gir sitatlokatorer som `invoice.txt:L5`
    eller `file.pdf:p2:L14`. `sources[]` har `documentId`, `displayName`, `sha256` og `docType`.
-3. **Penger.** `packages/shared/src/decimal.ts` er grunnlaget for penge- og timeregning. Steg 5 legger
-   til avrunding med paritet mot Pythons `Decimal`.
+3. **Penger.** `packages/shared/src/decimal.ts` er grunnlaget for tolking av beløp. Steg 5 la til
+   `packages/shared/src/analysis/py-decimal.ts`, en `Decimal` som er nøyaktig lik CPython (presisjon 28,
+   ROUND_HALF_EVEN, quantize, formatering som `str` og `.2f`), for regnestykkene i reglene.
 4. **Tekst.** `plain` og `md` (`packages/shared/src/text-sanitize.ts`) er allerede portert med paritet.
-5. **Kravets livsløp.** Steg 5 legger til overgangen `AWAITING_ANALYSIS -> PENDING_REVIEW`, med
-   pakkerevisjon 1 og en revisjonshendelse i samme transaksjon. `claim_documents` viser kildedokumentene.
-   Revisjon 1 må registrere `created_by_id` som brukeren som startet analysen, ellers kan den brukeren
-   godkjenne den (restrisiko FE-N2 for firøyeprinsippet).
+5. **Kravets livsløp.** Steg 5 la til overgangen `AWAITING_ANALYSIS -> PENDING_REVIEW`, med
+   pakkerevisjon 1 og revisjonshendelsen `claim.analyzed` i samme transaksjon. `claim_documents` viser
+   kildedokumentene. Revisjon 1 registrerer `created_by_id` som brukeren som startet analysen, så den
+   brukeren kan ikke godkjenne den (FE-N2 lukket; migreringen `20261012000000_analysis` avviser en revisjon
+   1 uten forfatter for et krav som venter på analyse).
 6. **Paritetsmønster.** `tools/parity/` og `api/test/parity/` er mønsteret for regel-dumpen. CI setter
-   allerede opp Python.
+   allerede opp Python. Steg 5 la til `tools/parity/rules_dump.py` og `api/test/parity/rules.parity.test.ts`
+   (registrerte avvik RD1-RD6).
 7. **Leverandører.** `ExtractionProvider` er der en LLM-leverandør kan kobles inn senere, bak rensing og
    med obligatorisk kildehenvisning. Den kan aldri senke et flagg som de deterministiske kontrollene har
    satt.
@@ -1131,22 +1150,27 @@ graph TD
     style W fill:#1e90ff,stroke:#1565c0,color:#fff
 ```
 
-Stegregisteret `EVAL_STAGES` inneholder foreløpig bare `extraction`; steg 5 registrerer `rules`.
+Stegregisteret `EVAL_STAGES` inneholder foreløpig bare `extraction`. Et `rules`-steg var planlagt for steg 5,
+men ble utsatt; reglene sjekkes i stedet mot Python av paritetstestene.
 Sett-hashen `evalSetSha256` dekker manifestet og hver saksfil i rekkefølge; testdataene holdes byte-like av
 `.gitattributes` (`api/eval/sets/** -text`).
 
 ## Grensesnitt for steg 5
 
-1. Intelligence-funksjonene leser bare lagrede kolonner (`claims` beløp, status, transportør,
+Status etter kjøringen `REQ-20261010-step5-analysis`: punkt 1 er levert; punkt 2 og 3 ble utsatt og
+står åpne.
+
+1. **Levert.** Intelligence-funksjonene leser bare lagrede kolonner (`claims` beløp, status, transportør,
    perspektiv, `updated_at`; siste revisjon av `evidence_packets`; `packet_findings.rule_id` og
-   `needs_human_review`; `packet_sources.doc_type`; `approvals.created_at`). Når steg 5 lager pakkerevisjon
-   1 (`AWAITING_ANALYSIS -> PENDING_REVIEW`), fylles arbeidsliste, likhet og proveniens uten endringer i
-   steg 4. Steg 5 må holde `rule_id` stabil og ikke-tom.
-2. Steg 5 registrerer et `rules`-steg i `EVAL_STAGES` (og utvider `stage`-CHECK-en med en migrering), og
-   gjenbruker `computePassStats`, registreringen og dashbordet; Python-funksjonen `run_pipeline` er
-   oraklet.
-3. Telemetri: steg 5 legger til `observeComponent('rules-v1', ...)`. Flagg: steg 5 kan legge til en
-   registernøkkel.
+   `needs_human_review`; `packet_sources.doc_type`; `approvals.created_at`). Steg 5 lager nå pakkerevisjon
+   1 (`AWAITING_ANALYSIS -> PENDING_REVIEW`), så analyserte importerte krav kommer med i arbeidsliste,
+   likhet og proveniens uten endringer i steg 4. `rule_id` er en av de åtte stabile, ikke-tomme
+   `RULE_IDS` (`rules-v1`).
+2. **Åpent.** Et `rules`-steg i `EVAL_STAGES` (og en migrering som utvider `stage`-CHECK-en), som
+   gjenbruker `computePassStats`, registreringen og dashbordet, med Python-funksjonen `run_pipeline` som
+   orakel.
+3. **Åpent.** Telemetri `observeComponent('rules-v1', ...)`. Ingen flagg ble lagt til (analyse ved
+   opprettelse av krav er ikke bygget).
 
 ## Merknader (steg 4)
 
@@ -1182,7 +1206,8 @@ To beslutninger krever nå en annen person:
 
 1. **Krav.** En bruker som har laget **en hvilken som helst** pakkerevisjon av et krav (gjeldende eller
    erstattet), kan ikke godkjenne eller avvise kravets gjeldende revisjon. En revisjon uten registrert
-   oppretter (seedet eller generert revisjon 1) utelukker ingen. «Klar til sending» er uendret.
+   oppretter (seedet revisjon 1) utelukker ingen. Siden steg 5 registrerer revisjon 1 fra analyse den som
+   analyserte. «Klar til sending» er uendret.
 2. **Importerte dokumenter.** Den som lastet opp, og alle som har registrert en felt-`CORRECT` eller
    -`ADD`, kan ikke godta dokumentet. Avvisning er uendret. Opplastinger med API-nøkkel regnes som
    opplastinger gjort av den som opprettet nøkkelen.
@@ -1371,10 +1396,13 @@ ny migrering for den tilhørende triggeren. Detaljer står i trusselmodellen, de
 
 ## Grensesnitt for steg 5 (firøyeprinsippet)
 
-- Steg 5 lager pakkerevisjon 1 for importerte krav. Det **må sette `evidence_packets.created_by_id` til
-  brukeren som startet analysen**. Ellers utelukker revisjon 1 ingen, og den brukeren kan godkjenne sin
-  egen pakke (FE-N2). Steg 5 bør også avgjøre om de som lastet opp kravets dokumenter, skal regnes som
-  forfattere av kravet (i dag gjør de ikke det).
+- **Levert (FE-N2 lukket).** Steg 5 lager pakkerevisjon 1 for importerte krav og setter
+  `evidence_packets.created_by_id` til brukeren som startet analysen (enkeltvis og i masseanalyse). Den
+  brukeren er da revisjonsforfatter og kan ikke godkjenne eller avvise kravet. Triggeren
+  `evidence_packets_analysis_guard` avviser en revisjon 1 uten forfatter for et krav i `AWAITING_ANALYSIS`.
+  Avgjørelse (standardvalg D2 i steg 5): de som lastet opp eller redigerte felt i kravets dokumenter, er
+  **ikke** forfattere av kravet. Firøyeprinsippet for dokumenter tvang allerede en annen person til å
+  godta disse inndataene (unntatt automatisk godtatte dokumenter, FE-S1).
 - Enhver ny kodevei som setter inn en `approvals`-rad (`APPROVE`/`REJECT`) eller en `ACCEPT`-beslutning,
   må kjøre kontrollen i tjenesten under samme radlås. Ellers avviser triggerne innsettingen.
 
@@ -1386,3 +1414,415 @@ ny migrering for den tilhørende triggeren. Detaljer står i trusselmodellen, de
   oversettelsen fra trigger til 403 dekkes bare av byggerens integrasjons- og enhetstester (de kan ikke
   nås utenfra).
 - Aksepterte restrisikoer FE-S1..S4, FE-N1 og FE-N2 står i trusselmodellen, del 8.5.
+
+---
+
+# Nettplattform: kravanalyse (steg 5)
+
+> Skrevet av scriber for kjøringen `REQ-20261010-step5-analysis` 2026-10-10 (grenen `feat/analysis`,
+> byggecommits `d27c4a2`..`5c047fb`). **Før produkt, kun syntetiske data, aldri utrullet.** Trusselradene
+> T47-T52, standardvalgene og de aksepterte restrisikoene står i
+> [technical/web-platform-security.md, del 9](technical/web-platform-security.md#9-step-5-claim-analysis)
+> (engelsk). Beskrivelse for brukere: [README.no.md, kravanalyse](README.no.md#kravanalyse-steg-5).
+> Mermaid-diagrammene er de samme som i den engelske originalen
+> ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-claim-analysis-step-5)).
+
+## Oversikt (steg 5)
+
+Før steg 5 ble et krav opprettet ved import stående i `AWAITING_ANALYSIS` uten beløp og uten pakke, fordi
+regelmotoren bare fantes i Python-referansetjenesten. Steg 5 lukker sløyfen:
+import -> gjennomgang -> opprett krav -> **analyser** -> pakkerevisjon 1 -> gjennomgang etter
+firøyeprinsippet.
+
+- **Motor (`@fr/shared/analysis`).** En TypeScript-port av Pythons `rules/` (`detention.py`,
+  `invoice_checks.py`, `engine.py`) og `evidence/` (`letter.py`, Markdown-delen av `packet.py`). Modulen er
+  ren: ingen innebygde Node-moduler og ingen flyttall for penger eller timer. Den bruker en desimaltype som
+  er nøyaktig lik CPython (`py-decimal.ts`: presisjon 28, ROUND_HALF_EVEN, formatering som CPythons `str` og
+  `.2f`), CPythons `repr` for strenger og lister, og naive `YYYY-MM-DDTHH:MM:SS`-tidspunkter med
+  heltallsregning på dager. Regelversjon `rules-v1`, åtte regel-ID-er (`INV-DUPLICATE`,
+  `INV-LINEHAUL-RATE`, `INV-FUEL-SURCHARGE`, `INV-ACCESSORIAL-UNAUTH`, `INV-TOTAL-MISMATCH`,
+  `DET-UNBILLED`, `DET-UNDERBILLED`, `DET-OVERBILLED`). Innstillingene er konstanter
+  (`DEFAULT_ANALYSIS_SETTINGS`: ventetid i trinn på 15 minutter, toleranse 0,01, tvistefrist 90 dager).
+- **Hva et funn er.** Et funn er resultatet av en fast, deterministisk regel brukt på feltverdiene i
+  kravets godtatte dokumenter (hentet ut av parseren fra steg 3 og, der de var flagget, gjennomgått av en
+  person). Det er et **utkast til menneskelig gjennomgang, ikke et verifisert resultat**. Konfidensen på et
+  funn er en fast konstant per regel, kopiert fra Python-referansen (0,6, 0,85, 0,9 eller 0,95), ikke en
+  målt sannsynlighet, og produktet påstår ingenting om nøyaktighet. Evalueringsterskelen fra steg 4 kjøres
+  på syntetiske testdata og er ikke et mål på nøyaktighet.
+- **Ruter.** `POST /api/v1/claims/:id/analyze` (201) og `POST /api/v1/claims/analyze-awaiting` (200,
+  masseanalyse). Begge krever den nye tillatelsen `claims:analyze` (OWNER, ADMIN, MANAGER, REVIEWER,
+  ANALYST), har ingen API-nøkkel-scope og deler ratebegrensningsgruppen `analysis` per bruker
+  (`RATE_LIMIT_ANALYSIS_MAX`, standard 30 per 10 minutter).
+- **Livsløp.** Én analyse kjører i én tenant-transaksjon under radlåsen på kravet. Den lager pakkerevisjon
+  1 (`PENDING_REVIEW`, opprettet av den som ba om analysen) med kilder, funn (med sitater og en styrende
+  klausul), en tidslinje og innholdshashen. Den setter kravet til `PENDING_REVIEW` med `recoverableCents`,
+  `pendingReviewCents` og `amountClaimedCents`, øker `version` og legger til `claim.analyzed`. Ingen
+  `approvals`-rad skrives. Deretter gjelder den eksisterende gjennomgangsflyten uendret.
+- **Databasevakter.** Migreringen `20261012000000_analysis` legger til to triggere og ingen endring i
+  tabeller, kolonner, enumer eller tilganger.
+- **Nett.** En seksjon **Analyze claim** i kravpanelet (fanene Summary og Evidence) og en dialog **Analyze
+  awaiting claims** på kravsiden, begge vist bare med `claims:analyze` (tekstene i appen er på engelsk).
+
+Utsatt (ikke bygget): analyse ved opprettelse av krav (ikke noe flagg; masseanalysen er automatiseringen,
+med en eksplisitt menneskelig utløser), et `rules`-steg i evalueringsverktøyet, telemetrikomponenten
+`rules-v1`, et endepunkt for nedlasting av Markdown, strengere tolking av beløp, brevmaler per transportør.
+
+## Modulstruktur (steg 5)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src/features/claims"]
+        CSH["ClaimSheet.tsx"]
+        ACS["AnalyzeClaimSection.tsx"]
+        CPG["ClaimsPage.tsx"]
+        BAD["BulkAnalyzeDialog.tsx"]
+    end
+    subgraph Shared["packages/shared"]
+        ENG["analysis/ engine"]
+        PDC["analysis/py-decimal.ts"]
+        REN["analysis/ letter + markdown"]
+        CPY["analysis/copy.ts"]
+        ADT["analysis-dto.ts"]
+        RBC["rbac.ts + audit-actions.ts"]
+        TXS["text-sanitize.ts"]
+    end
+    subgraph API["api/src"]
+        CR["claims/routes.ts"]
+        CA["claims/analysis.ts"]
+        BU["imports/bundle.ts"]
+        SEC["http/security.ts + config"]
+        DG["http/db-guard.ts"]
+        CH["audit/chain.ts"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261012000000_analysis"]
+        TG1["claims_status_guard"]
+        TG2["packets_analysis_guard"]
+    end
+    subgraph Parity["parity (tests only)"]
+        PT["rules.parity.test.ts"]
+        PY["rules_dump.py (Python)"]
+    end
+
+    CSH --> ACS
+    CPG --> BAD
+    ACS --> CPY
+    BAD --> CPY
+    BAD --> ADT
+    ACS -. "HTTP" .-> CR
+    BAD -. "HTTP" .-> CR
+    CR --> SEC
+    SEC --> RBC
+    CR --> CA
+    CA --> BU
+    CA --> ENG
+    ENG --> PDC
+    ENG --> REN
+    REN --> TXS
+    CA --> CH
+    CA --> DG
+    CA --> TG1
+    CA --> TG2
+    MIG --> TG1
+    MIG --> TG2
+    PT --> ENG
+    PT --> PY
+
+    style CSH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ACS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CPG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BAD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ENG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PDC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style REN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CPY fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ADT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RBC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BU fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SEC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PY fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Modul/funksjon | Formål | Viktige avhengigheter | Endret i denne kjøringen |
+| --- | --- | --- | --- |
+| `packages/shared/src/analysis/py-decimal.ts` | CPythons `Decimal`-semantikk: tolking, addisjon, subtraksjon, multiplikasjon, vanlig divisjon og heltallsdivisjon, sammenligning, quantize, `str`, `.2f`, Pythons `max`/`sum` | ingen (BigInt) | ny |
+| `packages/shared/src/analysis/py-text.ts`, `local-datetime.ts` | CPythons `repr(str)` og repr av lister, `_norm_text`; naive tidspunkter, epokesekunder via days-from-civil, `%Y-%m-%d %H:%M` | ingen | ny |
+| `packages/shared/src/analysis/invoice-checks.ts`, `detention.ts`, `engine.ts` | Port av `rules/*.py`: `classifyLine`, fjerning av duplikater, fakturakontroller, `computeDetention`, `applyRules`; `applyRulesTraced` gir også spor per funn for sitatene | `py-decimal`, `py-text`, `local-datetime` | ny |
+| `packages/shared/src/analysis/letter.ts`, `markdown.ts`, `evidence.ts` | Port av `evidence/letter.py` og Markdown-delen av `packet.py`: `buildDemandLetter`, `renderPacketMarkdown`, `buildEvidence` (`buildEvidenceTraced`), `packetLoadNumber` | `text-sanitize.ts` (`plain`, `md`) | ny |
+| `packages/shared/src/analysis/types.ts`, `copy.ts`, `index.ts` | `AnalysisInputError`, `DEFAULT_ANALYSIS_SETTINGS`, `RULES_VERSION`, `RULE_IDS`, `DRAFT_BANNER`, `PACKET_DISCLAIMER`; UI-tekstene `ANALYSIS_NOTE`, `ANALYZE_AUTHOR_NOTE`, `ANALYSIS_TEXT`; underbanen `@fr/shared/analysis` | ingen | ny |
+| `packages/shared/src/analysis-dto.ts` | `AnalyzeBody` (streng `{}`), `BulkAnalyzeBody` (`limit` 1..25), svarskjemaer, `ANALYZE_BATCH_MAX = 25`, `ANALYZE_BATCH_DEFAULT = 10` | zod | ny |
+| `packages/shared/src/rbac.ts`, `audit-actions.ts` | `claims:analyze` lagt til (5 roller); `claim.analyzed`, `claim.bulk_analyzed` lagt til | ingen | endret |
+| `api/src/imports/bundle.ts` | `assembleBundleWithProvenance` (registrerer hvilket dokument og felt som fylte hver plass i bunten); `loadAnalysisInput` (kilder med `sizeBytes`, felt med side, linje og utdrag; felt sortert etter `ordinal, id`); `loadBundleForClaim` delegerer, uendret signatur | Prisma tenant-tx | endret |
+| `api/src/claims/analysis.ts` | `buildAnalysisPacket` (ren: rader, sitater, klausuler, tidslinje, hash, lagringskontroll), `analyzeClaim` (ett krav, én tx), `analyzeAwaiting` (masseanalyse), `storableCents`, `INT4_MAX` | `@fr/shared/analysis`, `bundle.ts`, `lockClaimForUpdate`, `appendAudit`, `packetContentHash` | ny |
+| `api/src/claims/routes.ts` | `POST /claims/:id/analyze` (201), `POST /claims/analyze-awaiting` (200); tillatelse `claims:analyze`, ingen `apiKeyScope`, `rateGroup: 'analysis'` | `analysis.ts` | endret |
+| `api/src/http/security.ts`, `context.ts`, `config.ts`, `app.ts` | Ratebegrensningsgruppen `analysis` (per bruker, vindu på 10 minutter); `RATE_LIMIT_ANALYSIS_MAX` (standard 30, 1..100000); `app.analysisLimiter` (null når ratebegrensning er av) sendes til masseanalysen | lager for ratebegrensning (Redis) | endret |
+| `api/src/http/db-guard.ts` | Eksakt gjenkjenning av triggerfeil (SQLSTATE `P0001` + eksakt melding, gjennom `cause`/`meta`/`driverAdapterError`, dybde 5), delt av firøyeprinsippet og analysen; `isAnalysisDbError` | ingen | ny (flyttet fra `app.ts`) |
+| `api/src/http/errors.ts`, `audit/chain.ts` | 422 `analysis_input_invalid`; metadatanøkler for steg 5 på tillatelseslisten | ingen | endret |
+| `api/prisma/migrations/20261012000000_analysis/` | `fr_claim_status_guard` + triggeren `claims_status_guard`; `fr_analysis_packet_guard` + triggeren `evidence_packets_analysis_guard` | `claims`, `evidence_packets` | ny |
+| `web/src/features/claims/AnalyzeClaimSection.tsx`, `ClaimSheet.tsx` | Analyseknapp med begge merknadene i fanene Summary og Evidence; faste feiltekster per statuskode; ved suksess lastes krav, pakke, kravliste og godkjenninger på nytt, og Evidence-fanen vises | `useCan('claims:analyze')`, delte tekster | ny / endret |
+| `web/src/features/claims/BulkAnalyzeDialog.tsx`, `ClaimsPage.tsx` | Knapp i verktøylinjen og modal dialog; POST `{ limit: 10 }`; sammendrag i et `role="status"`-område; kravnumre som feilet, via `SafeText` | `Dialog`, delte tekster | ny / endret |
+| `tools/parity/rules_dump.py`, `api/test/parity/rules.parity.test.ts` | Python-orakel (bare i tester, aldri i drift) og sammenligningen TS mot Python i `test:integration` | Python-referansetjenesten | ny |
+
+## Funksjonskall (steg 5)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST claims/:id/analyze"] --> PIPE["security pipeline"]
+    R2["POST analyze-awaiting"] --> PIPE
+    PIPE --> AC["analyzeClaim (one tx)"]
+    PIPE --> AW["analyzeAwaiting"]
+    AW --> SCAN["candidate scan (own tx)"]
+    AW --> CHG["chargeExtra (bucket)"]
+    AW --> AC
+    AW --> AUD2["audit bulk_analyzed"]
+    AC --> LK["lockClaimForUpdate"]
+    AC --> LI["loadAnalysisInput"]
+    LI --> PROV["assembleBundleWithProvenance"]
+    AC --> BP["buildAnalysisPacket"]
+    BP --> BE["buildEvidenceTraced"]
+    BE --> AR["applyRulesTraced"]
+    BE --> DL["buildDemandLetter"]
+    BP --> SC["storableCents"]
+    BP --> HASH["packetContentHash"]
+    AC --> INS["insert packet + children"]
+    INS --> TG2["packets_analysis_guard"]
+    AC --> CU["claim.update"]
+    CU --> TG1["claims_status_guard"]
+    AC --> AUD1["audit claim.analyzed"]
+
+    style AC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AW fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PROV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD2 fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalles av | Formål |
+| --- | --- | --- | --- |
+| `analyzeClaim(tx, claimId, actor, { bulk })` | `api/src/claims/analysis.ts` | enkeltruten (inne i `db.tx`), `analyzeAwaiting` (én `db.tx` per kandidat) | UUID-kontroll og radlås (404), ny kontroll av status og «ingen pakke» under låsen (409), last inndata (409 uten godtatt dokument), bygg (422), sett inn, oppdater, revisjonsspor |
+| `analyzeAwaiting(db, actor, limit, chargeExtra)` | `api/src/claims/analysis.ts` | masseruten | kandidater én gang, én tx per kandidat, resultatlister, stopp ved tomt budsjett, sammendragshendelse |
+| `loadAnalysisInput(tx, claimId)` | `api/src/imports/bundle.ts` | `analyzeClaim` | koblede `ACCEPTED`-dokumenter (eldste kobling først, likhet avgjøres av koblings-ID) til `{ bundle, provenance, sources }` |
+| `buildAnalysisPacket({ input, claim, now, actorId })` | `api/src/claims/analysis.ts` | `analyzeClaim` | ren: kjøring av motoren, lagringskontroll, rader for kilder, funn, sitater, klausuler og tidslinje, `HashPacket` og innholdshash |
+| `buildEvidenceTraced` / `buildEvidence` | `packages/shared/src/analysis/evidence.ts` | `buildAnalysisPacket`, paritetstesten | resultat, brev (UTC-dato for `now`), Markdown (lagres ikke), lastnummer |
+| `applyRules` / `applyRulesTraced` | `packages/shared/src/analysis/engine.ts` | `buildEvidence*`, paritetstesten | fakturafunn, funn om ventetid, fordeling etter perspektiv, summer |
+| `isAnalysisDbError` | `api/src/http/db-guard.ts` | `toHttpError` i `app.ts`, `analyzeAwaiting` | gjør `claim_transition_invalid` / `analysis_packet_invalid` om til 409 `invalid_state` (enkeltvis) eller `skipped` (masseanalyse) |
+| `fr_claim_status_guard`, `fr_analysis_packet_guard` | migreringen `20261012000000_analysis` | `BEFORE UPDATE OF status ON claims`, `BEFORE INSERT ON evidence_packets` | databasens sikring av livsløpet (nedenfor) |
+
+## Dataflyt (analyse av ett krav)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["POST claims/:id/analyze"] --> B["Pipeline: 403, 401, 429, 403, 400"]
+    B --> C["Tenant tx: lock claim row"]
+    C --> D{"Claim visible?"}
+    D -- no --> E["404 not_found"]
+    D -- yes --> F{"AWAITING, no packet, accepted doc?"}
+    F -- no --> G["409 invalid_state"]
+    F -- yes --> H["Load bundle + provenance"]
+    H --> I["Rules, letter, rows, hash"]
+    I --> J{"Input valid and storable?"}
+    J -- no --> K["422 analysis_input_invalid"]
+    J -- yes --> L["Insert rev 1 + children"]
+    L --> M["Claim to PENDING_REVIEW"]
+    M --> N{"Triggers agree?"}
+    N -- no --> O["Rollback: 409 invalid_state"]
+    N -- yes --> P["Append claim.analyzed: 201"]
+
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style J fill:#1e90ff,stroke:#1565c0,color:#fff
+    style N fill:#1e90ff,stroke:#1565c0,color:#fff
+    style P fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Ingenting skrives før 422-kontrollen, så en avvist analyse (404, 409, 422) endrer ingenting og skriver ingen
+`claim.analyzed`. Grenen «Triggers agree?» er en sikring som kontrollene i tjenesten gjør uoppnåelig gjennom
+API-et; nås den likevel, svarer API-et 409 `invalid_state` (aldri 500, aldri databaseteksten) og logger
+`analysis_db_guard` på feilnivå.
+
+| Steg | Hvor | Merknader |
+| --- | --- | --- |
+| Rekkefølge, ett krav | sikkerhetspipelinen, `analyzeClaim` | origin/CSRF 403 -> 401 -> 429 (`analysis`-bøtten) -> 403 `forbidden` -> 400 -> 404 -> 409 `invalid_state` -> 422 `analysis_input_invalid` |
+| Rekkefølge, masseanalyse | sikkerhetspipelinen | origin/CSRF 403 -> 401 -> 429 -> 403 -> 400 -> 200 (resultat per krav i svaret) |
+| 422 | `buildAnalysisPacket` | motoren avviser inndata (feilformet desimaltall eller tidspunkt, trinn 0), eller et resultat kan ikke lagres: et lagret funnbeløp eller en sum er negativ eller over 2 147 483 647 cent, eller de to summene til sammen er over grensen (RD3) |
+| Samtidighet | `lockClaimForUpdate` + ny kontroll | N parallelle analyser av ett krav: nøyaktig én 201, resten 409; én pakke, én hendelse, `version` +1 én gang. Unik `(claim_id, revision)` og indeksen for én levende revisjon er en ekstra sikring |
+| Svar | `AnalyzeResponse` | `claim` (id, status, tre centbeløp), `packet` (id, revisjon 1, status, `contentHash`), `analysis` (`rulesVersion`, `findingsCount`, `pendingFindingsCount`, `ignoredFindingsCount`) |
+
+## Kravets livsløp og databasevakter (steg 5)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    CM["import commit"] --> AW["AWAITING_ANALYSIS"]
+    AW -- "analyze: rev 1 with author" --> PR["PENDING_REVIEW"]
+    PR --> FL["existing review flow"]
+    FL -. "back to AWAITING: refused" .-> AW
+
+    style AW fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PR fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Trigger (funksjon) | Utløses av | Avviser | Feil |
+| --- | --- | --- | --- |
+| `claims_status_guard` (`fr_claim_status_guard`) | `BEFORE UPDATE OF status ON claims` | en statusendring **til** `AWAITING_ANALYSIS`; en endring **fra** `AWAITING_ANALYSIS` til noe annet enn `PENDING_REVIEW`, eller til `PENDING_REVIEW` når det ikke finnes en `evidence_packets`-rad for samme krav og tenant med `revision = 1` og `created_by_id` som ikke er null | `P0001` `claim_transition_invalid` |
+| `evidence_packets_analysis_guard` (`fr_analysis_packet_guard`) | `BEFORE INSERT ON evidence_packets` | en pakke for et krav i `AWAITING_ANALYSIS` med mindre `revision = 1`, `created_by_id` ikke er null og `status = 'PENDING_REVIEW'` | `P0001` `analysis_packet_invalid` |
+
+Begge funksjonene er `SECURITY DEFINER` (eier = migreringsrollen), har `search_path = public, pg_temp`,
+sammenligner `tenant_id` eksplisitt (så en manglende `app.tenant_id` ikke kan skjule rader), og har
+`EXECUTE` trukket tilbake fra `PUBLIC`. Eksisterende rader valideres ikke på nytt. Oppdateringer som ikke
+endrer `status`, andre statusendringer, innsetting av krav og innsetting av pakker for andre krav påvirkes
+ikke; særlig er beløps- og `version`-kolonnene til et krav i `AWAITING_ANALYSIS` **ikke** beskyttet av
+databasen (restrisiko SA-6 i trusselmodellen). De fire tidligere migreringene er uendret byte for byte.
+
+## Masseanalyse og ratebudsjettet `analysis`
+
+`POST /api/v1/claims/analyze-awaiting` med `{ "limit": n }` (1..25, standard 10; dialogen i nettappen
+sender alltid 10):
+
+1. **Kandidater**, hentet én gang i en kort tenant-transaksjon: tenantens krav i `AWAITING_ANALYSIS` med
+   minst ett koblet `ACCEPTED`-dokument, eldste `createdAt` først (likhet avgjøres av id), høyst
+   `min(4 x limit, 100)`.
+2. **Hver kandidat i sin egen transaksjon**, nøyaktig som enkeltruten. En kandidat som ikke lenger kan
+   analyseres (404/409, eller en avvisning fra en databasevakt), havner i `skipped` (`invalid_state`); en
+   som får 422, havner i `failed` (`analysis_input_invalid`). Enhver annen feil avslutter forespørselen
+   med 500; analyser som allerede er lagret, blir stående.
+3. **Budsjett (rettingsrunde 1, S5-1).** Forespørselens eget `analysis`-token dekker den første
+   kandidaten. Før hver ny kandidat tas ett token til fra brukerens `analysis`-bøtte
+   (`app.analysisLimiter`). Det trekkes per **forsøkt** kandidat, så kandidater som hoppes over eller
+   feiler, koster også ett. Med `RATE_LIMIT_ENABLED=false` (bare utvikling og test; produksjon avviser det)
+   trekkes ingenting ekstra.
+4. **Stoppvilkår:** `analyzed` når `limit`, kandidatene er brukt opp, eller bøtten er tom. Et stopp på
+   grunn av budsjettet gir fortsatt 200 med samme form; krav som ikke ble forsøkt, blir i
+   `AWAITING_ANALYSIS` og telles i `remaining`. `examined` = forsøkte kandidater = analyzed + skipped +
+   failed.
+5. **Sammendrag.** Én `claim.bulk_analyzed`-hendelse (mål `tenant`) i egen transaksjon, med `limit`,
+   `examined`, `analyzed`, `skipped`, `failed` og `remaining` (tenantens krav som fortsatt venter på
+   analyse etter kjøringen).
+
+Virkning: en bruker kan utføre høyst `RATE_LIMIT_ANALYSIS_MAX` analyser per vindu på 10 minutter, enten
+enkeltruten eller masseruten brukes. Før rettingsrunde 1 kostet én masseforespørsel ett token for opptil 25
+analyser (25 ganger forsterkning, sikkerhetsfunn S5-1, Low). Samtidige masseforespørsler analyserer aldri
+et krav to ganger; den som taper kappløpet, rapporterer kravet som `skipped`.
+
+Kjente begrensninger (trusselmodellen del 9.5): kandidater som hoppes over eller feiler, bruker av
+budsjettet (SA-1); en feil i ratebegrenseren midt i kjøringen (for eksempel at Redis ikke svarer) avslutter
+forespørselen med 500 og uten `claim.bulk_analyzed` (SA-2); dialogen sier ikke at budsjettet stoppet
+kjøringen, men sammendraget («n still awaiting analysis») er fortsatt riktig (SA-3); et krav som feiler med
+422, forblir en kandidat og forsøkes først i hver kjøring fordi det er gammelt (SA-8).
+
+## Innholdet i pakken (revisjon 1)
+
+| Del | Innhold |
+| --- | --- |
+| Pakke | `revision 1`, `PENDING_REVIEW`, kravets perspektiv, `loadNumber` (første ikke-tomme fra faktura, ratebekreftelse (rate confirmation), fraktbrev (bill of lading)), `generatedAt` = analysetidspunktet, `PACKET_DISCLAIMER`, utkastet til kravbrev (datert med UTC-datoen for `generatedAt`), USD, `verifier NOT_RUN`, `createdBy` = den som ba om analysen, innholdshash |
+| Kilder | én per koblet `ACCEPTED`-dokument i koblingsrekkefølge: visningsnavn, type, SHA-256, størrelsen på den lagrede originalen |
+| Funn | funn for eget perspektiv i motorens rekkefølge (regel-ID, tittel, retning, beløp i cent, forklaring, utregningssteg, konfidens, `needsHumanReview`); funn i motsatt retning telles (`ignoredFindingsCount`), men lagres ikke |
+| Sitater | per regel, feltene som ga grunnlaget, som `{sourceId, locator, excerpt}` med lokator `<navn>:L<linje>`, `<navn>:p<side>:L<linje>` eller `<navn>:manual`; utdrag gjennom `plain(..., 200)`; duplikater fjernet |
+| Styrende klausul | feltet i ratebekreftelsen (rate confirmation) som regelen sammenligner med (linehaul-rate, drivstofftillegg, godkjente tilleggstjenester, fri ventetid), eller null |
+| Tidslinje | avtalt tid, ankomst, avgang (fraktbrev) og fakturadato, lagret med naive lokale tider lest som UTC; anlegg og fakturanummer gjennom `plain(..., 100)` |
+
+Sitater, styrende klausuler og tidslinjen er tillegg som bare finnes i TS, uten motpart i Python. De inngår
+i innholdshashen, så hashbindingen ved godkjenning og sending dekker dem.
+
+## Revisjonsspor (steg 5)
+
+| Handling | Når | Mål | Metadata (eksakt nøkkelsett) |
+| --- | --- | --- | --- |
+| `claim.analyzed` | hver vellykket analyse, i samme transaksjon som skrivingen | `claim` | `claimId`, `claimNumber`, `packetId`, `revision`, `contentHash`, `perspective`, `fromStatus`, `toStatus`, `documentIds`, `findingsCount`, `pendingFindingsCount`, `ignoredFindingsCount`, `recoverableCents`, `pendingReviewCents`, `rulesVersion`, `bulk` |
+| `claim.bulk_analyzed` | én gang per masseforespørsel som når handleren og fullføres, etter transaksjonene per krav | `tenant` | `limit`, `examined`, `analyzed`, `skipped`, `failed`, `remaining` (alle heltall) |
+
+Ingen navn, filnavn, uttrukne verdier, brevtekst eller begrunnelser havner i metadata. Avviste analyser (409,
+422) skriver ingen hendelse; avvisning på grunn av manglende tillatelse beholder den eksisterende
+`authz.denied`-oppførselen. Rensingen av metadata kutter lister ved 50 elementer, så `documentIds` ville
+være ufullstendig for et krav med mer enn 50 koblede godtatte dokumenter; radene i `packet_sources` er
+fortsatt fullstendige (SA-4).
+
+## Python-paritet: registrerte avvik (RD1-RD6)
+
+`api/test/parity/rules.parity.test.ts` (del av `npm run test:integration`; samme regel for å finne Python
+som paritetstestene fra steg 3: CI uten Python feiler, en lokal kjøring uten Python hoppes over med en
+melding) sender de samme sakene til TS-motoren og til `tools/parity/rules_dump.py`, som kaller
+Python-referansen med eksplisitte `Settings`. Den sammenligner med eksakt strenglikhet: `classifyLine`,
+JSON fra `computeDetention`, JSON fra `applyRules`, brevet, Markdown og lastnummeret, og kontrollerer at
+begge sider avviser de samme inndataene. Paritetsdomene: desimaltall
+`-?(0|[1-9][0-9]{0,14})(\.[0-9]{1,6})?`; tidspunkter `YYYY-MM-DDTHH:MM:SS`, år 1000-9999; strenger av
+tildelte kodepunkter uten kontrolltegn, bidi-kontrolltegn eller U+2028/U+2029, høyst 200 kodepunkter;
+trinn 1..240; frist 1..3650 dager.
+
+| ID | Avvik (TS mot Python) | Begrunnelse |
+| --- | --- | --- |
+| RD1 | Tidspunkter er bare naive `YYYY-MM-DDTHH:MM:SS`; forskyvninger avvises (`AnalysisInputError`). Pythons veier med tidssoner har ingen TS-inndata. | Uttrekket fra steg 3 lagrer naive lokale tider; det finnes ingen tidssone å bruke. |
+| RD2 | `%Y` fyller ut år under 1000 til 4 sifre (CPython på Linux gjør ikke det). | Korpuset bruker år 1000 og senere. |
+| RD3 | API-et avviser negative resultater og resultater over INT4 (422) der Python ville gitt dem ut. Den rene motoren er fortsatt lik Python. | Beløp lagres som int4-cent; et negativt kravbeløp gir ingen mening. |
+| RD4 | Store/små bokstaver og utskrivbarhet følger ICU-tabellene i Node 22, ikke Pythons Unicode-database. | Korpuset utelater kodepunkter som ikke er tildelt. |
+| RD5 | Ende til ende lister TS-pakken kravets godtatte koblede dokumenter; Python lister hver innleste fil. | Bare godtatte dokumenter gir grunnlag for et krav. |
+| RD6 | Brevdatoen er UTC-datoen for `generatedAt`; Python bruker den lokale datoen for `datetime.now()`. | Uavhengig av serverens tidssone; paritetskjøringer sender samme `now`. |
+
+Byggerens korpus (frø `20261010`): 2 132 saker (4 ende-til-ende-saker fra testdataene, 623 inndata fra
+Pythons testfiler, 1 200 genererte bunter, 300 genererte ventetidssaker, 5 klassifiseringsbunker med 200
+beskrivelser hver). Resultat i byggerens kjøring: null forskjeller på Node 22 og Node 24, hver regel-ID
+brukt, og ingen registrerte avvik trengtes innenfor korpuset. Testerens uavhengige orakel
+(`api/test-acceptance/helpers/rules_oracle.py`) besto P01-P05 i akseptansekjøring 1; antall saker per
+korpus er ennå ikke registrert.
+
+## Standardvalg (steg 5)
+
+| ID | Standard | Stedet å endre |
+| --- | --- | --- |
+| D1 | `claims:analyze` = OWNER, ADMIN, MANAGER, REVIEWER, ANALYST; ingen API-nøkkel-scope | raden i `rbac.ts` |
+| D2 | Forfatter av revisjon 1 = den som ba om analysen (enkeltvis og i masseanalyse); de som lastet opp eller redigerte felt i dokumentene, er ikke forfattere av kravet | `analysis.ts` + firøyepredikatet |
+| D3 | Analyse ved opprettelse av krav er ikke bygget; masseanalysen er automatiseringen | fremtidig flagg + migreringsrad |
+| D4 | Bare funn for eget perspektiv lagres | `buildAnalysisPacket` |
+| D5 | Null funn gir likevel revisjon 1 med nullbeløp og brevet «No amount is requested» | `analyzeClaim` |
+| D6 | Negative resultater eller resultater over INT4 -> 422, kravet uendret | `buildAnalysisPacket` |
+| D7 | Innstillingene er konstanter (15 min, 0,01, 90 dager) | `DEFAULT_ANALYSIS_SETTINGS` |
+| D8 | Brevdato = UTC-datoen for `generatedAt`; naive tider i tidslinjen lagres som UTC | `buildEvidence`, tidslinjen |
+| D9 | Masseanalyse: `limit` 1..25 (standard 10), skannetak `min(4 x limit, 100)`, eldste først | `analyzeAwaiting` |
+| D10 | Ratebegrensningsgruppen `analysis`, `RATE_LIMIT_ANALYSIS_MAX` 30 per 10 minutter, trukket per kandidat i masseanalyse | konfigurasjon, `analyzeAwaiting` |
+
+## Grensesnitt for senere steg (etter steg 5)
+
+- Hold `rule_id` innenfor `RULE_IDS` og øk `RULES_VERSION` når en regel endres; intelligence fra steg 4 og
+  paritetstestene er avhengige av begge.
+- Åpent: `rules`-steget i evalueringen, telemetri `rules-v1`, analyse ved opprettelse av krav, et
+  endepunkt for nedlasting av Markdown, strengere tolking av beløp.
+- En fremtidig HTML-, Markdown- eller PDF-visning av lagrede funn må rense `explanation` og `calculation`:
+  de inneholder den rå beskrivelsen av fakturalinjen (SA-5). Bare brevet bruker `plain()`.
+- En ny kodevei som skriver kravbeløp, må holde seg til analysetransaksjonen eller utvide statusvakten
+  (SA-6).
+
+## Merknader (steg 5)
+
+- Hva som ble kjørt (lokalt, Windows, **ikke GitHub CI**): byggeren kjørte lint, typecheck og
+  enhetstester (shared 165, api 370, web 78), paritetstestene for reglene (2 132 saker, null forskjeller på
+  Node 22 og 24) og integrasjonstestene på Node 22.23.3 (16 filer, 107 bestått, 3 lokale plassholdere
+  hoppet over), alt ved `b12ce2a`. Den uavhengige akseptansekjøringen 1 (Node 22.23.3, `CI=true`, ved
+  `b12ce2a`) ga shared 81/81 og api 754 bestått, 4 feilet, 10 hoppet over; alle de 4 feilene ble
+  klassifisert som testdesign og rettet i testfilene, men den bekreftende kjøringen ble stoppet av lite
+  ledig minne. Akseptansetestene for nettappen (AN-W01..W11) er ikke kjørt ennå. Rettingsrunde 1
+  (`5c047fb`) ble bare kontrollert med lint, typecheck og utvalgte enhetstester; det finnes ingen
+  integrasjons- eller akseptansekjøring ved `5c047fb`.
+- Gjennomgangens vurdering da dette ble skrevet: FAIL (validering ufullstendig), ingen kodefeil funnet.
+  Avvikene 1-8 i kjøringens `implementation.md` ble godtatt.
+- `.env.example` har `RATE_LIMIT_ANALYSIS_MAX=30` uten kommentartegn, i motsetning til innstillingene fra
+  steg 4; verdien er lik standardverdien.
+- Ikke verifisert: GitHub CI, container-images, compose-stacken, Playwright, enhver AWS-utrulling.

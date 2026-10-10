@@ -177,7 +177,7 @@ Programvarefundamentet ovenfor er nødvendig, ikke tilstrekkelig. Fortsatt påkr
 > [ARCHITECTURE.no.md, «Nettplattform»](ARCHITECTURE.no.md#nettplattform-typescript-steg-1-2).
 
 En nettapplikasjon med flere tenants for arbeidsflyten rundt bevispakker, bygget med sikkerhet først.
-Byggesteg 1 til 4 er ferdige:
+Byggesteg 1 til 5 er ferdige:
 
 - **Steg 1:** innlogging med e-post og passord (argon2id), et kortlivet tilgangstoken pluss en roterende
   refresh-informasjonskapsel, TOTP-MFA for eier, administrator og plattformroller, utestenging med
@@ -202,12 +202,18 @@ Byggesteg 1 til 4 er ferdige:
 - **Firøyeprinsippet (etter steg 4):** den som har redigert en revisjon, kan ikke godkjenne eller avvise
   den; den som har lastet opp, korrigert eller lagt til felt i et dokument, kan ikke godta det. Se
   [Firøyeprinsippet (arbeidsdeling)](#firøyeprinsippet-arbeidsdeling).
+- **Steg 5:** **kravanalyse**. Python-reglene og utkastet til kravbrev er portert til TypeScript (utdata
+  identisk tegn for tegn med Python-referansen på et paritetskorpus, bortsett fra seks registrerte avvik).
+  En **analyse**-handling gjør et importert krav som venter på analyse, om til bevispakkerevisjon 1 for
+  menneskelig gjennomgang; en massehandling analyserer opptil 10 om gangen. Se
+  [Kravanalyse (steg 5)](#kravanalyse-steg-5).
 
 «Send» merker bare et krav som klart til sending og logger det i revisjonssporet. Ingen e-post sendes, og
 ingen penger flyttes. De seedede kravene og bevispakkene er syntetiske og er transkribert fra
-Python-CLI-ens utdata på `tests/fixtures/`. Krav som opprettes ved import, har ennå ingen beløp eller
-pakke. OCR, mottak av videresendt e-post, enhver lært modell eller LLM-kall og TS-porten av
-Python-reglene (byggesteg 5, som skal analysere importerte krav) er senere steg.
+Python-CLI-ens utdata på `tests/fixtures/`. Krav som opprettes ved import, har ingen beløp eller pakke før
+noen kjører analysen (steg 5). Funn er regelresultater på uttrukne felt og er utkast som trenger
+menneskelig gjennomgang. OCR, mottak av videresendt e-post og enhver lært modell eller LLM-kall er senere
+steg.
 
 **Python-tjenesten og pilotdashbordet `webapp/` er uendret og blir værende.** Nettplattformen har sin
 egen compose-fil (`compose.web.yml`), sin egen CI-arbeidsflyt (`.github/workflows/web-ci.yml`) og sin
@@ -349,8 +355,8 @@ skjuler bare kontrollene.
 - **Opprett krav fra godtatte dokumenter** (på importsiden; du velger avsender eller transportør)
   grupperer de godtatte dokumentene etter lastnummer. Det oppretter et nytt krav med status **Venter på
   analyse** (`AWAITING_ANALYSIS`), eller kobler dokumentene til et eksisterende krav. Et nytt krav har
-  ingen beløp og ingen bevispakke før analysesteget (byggesteg 5) finnes. Har kravet allerede en pakke,
-  kobles dokumentene bare til, og pakken endres ikke.
+  ingen beløp og ingen bevispakke før noen analyserer det ([Kravanalyse (steg 5)](#kravanalyse-steg-5)).
+  Har kravet allerede en pakke, kobles dokumentene bare til, og pakken endres ikke.
 
 **Konfidens er en regelbasert parsepoengsum, ikke et mål på nøyaktighet.** Den sier hvordan verdien ble
 lest (for eksempel 0,95 for en eksplisitt `Nøkkel: verdi`-linje i en tekst- eller CSV-fil, 0,85 for en
@@ -539,9 +545,8 @@ forklarer plasseringen («Confirmed recoverable $1,000.00 (counted at 100%)», �
 $400.00 (counted at 25%)», hvor mange funn som fortsatt trenger gjennomgang, og «Waiting 3 days (not part
 of the score)») og neste handling (Resolve findings, Review and approve, Mark send-ready). Siden sier:
 «This is a work-order aid, not a forecast of what will be recovered.» Krav som fortsatt er
-`AWAITING_ANALYSIS`, rangeres ikke; siden teller dem («Not ranked: n claims awaiting analysis»). Til
-byggesteg 5 analyserer importerte krav, er arbeidslisten for en ekte tenant tom; bare de seedede
-demokravene rangeres.
+`AWAITING_ANALYSIS`, rangeres ikke; siden teller dem («Not ranked: n claims awaiting analysis»). Et
+importert krav kommer med i arbeidslisten når det er analysert ([Kravanalyse (steg 5)](#kravanalyse-steg-5)).
 
 **Lignende tidligere krav (`similar-v1`).** Det åpne kravet sammenlignes med de 500 sist oppdaterte
 kravene i samme tenant (`SIMILAR_CANDIDATE_LIMIT`) som teamet allerede har avgjort (`APPROVED`,
@@ -665,8 +670,9 @@ Kjøringen `REQ-20261009-four-eyes` gjør at to beslutninger krever en annen per
 dette; skjermbildene skjuler bare knappen.
 
 - **Krav.** Den som har laget en revisjon av kravets bevispakke (den gjeldende eller en eldre), kan ikke
-  godkjenne eller avvise kravet. En annen bruker med godkjenningsrett må gjøre det. En seedet eller
-  generert revisjon 1 har ingen registrert oppretter og utelukker ingen. Å merke en godkjent revisjon som
+  godkjenne eller avvise kravet. En annen bruker med godkjenningsrett må gjøre det. En seedet revisjon 1
+  har ingen registrert oppretter og utelukker ingen. Siden steg 5 registreres den som kjører analysen,
+  som oppretter av revisjon 1 (se [Kravanalyse (steg 5)](#kravanalyse-steg-5)). Å merke en godkjent revisjon som
   klar til sending er uendret: godkjenneren kan gjøre det, og det kan også en forfatter når en annen har
   godkjent.
 - **Importerte dokumenter.** Den som lastet opp et dokument, eller korrigerte eller la til et av feltene,
@@ -688,6 +694,116 @@ dette; skjermbildene skjuler bare knappen.
   [technical/web-platform-security.md, del 8](technical/web-platform-security.md#8-four-eyes-separation-of-duties)
   (engelsk).
 
+## Kravanalyse (steg 5)
+
+Kjøringen `REQ-20261010-step5-analysis` lukker sløyfen fra import til gjennomgang: import -> gjennomgang ->
+opprett krav -> **analyser** -> bevispakkerevisjon 1 -> godkjenning av en annen person. Arkitektur:
+[ARCHITECTURE.no.md, kravanalyse](ARCHITECTURE.no.md#nettplattform-kravanalyse-steg-5). Trusselmodell og
+restrisikoer: [technical/web-platform-security.md, del 9](technical/web-platform-security.md#9-step-5-claim-analysis)
+(engelsk).
+
+**Hva analysen er, og hva den ikke er.** Den kjører de faste reglene fra Python-referansetjenesten
+(dupliserte gebyrlinjer, linehaul og drivstoff over ratebekreftelsen, tilleggstjenester som ikke er oppført
+som godkjent, fakturasum over summen av linjene, opptjent mot fakturert ventetid) på feltverdiene i kravets
+godtatte dokumenter, og skriver et utkast til kravbrev. Funn er **deterministiske regelresultater på
+uttrukne felt. De er utkast som trenger menneskelig gjennomgang, ikke verifiserte resultater.** Konfidensen
+som vises på et funn, er et fast tall per regel, ikke en målt sannsynlighet, og ingenting her påstår
+nøyaktighet. Evalueringsterskelen (steg 4) kjøres på syntetiske testdata og er ikke et mål på nøyaktighet.
+
+### Hvem kan analysere
+
+| Rolle | Analysere ett krav, analysere krav som venter |
+| --- | --- |
+| OWNER, ADMIN, MANAGER, REVIEWER, ANALYST | ja |
+| VIEWER, PLATFORM_DEV, SUPER_ADMIN | nei |
+
+Tillatelsen er `claims:analyze` i `packages/shared/src/rbac.ts`. API-nøkler kan ikke kalle noen av rutene
+(403 `forbidden`), uansett scope.
+
+### Analysere ett krav
+
+1. Åpne et krav med status **Venter på analyse** (`AWAITING_ANALYSIS`). Det trenger minst ett koblet
+   dokument med status godtatt.
+2. Velg **Analyze claim** i fanen **Summary** eller **Evidence**. Seksjonen sier: «Runs fixed rules on
+   the accepted document fields. Findings are drafts for human review, not verified results.» og «You will
+   be recorded as the author of revision 1, so another approver must approve it.» (tekstene i appen er på
+   engelsk).
+3. Ved suksess sier varselet «Analysis complete. Revision 1 is ready for review.», og Evidence-fanen viser
+   revisjon 1: kilder, funn med sitater tilbake til dokumentlinjene, en tidslinje og utkastet til brev.
+   Kravet har nå status **Venter på gjennomgang** (`PENDING_REVIEW`) med beløp, og det vises i `/approvals` og i
+   arbeidslisten i Recovery intelligence.
+
+Avvises analysen, viser seksjonen en fast melding: 409 «This claim is no longer awaiting analysis or has no
+accepted documents. Reload to continue.», 422 «The extracted values of this claim cannot be analysed
+automatically.», 403 «You do not have permission to analyze claims.», 429 «Too many requests. Try again
+later.», alt annet «Analysis failed. Try again.» En avvist analyse endrer ingenting.
+
+En 422 betyr at reglene avviste inndataene (for eksempel et feilformet beløp eller en feilformet dato),
+eller at resultatet ikke kan lagres (et negativt beløp, eller mer enn 2 147 483 647 cent). Kravet blir
+stående som Venter på analyse. Godtatte dokumenter kan ikke endres, så et slikt krav trenger en ny import
+av rettede dokumenter (se restrisikoene).
+
+### Analysere krav som venter (masseanalyse)
+
+På kravsiden åpner **Analyze awaiting claims** en dialog («Analyzes up to 10 claims awaiting analysis,
+oldest first.»). **Analyze** sender én forespørsel med `{ "limit": 10 }` og viser et sammendrag som «Analyzed
+8. Skipped 1. Could not analyze 1. 4 still awaiting analysis.», pluss kravnumrene som ikke kunne
+analyseres.
+
+- API-et godtar `limit` 1..25 (standard 10) og ser på høyst `min(4 x limit, 100)` kandidater: krav som
+  venter på analyse og har minst ett godtatt dokument, eldste først.
+- Hvert krav analyseres i sin egen transaksjon, nøyaktig som enkelthandlingen. Et krav som noen andre har
+  analysert i mellomtiden, **hoppes over** (skipped); et krav som får 422, **kunne ikke analyseres**
+  (could not analyze). Krav som allerede er analysert, forblir analysert selv om et senere feiler.
+- **Ratebudsjett.** Begge rutene deler ditt `analysis`-budsjett per bruker (`RATE_LIMIT_ANALYSIS_MAX`,
+  standard 30 per 10 minutter). En masseforespørsel bruker én enhet for det første kravet den prøver, og
+  én enhet til for hvert nytt krav den prøver, også krav som hoppes over eller ikke kunne analyseres. Når
+  budsjettet er brukt opp, stopper kjøringen tidlig og svarer likevel normalt: kravene den ikke prøvde,
+  blir stående som Venter på analyse og telles i «still awaiting analysis». Dialogen sier ikke at
+  budsjettet stoppet kjøringen; vent til vinduet er over og kjør på nytt. Er budsjettet allerede tomt, får
+  forespørselen 429.
+- Et krav som fortsetter å feile med 422, forblir en kandidat. Fordi masseanalysen tar de eldste kravene
+  først, prøves det (og belastes) på nytt i hver kjøring til det importeres på nytt.
+
+### Firøyeprinsippet etter analyse
+
+Den som kjører analysen (enkeltvis eller som masseanalyse), registreres som forfatter av revisjon 1.
+Firøyeprinsippet avviser da den personens godkjenning eller avvisning av kravet, og `/approvals` viser dem
+«You edited this revision. Another approver must approve it.» (den eksisterende teksten). En annen
+godkjenner må avgjøre. De som lastet opp eller redigerte kravets dokumenter, regnes **ikke** som forfattere
+av kravet; firøyeprinsippet for dokumenter krevde allerede at en annen person godtok dokumentene, unntatt
+dokumenter som ble godtatt automatisk ved opplasting.
+
+### API
+
+| Rute | Innhold | Suksess |
+| --- | --- | --- |
+| `POST /api/v1/claims/:id/analyze` | `{}` (eller uten innhold) | 201: `claim` (status og beløp i cent), `packet` (id, revisjon 1, innholdshash), `analysis` (`rulesVersion: "rules-v1"`, antall funn) |
+| `POST /api/v1/claims/analyze-awaiting` | `{ "limit": 1..25 }` (valgfritt, standard 10) | 200: `limit`, `examined`, `analyzed[]`, `skipped[]`, `failed[]`, `remaining` |
+
+Begge rutene krever en innlogget bruker (API-nøkler avvises) og går gjennom de samme Origin- og
+CSRF-kontrollene som alle andre ruter som endrer data. Hver vellykket analyse registreres i tenantens
+revisjonsspor som `claim.analyzed`; hver masseforespørsel skriver også ett sammendrag
+`claim.bulk_analyzed` (bare antall).
+
+### Konfigurasjon (steg 5)
+
+| Variabel | Standard | Betydning |
+| --- | --- | --- |
+| `RATE_LIMIT_ANALYSIS_MAX` | 30 | analyser per bruker per 10 minutter, delt av enkeltruten og masseruten (1..100000; av bare med `RATE_LIMIT_ENABLED=false`, som produksjon avviser) |
+
+Regelinnstillingene er faste i dette steget: ventetid i trinn på 15 minutter, en toleranse på $0,01 og en
+tvistefrist på 90 dager (Python-standardene). De kan ikke konfigureres.
+
+### Ikke dekket (akseptert foreløpig)
+
+Analysen kjører ikke automatisk når krav opprettes; massehandlingen er automatiseringen. Et dokument som
+kobles til et krav etter analysen, siteres ikke i revisjon 1. Dokumenter som godtas automatisk ved
+opplasting, brukes i analysen på samme måte som gjennomgåtte dokumenter. Den fullstendige listen over
+restrisikoer står i
+[technical/web-platform-security.md, del 9.5](technical/web-platform-security.md#95-accepted-residuals-step-5)
+(engelsk).
+
 ## Tester og kontroller
 
 ```bash
@@ -699,7 +815,7 @@ npm run build                # shared + api + web (+ dist check: no inline scrip
                              # builds the parser worker, so run it BEFORE the integration/acceptance suites
 npm run test:integration     # api, against a migrated + seeded test DB (TEST_DATABASE_URL, TEST_ADMIN_DATABASE_URL,
                              # and the same MFA_ENC_KEY the seed used), S3 (MinIO) and Python (PYTHON=...) for the
-                             # parity suite; see the env block in .github/workflows/web-ci.yml
+                             # parity suites (step 3 extraction, step 5 rules); see the env block in .github/workflows/web-ci.yml
 npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
 npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1   # step 4: after npm run build
 npm run audit && npm audit signatures
@@ -739,3 +855,15 @@ miljøet fra `web-ci.yml`): lint, typecheck, enhetstester (shared 136, api 356, 
 bestått med 9 hoppet over og 2 todo, web 150 bestått med 1 hoppet over). **Ikke kjørt:** Node 24, GitHub
 CI, `npm run audit`, container-images, Playwright, enhver AWS-utrulling. Paritetstestene brukte Python
 3.14 (CI bruker 3.12).
+
+Steg 5 (2026-10-10, kjøringen `REQ-20261010-step5-analysis`, Windows, **lokale kjøringer, ikke GitHub
+CI**; valideringen er **ikke fullført**): byggeren kjørte lint, typecheck, enhetstester (shared 165, api
+370, web 78), paritetstestene for reglene (2 132 saker, null forskjeller på Node 22.23.3 og Node 24) og, på
+Node 22.23.3, migrering + seed (også `--reset`), build og integrasjon (16 filer, 107 bestått, 3 lokale
+plassholdere hoppet over), ved commit `b12ce2a`. Den første uavhengige akseptansekjøringen (Node 22.23.3,
+`CI=true`, samme commit) ga shared 81/81 og api 754 bestått, 4 feilet, 10 hoppet over; de 4 feilene var
+feil i testdesignet, rettet i testfilene, men ennå ikke bekreftet fordi den nye kjøringen ble stoppet av
+lite ledig minne. Akseptansetestene for nettappen er ikke kjørt ennå. Rettingscommiten `5c047fb`
+(budsjettet for masseanalyse) ble bare kontrollert med lint, typecheck og utvalgte enhetstester. **Ikke
+kjørt:** akseptanse og integrasjon ved `5c047fb`, GitHub CI, container-images, Playwright, enhver
+AWS-utrulling.

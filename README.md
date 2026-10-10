@@ -174,7 +174,7 @@ The software foundation above is necessary, not sufficient. Still required:
 > [technical/web-platform-security.md](technical/web-platform-security.md). Architecture:
 > [ARCHITECTURE.md, "Web platform"](ARCHITECTURE.md#web-platform-typescript-steps-1-2).
 
-A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 to 4
+A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 to 5
 are done:
 
 - **Step 1:** email + password login (argon2id), a short-lived access token plus a rotating refresh
@@ -196,11 +196,17 @@ are done:
 - **Four-eyes (after step 4):** the person who edited a revision cannot approve or reject it; the person
   who uploaded, corrected or added fields to a document cannot accept it. See
   [Four-eyes (separation of duties)](#four-eyes-separation-of-duties).
+- **Step 5:** **claim analysis**. The Python rules and the draft demand letter are ported to TypeScript
+  (string-identical output to the Python reference on a parity corpus, apart from six registered
+  divergences). An **Analyze** action turns an imported claim that is awaiting analysis into evidence
+  packet revision 1 for human review; a bulk action analyzes up to 10 at a time. See
+  [Claim analysis (step 5)](#claim-analysis-step-5).
 
 "Send" only marks a demand send-ready and audits it. No email is sent and no money moves. The seeded claims and
 packets are synthetic and are transcribed from the Python CLI output on `tests/fixtures/`. Claims created
-by import have no amounts or packet yet. OCR, email-forward ingestion, any learned model or LLM call, and
-the TS port of the Python rules (build step 5, which will analyse imported claims) are later steps.
+by import have no amounts or packet until someone runs the analysis (step 5). Findings are rule outputs on
+extracted fields and are drafts that need human review. OCR, email-forward ingestion and any learned model
+or LLM call are later steps.
 
 **The Python service and the `webapp/` pilot dashboard are unchanged and remain.** The web platform has
 its own compose file (`compose.web.yml`), CI workflow (`.github/workflows/web-ci.yml`) and Terraform
@@ -341,9 +347,9 @@ The UI only hides the controls.
   ([four-eyes](#four-eyes-separation-of-duties)).
 - **Create claims from accepted documents** (on the Import page; you choose Shipper or Carrier) groups
   the accepted documents by load number. It creates a new claim with status **Awaiting analysis**, or
-  links the documents to an existing claim. A new claim has no amounts and no evidence packet until the
-  analysis step (build step 5) exists. A claim that already has a packet only gets the documents linked;
-  its packet does not change.
+  links the documents to an existing claim. A new claim has no amounts and no evidence packet until
+  someone analyzes it ([Claim analysis (step 5)](#claim-analysis-step-5)). A claim that already has a
+  packet only gets the documents linked; its packet does not change.
 
 **Confidence is a rule-based parse score, not an accuracy measure.** It says how the value was read (for
 example 0.95 for an explicit `Key: value` line in a text or CSV file, 0.85 for a PDF, lower for a
@@ -545,8 +551,8 @@ lists why it is where it is ("Confirmed recoverable $1,000.00 (counted at 100%)"
 $400.00 (counted at 25%)", how many findings still need review, and "Waiting 3 days (not part of the
 score)") and a next action (Resolve findings, Review and approve, Mark send-ready). The page states:
 "This is a work-order aid, not a forecast of what will be recovered." Claims still `AWAITING_ANALYSIS`
-are not ranked; the page counts them ("Not ranked: n claims awaiting analysis"). Until build step 5
-analyses imported claims, a real tenant's worklist is empty; only the seeded demo claims rank.
+are not ranked; the page counts them ("Not ranked: n claims awaiting analysis"). An imported claim
+enters the worklist once it has been analyzed ([Claim analysis (step 5)](#claim-analysis-step-5)).
 
 **Similar past claims (`similar-v1`).** The open claim is compared with the 500 most recently updated
 claims of the same tenant (`SIMILAR_CANDIDATE_LIMIT`) that the team has already decided (`APPROVED`,
@@ -669,8 +675,9 @@ Run `REQ-20261009-four-eyes` makes two decisions need a second person. The serve
 screens only hide the button.
 
 - **Claims.** Whoever created any revision of a claim's evidence packet (the current one or an older one)
-  cannot approve or reject the claim. Another user with approval rights must do it. A seeded or generated
-  revision 1 has no recorded creator and excludes nobody. Marking an approved revision send-ready is
+  cannot approve or reject the claim. Another user with approval rights must do it. A seeded revision 1
+  has no recorded creator and excludes nobody. Since step 5, the person who runs the analysis is recorded
+  as the creator of revision 1 (see [Claim analysis (step 5)](#claim-analysis-step-5)). Marking an approved revision send-ready is
   unchanged: the approver may do it, and so may an author once someone else has approved.
 - **Imported documents.** Whoever uploaded a document, or corrected or added any of its fields, cannot
   accept it. Another reviewer must. Confirming a field, rejecting a field, changing the document type
@@ -689,6 +696,111 @@ screens only hide the button.
   has no human acceptor. Feature-flag changes are single-person. The full list of residual risks and the
   policy defaults is in [technical/web-platform-security.md, section 8](technical/web-platform-security.md#8-four-eyes-separation-of-duties).
 
+## Claim analysis (step 5)
+
+Run `REQ-20261010-step5-analysis` closes the loop from import to review: import -> review -> create claims
+-> **analyze** -> evidence packet revision 1 -> approval by a second person. Architecture:
+[ARCHITECTURE.md, claim analysis](ARCHITECTURE.md#web-platform-claim-analysis-step-5). Threat model and
+residual risks: [technical/web-platform-security.md, section 9](technical/web-platform-security.md#9-step-5-claim-analysis).
+
+**What the analysis is, and what it is not.** It runs the fixed rules of the Python reference service
+(duplicate charge lines, linehaul and fuel above the rate confirmation, accessorials not listed as
+authorized, invoice total above the sum of its lines, detention earned versus billed) on the field values
+of the claim's accepted documents, and writes a draft demand letter. Findings are **deterministic rule
+outputs on extracted fields. They are drafts that need human review, not verified results.** The
+confidence shown on a finding is a fixed number per rule, not a measured probability, and nothing here
+claims accuracy. The evaluation gate (step 4) runs on synthetic fixtures and is not an accuracy measure.
+
+### Who can analyze
+
+| Role | Analyze one claim, analyze awaiting claims |
+| --- | --- |
+| OWNER, ADMIN, MANAGER, REVIEWER, ANALYST | yes |
+| VIEWER, PLATFORM_DEV, SUPER_ADMIN | no |
+
+The permission is `claims:analyze` in `packages/shared/src/rbac.ts`. API keys cannot call either route
+(403 `forbidden`), whatever their scopes.
+
+### Analyze one claim
+
+1. Open a claim with status **Awaiting analysis** (`AWAITING_ANALYSIS`). It needs at least one linked
+   document with status Accepted.
+2. On the **Summary** or the **Evidence** tab, select **Analyze claim**. The section says: "Runs fixed
+   rules on the accepted document fields. Findings are drafts for human review, not verified results."
+   and "You will be recorded as the author of revision 1, so another approver must approve it."
+3. On success the toast reads "Analysis complete. Revision 1 is ready for review." and the Evidence tab
+   shows revision 1: sources, findings with citations back to the document lines, a timeline and the draft
+   letter. The claim is now **Pending review** (`PENDING_REVIEW`) with its amounts, and it appears in `/approvals` and in the
+   intelligence worklist.
+
+If the analysis is refused, the section shows a fixed message: 409 "This claim is no longer awaiting
+analysis or has no accepted documents. Reload to continue.", 422 "The extracted values of this claim cannot
+be analysed automatically.", 403 "You do not have permission to analyze claims.", 429 "Too many requests.
+Try again later.", anything else "Analysis failed. Try again." A refused analysis changes nothing.
+
+A 422 means the rules refused the input (for example a malformed amount or date) or the result cannot be
+stored (a negative amount, or more than 2,147,483,647 cents). The claim stays Awaiting analysis. Accepted
+documents cannot be edited, so such a claim needs a new import of corrected documents (see the residual
+risks).
+
+### Analyze awaiting claims (bulk)
+
+On the claims page, **Analyze awaiting claims** opens a dialog ("Analyzes up to 10 claims awaiting
+analysis, oldest first."). **Analyze** sends one request with `{ "limit": 10 }` and shows a summary such
+as "Analyzed 8. Skipped 1. Could not analyze 1. 4 still awaiting analysis.", plus the claim numbers that
+could not be analyzed.
+
+- The API accepts `limit` 1..25 (default 10) and looks at no more than `min(4 x limit, 100)` candidates:
+  claims awaiting analysis with at least one accepted document, oldest first.
+- Each claim is analyzed in its own transaction, exactly like the single action. A claim someone else
+  analyzed in the meantime is **skipped**; a claim that gets 422 is **could not analyze**. Claims already
+  analyzed stay analyzed if a later one fails.
+- **Rate budget.** Both routes share your per-user `analysis` budget (`RATE_LIMIT_ANALYSIS_MAX`, default
+  30 per 10 minutes). A bulk request uses one unit for the first claim it tries and one more unit for every
+  further claim it tries, including claims that are skipped or could not be analyzed. When the budget runs
+  out, the run stops early and still answers normally: the claims it did not try stay Awaiting analysis
+  and are counted in "still awaiting analysis". The dialog does not say that the budget stopped the run;
+  wait for the window to pass and run it again. When the budget is already empty, the request gets 429.
+- A claim that keeps failing with 422 stays a candidate. Because the bulk run takes the oldest claims
+  first, it is tried (and charged) again on every run until it is re-imported.
+
+### Four-eyes after analysis
+
+The person who runs the analysis (single or bulk) is recorded as the author of revision 1. Four-eyes then
+refuses their approve or reject of that claim, and `/approvals` shows them "You edited this revision.
+Another approver must approve it." (the existing four-eyes text). Another approver must decide. The people
+who uploaded or edited the claim's documents are **not** counted as claim authors; document four-eyes
+already required a second person to accept those documents, except for documents accepted automatically
+at upload.
+
+### API
+
+| Route | Body | Success |
+| --- | --- | --- |
+| `POST /api/v1/claims/:id/analyze` | `{}` (or no body) | 201: `claim` (status and amounts in cents), `packet` (id, revision 1, content hash), `analysis` (`rulesVersion: "rules-v1"`, findings counts) |
+| `POST /api/v1/claims/analyze-awaiting` | `{ "limit": 1..25 }` (optional, default 10) | 200: `limit`, `examined`, `analyzed[]`, `skipped[]`, `failed[]`, `remaining` |
+
+Both routes need a signed-in user (API keys are refused) and go through the same Origin and CSRF checks as
+every other mutating route. Each successful
+analysis is recorded in the tenant audit chain as `claim.analyzed`; each bulk request also writes one
+`claim.bulk_analyzed` summary (counts only).
+
+### Configuration (step 5)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `RATE_LIMIT_ANALYSIS_MAX` | 30 | analyses per user per 10 minutes, shared by the single and the bulk route (1..100000; off only with `RATE_LIMIT_ENABLED=false`, which production refuses) |
+
+The rule settings are fixed in this step: 15-minute detention increments, a tolerance of $0.01 and a
+90-day dispute window (the Python defaults). They are not configurable.
+
+### Not covered (accepted for now)
+
+Analysis does not run automatically when claims are created; the bulk action is the automation. A
+document linked to a claim after its analysis is not cited by revision 1. Documents accepted
+automatically at upload feed the analysis like reviewed ones. The full list of residual risks is in
+[technical/web-platform-security.md, section 9.5](technical/web-platform-security.md#95-accepted-residuals-step-5).
+
 ## Tests and checks
 
 ```bash
@@ -700,7 +812,7 @@ npm run build                # shared + api + web (+ dist check: no inline scrip
                              # builds the parser worker, so run it BEFORE the integration/acceptance suites
 npm run test:integration     # api, against a migrated + seeded test DB (TEST_DATABASE_URL, TEST_ADMIN_DATABASE_URL,
                              # and the same MFA_ENC_KEY the seed used), S3 (MinIO) and Python (PYTHON=...) for the
-                             # parity suite; see the env block in .github/workflows/web-ci.yml
+                             # parity suites (step 3 extraction, step 5 rules); see the env block in .github/workflows/web-ci.yml
 npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
 npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1   # step 4: after npm run build
 npm run audit && npm audit signatures
@@ -737,3 +849,14 @@ environment): lint, typecheck, unit tests (shared 136, api 356, web 67), migrate
 build, integration (95 passed, 2 pre-existing skips), acceptance (shared 36, api 690 passed with 9
 skipped and 2 todo, web 150 passed with 1 skip). **Not run:** Node 24, GitHub CI, `npm run audit`,
 container images, Playwright, any AWS deployment. The parity suites used Python 3.14 (CI uses 3.12).
+
+Step 5 (2026-10-10, run `REQ-20261010-step5-analysis`, Windows, **local runs, not GitHub CI**; the
+validation is **not complete**): the builder ran lint, typecheck, unit tests (shared 165, api 370, web 78),
+the rules parity suite (2,132 cases, zero differences on Node 22.23.3 and Node 24) and, on Node 22.23.3,
+migrate + seed (also `--reset`), build and integration (16 files, 107 passed, 3 local-skip placeholders),
+at commit `b12ce2a`. The first independent acceptance run (Node 22.23.3, `CI=true`, same commit) gave
+shared 81/81 and api 754 passed, 4 failed, 10 skipped; the 4 failures were test-design errors, fixed in
+the test files but not yet re-verified because the rerun was stopped by low system memory. The web
+acceptance suite has not run yet. The fix-round commit `5c047fb` (bulk budget) was checked only with lint,
+typecheck and targeted unit tests. **Not run:** acceptance and integration at `5c047fb`, GitHub CI,
+container images, Playwright, any AWS deployment.

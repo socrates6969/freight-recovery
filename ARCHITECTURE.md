@@ -79,7 +79,9 @@ Step 3 (import and export) is described in its own section below:
 [Web platform: import and export (step 3)](#web-platform-import-and-export-step-3). Step 4 (Dev
 dashboard, Recovery intelligence, tenant API keys and the evaluation tool) has its own section too:
 [Web platform: Dev dashboard, Recovery intelligence and API keys (step 4)](#web-platform-dev-dashboard-recovery-intelligence-and-api-keys-step-4).
-The TS port of the Python rules is a later step (step 5). There is no learned model and no LLM call. The seeded claims and packets come from
+Step 5 (the TS port of the Python rules and evidence letter, and the analyze action that turns an imported
+claim into packet revision 1) is described in
+[Web platform: claim analysis (step 5)](#web-platform-claim-analysis-step-5). There is no learned model and no LLM call. The seeded claims and packets come from
 the Python CLI output on `tests/fixtures/` (synthetic).
 
 ## Module Structure
@@ -266,6 +268,7 @@ on every request. The web app imports the same frozen data only to hide controls
 | `users:read`, `users:manage`, `audit:read`, `settings:manage`, `integrations:manage` | x | x | | | | | | |
 | `admins:manage`, `billing:manage`, `tenant:delete` | x | | | | | | | |
 | `apikeys:manage` (step 4: create, list and revoke tenant API keys) | x | x | | | | | | |
+| `claims:analyze` (step 5: analyze one claim, bulk analyze; no API-key scope) | x | x | x | x | x | | | |
 | `platform:health` (step 4: also pipeline health and telemetry) | | | | | | | x | x |
 | `platform:flags`, `platform:logs` | | | | | | | x | |
 | `platform:eval` (step 4: evaluation runs) | | | | | | | x | |
@@ -326,7 +329,8 @@ graph TD
 ```mermaid
 %%{init: {'theme': 'neutral'}}%%
 graph TD
-    P["PENDING_REVIEW"] -- "approve (reason)" --> A["APPROVED"]
+    W["AWAITING_ANALYSIS (claim)"] -- "analyze (step 5)" --> P["PENDING_REVIEW"]
+    P -- "approve (reason)" --> A["APPROVED"]
     P -- "reject (reason)" --> J["REJECTED"]
     A -- "send (reason, hash match)" --> S["SEND_READY (terminal)"]
     P -- "edit" --> N["new revision PENDING_REVIEW"]
@@ -335,7 +339,13 @@ graph TD
     N -. "old revision" .-> X["SUPERSEDED"]
 
     style S fill:#1e90ff,stroke:#1565c0,color:#fff
+    style W fill:#1e90ff,stroke:#1565c0,color:#fff
 ```
+
+`AWAITING_ANALYSIS` is a claim status only (imported claims, no packet yet). Since run
+`REQ-20261010-step5-analysis` the analyze action creates packet revision 1 in `PENDING_REVIEW` and moves the
+claim there; nothing returns to `AWAITING_ANALYSIS`. See
+[claim analysis (step 5)](#web-platform-claim-analysis-step-5).
 
 Every action needs a reason and writes an append-only `approvals` row plus an audit event in one
 transaction, with the claim row locked `FOR UPDATE`. Approve records the packet's canonical content hash.
@@ -427,7 +437,7 @@ Main decisions:
 - The API **proxies** originals. There are no signed URLs.
 - PDFs are read from the text layer only. Images are stored and flagged for manual entry.
 - Claims created from imports start in the new status `AWAITING_ANALYSIS`, with no money and no packet.
-  Step 5 adds the analysis.
+  Step 5 adds the analysis ([claim analysis (step 5)](#web-platform-claim-analysis-step-5)).
 
 ## Module Structure (step 3)
 
@@ -667,7 +677,7 @@ graph TD
 | `validateWorkerResponse` | `api/src/imports/sandbox/protocol.ts` | executor | strict re-validation of the worker output |
 | `resolveField`, `acceptDocument` | `api/src/imports/review-service.ts` | R48, R49 | human review gate |
 | `commitBatch` | `api/src/imports/commit-service.ts` | R52 | documents to claims under an advisory lock |
-| `loadBundleForClaim` | `api/src/imports/bundle.ts` | step 5 (planned) | claim documents to `ExtractedBundle` |
+| `loadBundleForClaim` | `api/src/imports/bundle.ts` | step 5 analysis (via `loadAnalysisInput`, which adds provenance) | claim documents to `ExtractedBundle` |
 
 ## Document and field states
 
@@ -769,8 +779,8 @@ divergences below are the **only** allowed differences. Any other difference is 
 Related notes (not new divergences):
 
 - **Money format** (leader ruling SQ1): `parseMoney` keeps CPython parity, so `"1,2,3"` parses as `123`
-  and `"$-5"` as `-5`. Step 5 may make money parsing stricter. That change would be registered as a new
-  divergence.
+  and `"$-5"` as `-5`. A later step may make money parsing stricter (step 5 did not). That change would be
+  registered as a new divergence. Step 5 refuses a negative result at persistence instead (RD3, 422).
 - **PDF pre-scan** (fix round 1): the pre-scan refuses bombs, filter chains longer than 3, an indirect
   `/Filter`, `/Prev` loops and oversized page trees before pdf.js runs. These hostile PDFs lie outside
   the D2 parity subset.
@@ -782,26 +792,33 @@ Related notes (not new divergences):
 
 ## Interfaces for step 5 (rules and evidence port)
 
-Step 5 ports the Python rules and evidence generation to TypeScript, with parity tests. It plugs into
-these step 3 interfaces:
+**Status: delivered** in run `REQ-20261010-step5-analysis` (see
+[claim analysis (step 5)](#web-platform-claim-analysis-step-5)). Items 1-6 are used as described below;
+item 7 (an LLM provider) and stricter money parsing remain future work. Step 5 ported the Python rules and
+evidence generation to TypeScript, with parity tests. It plugs into these step 3 interfaces:
 
 1. **Input.** `loadBundleForClaim(tx, claimId)` returns `{bundle, sources}`. `bundle` is the TS
-   `ExtractedBundle`, built from the effective field values of the claim's linked documents. It is the
-   input of the future `analyze(bundle, perspective, settings) -> Packet`. The Python counterpart is
-   `run_pipeline` after `extract_bundle`.
+   `ExtractedBundle`, built from the effective field values of the claim's linked documents. Step 5
+   added `loadAnalysisInput(tx, claimId)` (same document selection and order, plus field provenance and
+   `sizeBytes`); `loadBundleForClaim` now delegates to it with an unchanged signature. The engine entry is
+   `buildEvidence(docs, bundle, perspective, settings, now)` in `@fr/shared/analysis`. The Python
+   counterpart is `run_pipeline` after `extract_bundle`.
 2. **Provenance.** `pointerToLocator(displayName, pointer)` produces citation locators such as
    `invoice.txt:L5`, or `file.pdf:p2:L14` for PDFs. The seed already uses this convention. `sources[]`
    carries `documentId`, `displayName`, `sha256` and `docType` for `PacketSource`.
-3. **Money.** `packages/shared/src/decimal.ts` is the base for money and hours arithmetic. Step 5 adds
-   quantizing and rounding with Python `Decimal` parity.
+3. **Money.** `packages/shared/src/decimal.ts` is the base for money parsing. Step 5 added
+   `packages/shared/src/analysis/py-decimal.ts`, a CPython-exact `Decimal` (precision 28, ROUND_HALF_EVEN,
+   quantize, `str` and `.2f` formatting) for the rules arithmetic.
 4. **Text.** `plain` and `md` (`packages/shared/src/text-sanitize.ts`) are already ported with parity.
    The letter renderer reuses them.
-5. **Claim lifecycle.** Step 5 adds the transition `AWAITING_ANALYSIS -> PENDING_REVIEW`. The same
-   transaction creates packet revision 1 (with its content hash) and an audit event. `claim_documents`
-   names the source documents. Revision 1 must record `created_by_id` as the user who triggered the
-   analysis, or that user could approve it (four-eyes residual FE-N2).
+5. **Claim lifecycle.** Step 5 added the transition `AWAITING_ANALYSIS -> PENDING_REVIEW`. The same
+   transaction creates packet revision 1 (with its content hash) and the `claim.analyzed` audit event.
+   `claim_documents` names the source documents. Revision 1 records `created_by_id` as the user who
+   triggered the analysis, so that user cannot approve it (four-eyes FE-N2 closed; the migration
+   `20261012000000_analysis` refuses a revision 1 without an author for an awaiting claim).
 6. **Parity pattern.** `tools/parity/` and `api/test/parity/` are the pattern for the rules dump
-   script. CI already sets up Python.
+   script. CI already sets up Python. Step 5 added `tools/parity/rules_dump.py` and
+   `api/test/parity/rules.parity.test.ts` (registered divergences RD1-RD6).
 7. **Providers.** `ExtractionProvider` is where an LLM provider will plug in later, behind sanitization
    and with mandatory provenance. A future provider must return the same draft shape and pass the same
    validators. It can never lower a flag raised by the deterministic checks.
@@ -1181,20 +1198,26 @@ graph TD
     style W fill:#1e90ff,stroke:#1565c0,color:#fff
 ```
 
-The stage registry `EVAL_STAGES` currently holds `extraction` only; step 5 registers `rules`. The set
+The stage registry `EVAL_STAGES` currently holds `extraction` only. A `rules` stage was planned for
+step 5 but deferred; the rules are checked against Python by the parity suite instead. The set
 hash `evalSetSha256` covers the manifest and every case file in order; fixtures are kept byte-exact by
 `.gitattributes` (`api/eval/sets/** -text`).
 
 ## Interfaces for step 5
 
-1. The intelligence features read only persisted columns (`claims` amounts, status, carrier,
+Status after run `REQ-20261010-step5-analysis`: item 1 is delivered; items 2 and 3 were deferred and
+remain open.
+
+1. **Delivered.** The intelligence features read only persisted columns (`claims` amounts, status, carrier,
    perspective, `updated_at`; the latest `evidence_packets` revision; `packet_findings.rule_id` and
-   `needs_human_review`; `packet_sources.doc_type`; `approvals.created_at`). When step 5 creates packet
-   revision 1 (`AWAITING_ANALYSIS -> PENDING_REVIEW`), the worklist, similarity and provenance light up
-   without a step 4 change. Step 5 must keep `rule_id` stable and non-empty.
-2. Step 5 registers a `rules` stage in `EVAL_STAGES` (and widens the `stage` CHECK by migration), reusing
-   `computePassStats`, the recorder and the dashboard; the Python `run_pipeline` is the oracle.
-3. Telemetry: step 5 adds `observeComponent('rules-v1', ...)`. Flags: step 5 may add a registry key.
+   `needs_human_review`; `packet_sources.doc_type`; `approvals.created_at`). Step 5 now creates packet
+   revision 1 (`AWAITING_ANALYSIS -> PENDING_REVIEW`), so analyzed imported claims enter the worklist,
+   similarity and provenance without a step 4 change. `rule_id` is one of the eight stable, non-empty
+   `RULE_IDS` (`rules-v1`).
+2. **Open.** A `rules` stage in `EVAL_STAGES` (and a migration widening the `stage` CHECK), reusing
+   `computePassStats`, the recorder and the dashboard, with the Python `run_pipeline` as the oracle.
+3. **Open.** Telemetry `observeComponent('rules-v1', ...)`. No flag was added (analyze-on-commit is not
+   built).
 
 ## Notes (step 4)
 
@@ -1224,8 +1247,9 @@ hash `evalSetSha256` covers the manifest and every case file in order; fixtures 
 Two decisions now need a second person:
 
 1. **Claims.** A user who created **any** packet revision of a claim (current or superseded) cannot
-   approve or reject the claim's current revision. A revision with no recorded creator (seeded or
-   generated revision 1) excludes nobody. Send-ready is unchanged.
+   approve or reject the claim's current revision. A revision with no recorded creator (seeded revision
+   1) excludes nobody. Since step 5, revision 1 created by analysis records the analyzer. Send-ready is
+   unchanged.
 2. **Imported documents.** The uploader and every user who recorded a field `CORRECT` or `ADD` cannot
    accept the document. Reject is unchanged. API-key uploads count as uploads by the key's creator.
 
@@ -1413,10 +1437,13 @@ for the matching trigger. Details are in the threat model, section 8.4.
 
 ## Interfaces for step 5 (four-eyes)
 
-- Step 5 creates packet revision 1 for imported claims. It **must set `evidence_packets.created_by_id`
-  to the user who triggered the analysis**. Otherwise revision 1 excludes nobody and that user can
-  approve their own packet (FE-N2). Step 5 should also decide whether the uploaders of a claim's
-  documents count as claim authors (today they do not).
+- **Delivered (FE-N2 closed).** Step 5 creates packet revision 1 for imported claims and sets
+  `evidence_packets.created_by_id` to the user who triggered the analysis (single and bulk). That user is
+  then a revision author and cannot approve or reject the claim. The trigger
+  `evidence_packets_analysis_guard` refuses a revision 1 without an author for an `AWAITING_ANALYSIS`
+  claim. Decision (policy D2 of step 5): the uploaders and field editors of a claim's documents are
+  **not** claim authors. Document four-eyes already forced a second person to accept those inputs
+  (except auto-accepted documents, FE-S1).
 - Any new code path that inserts an `approvals` row (`APPROVE`/`REJECT`) or an `ACCEPT` decision must run
   the service check under the same row lock. The triggers refuse the insert otherwise.
 
@@ -1427,3 +1454,408 @@ for the matching trigger. Details are in the threat model, section 8.4.
   todo), web 150 passed (1 skipped). The audit fail-closed path and the trigger-to-403 mapping are
   covered only by the builder's integration and unit tests (not reachable black-box).
 - Accepted residuals FE-S1..S4, FE-N1 and FE-N2 are listed in the threat model, section 8.5.
+
+---
+
+# Web platform: claim analysis (step 5)
+
+> Written by scriber for run `REQ-20261010-step5-analysis` on 2026-10-10 (branch `feat/analysis`, build
+> commits `d27c4a2`..`5c047fb`). **Pre-product, synthetic data only, never deployed.** Threat rows T47-T52,
+> the policy defaults and the accepted residuals are in
+> [technical/web-platform-security.md, section 9](technical/web-platform-security.md#9-step-5-claim-analysis).
+> User-facing description: [README, claim analysis](README.md#claim-analysis-step-5).
+
+## Overview (step 5)
+
+Before step 5, a claim created by import stayed `AWAITING_ANALYSIS` with no amounts and no packet, because
+the rules engine existed only in the Python reference service. Step 5 closes the loop:
+import -> review -> commit -> **analyze** -> packet revision 1 -> four-eyes review.
+
+- **Engine (`@fr/shared/analysis`).** A TypeScript port of the Python `rules/` (`detention.py`,
+  `invoice_checks.py`, `engine.py`) and `evidence/` (`letter.py`, the Markdown of `packet.py`). The module is
+  pure: no Node built-ins and no floating point on money or hours. It uses a CPython-exact decimal
+  (`py-decimal.ts`: precision 28, ROUND_HALF_EVEN, CPython `str` and `.2f` formatting), CPython `repr` for
+  strings and lists, and naive `YYYY-MM-DDTHH:MM:SS` datetimes with integer day arithmetic. Rules version
+  `rules-v1`, eight rule ids (`INV-DUPLICATE`, `INV-LINEHAUL-RATE`, `INV-FUEL-SURCHARGE`,
+  `INV-ACCESSORIAL-UNAUTH`, `INV-TOTAL-MISMATCH`, `DET-UNBILLED`, `DET-UNDERBILLED`, `DET-OVERBILLED`).
+  Settings are constants (`DEFAULT_ANALYSIS_SETTINGS`: 15-minute detention increments, tolerance 0.01,
+  90-day dispute window).
+- **What a finding is.** A finding is the output of a fixed, deterministic rule applied to the field values
+  of the claim's accepted documents (extracted by the step 3 parser and, where flagged, reviewed by a
+  person). It is a **draft for human review, not a verified result**. The confidence on a finding is a
+  fixed constant per rule copied from the Python reference (0.6, 0.85, 0.9 or 0.95), not a measured
+  probability, and the product makes no accuracy claim. The step 4 evaluation gate runs on synthetic
+  fixtures and is not an accuracy measure.
+- **Routes.** `POST /api/v1/claims/:id/analyze` (201) and `POST /api/v1/claims/analyze-awaiting` (200,
+  bulk). Both need the new permission `claims:analyze` (OWNER, ADMIN, MANAGER, REVIEWER, ANALYST), have no
+  API-key scope, and share the per-user rate group `analysis` (`RATE_LIMIT_ANALYSIS_MAX`, default 30 per 10
+  minutes).
+- **Lifecycle.** One analyze runs in one tenant transaction under the claim row lock. It creates packet
+  revision 1 (`PENDING_REVIEW`, created by the requester) with sources, findings (with citations and a
+  governing clause), a timeline and the content hash. It sets the claim to `PENDING_REVIEW` with
+  `recoverableCents`, `pendingReviewCents` and `amountClaimedCents`, increments `version`, and appends
+  `claim.analyzed`. No `approvals` row is written. After that, the existing review flow applies unchanged.
+- **Database guards.** Migration `20261012000000_analysis` adds two triggers and no table, column, enum or
+  grant change.
+- **Web.** An **Analyze claim** section on the claim sheet (Summary and Evidence tabs) and an **Analyze
+  awaiting claims** dialog on the claims page, both shown only with `claims:analyze`.
+
+Deferred (not built): analyze-on-commit (no flag; the bulk action is the automation, with an explicit human
+trigger), a `rules` stage in the evaluation tool, telemetry component `rules-v1`, a Markdown download
+endpoint, stricter money parsing, per-carrier letter templates.
+
+## Module Structure (step 5)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src/features/claims"]
+        CSH["ClaimSheet.tsx"]
+        ACS["AnalyzeClaimSection.tsx"]
+        CPG["ClaimsPage.tsx"]
+        BAD["BulkAnalyzeDialog.tsx"]
+    end
+    subgraph Shared["packages/shared"]
+        ENG["analysis/ engine"]
+        PDC["analysis/py-decimal.ts"]
+        REN["analysis/ letter + markdown"]
+        CPY["analysis/copy.ts"]
+        ADT["analysis-dto.ts"]
+        RBC["rbac.ts + audit-actions.ts"]
+        TXS["text-sanitize.ts"]
+    end
+    subgraph API["api/src"]
+        CR["claims/routes.ts"]
+        CA["claims/analysis.ts"]
+        BU["imports/bundle.ts"]
+        SEC["http/security.ts + config"]
+        DG["http/db-guard.ts"]
+        CH["audit/chain.ts"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261012000000_analysis"]
+        TG1["claims_status_guard"]
+        TG2["packets_analysis_guard"]
+    end
+    subgraph Parity["parity (tests only)"]
+        PT["rules.parity.test.ts"]
+        PY["rules_dump.py (Python)"]
+    end
+
+    CSH --> ACS
+    CPG --> BAD
+    ACS --> CPY
+    BAD --> CPY
+    BAD --> ADT
+    ACS -. "HTTP" .-> CR
+    BAD -. "HTTP" .-> CR
+    CR --> SEC
+    SEC --> RBC
+    CR --> CA
+    CA --> BU
+    CA --> ENG
+    ENG --> PDC
+    ENG --> REN
+    REN --> TXS
+    CA --> CH
+    CA --> DG
+    CA --> TG1
+    CA --> TG2
+    MIG --> TG1
+    MIG --> TG2
+    PT --> ENG
+    PT --> PY
+
+    style CSH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ACS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CPG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BAD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ENG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PDC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style REN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CPY fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ADT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RBC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BU fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SEC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PY fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Module/Function | Purpose | Key Dependencies | Changed in This Run |
+| --- | --- | --- | --- |
+| `packages/shared/src/analysis/py-decimal.ts` | CPython `Decimal` semantics: parse, add, sub, mul, true and integer division, compare, quantize, `str`, `.2f`, Python `max`/`sum` | none (BigInt) | new |
+| `packages/shared/src/analysis/py-text.ts`, `local-datetime.ts` | CPython `repr(str)` and list repr, `_norm_text`; naive datetimes, days-from-civil epoch seconds, `%Y-%m-%d %H:%M` | none | new |
+| `packages/shared/src/analysis/invoice-checks.ts`, `detention.ts`, `engine.ts` | Port of `rules/*.py`: `classifyLine`, dedupe, invoice checks, `computeDetention`, `applyRules`; `applyRulesTraced` also returns per-finding traces for citations | `py-decimal`, `py-text`, `local-datetime` | new |
+| `packages/shared/src/analysis/letter.ts`, `markdown.ts`, `evidence.ts` | Port of `evidence/letter.py` and the Markdown of `packet.py`: `buildDemandLetter`, `renderPacketMarkdown`, `buildEvidence` (`buildEvidenceTraced`), `packetLoadNumber` | `text-sanitize.ts` (`plain`, `md`) | new |
+| `packages/shared/src/analysis/types.ts`, `copy.ts`, `index.ts` | `AnalysisInputError`, `DEFAULT_ANALYSIS_SETTINGS`, `RULES_VERSION`, `RULE_IDS`, `DRAFT_BANNER`, `PACKET_DISCLAIMER`; UI copy `ANALYSIS_NOTE`, `ANALYZE_AUTHOR_NOTE`, `ANALYSIS_TEXT`; subpath `@fr/shared/analysis` | none | new |
+| `packages/shared/src/analysis-dto.ts` | `AnalyzeBody` (strict `{}`), `BulkAnalyzeBody` (`limit` 1..25), response schemas, `ANALYZE_BATCH_MAX = 25`, `ANALYZE_BATCH_DEFAULT = 10` | zod | new |
+| `packages/shared/src/rbac.ts`, `audit-actions.ts` | `claims:analyze` appended (5 roles); `claim.analyzed`, `claim.bulk_analyzed` appended | none | changed |
+| `api/src/imports/bundle.ts` | `assembleBundleWithProvenance` (records which document and field filled each bundle slot); `loadAnalysisInput` (sources with `sizeBytes`, fields with page, line, excerpt; fields ordered by `ordinal, id`); `loadBundleForClaim` delegates, signature unchanged | Prisma tenant tx | changed |
+| `api/src/claims/analysis.ts` | `buildAnalysisPacket` (pure: rows, citations, clauses, timeline, hash, storability), `analyzeClaim` (single, one tx), `analyzeAwaiting` (bulk), `storableCents`, `INT4_MAX` | `@fr/shared/analysis`, `bundle.ts`, `lockClaimForUpdate`, `appendAudit`, `packetContentHash` | new |
+| `api/src/claims/routes.ts` | `POST /claims/:id/analyze` (201), `POST /claims/analyze-awaiting` (200); permission `claims:analyze`, no `apiKeyScope`, `rateGroup: 'analysis'` | `analysis.ts` | changed |
+| `api/src/http/security.ts`, `context.ts`, `config.ts`, `app.ts` | Rate group `analysis` (per user, 10-minute window); `RATE_LIMIT_ANALYSIS_MAX` (default 30, 1..100000); `app.analysisLimiter` (null when rate limiting is off) passed to bulk | limiter store (Redis) | changed |
+| `api/src/http/db-guard.ts` | Exact trigger-raise matcher (SQLSTATE `P0001` + exact message, through `cause`/`meta`/`driverAdapterError`, depth 5) shared by four-eyes and analysis; `isAnalysisDbError` | none | new (moved from `app.ts`) |
+| `api/src/http/errors.ts`, `audit/chain.ts` | 422 `analysis_input_invalid`; step 5 metadata keys allow-listed | none | changed |
+| `api/prisma/migrations/20261012000000_analysis/` | `fr_claim_status_guard` + trigger `claims_status_guard`; `fr_analysis_packet_guard` + trigger `evidence_packets_analysis_guard` | `claims`, `evidence_packets` | new |
+| `web/src/features/claims/AnalyzeClaimSection.tsx`, `ClaimSheet.tsx` | Analyze button with both notes in the Summary and Evidence tabs; fixed error texts per status code; on success reload claim, packet, claims, approvals and show the Evidence tab | `useCan('claims:analyze')`, shared copy | new / changed |
+| `web/src/features/claims/BulkAnalyzeDialog.tsx`, `ClaimsPage.tsx` | Toolbar button and modal dialog; POST `{ limit: 10 }`; summary in a `role="status"` region; failed claim numbers via `SafeText` | `Dialog`, shared copy | new / changed |
+| `tools/parity/rules_dump.py`, `api/test/parity/rules.parity.test.ts` | Python oracle dump (test only, never at runtime) and the TS-vs-Python comparison in `test:integration` | Python reference service | new |
+
+## Function Call Graph (step 5)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST claims/:id/analyze"] --> PIPE["security pipeline"]
+    R2["POST analyze-awaiting"] --> PIPE
+    PIPE --> AC["analyzeClaim (one tx)"]
+    PIPE --> AW["analyzeAwaiting"]
+    AW --> SCAN["candidate scan (own tx)"]
+    AW --> CHG["chargeExtra (bucket)"]
+    AW --> AC
+    AW --> AUD2["audit bulk_analyzed"]
+    AC --> LK["lockClaimForUpdate"]
+    AC --> LI["loadAnalysisInput"]
+    LI --> PROV["assembleBundleWithProvenance"]
+    AC --> BP["buildAnalysisPacket"]
+    BP --> BE["buildEvidenceTraced"]
+    BE --> AR["applyRulesTraced"]
+    BE --> DL["buildDemandLetter"]
+    BP --> SC["storableCents"]
+    BP --> HASH["packetContentHash"]
+    AC --> INS["insert packet + children"]
+    INS --> TG2["packets_analysis_guard"]
+    AC --> CU["claim.update"]
+    CU --> TG1["claims_status_guard"]
+    AC --> AUD1["audit claim.analyzed"]
+
+    style AC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AW fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PROV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD2 fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Function | Defined In | Called By | Purpose |
+| --- | --- | --- | --- |
+| `analyzeClaim(tx, claimId, actor, { bulk })` | `api/src/claims/analysis.ts` | single route (inside `db.tx`), `analyzeAwaiting` (one `db.tx` per candidate) | UUID check and row lock (404), re-check status and "no packet" under the lock (409), load input (409 if no accepted document), build (422), insert, update, audit |
+| `analyzeAwaiting(db, actor, limit, chargeExtra)` | `api/src/claims/analysis.ts` | bulk route | candidates once, per-candidate tx, outcome lists, budget stop, summary audit |
+| `loadAnalysisInput(tx, claimId)` | `api/src/imports/bundle.ts` | `analyzeClaim` | linked `ACCEPTED` documents (oldest link first, ties by link id) to `{ bundle, provenance, sources }` |
+| `buildAnalysisPacket({ input, claim, now, actorId })` | `api/src/claims/analysis.ts` | `analyzeClaim` | pure: engine run, storability check, source, finding, citation, clause and timeline rows, `HashPacket` and content hash |
+| `buildEvidenceTraced` / `buildEvidence` | `packages/shared/src/analysis/evidence.ts` | `buildAnalysisPacket`, parity test | result, letter (UTC date of `now`), Markdown (not persisted), load number |
+| `applyRules` / `applyRulesTraced` | `packages/shared/src/analysis/engine.ts` | `buildEvidence*`, parity test | invoice findings, detention findings, perspective split, totals |
+| `isAnalysisDbError` | `api/src/http/db-guard.ts` | `app.ts` `toHttpError`, `analyzeAwaiting` | maps `claim_transition_invalid` / `analysis_packet_invalid` to 409 `invalid_state` (single) or `skipped` (bulk) |
+| `fr_claim_status_guard`, `fr_analysis_packet_guard` | migration `20261012000000_analysis` | `BEFORE UPDATE OF status ON claims`, `BEFORE INSERT ON evidence_packets` | database backstop for the lifecycle (below) |
+
+## Data Flow (single analyze)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["POST claims/:id/analyze"] --> B["Pipeline: 403, 401, 429, 403, 400"]
+    B --> C["Tenant tx: lock claim row"]
+    C --> D{"Claim visible?"}
+    D -- no --> E["404 not_found"]
+    D -- yes --> F{"AWAITING, no packet, accepted doc?"}
+    F -- no --> G["409 invalid_state"]
+    F -- yes --> H["Load bundle + provenance"]
+    H --> I["Rules, letter, rows, hash"]
+    I --> J{"Input valid and storable?"}
+    J -- no --> K["422 analysis_input_invalid"]
+    J -- yes --> L["Insert rev 1 + children"]
+    L --> M["Claim to PENDING_REVIEW"]
+    M --> N{"Triggers agree?"}
+    N -- no --> O["Rollback: 409 invalid_state"]
+    N -- yes --> P["Append claim.analyzed: 201"]
+
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style J fill:#1e90ff,stroke:#1565c0,color:#fff
+    style N fill:#1e90ff,stroke:#1565c0,color:#fff
+    style P fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Nothing is written before the 422 check, so a refused analyze (404, 409, 422) changes nothing and writes no
+`claim.analyzed`. The "Triggers agree?" branch is a backstop that the service checks make unreachable
+through the API; if it is ever reached the API answers 409 `invalid_state` (never 500, never the database
+text) and logs `analysis_db_guard` at error level.
+
+| Step | Where | Notes |
+| --- | --- | --- |
+| Precedence, single | security pipeline, `analyzeClaim` | origin/CSRF 403 -> 401 -> 429 (`analysis` bucket) -> 403 `forbidden` -> 400 -> 404 -> 409 `invalid_state` -> 422 `analysis_input_invalid` |
+| Precedence, bulk | security pipeline | origin/CSRF 403 -> 401 -> 429 -> 403 -> 400 -> 200 (per-claim outcomes in the body) |
+| 422 | `buildAnalysisPacket` | the engine refuses an input (malformed decimal or datetime, increment 0), or a result is not storable: any persisted finding amount or total negative, or above 2,147,483,647 cents, or the two totals together above it (RD3) |
+| Concurrency | `lockClaimForUpdate` + re-check | N parallel analyzes of one claim: exactly one 201, the rest 409; one packet, one event, `version` +1 once. Unique `(claim_id, revision)` and the one-live-revision index are a further backstop |
+| Response | `AnalyzeResponse` | `claim` (id, status, three cent amounts), `packet` (id, revision 1, status, `contentHash`), `analysis` (`rulesVersion`, `findingsCount`, `pendingFindingsCount`, `ignoredFindingsCount`) |
+
+## Claim lifecycle and database guards (step 5)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    CM["import commit"] --> AW["AWAITING_ANALYSIS"]
+    AW -- "analyze: rev 1 with author" --> PR["PENDING_REVIEW"]
+    PR --> FL["existing review flow"]
+    FL -. "back to AWAITING: refused" .-> AW
+
+    style AW fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PR fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Trigger (function) | Fires on | Refuses | Error |
+| --- | --- | --- | --- |
+| `claims_status_guard` (`fr_claim_status_guard`) | `BEFORE UPDATE OF status ON claims` | a status change **to** `AWAITING_ANALYSIS`; a change **from** `AWAITING_ANALYSIS` to anything other than `PENDING_REVIEW`, or to `PENDING_REVIEW` when no `evidence_packets` row of the same claim and tenant with `revision = 1` and a non-null `created_by_id` exists | `P0001` `claim_transition_invalid` |
+| `evidence_packets_analysis_guard` (`fr_analysis_packet_guard`) | `BEFORE INSERT ON evidence_packets` | a packet for an `AWAITING_ANALYSIS` claim unless `revision = 1`, `created_by_id` is not null and `status = 'PENDING_REVIEW'` | `P0001` `analysis_packet_invalid` |
+
+Both functions are `SECURITY DEFINER` (owner = the migration role), `search_path = public, pg_temp`, match
+`tenant_id` explicitly (so a missing `app.tenant_id` cannot hide rows), and have `EXECUTE` revoked from
+`PUBLIC`. Existing rows are not re-validated. Updates that do not change `status`, other status changes,
+claim inserts and packet inserts for other claims are unaffected; in particular the amount and `version`
+columns of an `AWAITING_ANALYSIS` claim are **not** guarded by the database (residual SA-6 in the threat
+model). The four earlier migrations are byte-for-byte unchanged.
+
+## Bulk analyze and the `analysis` rate budget
+
+`POST /api/v1/claims/analyze-awaiting` with `{ "limit": n }` (1..25, default 10; the web dialog always sends
+10):
+
+1. **Candidates**, fetched once in a short tenant transaction: the tenant's claims in `AWAITING_ANALYSIS`
+   with at least one linked `ACCEPTED` document, oldest `createdAt` first (ties by id), at most
+   `min(4 x limit, 100)`.
+2. **Each candidate in its own transaction**, exactly like the single route. A candidate that is no longer
+   analyzable (404/409, or a database guard refusal) goes to `skipped` (`invalid_state`); one that gets 422
+   goes to `failed` (`analysis_input_invalid`). Any other error ends the request with 500; analyses already
+   committed stay committed.
+3. **Budget (fix round 1, S5-1).** The request's own `analysis` token covers the first candidate. Before
+   each further candidate, one more token is taken from the requester's per-user `analysis` bucket
+   (`app.analysisLimiter`). Tokens are charged per candidate **attempted**, so skipped and failed
+   candidates also cost one. With `RATE_LIMIT_ENABLED=false` (dev/test only; production refuses it) nothing
+   extra is charged.
+4. **Stop conditions:** `analyzed` reaches `limit`, the candidates are exhausted, or the bucket is empty.
+   A budget stop still returns 200 with the same shape; unattempted claims stay `AWAITING_ANALYSIS` and
+   count in `remaining`. `examined` = candidates attempted = analyzed + skipped + failed.
+5. **Summary.** One `claim.bulk_analyzed` event (target `tenant`) in its own transaction, with `limit`,
+   `examined`, `analyzed`, `skipped`, `failed` and `remaining` (the tenant's claims still awaiting analysis
+   after the run).
+
+Effect: a user can perform at most `RATE_LIMIT_ANALYSIS_MAX` analyses per 10-minute window whether they use
+the single or the bulk route. Before fix round 1, one bulk request cost one token for up to 25 analyses (a
+25x amplification, security finding S5-1, Low). Concurrent bulk requests never analyze a claim twice; the
+loser of a race reports it as `skipped`.
+
+Known limits (threat model section 9.5): skipped and failed candidates consume budget (SA-1); a limiter
+failure mid-run (for example the Redis store unreachable) ends the request with 500 and no
+`claim.bulk_analyzed` event (SA-2); the dialog does not say that the budget stopped the run, although its
+summary ("n still awaiting analysis") stays true (SA-3); a claim that fails with 422 stays a candidate and,
+being old, is attempted first on every run (SA-8).
+
+## Packet content (revision 1)
+
+| Part | Content |
+| --- | --- |
+| Packet | `revision 1`, `PENDING_REVIEW`, claim perspective, `loadNumber` (first non-empty of invoice, rate confirmation, bill of lading), `generatedAt` = analysis time, `PACKET_DISCLAIMER`, the draft demand letter (dated with the UTC date of `generatedAt`), USD, `verifier NOT_RUN`, `createdBy` = requester, content hash |
+| Sources | one per linked `ACCEPTED` document in link order: display name, type, SHA-256, size of the stored original |
+| Findings | own-perspective findings in engine order (rule id, title, direction, amount in cents, explanation, calculation steps, confidence, `needsHumanReview`); other-direction findings are counted (`ignoredFindingsCount`) but not stored |
+| Citations | per rule, the fields that fed it, as `{sourceId, locator, excerpt}` with locator `<name>:L<line>`, `<name>:p<page>:L<line>` or `<name>:manual`; excerpt through `plain(..., 200)`; duplicates removed |
+| Governing clause | the rate-confirmation field the rule compares against (linehaul rate, fuel surcharge, authorized accessorials, detention free time), or null |
+| Timeline | appointment, arrival, departure (bill of lading) and invoice date, stored with naive local times read as UTC; facility and invoice number through `plain(..., 100)` |
+
+Citations, governing clauses and the timeline are TS-only additions with no Python counterpart. They are
+part of the content hash, so the approve/send hash binding covers them.
+
+## Audit (step 5)
+
+| Action | When | Target | Metadata (exact key set) |
+| --- | --- | --- | --- |
+| `claim.analyzed` | each successful analyze, same transaction as the writes | `claim` | `claimId`, `claimNumber`, `packetId`, `revision`, `contentHash`, `perspective`, `fromStatus`, `toStatus`, `documentIds`, `findingsCount`, `pendingFindingsCount`, `ignoredFindingsCount`, `recoverableCents`, `pendingReviewCents`, `rulesVersion`, `bulk` |
+| `claim.bulk_analyzed` | once per bulk request that reaches the handler and finishes, after the per-claim transactions | `tenant` | `limit`, `examined`, `analyzed`, `skipped`, `failed`, `remaining` (all integers) |
+
+No names, file names, extracted values, letter text or reasons go into metadata. Refused analyzes (409, 422)
+write no event; permission refusals keep the existing `authz.denied` behaviour. The audit metadata
+sanitizer caps arrays at 50 entries, so `documentIds` would be incomplete for a claim with more than 50
+linked accepted documents; the `packet_sources` rows stay complete (SA-4).
+
+## Python parity: registered divergences (RD1-RD6)
+
+`api/test/parity/rules.parity.test.ts` (part of `npm run test:integration`; same Python discovery rule as
+the step 3 parity suite: CI without Python fails, a local run without Python skips with a message) feeds
+the same cases to the TS engine and to `tools/parity/rules_dump.py`, which calls the Python reference with
+explicit `Settings`. It compares with exact string equality: `classifyLine`, `computeDetention` JSON,
+`applyRules` JSON, the letter, the Markdown and the load number, and checks that both sides refuse the same
+inputs. Parity domain: decimals `-?(0|[1-9][0-9]{0,14})(\.[0-9]{1,6})?`; datetimes
+`YYYY-MM-DDTHH:MM:SS`, years 1000-9999; strings of assigned code points without controls, bidi controls or
+U+2028/U+2029, at most 200 code points; increments 1..240; window 1..3650 days.
+
+| ID | Divergence (TS vs Python) | Rationale |
+| --- | --- | --- |
+| RD1 | Timestamps are naive `YYYY-MM-DDTHH:MM:SS` only; offsets are refused (`AnalysisInputError`). Python's timezone-aware paths have no TS input. | The step 3 extraction stores naive local times; there is no time zone to apply. |
+| RD2 | `%Y` pads years below 1000 to 4 digits (CPython on Linux does not). | The corpus uses years 1000 and later. |
+| RD3 | The API refuses negative or over-INT4 results (422) where Python would emit them. The pure engine still matches Python. | Amounts are stored as int4 cents; a negative claim amount has no meaning. |
+| RD4 | Case mapping and printability follow Node 22's ICU tables, not Python's Unicode database. | The corpus excludes unassigned code points. |
+| RD5 | End to end, the TS packet lists the claim's accepted linked documents; Python lists every ingested file. | Only accepted documents feed a claim. |
+| RD6 | The letter date is the UTC date of `generatedAt`; Python uses the local date of `datetime.now()`. | Independent of the server time zone; parity runs pass the same `now`. |
+
+Builder corpus (seed `20261010`): 2,132 cases (4 fixture end-to-end, 623 inputs from the Python test
+files, 1,200 generated bundles, 300 generated detention cases, 5 classification batches of 200
+descriptions). Result in the builder's run: zero differences on Node 22 and Node 24, every rule id
+exercised, no registered divergence needed inside the corpus. The tester's independent oracle
+(`api/test-acceptance/helpers/rules_oracle.py`) passed P01-P05 in acceptance run 1; its per-corpus counts
+were not yet recorded.
+
+## Policy defaults (step 5)
+
+| ID | Default | Flip point |
+| --- | --- | --- |
+| D1 | `claims:analyze` = OWNER, ADMIN, MANAGER, REVIEWER, ANALYST; no API-key scope | `rbac.ts` matrix row |
+| D2 | Revision-1 author = the requester (single and bulk); document uploaders and field editors are not claim authors | `analysis.ts` + four-eyes predicate |
+| D3 | Analyze-on-commit not built; bulk is the automation | future flag + migration row |
+| D4 | Only own-perspective findings are persisted | `buildAnalysisPacket` |
+| D5 | Zero findings still create revision 1 with zero amounts and the "No amount is requested" letter | `analyzeClaim` |
+| D6 | Negative or over-INT4 results -> 422, claim unchanged | `buildAnalysisPacket` |
+| D7 | Settings are constants (15 min, 0.01, 90 days) | `DEFAULT_ANALYSIS_SETTINGS` |
+| D8 | Letter date = UTC date of `generatedAt`; naive timeline times stored as UTC | `buildEvidence`, timeline |
+| D9 | Bulk `limit` 1..25 (default 10), scan cap `min(4 x limit, 100)`, oldest first | `analyzeAwaiting` |
+| D10 | Rate group `analysis`, `RATE_LIMIT_ANALYSIS_MAX` 30 per 10 minutes, charged per bulk candidate | config, `analyzeAwaiting` |
+
+## Interfaces for later steps (after step 5)
+
+- Keep `rule_id` within `RULE_IDS` and bump `RULES_VERSION` when a rule changes; step 4 intelligence and
+  the parity suite depend on both.
+- Open: the `rules` evaluation stage, telemetry `rules-v1`, analyze-on-commit, a Markdown download
+  endpoint, stricter money parsing.
+- Any future HTML, Markdown or PDF renderer of stored findings must sanitize `explanation` and
+  `calculation`: they contain the raw invoice line description (SA-5). Only the letter applies `plain()`.
+- A new code path that writes claim amounts must keep to the analyze transaction or extend the status guard
+  (SA-6).
+
+## Notes (step 5)
+
+- What ran (local, Windows, **not GitHub CI**): the builder ran lint, typecheck and unit tests (shared 165,
+  api 370, web 78), the rules parity suite (2,132 cases, zero differences on Node 22 and 24) and the
+  integration suite on Node 22.23.3 (16 files, 107 passed, 3 local-skip placeholders), all at `b12ce2a`.
+  The independent acceptance run 1 (Node 22.23.3, `CI=true`, at `b12ce2a`) gave shared 81/81 and api 754
+  passed, 4 failed, 10 skipped; all 4 failures were classified as test design and fixed in the test files,
+  but the verification rerun was stopped by low system memory. The web acceptance suite (AN-W01..W11) has
+  not run yet. Fix round 1 (`5c047fb`) was checked only with lint, typecheck and targeted unit tests; no
+  integration or acceptance run exists at `5c047fb`.
+- Review verdict at the time of writing: FAIL (validation incomplete), no code defect found. The deviations
+  1-8 in the run's `implementation.md` were accepted.
+- `.env.example` lists `RATE_LIMIT_ANALYSIS_MAX=30` uncommented, unlike the commented step 4 knobs; the
+  value equals the default.
+- Not verified: GitHub CI, container images, the compose stack, Playwright, any AWS deployment.
