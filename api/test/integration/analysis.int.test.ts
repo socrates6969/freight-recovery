@@ -11,9 +11,11 @@ import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-import { buildApp, toHttpError } from '../../src/app.js';
+import { buildApp, isAnalysisDbError, toHttpError } from '../../src/app.js';
+import { createDb } from '../../src/db/client.js';
+import { tenantDb } from '../../src/db/tenant.js';
 
-import { Session, adminUrl, baseEnv, canRun, cleanupBatches, deleteBatchObjects, s3, unique } from './import-helpers.js';
+import { Session, adminUrl, appUrl, baseEnv, canRun, cleanupBatches, deleteBatchObjects, s3, unique } from './import-helpers.js';
 
 const REASON = 'Checked against the original document.';
 const enc = (s: string) => new TextEncoder().encode(s);
@@ -318,6 +320,42 @@ describe.skipIf(!canRun)('claim analysis (PostgreSQL + S3 + sandbox)', () => {
     expect(await capture(`UPDATE claims SET status = 'AWAITING_ANALYSIS' WHERE id = $1`, [id])).toMatchObject({ code: 'P0001', message: 'claim_transition_invalid' });
     // Updates that do not change status are unaffected.
     expect(await capture(`UPDATE claims SET version = version + 1 WHERE id = $1`, [id])).toBeNull();
+  });
+
+  it('a guard refusal through Prisma as the runtime role maps to 409 invalid_state (driver adapter error shape)', async () => {
+    const id = randomUUID();
+    claims.push(id);
+    await admin.query(
+      `INSERT INTO claims (id, tenant_id, claim_number, carrier_name, shipper_name, perspective, status, amount_claimed_cents, recoverable_cents, pending_review_cents, updated_at)
+       VALUES ($1, $2, $3, '', '', 'SHIPPER', 'AWAITING_ANALYSIS', 0, 0, 0, now())`,
+      [id, acmeId, `AN-${unique()}`],
+    );
+    const base = createDb(appUrl ?? '');
+    try {
+      const db = tenantDb(base, acmeId);
+      const fail = <T,>(p: Promise<T>) =>
+        p.then(
+          () => null,
+          (e: unknown) => e,
+        );
+      const statusErr = await fail(db.tx((tx) => tx.claim.update({ where: { id }, data: { status: 'PENDING_REVIEW' } })));
+      const packetErr = await fail(
+        db.tx((tx) =>
+          tx.evidencePacket.create({
+            data: { tenantId: acmeId, claimId: id, revision: 1, status: 'PENDING_REVIEW', perspective: 'SHIPPER', generatedAt: new Date(), disclaimer: 'd', demandLetter: 'l', recoverableCents: 0, pendingReviewCents: 0, contentHash: 'a'.repeat(64) },
+          }),
+        ),
+      );
+      for (const err of [statusErr, packetErr]) {
+        expect(err).not.toBeNull();
+        expect(isAnalysisDbError(err)).toBe(true);
+        const mapped = toHttpError(err);
+        expect([mapped.statusCode, mapped.code, mapped.message]).toEqual([409, 'invalid_state', 'This action is not allowed in the current state.']);
+      }
+      expect(await claimRow(id)).toMatchObject({ status: 'AWAITING_ANALYSIS', packets: 0 });
+    } finally {
+      await base.$disconnect();
+    }
   });
 
   it('bulk analyzes oldest candidates in separate transactions, reports skipped/failed, and audits once', async () => {
