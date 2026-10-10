@@ -114,6 +114,8 @@ export interface StubOpts {
   login?: () => Response;
   /** access tokens that the stub rejects with 401 on protected routes */
   rejectTokens?: Set<string>;
+  /** four-eyes (P3): claim ids for which the signed-in user is a revision author (ApprovalItem.selfAuthored) */
+  selfAuthored?: Set<string>;
 }
 
 export function createStub(o: StubOpts = {}) {
@@ -124,12 +126,14 @@ export function createStub(o: StubOpts = {}) {
   const handlers: Array<{ m: string; re: RegExp; fn: Handler }> = [];
   let refreshN = 0;
   const reject = o.rejectTokens ?? new Set<string>();
+  const selfAuthored = o.selfAuthored ?? new Set<string>();
   const user = mkUser(role);
   const stub = {
     calls,
     claims,
     packets,
     user,
+    selfAuthored,
     on(m: string, re: RegExp, fn: Handler) {
       handlers.unshift({ m, re, fn });
       return stub;
@@ -181,7 +185,7 @@ export function createStub(o: StubOpts = {}) {
       m = /^\/claims\/([^/]+)\/packet$/.exec(p);
       if (m && method === 'GET') { const c = claims.find((x) => x.id === m![1]); if (!c) return json(404, { error: { code: 'not_found', message: 'Not found.', requestId: 'r' } }); return json(200, packets[c.id] ?? (packets[c.id] = mkPacket(c))); }
       if (method === 'GET' && p === '/approvals') {
-        const items = claims.filter((c) => ['PENDING_REVIEW', 'APPROVED'].includes(c.status)).map((c) => ({ ...c, packetRevision: 1, pendingFindingsCount: c.pendingReviewCents > 0 ? 1 : 0, waitingSince: c.updatedAt }));
+        const items = claims.filter((c) => ['PENDING_REVIEW', 'APPROVED'].includes(c.status)).map((c) => ({ ...c, packetRevision: 1, pendingFindingsCount: c.pendingReviewCents > 0 ? 1 : 0, waitingSince: c.updatedAt, selfAuthored: selfAuthored.has(c.id) }));
         return json(200, { items, page: 1, pageSize: 25, total: items.length });
       }
       m = /^\/claims\/([^/]+)\/packet\/(approve|reject|send|revisions)$/.exec(p);

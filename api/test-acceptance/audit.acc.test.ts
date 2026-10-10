@@ -164,11 +164,14 @@ describe('T-AUD-01 coverage, exactness and hygiene', () => {
     const rev = pv.res.body.revision;
     const ed = await observe(() => manager.post(`/claims/${c20}/packet/revisions`, { baseRevision: rev, demandLetter: LETTER, reason: 'audit coverage edit' }));
     one('revision created', ed, (a) => a === 'packet.revision_created');
-    const ap = await observe(() => manager.post(`/claims/${c20}/packet/approve`, { packetRevision: rev + 1, reason: 'audit coverage approve' }));
+    const fe = await observe(() => manager.post(`/claims/${c20}/packet/approve`, { packetRevision: rev + 1, reason: 'audit coverage approve' }));
+    expect(fe.res.status, fe.res.text).toBe(403); // four-eyes: the editor cannot approve their own revision
+    one('four-eyes denied', fe, (a) => a === 'authz.four_eyes_denied', (e) => expect(e.actor.id).toBe(manager.user.id));
+    const ap = await observe(() => owner.post(`/claims/${c20}/packet/approve`, { packetRevision: rev + 1, reason: 'audit coverage approve' }));
     one('approve', ap, (a) => a === 'approval.approved', (e) => expect(JSON.stringify(e.metadata)).toMatch(/[0-9a-f]{64}/));
     const pv21 = (await manager.get(`/claims/${c21}/packet`)).body;
     expect((await manager.post(`/claims/${c21}/packet/revisions`, { baseRevision: pv21.revision, demandLetter: LETTER + ' two', reason: 'audit coverage edit two' })).status).toBe(201);
-    const rj = await observe(() => manager.post(`/claims/${c21}/packet/reject`, { packetRevision: pv21.revision + 1, reason: 'audit coverage reject' }));
+    const rj = await observe(() => owner.post(`/claims/${c21}/packet/reject`, { packetRevision: pv21.revision + 1, reason: 'audit coverage reject' }));
     one('reject', rj, (a) => a === 'approval.rejected');
     const pv17 = (await manager.get(`/claims/${c17}/packet`)).body;
     const sd = await observe(() => manager.post(`/claims/${c17}/packet/send`, { packetRevision: pv17.revision, reason: 'audit coverage send ready' }));

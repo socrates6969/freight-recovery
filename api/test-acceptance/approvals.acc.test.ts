@@ -108,7 +108,7 @@ describe('T-APR-01 reason requirement for R30-R33', () => {
     expect(a.status, a.text).toBe(200);
     const s = await send(m, id12, 1, 'z'.repeat(2000));
     expect(s.status, s.text).toBe(200);
-    const rj = await reject(m, id, 3, 'r'.repeat(2000));
+    const rj = await reject(rv, id, 3, 'r'.repeat(2000)); // four-eyes: m authored revisions 2 and 3, so another approver rejects
     expect(rj.status, rj.text).toBe(200);
   });
 });
@@ -179,8 +179,8 @@ describe('T-APR-04 reject then edit', () => {
   });
 });
 
-describe('T-APR-05 edit chain on CLM-0005', () => {
-  it('edit -> stale handling -> approve -> edit invalidates approval -> re-approve -> send-ready', async () => {
+describe('T-APR-05 edit chain on CLM-0005 (editor and approver are different sessions)', () => {
+  it('edit -> stale handling -> four-eyes -> approve by another user -> edit invalidates approval -> re-approve -> send-ready', async () => {
     const id = await idOf('CLM-0005');
     const p1 = await pk(id);
     const letter = 'Edited letter\u0007 with\u0000 control chars\nand a second line';
@@ -202,14 +202,16 @@ describe('T-APR-05 edit chain on CLM-0005', () => {
     expect(p2.verifier.status).toBe('NOT_RUN');
     expectError(await edit(m, id, 1), 409, 'stale_revision');
     expectError(await approve(m, id, 1), 409, 'stale_revision');
-    expect((await approve(m, id, 2)).status).toBe(200);
+    expectError(await approve(m, id, 2), 403, 'four_eyes_required'); // four-eyes: the editor cannot approve their own revision
+    expect((await approve(owner, id, 2)).status).toBe(200);
     const e3 = await edit(m, id, 2, 'Third revision after approval', 'Reopen after approval to change wording');
     expect(e3.status, e3.text).toBe(201);
     expect(e3.body.packet.revision).toBe(3);
     expectError(await send(m, id, 2), 409, 'stale_revision');
     expect((await m.get(`/claims/${id}`)).body.status).toBe('PENDING_REVIEW');
-    expect((await approve(m, id, 3)).status).toBe(200);
-    const s = await send(m, id, 3);
+    expectError(await approve(m, id, 3), 403, 'four_eyes_required');
+    expect((await approve(owner, id, 3)).status).toBe(200);
+    const s = await send(m, id, 3); // send-ready is unrestricted: an author may send what another person approved
     expect(s.status, s.text).toBe(200);
     expect(s.body.claim.status).toBe('SEND_READY');
     expect(s.body.delivery).toEqual({ sent: false, mode: 'send_ready_only' });
@@ -284,12 +286,12 @@ describe('T-APR-08 concurrency', () => {
     for (const l of losers) expectError(l, 409, 'stale_revision');
     const p = await pk(id);
     expect(p.revision).toBe(revs0 + 1);
-    const two = await Promise.all([approve(m, id, p.revision), approve(rv, id, p.revision)]);
+    const two = await Promise.all([approve(owner, id, p.revision), approve(rv, id, p.revision)]); // four-eyes: m authored the revision, so two other approvers race
     expect(two.map((r) => r.status).sort()).toEqual([200, 409]);
     const e = await edit(m, id, p.revision, 'fresh pending revision', 'reopen for approve/reject race');
     expect(e.status, e.text).toBe(201);
     const rev3 = e.body.packet.revision;
-    const race = await Promise.all([approve(m, id, rev3), reject(rv, id, rev3)]);
+    const race = await Promise.all([approve(owner, id, rev3), reject(rv, id, rev3)]);
     expect(race.filter((r) => r.status === 200)).toHaveLength(1);
     expect(race.filter((r) => r.status === 409)).toHaveLength(1);
     const fin = await pk(id);
