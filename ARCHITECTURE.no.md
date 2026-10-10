@@ -352,6 +352,9 @@ innholdshash. Sending regner den ut på nytt og krever at den er lik både godkj
 hashen. «Send» merker bare kravet som klart til sending: ingen e-post, ingen betaling. DB-triggeren
 `fr_packet_update_guard` håndhever de samme overgangene og gjør alle kolonner unntatt `status`
 uforanderlige. Redigering lager en ny revisjon; godkjenningsraden registrerer grunnrevisjonen (avvik 18).
+Siden kjøringen `REQ-20261009-four-eyes` avvises også godkjenning og avvisning (403 `four_eyes_required`)
+for alle som har laget en revisjon av kravets pakke; se
+[firøyeprinsippet](#nettplattform-firøyeprinsippet-arbeidsdeling).
 
 | Funksjon | Definert i | Kalles av | Formål |
 | --- | --- | --- | --- |
@@ -654,6 +657,12 @@ graph TD
 Et felt går én gang fra `PROPOSED` til `CONFIRMED`, `CORRECTED` eller `REJECTED`. En databasetrigger
 håndhever overgangene og holder uttrukket verdi, råverdi, konfidens og pekere uforanderlige.
 
+Siden kjøringen `REQ-20261009-four-eyes` avvises R49 (godta) med 403 `four_eyes_required` for den som
+lastet opp dokumentet, og for alle som har registrert en felt-`CORRECT` eller -`ADD` på det; se
+[firøyeprinsippet](#nettplattform-firøyeprinsippet-arbeidsdeling). Et dokument som går rett fra
+`RECEIVED` til `ACCEPTED` (ingen grunner til gjennomgang), har ingen menneskelig godkjenner (restrisiko
+FE-S1).
+
 ## Datamodell og lagring
 
 Fem nye tenant-tabeller: `import_batches`, `import_documents`, `extracted_fields`,
@@ -734,6 +743,8 @@ PNG tåles, som for JPEG. `strptime`-paritet følger CPython 3.12 for et ledende
 4. **Tekst.** `plain` og `md` (`packages/shared/src/text-sanitize.ts`) er allerede portert med paritet.
 5. **Kravets livsløp.** Steg 5 legger til overgangen `AWAITING_ANALYSIS -> PENDING_REVIEW`, med
    pakkerevisjon 1 og en revisjonshendelse i samme transaksjon. `claim_documents` viser kildedokumentene.
+   Revisjon 1 må registrere `created_by_id` som brukeren som startet analysen, ellers kan den brukeren
+   godkjenne den (restrisiko FE-N2 for firøyeprinsippet).
 6. **Paritetsmønster.** `tools/parity/` og `api/test/parity/` er mønsteret for regel-dumpen. CI setter
    allerede opp Python.
 7. **Leverandører.** `ExtractionProvider` er der en LLM-leverandør kan kobles inn senere, bak rensing og
@@ -1152,3 +1163,226 @@ Sett-hashen `evalSetSha256` dekker manifestet og hver saksfil i rekkefølge; tes
   rangering.
 - Ikke verifisert: container-images, compose-stacken, Playwright-ende-til-ende-tester, enhver
   AWS-utrulling.
+
+---
+
+# Nettplattform: firøyeprinsippet (arbeidsdeling)
+
+> Skrevet av scriber for kjøringen `REQ-20261009-four-eyes` 2026-10-10 (grenen `feat/four-eyes`,
+> byggecommit `8eb7062`). **Før produkt, kun syntetiske data, aldri utrullet.** Trusselrad T46,
+> standardvalgene og de aksepterte restrisikoene står i
+> [technical/web-platform-security.md, del 8](technical/web-platform-security.md#8-four-eyes-separation-of-duties)
+> (engelsk). Beskrivelse for brukere: [README.no.md, firøyeprinsippet](README.no.md#firøyeprinsippet-arbeidsdeling).
+> Mermaid-diagrammene er de samme som i den engelske originalen
+> ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-four-eyes-separation-of-duties)).
+
+## Oversikt (firøyeprinsippet)
+
+To beslutninger krever nå en annen person:
+
+1. **Krav.** En bruker som har laget **en hvilken som helst** pakkerevisjon av et krav (gjeldende eller
+   erstattet), kan ikke godkjenne eller avvise kravets gjeldende revisjon. En revisjon uten registrert
+   oppretter (seedet eller generert revisjon 1) utelukker ingen. «Klar til sending» er uendret.
+2. **Importerte dokumenter.** Den som lastet opp, og alle som har registrert en felt-`CORRECT` eller
+   -`ADD`, kan ikke godta dokumentet. Avvisning er uendret. Opplastinger med API-nøkkel regnes som
+   opplastinger gjort av den som opprettet nøkkelen.
+
+Kontrollen i tjenesten er den primære kontrollen. Databasetriggere er en ekstra sikring, et avslag er én
+fast 403 for alle kallere og logges i revisjonssporet, og brukergrensesnittet skjuler knappen for den
+utelukkede personen (bare kosmetisk). Ingen tabell, kolonne, tenant-tabell, RBAC-oppføring eller rute ble
+lagt til. Den eneste skjemaendringen er triggermigreringen `20261011000000_four_eyes`.
+
+## Modulstruktur (firøyeprinsippet)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Shared["packages/shared"]
+        FE["four-eyes.ts"]
+        AA["audit-actions.ts"]
+        DTO["dto.ts / import-dto.ts"]
+    end
+    subgraph Web["web/src/features"]
+        AP["ApprovalsPage.tsx"]
+        RQ["ReviewQueuePage.tsx"]
+    end
+    subgraph API["api/src"]
+        CR["claims/routes.ts"]
+        CS["claims/service.ts"]
+        IR["imports/routes.ts"]
+        RS["imports/review-service.ts"]
+        ID["imports/dto.ts"]
+        ER["http/errors.ts"]
+        APP["app.ts error handler"]
+        CH["audit/chain.ts"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261011000000_four_eyes"]
+        T1["approvals trigger"]
+        T2["review_decisions trigger"]
+    end
+
+    AP --> FE
+    RQ --> FE
+    AP --> DTO
+    RQ --> DTO
+    CR --> CS
+    IR --> RS
+    RS --> ID
+    CS --> ER
+    RS --> ER
+    ER --> APP
+    APP --> CH
+    APP --> AA
+    CS --> T1
+    RS --> T2
+    MIG --> T1
+    MIG --> T2
+
+    style FE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RQ fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ID fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ER fill:#1e90ff,stroke:#1565c0,color:#fff
+    style APP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style T1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style T2 fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Modul/funksjon | Formål | Viktige avhengigheter | Endret i denne kjøringen |
+| --- | --- | --- | --- |
+| `packages/shared/src/four-eyes.ts` | `FOUR_EYES_ERROR_CODE`, `FOUR_EYES_CLAIM_TEXT`, `FOUR_EYES_DOCUMENT_TEXT` (nøyaktig UI-tekst) | ingen | ny |
+| `packages/shared/src/audit-actions.ts` | legger til `authz.four_eyes_denied` (siste oppføring) | ingen | endret |
+| `packages/shared/src/dto.ts`, `import-dto.ts` | påkrevd `selfAuthored: boolean` bare på `ApprovalItem` og `ImportDocumentDetail` | zod | endret |
+| `api/src/http/errors.ts` | meldingen for `four_eyes_required`; `FourEyesRefusal` (403, bærer revisjonskonteksten); `errors.fourEyes(audit)` | `HttpError` | endret |
+| `api/src/app.ts` | asynkron feilhåndterer: skriver `authz.four_eyes_denied` i en egen tenant-transaksjon, 500 hvis det feiler; `isFourEyesDbError` gjør et triggeravslag om til 403 | `appendAudit`, `requireTenant` | endret |
+| `api/src/audit/chain.ts` | `basis` tillatt i `METADATA_KEYS` | ingen | endret |
+| `api/src/claims/service.ts` | `FOUR_EYES_GUARDED_TRANSITIONS`; forfatterkontroll i `transition()`; `listApprovalQueue(tx, query, viewerId)` beregner `selfAuthored` | `lockAndLoadLatest` | endret |
+| `api/src/claims/routes.ts` | sender `requireTenant(req).user.id` som innlogget bruker | kravtjenesten | endret |
+| `api/src/imports/review-service.ts` | `assertNotDocumentEditor` i `acceptDocument`; alle kall til detaljvisningen sender brukeren | `lockReviewable`, `documentDetail` | endret |
+| `api/src/imports/dto.ts` | `EDITOR_DECISIONS = {CORRECT, ADD}`; `isDocumentEditor(uploadedById, decisions, viewerId)` | ingen | endret |
+| `api/src/imports/service.ts`, `routes.ts`, `deps.ts` | `documentDetail(..., viewerId)`; `uploadedById` lastes internt (ingen DTO viser den); inntak avviser en `user`-aktør med id som ikke er en UUID; tilskrivingsregelen er dokumentert | lagring, DB | endret |
+| `api/prisma/migrations/20261011000000_four_eyes/` | `fr_approval_four_eyes_guard`, `fr_review_four_eyes_guard` og deres `BEFORE INSERT`-triggere | `evidence_packets`, `import_documents`, `import_review_decisions` | ny |
+| `web/src/features/approvals/ApprovalsPage.tsx` | skjuler Approve/Reject når `selfAuthored`; viser kravteksten ved 403 `four_eyes_required` og henter på nytt | delte konstanter | endret |
+| `web/src/features/imports/ReviewQueuePage.tsx` | skjuler Accept document når `selfAuthored`; viser dokumentteksten ved 403 og henter på nytt | delte konstanter | endret |
+
+## Funksjonskall (firøyeprinsippet)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST approve / reject"] --> TR["transition()"]
+    TR --> LK["lockAndLoadLatest"]
+    TR --> GT{"in GUARDED_TRANSITIONS?"}
+    GT -- yes --> AF["findFirst author rev"]
+    AF -- found --> FR["errors.fourEyes()"]
+    AF -- none --> INS1["insert approvals row"]
+    INS1 --> TG1["fr_approval_four_eyes_guard"]
+
+    R2["POST accept document"] --> ACC["acceptDocument()"]
+    ACC --> LR["lockReviewable"]
+    ACC --> AN["assertNotDocumentEditor"]
+    AN -- editor --> FR
+    AN -- not editor --> INS2["insert ACCEPT decision"]
+    INS2 --> TG2["fr_review_four_eyes_guard"]
+
+    FR --> EH["app error handler"]
+    TG1 -. "P0001 (bypass only)" .-> MAP["isFourEyesDbError"]
+    TG2 -. "P0001 (bypass only)" .-> MAP
+    MAP --> EH
+    EH --> AUD["appendAudit four_eyes_denied"]
+
+    style TR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MAP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalles av | Formål |
+| --- | --- | --- | --- |
+| `transition` | `api/src/claims/service.ts` | kravrutene (approve, reject, send) | tilstandsmaskin, så forfatterkontrollen for approve/reject, så kontrollen av bekreftelse |
+| `listApprovalQueue` | `api/src/claims/service.ts` | `GET /api/v1/approvals` | én `distinct`-spørring over sidens krav-id-er setter `selfAuthored` |
+| `acceptDocument`, `assertNotDocumentEditor` | `api/src/imports/review-service.ts` | `POST .../accept` | opplasterkontroll (`basis: uploader`), så CORRECT/ADD-kontroll (`basis: field_editor`), før kontrollen av uløste felt |
+| `documentDetail`, `isDocumentEditor` | `api/src/imports/service.ts`, `api/src/imports/dto.ts` | detalj, opplasting, sett type, godta, avvis, inntak | `selfAuthored` fra beslutningene som allerede er lastet (ingen ekstra spørring) |
+| `FourEyesRefusal`, `errors.fourEyes` | `api/src/http/errors.ts` | begge tjenestene | 403 `four_eyes_required` med `{tenantId, targetType, targetId, metadata}` |
+| `isFourEyesDbError` | `api/src/app.ts` | `toHttpError` | gjenkjenner SQLSTATE `P0001` og den nøyaktige meldingen `four_eyes_required` på feilen eller i `cause`/`meta`-kjeden (dybde 5, tåler sykluser) |
+| `fr_approval_four_eyes_guard` | migreringen `20261011000000_four_eyes` | `BEFORE INSERT ON approvals` | avviser `APPROVE`/`REJECT` fra enhver `created_by_id` på kravets pakker (samme tenant) |
+| `fr_review_four_eyes_guard` | migreringen `20261011000000_four_eyes` | `BEFORE INSERT ON import_review_decisions` | avviser `ACCEPT` fra opplasteren eller en CORRECT/ADD-aktør på dokumentet (samme tenant) |
+
+## Dataflyt (avslag etter firøyeprinsippet)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["Approve / reject / accept"] --> B["Route checks: 400, 401, 403, 404"]
+    B --> C["Business tx: row lock"]
+    C --> D{"Stale or wrong state?"}
+    D -- yes --> E["409 (unchanged)"]
+    D -- no --> F{"Requester excluded?"}
+    F -- no --> G["Insert decision row"]
+    G --> H{"Trigger agrees?"}
+    H -- yes --> I["Commit: 200"]
+    H -- no --> J["Rollback"]
+    F -- yes --> J
+    J --> K["Own tx: append four_eyes_denied"]
+    K --> L{"Audit append ok?"}
+    L -- yes --> M["403 four_eyes_required"]
+    L -- no --> N["500 internal_error"]
+
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+    style K fill:#1e90ff,stroke:#1565c0,color:#fff
+    style M fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Grenen «Trigger agrees?» er en reserve: den nås bare hvis applikasjonskoden hoppet over kontrollen i
+tjenesten. Da svarer API-et også 403 og logger `four_eyes_db_guard`, men skriver ingen revisjonshendelse
+(FE-N1). Alle redigeringer og beslutninger på ett krav tar kravradens lås, og alle feltredigeringer og
+beslutninger på ett dokument tar dokumentradens lås. Derfor kan ikke settet av forfattere eller
+redaktører som leses i transaksjonen, endre seg før commit.
+
+| Trinn | Hvor | Merknader |
+| --- | --- | --- |
+| Rekkefølge, approve/reject | `transition()` | 400 -> 401 -> 403 `forbidden` -> 404 -> 409 `stale_revision` -> 409 `invalid_state` -> **403 `four_eyes_required`** -> 422 |
+| Rekkefølge, accept | `acceptDocument()` | 400 -> 401 -> 403 `forbidden` -> 404 -> 409 `invalid_state` -> **403 `four_eyes_required`** -> 409 `unresolved_fields` |
+| Feilsvar | `sendError` | `{ code, message: "A different person must make this decision.", requestId }`, likt for UI og API; ingen `authz.denied`-hendelse |
+| Revisjonsspor | feilhåndtereren, tenantkjeden | krav: `claimId`, `packetId`, `packetRevision`, `action`, `basis: revision_author`; dokument: `documentId`, `batchId`, `action: ACCEPT`, `basis` |
+| UI | `selfAuthored` | skjuler knappen og viser den faste teksten; bare kosmetisk, serveren bestemmer |
+
+## Standardvalg (firøyeprinsippet)
+
+D1 en revisjonsforfatter kan heller ikke avvise; D2 «klar til sending» er ikke begrenset; D3 bare
+opplasteren og CORRECT/ADD-aktører er dokumentredaktører; D4 avvisning av dokumenter er ikke begrenset.
+Stedene å endre er `FOUR_EYES_GUARDED_TRANSITIONS` (krav) og `EDITOR_DECISIONS` (dokumenter), hver med en
+ny migrering for den tilhørende triggeren. Detaljer står i trusselmodellen, del 8.4.
+
+## Grensesnitt for steg 5 (firøyeprinsippet)
+
+- Steg 5 lager pakkerevisjon 1 for importerte krav. Det **må sette `evidence_packets.created_by_id` til
+  brukeren som startet analysen**. Ellers utelukker revisjon 1 ingen, og den brukeren kan godkjenne sin
+  egen pakke (FE-N2). Steg 5 bør også avgjøre om de som lastet opp kravets dokumenter, skal regnes som
+  forfattere av kravet (i dag gjør de ikke det).
+- Enhver ny kodevei som setter inn en `approvals`-rad (`APPROVE`/`REJECT`) eller en `ACCEPT`-beslutning,
+  må kjøre kontrollen i tjenesten under samme radlås. Ellers avviser triggerne innsettingen.
+
+## Merknader (firøyeprinsippet)
+
+- Verifisert lokalt på Node 22.23.3 (CI-versjonen), **ikke i GitHub CI**: enhetstester shared 136, api
+  356, web 67; integrasjon 95 bestått (2 hoppet over fra før); akseptanse shared 36, api 690 bestått (9
+  hoppet over, 2 todo), web 150 bestått (1 hoppet over). Veien som feiler lukket i revisjonssporet, og
+  oversettelsen fra trigger til 403 dekkes bare av byggerens integrasjons- og enhetstester (de kan ikke
+  nås utenfra).
+- Aksepterte restrisikoer FE-S1..S4, FE-N1 og FE-N2 står i trusselmodellen, del 8.5.

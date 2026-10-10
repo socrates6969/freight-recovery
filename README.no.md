@@ -199,6 +199,9 @@ Byggesteg 1 til 4 er ferdige:
   tenantens egne data), **API-nøkler for tenanter** for maskintilgang til ni ruter, og et
   **evalueringsverktøy** på kommandolinjen (pass^k på syntetiske testdata). Se
   [Utviklerdashbord, Recovery intelligence og API-nøkler (steg 4)](#utviklerdashbord-recovery-intelligence-og-api-nøkler-steg-4).
+- **Firøyeprinsippet (etter steg 4):** den som har redigert en revisjon, kan ikke godkjenne eller avvise
+  den; den som har lastet opp, korrigert eller lagt til felt i et dokument, kan ikke godta det. Se
+  [Firøyeprinsippet (arbeidsdeling)](#firøyeprinsippet-arbeidsdeling).
 
 «Send» merker bare et krav som klart til sending og logger det i revisjonssporet. Ingen e-post sendes, og
 ingen penger flyttes. De seedede kravene og bevispakkene er syntetiske og er transkribert fra
@@ -340,7 +343,9 @@ skjuler bare kontrollene.
 - En gjennomgåer (`import:review`) bekrefter, korrigerer eller avviser hvert flagget felt. For bilder kan
   gjennomgåeren også sette dokumenttypen og skrive inn felt for hånd. Deretter godtar eller avviser
   gjennomgåeren hele dokumentet. Hver beslutning krever en begrunnelse på minst 10 tegn og lagres i en
-  tabell som bare kan utvides, og i revisjonssporet. Godtatte dokumenter kan ikke endres.
+  tabell som bare kan utvides, og i revisjonssporet. Godtatte dokumenter kan ikke endres. Den som lastet
+  opp et dokument, eller korrigerte eller la til et av feltene, kan ikke godta det; en annen gjennomgåer
+  må gjøre det ([firøyeprinsippet](#firøyeprinsippet-arbeidsdeling)).
 - **Opprett krav fra godtatte dokumenter** (på importsiden; du velger avsender eller transportør)
   grupperer de godtatte dokumentene etter lastnummer. Det oppretter et nytt krav med status **Venter på
   analyse** (`AWAITING_ANALYSIS`), eller kobler dokumentene til et eksisterende krav. Et nytt krav har
@@ -592,7 +597,7 @@ not an accuracy measure.»
 - **Samme regler som en bruker.** En nøkkelforespørsel går gjennom samme tenant-isolasjon,
   tillatelseskontroller, ratebegrensninger, flagg og revisjonsspor som en bruker i den tenanten.
   Revisjonshendelser viser aktørrollen `API_KEY` og `viaApiKey: <nøkkel-id>`; eierkolonner får skaperens
-  id. **Skaperens nåværende rolle** sjekkes ved hver forespørsel: er skaperen deaktivert eller har ikke
+  id (så skaperen regnes som den som lastet opp en nøkkelopplasting, og kan ikke godta det dokumentet). **Skaperens nåværende rolle** sjekkes ved hver forespørsel: er skaperen deaktivert eller har ikke
   lenger tillatelsen omfanget krever, eller er tenanten suspendert, får nøkkelen 401.
 - **Feil.** Ukjent nøkkel, feil hemmelighet, feil format, tilbakekalt eller utløpt: en identisk 401
   (ingenting skiller dem). En gyldig nøkkel på en rute den ikke får bruke: 403.
@@ -654,6 +659,35 @@ Alle innstillinger leses én gang ved oppstart og områdesjekkes; produksjonsgre
 | `RATE_LIMIT_API_KEY_MAX` | 300 | forespørsler per nøkkel per 60 sekunder |
 | `RATE_LIMIT_API_KEY_FAIL_MAX` | 30 | mislykkede nøkkelautentiseringer per klientadresse per 10 minutter |
 
+## Firøyeprinsippet (arbeidsdeling)
+
+Kjøringen `REQ-20261009-four-eyes` gjør at to beslutninger krever en annen person. Serveren håndhever
+dette; skjermbildene skjuler bare knappen.
+
+- **Krav.** Den som har laget en revisjon av kravets bevispakke (den gjeldende eller en eldre), kan ikke
+  godkjenne eller avvise kravet. En annen bruker med godkjenningsrett må gjøre det. En seedet eller
+  generert revisjon 1 har ingen registrert oppretter og utelukker ingen. Å merke en godkjent revisjon som
+  klar til sending er uendret: godkjenneren kan gjøre det, og det kan også en forfatter når en annen har
+  godkjent.
+- **Importerte dokumenter.** Den som lastet opp et dokument, eller korrigerte eller la til et av feltene,
+  kan ikke godta det. En annen gjennomgåer må gjøre det. Å bekrefte et felt, avvise et felt, endre
+  dokumenttypen og avvise dokumentet teller ikke, og står åpent for alle med gjennomgangsrett. Et
+  dokument som er lastet opp med en API-nøkkel, regnes som lastet opp av den som opprettet nøkkelen.
+- **Hva du ser.** På `/approvals` viser raden «You edited this revision. Another approver must approve
+  it.» i stedet for Approve/Reject. I gjennomgangsdialogen erstatter «You uploaded or edited this
+  document. Another reviewer must accept it.» knappen Accept document (tekstene i appen er på engelsk).
+  Prøver du likevel (et gammelt skjermbilde eller en annen fane), svarer API-et 403 `four_eyes_required`
+  («A different person must make this decision.»), endrer ingenting og registrerer forsøket i
+  revisjonssporet som `authz.four_eyes_denied`. API-kallere får nøyaktig samme svar.
+- **Hvor det håndheves.** En kontroll i API-tjenesten, under samme radlås som beslutningen, pluss
+  databasetriggere fra migreringen `20261011000000_four_eyes` som avviser en slik beslutningsrad selv om
+  kontrollen i tjenesten skulle bli hoppet over.
+- **Ikke dekket (akseptert foreløpig).** Et dokument uten grunner til gjennomgang godtas automatisk og har
+  dermed ingen menneskelig godkjenner. Endringer av funksjonsflagg gjøres av én person. Den fullstendige
+  listen over restrisikoer og standardvalgene står i
+  [technical/web-platform-security.md, del 8](technical/web-platform-security.md#8-four-eyes-separation-of-duties)
+  (engelsk).
+
 ## Tester og kontroller
 
 ```bash
@@ -697,3 +731,11 @@ integrasjon (85 bestått, 2 plassholdere hoppet over). Uavhengig akseptansekjør
 erklærte unntak, 2 todo). Runde 1 fant seks feil (D-1..D-6); alle ble rettet og verifisert på nytt.
 **Ikke kjørt:** container-images og compose-stacken, Playwright, terraform i testkjøringen (byggeren kjørte
 fmt/validate), enhver AWS-utrulling.
+
+Firøyeprinsippet (2026-10-10, kjøringen `REQ-20261009-four-eyes`, Windows, **lokal kjøring på Node
+22.23.3, ikke GitHub CI**, portabel PostgreSQL 16, portabel MinIO med SSE-KMS, i stegrekkefølgen og med
+miljøet fra `web-ci.yml`): lint, typecheck, enhetstester (shared 136, api 356, web 67), migrering + seed,
+`ensure-bucket`, build, integrasjon (95 bestått, 2 hoppet over fra før), akseptanse (shared 36, api 690
+bestått med 9 hoppet over og 2 todo, web 150 bestått med 1 hoppet over). **Ikke kjørt:** Node 24, GitHub
+CI, `npm run audit`, container-images, Playwright, enhver AWS-utrulling. Paritetstestene brukte Python
+3.14 (CI bruker 3.12).

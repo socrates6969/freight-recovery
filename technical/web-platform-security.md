@@ -11,7 +11,9 @@ isolation, app hardening, the audit trail, the claims list, the evidence-packet 
 gate. Step 3 (import and export: hostile uploads, the parse sandbox, review, commit and CSV/XLSX export)
 is covered in [section 6](#6-step-3-import-and-export). Step 4 (the Dev dashboard, Recovery
 intelligence, tenant API keys and the evaluation tool) is covered in
-[section 7](#7-step-4-dev-dashboard-recovery-intelligence-and-api-keys). Every secret, its rotation and
+[section 7](#7-step-4-dev-dashboard-recovery-intelligence-and-api-keys). The four-eyes rule (separation
+of duties for claim approvals and document acceptance) is covered in
+[section 8](#8-four-eyes-separation-of-duties). Every secret, its rotation and
 the buyer handover checklist are in [docs/secrets.md](../docs/secrets.md). The structure is in [ARCHITECTURE.md](../ARCHITECTURE.md#web-platform-typescript-steps-1-2). The
 infrastructure is in [infra/README.md](../infra/README.md).
 
@@ -51,7 +53,7 @@ The exceptions are noted in section 3.
 | T8 | Super-admin abuse | Cross-tenant access is read-only and needs a reason of at least 10 characters. A `platform.cross_tenant_read` event is appended to the **target tenant's** chain in the same transaction before the read. If that append fails, the request fails with nothing returned (`platform/cross-tenant.ts`). | T-SA-01/02; fail-closed by `api/test/integration/audit-failclosed.int.test.ts` and `api/test/cross-tenant-failclosed.test.ts` | T-SA-03 is not proven black-box (section 3). |
 | T9 | Platform/Dev access to customer data | `PLATFORM_DEV` holds only `platform:health`, `platform:flags`, `platform:logs` and (step 4) `platform:eval`; `SUPER_ADMIN` adds (step 4) `platform:audit`. Neither has a tenant permission or a tenant DB handle. The step 4 dashboard returns aggregates and filtered telemetry only (section 7, T38-T39, T45). | T-RBAC matrix, T3, T4, T6 | None known. |
 | T10 | Audit tampering | Each chain computes `hash_n = SHA-256(hash_{n-1} + "\n" + canonicalJson(event_n))`, under a per-chain advisory lock. DB triggers block UPDATE, DELETE and TRUNCATE on `audit_events`, `approvals`, `login_attempts` and the packet child tables, even for the owner. `freight_app` has only SELECT and INSERT on them. `GET /api/v1/audit/verify` recomputes the chain. | T-AUD-01..08, `api/test/audit-chain.test.ts` | Someone with a DB superuser account, or `freight_owner` with `session_replication_role` (a dev/test-only grant), could rewrite the whole chain from genesis. Nothing anchors chain heads externally yet (for example a WORM export). |
-| T11 | "Approve X, send Y", races | Approval stores the packet content hash. Send re-hashes the latest revision and requires it to equal both the approval's hash and the stored hash. A DB trigger makes packets immutable except for `status`, and only along the state machine. The claim row is locked (`SELECT ... FOR UPDATE`) for the whole transition. | T-APR-01..11 (incl. concurrency), T-PKT tamper tests | Four-eyes (author ≠ approver) is **not** enforced (assumption A9). |
+| T11 | "Approve X, send Y", races | Approval stores the packet content hash. Send re-hashes the latest revision and requires it to equal both the approval's hash and the stored hash. A DB trigger makes packets immutable except for `status`, and only along the state machine. The claim row is locked (`SELECT ... FOR UPDATE`) for the whole transition. | T-APR-01..11 (incl. concurrency), T-PKT tamper tests | None known for "approve X, send Y". Four-eyes (author ≠ approver) used to be a residual here (assumption A9); it is enforced since run `REQ-20261009-four-eyes` (T46, [section 8](#8-four-eyes-separation-of-duties)). |
 | T12 | Injection, malformed input | Prisma uses parameterized queries. Claim search escapes `\ % _` itself, because Prisma 7 `contains` does not. Strict Zod schemas reject unknown keys. Bodies are capped at 64 KiB, with a matching WAF Content-Length rule. | T-VAL-01..06, T-CLM | Step 3 added uploads (raw bytes, size-capped while streaming; see T18-T21 in section 6). There is still no URL fetching of any kind. |
 | T13 | Leakage through errors and logs | Error messages are fixed and never echo input. The UI shows fixed texts for 422 and 500. Pino redacts known paths, and a recursive scrubber covers the rest. Request logs carry method, path (no query string), status, duration and requestId. Config errors name the key, never the value. | T-LOG-01/02, T-UI-10, T-CFG | Forced-500 header and log checks are not automatable (section 3). |
 | T14 | Unsafe production configuration | `NODE_ENV` defaults to `production`. Production refuses to start with `COOKIE_SECURE=false`, `ENABLE_DEV_OUTBOX`, any `MAIL_TRANSPORT` that is not implemented (currently all of them: `outbox` is a dev sink and `ses` is a stub, fix round 3), `RATE_LIMIT_ENABLED=false` or a missing `REDIS_URL`. Secrets must be at least 43 characters, must differ from each other and must not look like placeholders, in every environment. In production they also must not be a documented dev or CI value, and must pass an alphabet-aware entropy check (≥160 bits, no repetition, at least 8 distinct characters, and no single character more frequent than chance allows). Since step 4 fix round 2 the last rule is an **exact binomial bound**: with n symbols over an alphabet of size A the value is refused when `A * P(Binomial(n, 1/A) >= maxCount) < 1e-12`, so a truly random secret is falsely refused with probability below 10^-12 (thresholds: hex-64 25, base64-48 16, base64-32 14 copies of one character). Random hex and base64 both pass. Step 4 adds `API_KEY_PEPPER` (production: required, ≥256 estimated bits, distinct from every other secret; set but empty refused everywhere). | T-CFG-01..04, T-KEY-19, `api/test/config.test.ts` (1000 random hex and base64 draws, a seeded deterministic set of 4000 secrets, and an independent check of the exact thresholds) | None known. This includes the G-B hole, fixed in fix round 1. The old 25% cap occasionally refused a genuine random secret (a flaky test); fixed in step 4 fix round 2. |
@@ -94,8 +96,9 @@ These are open. Do not read any of them as done.
 
 Other residual risks and limits:
 
-- Four-eyes approval is not enforced (A9). One MANAGER, REVIEWER, ADMIN or OWNER can both approve and,
-  where permitted, send.
+- Four-eyes is enforced for claim approve/reject and document accept since run `REQ-20261009-four-eyes`
+  (section 8). Its accepted residuals (FE-S1..S4, FE-N1, FE-N2) are listed in section 8.5. An approver
+  may still mark the revision they approved send-ready (policy D2).
 - Chain heads are not anchored externally (T10).
 - `infra/` has passed `terraform fmt` and `validate` only. It has never been planned or applied, and it
   has no ECR repository or CI deploy path yet.
@@ -149,6 +152,12 @@ and environment): unit shared 134, api 346, web 62; evaluation gate
 `npm run build`); integration 85 passed (2 placeholder skips); acceptance (test round 2) shared 33/33,
 web 138 passed (1 skip), api 651 passed (9 skipped, 2 todo).
 
+Four-eyes (run `REQ-20261009-four-eyes`, 2026-10-10, build commit `8eb7062` plus the acceptance tests,
+**local run on Node 22.23.3, not CI**, `web-ci.yml` order and environment, portable PostgreSQL 16, MinIO
+with SSE-KMS): lint, typecheck, unit shared 136, api 356, web 67; migrate, seed, `ensure-bucket`, build;
+integration 95 passed (2 pre-existing skips); acceptance shared 36, api 690 passed (9 skipped, 2 todo),
+web 150 passed (1 skip). Details and gaps in section 8.6.
+
 ## 6. Step 3: import and export
 
 Build-order step 3 (run `REQ-20261008-step3-import-export`, branch `feat/import-export`) adds document
@@ -190,7 +199,7 @@ documentation gap (D10) and two test bugs that were fixed. Web acceptance passed
 | T23 | Leaking objects through URLs or downloads | No signed URLs: `presignGet` has no caller outside tests (architecture test). Originals are streamed through the API with `Content-Type: application/octet-stream`, `Content-Disposition: attachment` and a **synthesized** file name (`document-<8 hex>.<ext>`), `nosniff` and `no-store`. The streamed bytes are hashed and compared with the stored sha256; a mismatch aborts the stream and logs an integrity alert. Every download is audited before streaming starts. | T-STORE, T-HDR-IMP, T-AUD-IMP | The API pays the bandwidth cost of downloads. |
 | T24 | Unencrypted or wrongly encrypted objects | Every put sends SSE-KMS with the configured key and a SHA-256 checksum. In production a `HEAD` verifies the encryption after the write. Production refuses to start with `S3_SSE=none` or without `S3_KMS_KEY_ID`. The bucket policy denies puts without the SSE header, with a non-KMS algorithm or with a different KMS key id, and it keeps TLS-only access, the public access block, versioning and bucket-owner enforcement. Lifecycle: noncurrent versions expire after 30 days, and incomplete multipart uploads are aborted after 1 day. | T-STORE (SSE `aws:kms` observed on MinIO), T-REPO-IMP 4 and 7, `api/test/config.test.ts` | The bucket policy relies on single-request `PutObject` with explicit headers. A future multipart upload path would need the policy reviewed. |
 | T25 | Injection through extracted strings (XSS, bidi spoofing, log injection) | Every string that comes from a document (file names, values, excerpts) is stored and returned as single-line text, with C0/C1 controls, line separators and bidi controls removed (D6, `SANITIZED_VALUE`). The UI renders text nodes only, through `displayText()`. Logs carry ids, sizes, 12-character sha256 prefixes and fixed reason codes, never file names, values or text. Audit metadata is allow-listed. | T-IMP-NAME, T-LOG-IMP, T-AUD-IMP, UI-11 | None known beyond T2. |
-| T26 | A wrong or manipulated value becomes a claim without a human check | Confidence is a **rule-based parse score, not an accuracy measure**, and the UI says so. Fields below 0.90, unparseable values and conflicting duplicates are flagged, and every PDF field is flagged. Only ACCEPTED documents can be committed. Acceptance needs `import:review` (ANALYST cannot accept) and a reason of at least 10 characters. Values that are unparseable or conflicting must be resolved one by one, even with "confirm all remaining". Each decision is an append-only row plus an audit event. Accepted documents are immutable (DB trigger). Claims from imports start as `AWAITING_ANALYSIS`, with no money and no packet. A claim that already has a packet is never changed by a commit. | T-REV (REV-01..08), T-COM (COM-01..11), P3 | **Four-eyes is not enforced** (D-7, like A9 / F-13 for approvals): the same REVIEWER, MANAGER, ADMIN or OWNER can upload, review and accept their own document. |
+| T26 | A wrong or manipulated value becomes a claim without a human check | Confidence is a **rule-based parse score, not an accuracy measure**, and the UI says so. Fields below 0.90, unparseable values and conflicting duplicates are flagged, and every PDF field is flagged. Only ACCEPTED documents can be committed. Acceptance needs `import:review` (ANALYST cannot accept) and a reason of at least 10 characters. Values that are unparseable or conflicting must be resolved one by one, even with "confirm all remaining". Each decision is an append-only row plus an audit event. Accepted documents are immutable (DB trigger). Claims from imports start as `AWAITING_ANALYSIS`, with no money and no packet. A claim that already has a packet is never changed by a commit. | T-REV (REV-01..08), T-COM (COM-01..11), P3 | Four-eyes on acceptance (formerly D-7) is enforced since run `REQ-20261009-four-eyes`: the uploader and anyone who corrected or added a field cannot accept the document (T46, [section 8](#8-four-eyes-separation-of-duties)). Still open: a document with no review reasons is accepted automatically with no human acceptor (FE-S1), and only CORRECT/ADD count as editing (FE-S3). |
 | T27 | CSV/Excel formula injection | Every exported text cell is cleaned (controls, bidi and zero-width characters removed; tab, CR, LF, LS and PS become one space; 10,000-character cap). A cell whose first non-whitespace character is `=`, `+`, `-`, `@` or a full-width form (U+FF1D, U+FF0B, U+FF0D, U+FF20) gets a leading `'`. Numbers are written from numbers and never pass through text handling. The XLSX writer never emits `<f>`, hyperlinks, drawings, external relationships, macros or defined names (`api/src/exports/`). | T-EXP (EXP-03 corpus, EXP-15 random strings), P4, exports unit tests | The neutralizing `'` is visible in some spreadsheet programs. Other consumers (a script reading the CSV) must still treat cells as data. |
 | T28 | Bulk exfiltration through exports | Exports need `export:claims`, `export:packets` or `export:outcomes`. VIEWER has none, and ANALYST has only claims. Tenant scope and filters are the same as R26. `EXPORT_MAX_ROWS` (50,000) is checked before the first byte (422). `export.started` is committed **before** any data is sent, and `export.completed` records the row count, byte length and SHA-256 of the exact bytes sent. `export.aborted` records partial transfers. Exports contain no user names, emails or ids, and no demand letter text. | EXP-01..14, T-RBAC-IMP, T-AUD-IMP | An authorized user can still export their whole tenant in several files. The audit trail records it but does not prevent it. |
 | T29 | WAF blocks or lets through uploads | The 64 KiB Content-Length block now excludes only `POST /api/v1/imports/<uuid>/documents`, and that route has its own block above 10 MiB (`var.import_max_file_bytes`). The API enforces both limits itself while streaming. | `terraform validate`, T-REPO-IMP 4, regex boundary tests | The **AWS Common rule set** still inspects the first 8 KB of binary upload bodies and may produce **false positives** on PDFs or images. Watch the `aws-common` metrics before launch, and add a scoped rule exclusion if needed. Not tested against a deployed WAF. |
@@ -211,8 +220,10 @@ These are open. Do not read any of them as done.
 3. **No antivirus scan** of uploaded files (T30).
 4. **WAF.** The body-size rule changed for the upload route. The AWS Common managed rule set may
    produce false positives on binary bodies (T29). Neither has been tested against a deployed WAF.
-5. **Four-eyes is still not enforced** (finding F-13 from the step 1-2 review; decision D-7 for import
-   review). One reviewer can upload, review and accept their own document.
+5. **Four-eyes on document acceptance: the gap itself is closed** by run `REQ-20261009-four-eyes`
+   (section 8; it was finding F-13 / decision D-7). What stays open from it: auto-accepted documents have
+   no human acceptor (FE-S1), and a field REJECT or a document-type change does not count as editing
+   (FE-S3).
 6. **Email-forward ingestion is design only.** No SES, SQS or email worker exists. The design and its
    open questions are in [docs/design/email-ingest.md](../docs/design/email-ingest.md).
 7. **No OCR.** Images yield no fields and need manual entry (D8). PDF parity with Python holds only for
@@ -221,8 +232,9 @@ These are open. Do not read any of them as done.
    Playwright end-to-end tests, and the forced audit-append failure for exports (EXP-06, skipped: it
    needs a second database with INSERT revoked). Encrypted-PDF tests were skipped because `qpdf` was not
    installed. The export abort path is integration-tested with a real socket.
-9. **Open owner decisions** (not blocking): outcomes export as a decision ledger, no four-eyes, VIEWER
-   cannot import or export, threshold 0.90, 1 GiB storage quota per tenant.
+9. **Open owner decisions** (not blocking): outcomes export as a decision ledger, VIEWER cannot import or
+   export, threshold 0.90, 1 GiB storage quota per tenant. (Four-eyes was decided and built in run
+   `REQ-20261009-four-eyes`; its policy defaults D1-D4 are in section 8.4.)
 
 ## 7. Step 4: Dev dashboard, Recovery intelligence and API keys
 
@@ -266,7 +278,7 @@ were fixed and re-verified.
 | T38 | Platform/Dev staff see customer data (data minimisation) | No platform route accepts a tenant id. The only cross-tenant read is the `SECURITY DEFINER` function `fr_platform_pipeline_stats`, which raises outside system mode, pins `search_path`, range-checks its inputs and returns counts and durations only (never a tenant id, user id, name, file name, storage key, hash or claim number). Every platform response is parsed by a strict outgoing schema (`strictBody`) before it is sent. Architecture tests forbid tenant models, tenant tables and `email` in platform modules. Platform responses never mention API keys or per-tenant key counts. Platform roles have no tenant database handle. | hostile tenant strings (e-mail addresses, tokens) absent from all R60-R68 bodies (integration), T4, T-KEY-18, architecture tests | Aggregates span all tenants; with very few tenants, a count can effectively describe one tenant's activity volume (never its content). Platform `authz.denied` events name route templates and permission names (accepted ruling). |
 | T39 | Secrets or personal data leaking through the Logs view | The ring buffer stores only 8 fields **derived** from the already-redacted log line: never the raw line. `requestId` must be a UUID, `route` a pattern without `?`, `event` only a message matching `^[A-Za-z0-9 _.:/()-]{1,80}$` with no `@` and no run of 20+ token characters, otherwise `(message withheld)`. Malformed JSON, unknown levels and prototype keys are ignored; the buffer never throws into the logger. The UI renders every value as inert text and clips long values (D-2). Every view is audited (`platform.logs_viewed`) and the tab is `PLATFORM_DEV` only. | `observability.test` (e-mail, JWT-like, long hex, UUID in message, control/bidi characters, 10,000-character messages), T6, T-WEB-04, logging tests | A short message of allowed characters is still shown, so developers must keep data out of log **messages** (structured fields are dropped anyway). The view covers one instance and is lost on restart; central log search is CloudWatch, outside this control. |
 | T40 | Telemetry cardinality attack (memory growth) | Telemetry keys on the route **pattern**, never the URL. Unknown URLs share one `(unmatched)` bucket, unknown methods become `OTHER`, at most 200 route keys exist (overflow into `(other)`), and buckets are fixed. Memory is O(routes x buckets). | `observability.test`, T5 | None known. |
-| T41 | Feature-flag tampering or misuse | Only `PLATFORM_DEV` (MFA required) holds `platform:flags`. Changes need CSRF + Origin, a reason of at least 10 characters, the current version (409 if stale), a `SELECT ... FOR UPDATE` and the `platform.flag_changed` audit event in the same transaction. Only the three registry keys exist; DB triggers enforce `version + 1` and block INSERT, DELETE and TRUNCATE. Flags can gate only the three intelligence features, never auth, CSRF, RLS or audit (architecture test), and an unreadable flag counts as off. | `platform-dashboard.int` (stale, conflict, unknown, CSRF, role, audit), `intelligence-db.int` (triggers, grants), T7, T-FLAG | **No four-eyes**: one PLATFORM_DEV can switch a feature off for every tenant. A change reaches other instances only after `FLAGS_CACHE_TTL_MS` (5 s default, at most 30 s in production). Flags are global; there are no per-tenant overrides. |
+| T41 | Feature-flag tampering or misuse | Only `PLATFORM_DEV` (MFA required) holds `platform:flags`. Changes need CSRF + Origin, a reason of at least 10 characters, the current version (409 if stale), a `SELECT ... FOR UPDATE` and the `platform.flag_changed` audit event in the same transaction. Only the three registry keys exist; DB triggers enforce `version + 1` and block INSERT, DELETE and TRUNCATE. Flags can gate only the three intelligence features, never auth, CSRF, RLS or audit (architecture test), and an unreadable flag counts as off. | `platform-dashboard.int` (stale, conflict, unknown, CSRF, role, audit), `intelligence-db.int` (triggers, grants), T7, T-FLAG | **No four-eyes on flags** (the section 8 control covers claim and document decisions only): one PLATFORM_DEV can switch a feature off for every tenant. A change reaches other instances only after `FLAGS_CACHE_TTL_MS` (5 s default, at most 30 s in production). Flags are global; there are no per-tenant overrides. |
 | T42 | Cross-tenant leakage through Recovery intelligence (similar claims, worklist, provenance) | All reads run in the caller's tenant transaction (RLS FORCE) with explicit `tenant_id = fr_current_tenant()` predicates as defense in depth. Candidates come only from the same tenant; another tenant's claim id gets the byte-identical 404; platform users get 403 before any query. Query schemas are strict, page size and candidate count are bounded, SQL is parameterized, and nothing is cached. | `intelligence.int`, T10-T12, T-SIM, T-WORK | Same as T7. |
 | T43 | Misleading figures (unearned accuracy, learning or speed claims) | Fixed texts from `packages/shared/src/honest-copy.ts`; weights are shown as policy with every result; evaluation results are labeled "synthetic fixtures" and never accuracy; an architecture test forbids "neural mesh", "Hebbian", "solved-problems cache", "AI-powered", "faster than" and "Nx faster" in source, and UI sweeps check every new screen. | architecture test, web DOM sweeps, T14 | Users can still over-read a ranking; the worklist note says it is a work-order aid, not a forecast. |
 | T44 | Evaluation tool abuse (path traversal, secret disclosure, tampering with results) | Manifest paths must resolve inside the set directory to regular files of at most 5 MiB (absolute paths, `..` and symlink escapes refused). Parsing runs in the existing sandbox with no network. Only `--record` writes, in one system transaction, and never prints the database URL; an infrastructure error records nothing (exit 3). Eval tables are append-only for every role. | `eval-units`, `eval-record.int`, T9 | The tool runs with the operator's `DATABASE_URL` in system mode, so it is as trusted as the operator. |
@@ -283,7 +295,7 @@ These are open. Do not read any of them as done.
 
 1. **Per-instance observability.** Telemetry, the log view and the API key "refuse early" cache live in
    one API process and reset on restart. With several instances each shows only its own view.
-2. **Flags:** no four-eyes approval, global only, and up to `FLAGS_CACHE_TTL_MS` of staleness on other
+2. **Flags:** no four-eyes approval (section 8 does not cover flags), global only, and up to `FLAGS_CACHE_TTL_MS` of staleness on other
    instances.
 3. **No outcome data.** The worklist and similarity are fixed rules; nothing can say which claims will
    actually be paid. A learned ranker is deferred until outcomes are recorded and measured offline.
@@ -297,3 +309,156 @@ These are open. Do not read any of them as done.
    behaviour of long log values is not observable in jsdom.
 7. **Not run:** container images and the compose stack, Playwright end-to-end tests, any AWS deployment.
    Terraform was validated by the builder only (fmt/validate; never planned or applied).
+
+## 8. Four-eyes: separation of duties
+
+Run `REQ-20261009-four-eyes` (branch `feat/four-eyes`, build commit `8eb7062`) makes sure the person who
+prepared a decision is not the person who takes it. Before this run, the gap was a documented residual
+(A9 and F-13 for approvals, D-7 for import review). Rows T11 and T26 now point here. The structure is in
+[ARCHITECTURE.md, four-eyes](../ARCHITECTURE.md#web-platform-four-eyes-separation-of-duties).
+
+### 8.1 What is enforced
+
+| Decision | Refused | Still allowed |
+| --- | --- | --- |
+| Approve or reject a claim's current packet revision | Every **revision author** of the claim: the recorded creator (`evidence_packets.created_by_id`) of **any** revision of that claim, current or superseded. A revision with no recorded creator (seeded or generated revision 1) adds nobody. Example: A creates revision 2 and B creates revision 3, so A and B are both refused and C may approve. | Any other user with `packets:approve` |
+| Accept an imported document | Every **document editor**: the uploader (`import_documents.uploaded_by_id`, if recorded) and every user who recorded a field `CORRECT` or `ADD` decision on that document | Any other user with `import:review` |
+
+Unchanged: marking an APPROVED revision send-ready (anyone with `demands:send`, including the approver and
+a revision author; D2), rejecting a document (D4), RBAC, the state machine, the reason rules and every
+other error. A field `CONFIRM`, a field `REJECT`, a document-type change and the confirmations that
+acceptance itself records do not make a user a document editor (D3).
+
+**API-key uploads** are attributed to the user who created the key. That user is the uploader (shown as
+`uploadedBy` in the review queue), so they cannot accept the document. An ingest actor of kind `user`
+with a non-UUID id is refused before any database work. Only the future `system` ingest kind (no caller
+today) stores a null uploader; it excludes no uploader, but CORRECT/ADD editors are still excluded. API
+keys still cannot call approve, reject, send, accept or reject-document at all (T34).
+
+### 8.2 Threat and mitigation
+
+| # | Threat | Mitigation (where) | Verified by | Residual risk |
+| --- | --- | --- | --- | --- |
+| T46 | Self-approval: one person edits a packet revision and approves (or rejects) it, or uploads or edits a document and accepts it, so no second person ever checks the work | Service check under the existing row locks, backed by `SECURITY DEFINER` `BEFORE INSERT` triggers on `approvals` and `import_review_decisions` (migration `20261011000000_four_eyes`). A refusal is 403 `four_eyes_required`, changes nothing, and is audited as `authz.four_eyes_denied`. If that audit append fails, the request fails with 500 (fail closed). The UI hides the button for the excluded person, but that is cosmetic only (section 8.3). | FE-C01..17, FE-D01..11, FE-B01..07, FE-P01..04, FE-U01..10, FE-SH, the T-APR-05 rewrite (`*/test-acceptance/`); `api/test/integration/four-eyes.int.test.ts`, `api/test/four-eyes-units.test.ts`, `web/test/four-eyes.test.tsx`, `packages/shared/src/four-eyes.test.ts` | FE-S1..S4, FE-N1, FE-N2 (section 8.5) |
+
+### 8.3 How it works
+
+1. **Service check (the primary control).** Claims: `transition()` in `api/src/claims/service.ts` checks
+   the requester against every revision's creator for the transitions in `FOUR_EYES_GUARDED_TRANSITIONS`
+   (`approve`, `reject`). It runs while the claim row is locked (`SELECT ... FOR UPDATE`). Documents:
+   `assertNotDocumentEditor` runs in `acceptDocument` (`api/src/imports/review-service.ts`) right after
+   the document row lock. It checks the uploader first (`basis: uploader`), then CORRECT/ADD decisions by
+   the requester (`basis: field_editor`). The editor decisions are listed in `EDITOR_DECISIONS`
+   (`api/src/imports/dto.ts`). Every edit and decision on a claim takes the same claim lock, and every field
+   edit and decision on a document takes the same document lock. So the author or editor set cannot
+   change between the check and the commit, and of two concurrent decisions at most one succeeds. The
+   other gets `stale_revision`, `invalid_state` or `four_eyes_required`, never 500.
+2. **Database triggers (defence in depth).** Migration
+   `api/prisma/migrations/20261011000000_four_eyes/migration.sql` adds `approvals_four_eyes_guard`
+   (function `fr_approval_four_eyes_guard`, rows with action `APPROVE` or `REJECT`) and
+   `import_review_decisions_four_eyes_guard` (function `fr_review_four_eyes_guard`, action `ACCEPT`).
+   Both are `BEFORE INSERT`, `SECURITY DEFINER` (owner `freight_owner`) with `search_path = public,
+   pg_temp`, and `EXECUTE` revoked from `PUBLIC`. They match `tenant_id` explicitly and raise SQLSTATE
+   `P0001` with the message `four_eyes_required`. Because they run as definer, a missing or foreign
+   `app.tenant_id` cannot hide the author rows; such inserts are refused too (FE-B04). The migration adds
+   triggers only: no table or column changes, no new tenant table, and the earlier migrations are
+   byte-for-byte unchanged. Existing rows are not re-validated. `EDIT` and `SEND_READY` rows are not
+   checked.
+3. **Error.** `403` with code `four_eyes_required` and the fixed message `A different person must make
+   this decision.` The body is `{ code, message, requestId }` only, the same for browser and API callers,
+   with no other user's identity and no database text. Precedence for approve/reject: 400 -> 401 -> 403
+   `forbidden` -> 404 -> 409 `stale_revision` -> 409 `invalid_state` -> **403 `four_eyes_required`** ->
+   422 (unacknowledged pending findings). For accept: 400 -> 401 -> 403 `forbidden` -> 404 -> 409
+   `invalid_state` -> **403 `four_eyes_required`** -> 409 `unresolved_fields`. If a trigger refusal ever
+   reaches the API (a service check was bypassed), `toHttpError` maps it to the same 403, never 500. It
+   matches only the exact SQLSTATE and message, and it logs `four_eyes_db_guard` at error level.
+4. **Audit, fail closed.** Each refused request appends exactly one `authz.four_eyes_denied` event to the
+   tenant chain. The error handler writes it in its own transaction after the business transaction has
+   rolled back. Claim metadata: `claimId`, `packetId`, `packetRevision`, `action` (`APPROVE` or
+   `REJECT`), `basis: revision_author`. Document metadata: `documentId`, `batchId`, `action: ACCEPT`,
+   `basis` (`uploader` or `field_editor`). No reason text, no other user's id and no field values are
+   recorded. No `authz.denied` event is written for this error. If the append fails, the request answers
+   500 `internal_error` and logs `four_eyes_audit_failed`, the same fail-closed rule as `authz.denied`. A
+   refusal otherwise changes nothing: no approval or decision row, no status change, the claim `version`
+   unchanged, no field confirmed, no `approval.*` or `review.*` event.
+5. **UI hiding is cosmetic only.** `ApprovalItem.selfAuthored` (`GET /api/v1/approvals`) and
+   `ImportDocumentDetail.selfAuthored` (document detail, upload, set type, accept, reject) are required
+   booleans. They are computed for the requesting user, whose identity is reloaded from the database on
+   every request. When the flag is true, the Approvals row shows "You edited this revision. Another
+   approver must approve it." instead of Approve/Reject. The review dialog shows "You uploaded or edited
+   this document. Another reviewer must accept it." instead of Accept document. This only saves a click.
+   **The server is the control**: a stale screen or a second tab still gets the 403, which the UI shows
+   in a `role="alert"` element before refetching. The flag only says whether the requester is excluded;
+   it names no other user.
+
+### 8.4 Policy defaults (owner decisions; each can be flipped later)
+
+- **D1. A revision author may not reject either** (not only approve), for uniformity. An author who wants
+  to withdraw their revision can edit again. To flip it: remove `reject` from
+  `FOUR_EYES_GUARDED_TRANSITIONS`, add a new migration that drops `REJECT` from the trigger, and change
+  the UI condition.
+- **D2. Send-ready is unrestricted.** The approver, and also a revision author, may mark a revision
+  someone else approved as send-ready. Two people were already involved.
+- **D3. "Document editor" means the uploader plus CORRECT and ADD actors only.** A field REJECT, a
+  document-type change and CONFIRM do not count. Adding REJECT and SET_TYPE would take a change to
+  `EDITOR_DECISIONS` plus a new migration (see FE-S3).
+- **D4. Document reject is unrestricted.** An uploader or editor may reject their own document, which is
+  the normal remedy for a wrong upload.
+
+### 8.5 Accepted residuals (four-eyes)
+
+These are open. Do not read any of them as done. All were rated Low or Info by the security review of
+this run, with no Critical, High or Medium findings.
+
+1. **FE-S1 (Low): auto-accepted documents have no human acceptor.** A document with no review reasons
+   goes `RECEIVED -> ACCEPTED` at ingest (`api/src/imports/service.ts`). Commit needs only `import:run`,
+   so the uploader can turn it into a claim without a second person. Options if this is not accepted:
+   force `NEEDS_REVIEW` for every document, or stop the uploader from committing a document that no
+   human accepted.
+2. **FE-S2 (Low): a status change is not tied to a decision row.** The triggers guard inserts into
+   `approvals` and `import_review_decisions` only. `freight_app` holds `UPDATE (status)` on the packet and
+   document tables, so SQL that sets `APPROVED` or `ACCEPTED` without inserting a decision row is outside
+   the new triggers. The existing state-machine triggers still apply, and the service always writes both
+   in one transaction. Possible hardening: a `DEFERRABLE` constraint trigger that requires a matching
+   APPROVE/ACCEPT row in the same transaction.
+3. **FE-S3 (Low; policy D3): narrow editor definition.** A field REJECT (choosing between conflicting
+   values) or a document-type change also shapes what a document contributes to a claim, but it does not
+   make the actor a document editor. If the policy is revisited, count field REJECT, and SET_TYPE when a
+   later ADD depends on it.
+4. **FE-S4 (Low): refusal audit volume.** Every refused attempt writes one audit row and takes the
+   tenant's audit advisory lock. The decision routes have only the global rate limit. This is the same
+   exposure as `authz.denied` and has no cross-tenant effect. Possible hardening: a per-user rate group
+   for decision routes, or coalescing repeated refusals.
+5. **FE-N1 (Info): a trigger refusal is logged but not audited.** If a service check were bypassed and
+   the trigger refused the insert, the API answers 403 and logs `four_eyes_db_guard`, but writes no tenant
+   audit event. This path is not reachable through the current routes. Option: audit it with
+   `basis: db_guard`.
+6. **FE-N2 (Info; a requirement for step 5): revision 1 has no creator.** Revision 1 from analysis or
+   the seed has a null `created_by_id`, so it excludes nobody. Step 5, which creates revision 1 for
+   imported claims, **must record `created_by_id` as the user who triggered the analysis**, or that
+   user can approve their own packet. Related: the uploader of a claim's documents is not counted as a
+   claim author. Step 5 should decide whether it must be.
+7. **Flags are not covered.** Feature-flag changes (T41) remain single-person.
+
+### 8.6 What was run
+
+Local run on **Node 22.23.3 (the CI version), not GitHub CI**, in the `web-ci.yml` step order with its
+environment, on Windows with portable PostgreSQL 16 (runtime role `freight_app` without BYPASSRLS) and
+MinIO with SSE-KMS:
+
+| Step | Result |
+| --- | --- |
+| lint, typecheck, `verify:no-install-scripts`, `prisma:generate` | exit 0 |
+| unit (`npm test`) | shared 136, api 356, web 67 passed |
+| migrate deploy (incl. `20261011000000_four_eyes`), seed `--reset`, `ensure-bucket`, build | exit 0 |
+| integration | 95 passed, 2 pre-existing skips |
+| acceptance | shared 36 passed; api 690 passed, 9 skipped, 2 todo; web 150 passed, 1 skipped |
+
+Every FE-* case passed, including 20 rounds per concurrency case (FE-P01..04) with no 500. The tester made
+three test-design fixes in the first round; none relaxed an expected outcome. Not covered or not run:
+
+- The fail-closed path (500 when the `authz.four_eyes_denied` append fails) and the mapping of a trigger
+  refusal to 403 cannot be reached black-box. Only the builder's integration and unit tests cover them.
+- Not run on Node 24 or in GitHub CI. `npm run audit` and `npm audit signatures` were not run in this
+  run. The parity suites used Python 3.14 (CI uses 3.12).
+- Container images, the compose stack, Playwright and any AWS deployment, as in the earlier steps.

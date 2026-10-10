@@ -85,6 +85,10 @@ graph TD
 - The alias token is a bearer secret. Anyone who learns it can submit documents into that tenant's
   review queue. They cannot read anything, and nothing becomes a claim without review. Rotation and
   revocation are the mitigation.
+- Four-eyes: an emailed document would be ingested by the `system` actor and store no uploader, so no
+  uploader is excluded from accepting it. Anyone who corrects or adds a field is still excluded (see
+  [technical/web-platform-security.md, section 8](../../technical/web-platform-security.md#8-four-eyes-separation-of-duties)).
+  If the alias owner should count as the uploader, the design must say so before this is built.
 - Email bodies are not imported (see open question 2). Headers and bodies are never logged.
 - SES virus scanning is not a full anti-malware control. The same "no AV scan" residual risk as for
   uploads applies (see [technical/web-platform-security.md](../../technical/web-platform-security.md)).

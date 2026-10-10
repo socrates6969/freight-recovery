@@ -342,7 +342,9 @@ transaction, with the claim row locked `FOR UPDATE`. Approve records the packet'
 Send recomputes it and requires it to equal both the approval's hash and the stored hash. "Send" only
 marks the demand send-ready: no email, no payment. The DB trigger `fr_packet_update_guard` enforces
 the same transitions and makes every column except `status` immutable. Edit creates a new revision; the
-approval row records the base revision (deviation 18).
+approval row records the base revision (deviation 18). Since run `REQ-20261009-four-eyes`, approve and
+reject are also refused (403 `four_eyes_required`) for anyone who created any revision of the claim's
+packet; see [four-eyes](#web-platform-four-eyes-separation-of-duties).
 
 | Function | Defined In | Called By | Purpose |
 | --- | --- | --- | --- |
@@ -687,6 +689,11 @@ enforces the transitions and keeps the extracted value, raw value, confidence an
 `RECEIVED` document older than `IMPORT_STALE_SECONDS` becomes `FAILED` the next time its batch is read,
 and its object is removed.
 
+Since run `REQ-20261009-four-eyes`, R49 (accept) is refused with 403 `four_eyes_required` for the
+document's uploader and for anyone who recorded a field `CORRECT` or `ADD` on it; see
+[four-eyes](#web-platform-four-eyes-separation-of-duties). A document that goes straight from `RECEIVED`
+to `ACCEPTED` (no review reasons) has no human acceptor (residual FE-S1).
+
 ## Data model and storage
 
 | Table | Purpose | Notable rules |
@@ -791,7 +798,8 @@ these step 3 interfaces:
    The letter renderer reuses them.
 5. **Claim lifecycle.** Step 5 adds the transition `AWAITING_ANALYSIS -> PENDING_REVIEW`. The same
    transaction creates packet revision 1 (with its content hash) and an audit event. `claim_documents`
-   names the source documents.
+   names the source documents. Revision 1 must record `created_by_id` as the user who triggered the
+   analysis, or that user could approve it (four-eyes residual FE-N2).
 6. **Parity pattern.** `tools/parity/` and `api/test/parity/` are the pattern for the rules dump
    script. CI already sets up Python.
 7. **Providers.** `ExtractionProvider` is where an LLM provider will plug in later, behind sanitization
@@ -1200,3 +1208,222 @@ hash `evalSetSha256` covers the manifest and every case file in order; fixtures 
   the manual path), HMAC request signing, per-key usage dashboards, more scopes, four-eyes on flag
   changes, cluster-wide telemetry and logs, any learned ranker.
 - Not verified: container images, the compose stack, Playwright end-to-end tests, any AWS deployment.
+
+---
+
+# Web platform: four-eyes (separation of duties)
+
+> Written by scriber for run `REQ-20261009-four-eyes` on 2026-10-10 (branch `feat/four-eyes`, build
+> commit `8eb7062`). **Pre-product, synthetic data only, never deployed.** Threat row T46, the policy
+> defaults and the accepted residuals are in
+> [technical/web-platform-security.md, section 8](technical/web-platform-security.md#8-four-eyes-separation-of-duties).
+> User-facing description: [README, four-eyes](README.md#four-eyes-separation-of-duties).
+
+## Overview (four-eyes)
+
+Two decisions now need a second person:
+
+1. **Claims.** A user who created **any** packet revision of a claim (current or superseded) cannot
+   approve or reject the claim's current revision. A revision with no recorded creator (seeded or
+   generated revision 1) excludes nobody. Send-ready is unchanged.
+2. **Imported documents.** The uploader and every user who recorded a field `CORRECT` or `ADD` cannot
+   accept the document. Reject is unchanged. API-key uploads count as uploads by the key's creator.
+
+The service check is the primary control. Database triggers back it up, a refusal is one fixed 403 for
+every caller and is audited, and the UI hides the button for the excluded person (cosmetic only). No
+table, column, tenant table, RBAC entry or route was added. The only schema change is the trigger
+migration `20261011000000_four_eyes`.
+
+## Module Structure (four-eyes)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Shared["packages/shared"]
+        FE["four-eyes.ts"]
+        AA["audit-actions.ts"]
+        DTO["dto.ts / import-dto.ts"]
+    end
+    subgraph Web["web/src/features"]
+        AP["ApprovalsPage.tsx"]
+        RQ["ReviewQueuePage.tsx"]
+    end
+    subgraph API["api/src"]
+        CR["claims/routes.ts"]
+        CS["claims/service.ts"]
+        IR["imports/routes.ts"]
+        RS["imports/review-service.ts"]
+        ID["imports/dto.ts"]
+        ER["http/errors.ts"]
+        APP["app.ts error handler"]
+        CH["audit/chain.ts"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261011000000_four_eyes"]
+        T1["approvals trigger"]
+        T2["review_decisions trigger"]
+    end
+
+    AP --> FE
+    RQ --> FE
+    AP --> DTO
+    RQ --> DTO
+    CR --> CS
+    IR --> RS
+    RS --> ID
+    CS --> ER
+    RS --> ER
+    ER --> APP
+    APP --> CH
+    APP --> AA
+    CS --> T1
+    RS --> T2
+    MIG --> T1
+    MIG --> T2
+
+    style FE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RQ fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ID fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ER fill:#1e90ff,stroke:#1565c0,color:#fff
+    style APP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style T1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style T2 fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Module/Function | Purpose | Key Dependencies | Changed in This Run |
+| --- | --- | --- | --- |
+| `packages/shared/src/four-eyes.ts` | `FOUR_EYES_ERROR_CODE`, `FOUR_EYES_CLAIM_TEXT`, `FOUR_EYES_DOCUMENT_TEXT` (exact UI copy) | none | new |
+| `packages/shared/src/audit-actions.ts` | adds `authz.four_eyes_denied` (last entry) | none | changed |
+| `packages/shared/src/dto.ts`, `import-dto.ts` | required `selfAuthored: boolean` on `ApprovalItem` and `ImportDocumentDetail` only | zod | changed |
+| `api/src/http/errors.ts` | `four_eyes_required` message; `FourEyesRefusal` (403, carries the audit context); `errors.fourEyes(audit)` | `HttpError` | changed |
+| `api/src/app.ts` | async error handler: appends `authz.four_eyes_denied` in its own tenant transaction, 500 if that fails; `isFourEyesDbError` maps a trigger refusal to 403 | `appendAudit`, `requireTenant` | changed |
+| `api/src/audit/chain.ts` | `basis` allow-listed in `METADATA_KEYS` | none | changed |
+| `api/src/claims/service.ts` | `FOUR_EYES_GUARDED_TRANSITIONS`; author check in `transition()`; `listApprovalQueue(tx, query, viewerId)` computes `selfAuthored` | `lockAndLoadLatest` | changed |
+| `api/src/claims/routes.ts` | passes `requireTenant(req).user.id` as the viewer | claims service | changed |
+| `api/src/imports/review-service.ts` | `assertNotDocumentEditor` in `acceptDocument`; all detail call sites pass the viewer | `lockReviewable`, `documentDetail` | changed |
+| `api/src/imports/dto.ts` | `EDITOR_DECISIONS = {CORRECT, ADD}`; `isDocumentEditor(uploadedById, decisions, viewerId)` | none | changed |
+| `api/src/imports/service.ts`, `routes.ts`, `deps.ts` | `documentDetail(..., viewerId)`; `uploadedById` loaded internally (no DTO exposes it); ingest refuses a `user` actor with a non-UUID id; attribution rule documented | storage, DB | changed |
+| `api/prisma/migrations/20261011000000_four_eyes/` | `fr_approval_four_eyes_guard`, `fr_review_four_eyes_guard` and their `BEFORE INSERT` triggers | `evidence_packets`, `import_documents`, `import_review_decisions` | new |
+| `web/src/features/approvals/ApprovalsPage.tsx` | hides Approve/Reject when `selfAuthored`; maps a 403 `four_eyes_required` to the claim text and refetches | shared constants | changed |
+| `web/src/features/imports/ReviewQueuePage.tsx` | hides Accept document when `selfAuthored`; maps the 403 to the document text and refetches | shared constants | changed |
+
+## Function Call Graph (four-eyes)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST approve / reject"] --> TR["transition()"]
+    TR --> LK["lockAndLoadLatest"]
+    TR --> GT{"in GUARDED_TRANSITIONS?"}
+    GT -- yes --> AF["findFirst author rev"]
+    AF -- found --> FR["errors.fourEyes()"]
+    AF -- none --> INS1["insert approvals row"]
+    INS1 --> TG1["fr_approval_four_eyes_guard"]
+
+    R2["POST accept document"] --> ACC["acceptDocument()"]
+    ACC --> LR["lockReviewable"]
+    ACC --> AN["assertNotDocumentEditor"]
+    AN -- editor --> FR
+    AN -- not editor --> INS2["insert ACCEPT decision"]
+    INS2 --> TG2["fr_review_four_eyes_guard"]
+
+    FR --> EH["app error handler"]
+    TG1 -. "P0001 (bypass only)" .-> MAP["isFourEyesDbError"]
+    TG2 -. "P0001 (bypass only)" .-> MAP
+    MAP --> EH
+    EH --> AUD["appendAudit four_eyes_denied"]
+
+    style TR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MAP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Function | Defined In | Called By | Purpose |
+| --- | --- | --- | --- |
+| `transition` | `api/src/claims/service.ts` | claims routes (approve, reject, send) | state machine, then the author check for approve/reject, then the acknowledgement check |
+| `listApprovalQueue` | `api/src/claims/service.ts` | `GET /api/v1/approvals` | one `distinct` query over the page's claim ids sets `selfAuthored` |
+| `acceptDocument`, `assertNotDocumentEditor` | `api/src/imports/review-service.ts` | `POST .../accept` | uploader check (`basis: uploader`), then CORRECT/ADD check (`basis: field_editor`), before the unresolved-field checks |
+| `documentDetail`, `isDocumentEditor` | `api/src/imports/service.ts`, `api/src/imports/dto.ts` | detail, upload, set type, accept, reject, ingest | `selfAuthored` from the decisions already loaded (no extra query) |
+| `FourEyesRefusal`, `errors.fourEyes` | `api/src/http/errors.ts` | both services | 403 `four_eyes_required` carrying `{tenantId, targetType, targetId, metadata}` |
+| `isFourEyesDbError` | `api/src/app.ts` | `toHttpError` | matches SQLSTATE `P0001` and the exact message `four_eyes_required` on the error or its `cause`/`meta` chain (depth 5, cycle-safe) |
+| `fr_approval_four_eyes_guard` | migration `20261011000000_four_eyes` | `BEFORE INSERT ON approvals` | refuses `APPROVE`/`REJECT` by any `created_by_id` of the claim's packets (same tenant) |
+| `fr_review_four_eyes_guard` | migration `20261011000000_four_eyes` | `BEFORE INSERT ON import_review_decisions` | refuses `ACCEPT` by the uploader or a CORRECT/ADD actor of the document (same tenant) |
+
+## Data Flow (four-eyes refusal)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["Approve / reject / accept"] --> B["Route checks: 400, 401, 403, 404"]
+    B --> C["Business tx: row lock"]
+    C --> D{"Stale or wrong state?"}
+    D -- yes --> E["409 (unchanged)"]
+    D -- no --> F{"Requester excluded?"}
+    F -- no --> G["Insert decision row"]
+    G --> H{"Trigger agrees?"}
+    H -- yes --> I["Commit: 200"]
+    H -- no --> J["Rollback"]
+    F -- yes --> J
+    J --> K["Own tx: append four_eyes_denied"]
+    K --> L{"Audit append ok?"}
+    L -- yes --> M["403 four_eyes_required"]
+    L -- no --> N["500 internal_error"]
+
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+    style K fill:#1e90ff,stroke:#1565c0,color:#fff
+    style M fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+The "Trigger agrees?" branch is a backstop: it is reached only if application code skipped the service
+check. In that case the API also answers 403 and logs `four_eyes_db_guard`, but writes no audit event
+(FE-N1). Every edit and decision on one claim takes the claim row lock, and every field edit and
+decision on one document takes the document row lock. So the author or editor set read inside the
+transaction cannot change before commit.
+
+| Step | Where | Notes |
+| --- | --- | --- |
+| Precedence, approve/reject | `transition()` | 400 -> 401 -> 403 `forbidden` -> 404 -> 409 `stale_revision` -> 409 `invalid_state` -> **403 `four_eyes_required`** -> 422 |
+| Precedence, accept | `acceptDocument()` | 400 -> 401 -> 403 `forbidden` -> 404 -> 409 `invalid_state` -> **403 `four_eyes_required`** -> 409 `unresolved_fields` |
+| Error body | `sendError` | `{ code, message: "A different person must make this decision.", requestId }`, identical for UI and API callers; no `authz.denied` event |
+| Audit | error handler, tenant chain | claim: `claimId`, `packetId`, `packetRevision`, `action`, `basis: revision_author`; document: `documentId`, `batchId`, `action: ACCEPT`, `basis` |
+| UI | `selfAuthored` | hides the button and shows the fixed text; cosmetic only, the server decides |
+
+## Policy defaults (four-eyes)
+
+D1 a revision author may not reject either; D2 send-ready is unrestricted; D3 only the uploader and
+CORRECT/ADD actors are document editors; D4 document reject is unrestricted. The flip points are
+`FOUR_EYES_GUARDED_TRANSITIONS` (claims) and `EDITOR_DECISIONS` (documents), each plus a new migration
+for the matching trigger. Details are in the threat model, section 8.4.
+
+## Interfaces for step 5 (four-eyes)
+
+- Step 5 creates packet revision 1 for imported claims. It **must set `evidence_packets.created_by_id`
+  to the user who triggered the analysis**. Otherwise revision 1 excludes nobody and that user can
+  approve their own packet (FE-N2). Step 5 should also decide whether the uploaders of a claim's
+  documents count as claim authors (today they do not).
+- Any new code path that inserts an `approvals` row (`APPROVE`/`REJECT`) or an `ACCEPT` decision must run
+  the service check under the same row lock. The triggers refuse the insert otherwise.
+
+## Notes (four-eyes)
+
+- Verified locally on Node 22.23.3 (the CI version), **not in GitHub CI**: unit shared 136, api 356, web
+  67; integration 95 passed (2 pre-existing skips); acceptance shared 36, api 690 passed (9 skipped, 2
+  todo), web 150 passed (1 skipped). The audit fail-closed path and the trigger-to-403 mapping are
+  covered only by the builder's integration and unit tests (not reachable black-box).
+- Accepted residuals FE-S1..S4, FE-N1 and FE-N2 are listed in the threat model, section 8.5.

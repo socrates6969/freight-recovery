@@ -193,6 +193,9 @@ are done:
   provenance summary, all computed by fixed, documented rules over the tenant's own data), **tenant API
   keys** for machine access to nine routes, and a command-line **evaluation tool** (pass^k on synthetic
   fixtures). See [Dev dashboard, Recovery intelligence and API keys (step 4)](#dev-dashboard-recovery-intelligence-and-api-keys-step-4).
+- **Four-eyes (after step 4):** the person who edited a revision cannot approve or reject it; the person
+  who uploaded, corrected or added fields to a document cannot accept it. See
+  [Four-eyes (separation of duties)](#four-eyes-separation-of-duties).
 
 "Send" only marks a demand send-ready and audits it. No email is sent and no money moves. The seeded claims and
 packets are synthetic and are transcribed from the Python CLI output on `tests/fixtures/`. Claims created
@@ -333,7 +336,9 @@ The UI only hides the controls.
 - A reviewer (`import:review`) confirms, corrects or rejects each flagged field. For images the reviewer
   can also set the document type and type fields in by hand. The reviewer then accepts or rejects the
   whole document. Every decision needs a reason of at least 10 characters and is recorded in an
-  append-only table and in the audit trail. Accepted documents cannot be changed.
+  append-only table and in the audit trail. Accepted documents cannot be changed. The person who
+  uploaded a document, or corrected or added any of its fields, cannot accept it; another reviewer must
+  ([four-eyes](#four-eyes-separation-of-duties)).
 - **Create claims from accepted documents** (on the Import page; you choose Shipper or Carrier) groups
   the accepted documents by load number. It creates a new claim with status **Awaiting analysis**, or
   links the documents to an existing claim. A new claim has no amounts and no evidence packet until the
@@ -595,7 +600,8 @@ an accuracy measure."
 
 - **Same rules as a user.** A key request runs through the same tenant isolation, permission checks,
   rate limits, flags and audit as a user of that tenant. Audit events show the actor role `API_KEY` and
-  `viaApiKey: <key id>`; ownership columns get the creator's id. The **creator's current role** is checked
+  `viaApiKey: <key id>`; ownership columns get the creator's id (so the creator counts as the uploader
+  of a key upload and cannot accept that document). The **creator's current role** is checked
   on every request: if the creator is disabled or no longer holds the scope's permission, or the tenant
   is suspended, the key gets 401.
 - **Failures.** Unknown key, wrong secret, malformed, revoked or expired: an identical 401 (nothing tells
@@ -657,6 +663,32 @@ All knobs are read once at start-up and range-checked; production limits apply o
 | `RATE_LIMIT_API_KEY_MAX` | 300 | requests per key per 60 seconds |
 | `RATE_LIMIT_API_KEY_FAIL_MAX` | 30 | failed key authentications per client address per 10 minutes |
 
+## Four-eyes (separation of duties)
+
+Run `REQ-20261009-four-eyes` makes two decisions need a second person. The server enforces it; the
+screens only hide the button.
+
+- **Claims.** Whoever created any revision of a claim's evidence packet (the current one or an older one)
+  cannot approve or reject the claim. Another user with approval rights must do it. A seeded or generated
+  revision 1 has no recorded creator and excludes nobody. Marking an approved revision send-ready is
+  unchanged: the approver may do it, and so may an author once someone else has approved.
+- **Imported documents.** Whoever uploaded a document, or corrected or added any of its fields, cannot
+  accept it. Another reviewer must. Confirming a field, rejecting a field, changing the document type
+  and rejecting the document do not count and stay open to everyone with review rights. A document
+  uploaded with an API key counts as uploaded by the key's creator.
+- **What you see.** On `/approvals` the row shows "You edited this revision. Another approver must
+  approve it." instead of Approve/Reject. In the review dialog, "You uploaded or edited this document.
+  Another reviewer must accept it." replaces Accept document. If you try anyway (an old screen or a
+  second tab), the API answers 403 `four_eyes_required` ("A different person must make this decision."),
+  changes nothing, and records the attempt in the audit trail as `authz.four_eyes_denied`. API callers
+  get exactly the same answer.
+- **Where it is enforced.** A check in the API service, under the same row lock as the decision, plus
+  database triggers from migration `20261011000000_four_eyes` that refuse such a decision row even if the
+  service check were skipped.
+- **Not covered (accepted for now).** A document with no review reasons is accepted automatically, so it
+  has no human acceptor. Feature-flag changes are single-person. The full list of residual risks and the
+  policy defaults is in [technical/web-platform-security.md, section 8](technical/web-platform-security.md#8-four-eyes-separation-of-duties).
+
 ## Tests and checks
 
 ```bash
@@ -698,3 +730,10 @@ integration (85 passed, 2 placeholder skips). Independent acceptance run (round 
 138 passed (1 skip), api 651 passed (9 skipped for missing tools or declared skips, 2 todo). Round 1 had
 found six defects (D-1..D-6); all were fixed and re-verified. **Not run:** container images and the
 compose stack, Playwright, terraform in the test run (the builder ran fmt/validate), any AWS deployment.
+
+Four-eyes (2026-10-10, run `REQ-20261009-four-eyes`, Windows, **local run on Node 22.23.3, not GitHub
+CI**, portable PostgreSQL 16, portable MinIO with SSE-KMS, in the `web-ci.yml` step order with its
+environment): lint, typecheck, unit tests (shared 136, api 356, web 67), migrate + seed, `ensure-bucket`,
+build, integration (95 passed, 2 pre-existing skips), acceptance (shared 36, api 690 passed with 9
+skipped and 2 todo, web 150 passed with 1 skip). **Not run:** Node 24, GitHub CI, `npm run audit`,
+container images, Playwright, any AWS deployment. The parity suites used Python 3.14 (CI uses 3.12).
