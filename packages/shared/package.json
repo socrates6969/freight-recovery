@@ -28,6 +28,11 @@
       "types": "./dist/extraction.d.ts",
       "source": "./src/extraction.ts",
       "default": "./dist/extraction.js"
+    },
+    "./analysis": {
+      "types": "./dist/analysis/index.d.ts",
+      "source": "./src/analysis/index.ts",
+      "default": "./dist/analysis/index.js"
     }
   },
   "scripts": {
