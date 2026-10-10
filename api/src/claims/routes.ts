@@ -109,7 +109,13 @@ export function registerClaimRoutes(app: FastifyInstance): void {
     access: { kind: 'permission', permission: 'claims:analyze' },
     rateGroup: 'analysis',
     schema: { body: BulkAnalyzeBody },
-    handler: async (req, _reply, { body }) => analyzeAwaiting(requireTenant(req).db, actorOf(req), body.limit),
+    handler: async (req, _reply, { body }) => {
+      // S5-1: the request's own token covers the first candidate; every further candidate costs one more
+      // token of the same per-user bucket, so bulk never exceeds the single route's analysis budget.
+      const limiter = app.analysisLimiter;
+      const charge = limiter ? async () => (await limiter(req)).allowed : async () => true;
+      return analyzeAwaiting(requireTenant(req).db, actorOf(req), body.limit, charge);
+    },
   });
 
   defineRoute(app, {

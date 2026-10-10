@@ -131,6 +131,8 @@ declare module 'fastify' {
     logRing: LogRingBuffer;
     startedAt: Date;
     flags: FlagService;
+    /** Step 5 (S5-1): the per-user `analysis` bucket, charged per extra bulk candidate; null when rate limiting is off. */
+    analysisLimiter: Limiter | null;
   }
 }
 
@@ -271,6 +273,7 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   app.addHook('onResponse', async (req) => releaseApiKeyRequest(req.frRequestId));
   app.addHook('onRequestAbort', async (req) => releaseApiKeyRequest(req.frRequestId));
   app.decorate('flags', flags);
+  app.decorate('analysisLimiter', cfg.rateLimitEnabled ? analysisLimiter : null);
 
   registerSecurityPipeline(app, {
     cfg,

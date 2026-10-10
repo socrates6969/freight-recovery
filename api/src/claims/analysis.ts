@@ -395,8 +395,18 @@ export async function analyzeClaim(tx: TenantTx, claimId: string, actor: Actor, 
  * document, oldest first, at most min(4 * limit, 100)); each analyzed in ITS OWN tenant transaction exactly
  * like the single route; 404/409 -> skipped, 422 -> failed, anything else propagates (500; analyses
  * already committed stay committed). One `claim.bulk_analyzed` summary event at the end.
+ *
+ * Budget (S5-1): `chargeExtra` is called before every candidate after the first (the request itself paid
+ * for the first); when it returns false the per-user `analysis` budget is spent and processing stops
+ * early (200 with the work done so far; the unprocessed claims stay AWAITING_ANALYSIS and count in
+ * `remaining`).
  */
-export async function analyzeAwaiting(db: TenantDb, actor: Actor, limit: number): Promise<BulkAnalyzeResponseDto> {
+export async function analyzeAwaiting(
+  db: TenantDb,
+  actor: Actor,
+  limit: number,
+  chargeExtra: () => Promise<boolean> = async () => true,
+): Promise<BulkAnalyzeResponseDto> {
   const take = Math.min(SCAN_FACTOR * limit, SCAN_CAP);
   const candidates = await db.tx((tx) =>
     tx.claim.findMany({
@@ -409,6 +419,7 @@ export async function analyzeAwaiting(db: TenantDb, actor: Actor, limit: number)
   const out: BulkAnalyzeResponseDto = { limit, examined: 0, analyzed: [], skipped: [], failed: [], remaining: 0 };
   for (const c of candidates) {
     if (out.analyzed.length >= limit) break;
+    if (out.examined > 0 && !(await chargeExtra())) break;
     out.examined += 1;
     try {
       const r = await db.tx((tx) => analyzeClaim(tx, c.id, actor, { bulk: true }));
