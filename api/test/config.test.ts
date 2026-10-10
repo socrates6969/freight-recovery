@@ -340,6 +340,18 @@ describe('config: step 3 import/export knobs (N3)', () => {
     expect(DEFAULT_RUNTIME.moduleHooksAvailable).toBe(true);
   });
 
+  describe('step 5 knob RATE_LIMIT_ANALYSIS_MAX (P11)', () => {
+    const dev = { ...base, NODE_ENV: 'development', COOKIE_SECURE: 'false' };
+    it('defaults to 30 and accepts 1..100000', () => {
+      expect(loadConfig(dev).rateLimitAnalysisMax).toBe(30);
+      expect(loadConfig({ ...dev, RATE_LIMIT_ANALYSIS_MAX: '1' }).rateLimitAnalysisMax).toBe(1);
+      expect(loadConfig({ ...dev, RATE_LIMIT_ANALYSIS_MAX: '100000' }).rateLimitAnalysisMax).toBe(100000);
+    });
+    it('refuses values out of range or not integers', () => {
+      for (const v of ['0', '100001', '2.5', 'abc', '-1']) expect(() => loadConfig({ ...dev, RATE_LIMIT_ANALYSIS_MAX: v })).toThrow();
+    });
+  });
+
   describe('step 4 knobs (Q9, Q13)', () => {
     const dev = { ...base, NODE_ENV: 'development', COOKIE_SECURE: 'false' };
     it('defaults', () => {

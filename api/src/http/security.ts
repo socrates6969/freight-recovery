@@ -38,6 +38,8 @@ export interface PipelineDeps {
     /** Step 4: R60-R68 (RATE_LIMIT_PLATFORM_MAX) and R71-R73 (RATE_LIMIT_INTELLIGENCE_MAX), per user. */
     platform?: Limiter | null;
     intelligence?: Limiter | null;
+    /** Step 5 (P11): the analyze routes (RATE_LIMIT_ANALYSIS_MAX), per user. */
+    analysis?: Limiter | null;
   };
   authenticate: (token: string, meta: { ip: string; requestId: string }) => Promise<RequestCtx | null>;
   /**
@@ -80,7 +82,7 @@ function bearerToken(req: FastifyRequest): string | null {
 }
 
 function userRateGroup(group: string | undefined): UserRateGroup | null {
-  return group === 'upload' || group === 'export' || group === 'platform' || group === 'intelligence' ? group : null;
+  return group === 'upload' || group === 'export' || group === 'platform' || group === 'intelligence' || group === 'analysis' ? group : null;
 }
 
 export function registerSecurityPipeline(app: FastifyInstance, deps: PipelineDeps): void {
@@ -151,7 +153,7 @@ export function registerSecurityPipeline(app: FastifyInstance, deps: PipelineDep
     if (!ctx) throw errors.unauthenticated();
     req.ctx = ctx;
 
-    // 4b. Per-user rate limit for upload/export/platform/intelligence routes (second stage; needs the
+    // 4b. Per-user rate limit for upload/export/platform/intelligence/analysis routes (second stage; needs the
     // authenticated user).
     await userStageLimit(req, config?.rateGroup);
 

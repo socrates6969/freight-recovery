@@ -49,6 +49,8 @@ export const PERMISSIONS = [
   'platform:eval',
   'platform:audit',
   'apikeys:manage',
+  // Step 5 (REQ-20261010-step5-analysis): run the rules on AWAITING_ANALYSIS claims (single and bulk).
+  'claims:analyze',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -75,6 +77,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'export:packets',
     'export:outcomes',
     'apikeys:manage',
+    'claims:analyze',
   ] as const),
   ADMIN: Object.freeze([
     'claims:read',
@@ -93,6 +96,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'export:packets',
     'export:outcomes',
     'apikeys:manage',
+    'claims:analyze',
   ] as const),
   MANAGER: Object.freeze([
     'claims:read',
@@ -105,6 +109,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'export:claims',
     'export:packets',
     'export:outcomes',
+    'claims:analyze',
   ] as const),
   REVIEWER: Object.freeze([
     'claims:read',
@@ -115,8 +120,10 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'export:claims',
     'export:packets',
     'export:outcomes',
+    'claims:analyze',
   ] as const),
-  ANALYST: Object.freeze(['claims:read', 'import:run', 'export:claims'] as const),
+  // Step 5 policy D1: ANALYST may run the analysis (creates a draft only; cannot approve).
+  ANALYST: Object.freeze(['claims:read', 'import:run', 'export:claims', 'claims:analyze'] as const),
   VIEWER: Object.freeze(['claims:read'] as const),
   PLATFORM_DEV: Object.freeze(['platform:health', 'platform:flags', 'platform:logs', 'platform:eval'] as const),
   SUPER_ADMIN: Object.freeze([

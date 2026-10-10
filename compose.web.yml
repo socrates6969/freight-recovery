@@ -50,6 +50,8 @@ x-api-env: &api-env
   API_KEY_ALLOW_NON_EXPIRING: "${API_KEY_ALLOW_NON_EXPIRING:-true}"
   RATE_LIMIT_API_KEY_MAX: "${RATE_LIMIT_API_KEY_MAX:-300}"
   RATE_LIMIT_API_KEY_FAIL_MAX: "${RATE_LIMIT_API_KEY_FAIL_MAX:-30}"
+  # Step 5 knob (default; see api/src/config.ts).
+  RATE_LIMIT_ANALYSIS_MAX: "${RATE_LIMIT_ANALYSIS_MAX:-30}"
 
 x-hardening: &hardening
   read_only: true

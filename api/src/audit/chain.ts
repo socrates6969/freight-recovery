@@ -174,6 +174,19 @@ const METADATA_KEYS = new Set([
   'viaApiKey',
   // Four-eyes (REQ-20261009-four-eyes): fixed refusal basis code (revision_author | uploader | field_editor).
   'basis',
+  // Step 5 (REQ-20261010-step5-analysis): analysis counts, cents totals, rules version and bulk summary.
+  // Never names, file names, extracted values or letter text.
+  'findingsCount',
+  'pendingFindingsCount',
+  'ignoredFindingsCount',
+  'recoverableCents',
+  'pendingReviewCents',
+  'rulesVersion',
+  'bulk',
+  'examined',
+  'analyzed',
+  'failed',
+  'remaining',
 ]);
 const MAX_STRING = 2000;
 

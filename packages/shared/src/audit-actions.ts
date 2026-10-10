@@ -56,6 +56,9 @@ export const AUDIT_ACTIONS = [
   'apikey.use_denied',
   // Four-eyes (REQ-20261009-four-eyes): refused approve/reject/accept attempts.
   'authz.four_eyes_denied',
+  // Step 5 (REQ-20261010-step5-analysis): claim analysis (single, and one summary per bulk request).
+  'claim.analyzed',
+  'claim.bulk_analyzed',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

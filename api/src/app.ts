@@ -38,6 +38,7 @@ import { registerImportRoutes } from './imports/routes.js';
 import { ChildProcessExecutor, type ParseExecutor } from './imports/sandbox/executor.js';
 import { KeyedGate } from './imports/sandbox/semaphore.js';
 import { TenantScopeError } from './db/errors.js';
+import { isAnalysisDbError, isFourEyesDbError } from './http/db-guard.js';
 import { ERROR_MESSAGES, FourEyesRefusal, HttpError, errors } from './http/errors.js';
 import { enforceRouteAccess, requireTenant, zodDetails } from './http/route.js';
 import { registerSecurityHeaders, registerSecurityPipeline, type Limiter } from './http/security.js';
@@ -83,36 +84,11 @@ function sendError(reply: FastifyReply, req: FastifyRequest, err: HttpError): vo
   void reply.code(err.statusCode).type('application/json; charset=utf-8').send(body);
 }
 
-/** SQLSTATE and exact message raised by the four-eyes guard triggers (migration 20261011000000_four_eyes). */
-const FOUR_EYES_SQLSTATE = 'P0001';
-const FOUR_EYES_DB_MESSAGE = 'four_eyes_required';
-/** Bound on how far the error chain is followed (cause / meta / driverAdapterError links). */
-const MAX_ERROR_CHAIN_DEPTH = 5;
-const ERROR_CHAIN_LINKS = ['cause', 'meta', 'driverAdapterError'] as const;
+/** Four-eyes / analysis trigger matchers live in http/db-guard.ts (re-exported for existing callers). */
+export { isAnalysisDbError, isFourEyesDbError };
 
-function isFourEyesDbNode(o: Record<string, unknown>): boolean {
-  // Prisma 7 + @prisma/adapter-pg: PrismaClientKnownRequestError (P2039/P2010) carries
-  // meta.driverAdapterError.cause = { kind: 'postgres', originalCode, originalMessage, code, message }.
-  if (o.originalCode === FOUR_EYES_SQLSTATE && o.originalMessage === FOUR_EYES_DB_MESSAGE) return true;
-  // A plain pg DatabaseError (raw driver) carries the SQLSTATE in `code` and the exact raise text in `message`.
-  return o.code === FOUR_EYES_SQLSTATE && o.message === FOUR_EYES_DB_MESSAGE;
-}
-
-/**
- * True iff the error, or an error linked from it within MAX_ERROR_CHAIN_DEPTH hops, is the four-eyes
- * trigger raise: SQLSTATE P0001 AND message exactly `four_eyes_required` (never a substring match).
- */
-export function isFourEyesDbError(err: unknown): boolean {
-  const seen = new Set<object>();
-  const walk = (v: unknown, depth: number): boolean => {
-    if (depth > MAX_ERROR_CHAIN_DEPTH || typeof v !== 'object' || v === null || seen.has(v)) return false;
-    seen.add(v);
-    const o = v as Record<string, unknown>;
-    if (isFourEyesDbNode(o)) return true;
-    return ERROR_CHAIN_LINKS.some((k) => walk(o[k], depth + 1));
-  };
-  return walk(err, 0);
-}
+/** Marker for the error handler: an analysis DB guard refused a write (logged as analysis_db_guard). */
+const ANALYSIS_GUARD_ERRORS = new WeakSet<HttpError>();
 
 /** Map any thrown value to a fixed-shape HttpError (never forwards unknown messages). */
 export function toHttpError(err: unknown): HttpError {
@@ -120,6 +96,12 @@ export function toHttpError(err: unknown): HttpError {
   if (err instanceof ZodError) return errors.validation(zodDetails(err));
   // Four-eyes DB guard reached the API: a service check was bypassed. Plain 403 (no audit context).
   if (isFourEyesDbError(err)) return new HttpError(403, 'four_eyes_required');
+  // Step-5 analysis DB guard reached the API: a service check was bypassed. Plain 409 invalid_state.
+  if (isAnalysisDbError(err)) {
+    const mapped = errors.invalidState();
+    ANALYSIS_GUARD_ERRORS.add(mapped);
+    return mapped;
+  }
   const fe = err as Partial<FastifyError> & { code?: string; statusCode?: number };
   switch (fe.code) {
     case 'FST_ERR_CTP_BODY_TOO_LARGE':
@@ -263,6 +245,8 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     createRateLimit({ max: cfg.apiKeys.rateLimitFailMax, timeWindow: tenMinutes, keyGenerator: (req: FastifyRequest) => `kf:${req.ip}` }),
   );
   const intelligenceLimiter = wrapLimiter(createRateLimit({ max: cfg.rateLimitIntelligenceMax, timeWindow: tenMinutes, keyGenerator: userKey('i') }));
+  // Step 5 (P11): both analyze routes share one per-user bucket.
+  const analysisLimiter = wrapLimiter(createRateLimit({ max: cfg.rateLimitAnalysisMax, timeWindow: tenMinutes, keyGenerator: userKey('a') }));
 
   const deps: AuthDeps = {
     cfg,
@@ -297,6 +281,7 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
       export: exportLimiter,
       platform: platformLimiter,
       intelligence: intelligenceLimiter,
+      analysis: analysisLimiter,
     },
     authenticate: (token, meta) => authenticateAccessToken(deps, token, meta),
     authenticateApiKey: (req, presented, access) => apiKeyAuth.authenticate(req, presented, access),
@@ -334,6 +319,8 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
       }
     } else if (httpErr.code === 'four_eyes_required') {
       req.log.error({ errorKind: 'four_eyes_db_guard' }, 'four-eyes database guard refused a write');
+    } else if (ANALYSIS_GUARD_ERRORS.has(httpErr)) {
+      req.log.error({ errorKind: 'analysis_db_guard' }, 'analysis database guard refused a write');
     }
     if (httpErr.statusCode >= 500 && !(err instanceof FourEyesRefusal)) {
       const kind = err instanceof TenantScopeError ? 'tenant_scope_violation' : (err as Error | undefined)?.name ?? 'unknown';

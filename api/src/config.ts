@@ -69,6 +69,8 @@ export interface AppConfig {
   rateLimitPlatformMax: number;
   /** R71-R73 per user per 600 s. */
   rateLimitIntelligenceMax: number;
+  /** Step 5 (P11): both analyze routes, per user per 600 s. */
+  rateLimitAnalysisMax: number;
   /** Step 4 (Q13): tenant API keys. */
   apiKeys: ApiKeyConfig;
 }
@@ -239,6 +241,8 @@ const STEP4_KNOBS = {
   similarCandidateLimit: { key: 'SIMILAR_CANDIDATE_LIMIT', def: 500, min: 10, max: 2000 },
   rateLimitPlatformMax: { key: 'RATE_LIMIT_PLATFORM_MAX', def: 120, min: 1, max: 100000 },
   rateLimitIntelligenceMax: { key: 'RATE_LIMIT_INTELLIGENCE_MAX', def: 120, min: 1, max: 100000 },
+  // Step 5 (P11): per-user bucket of the analyze routes.
+  rateLimitAnalysisMax: { key: 'RATE_LIMIT_ANALYSIS_MAX', def: 30, min: 1, max: 100000 },
   apiKeyMaxActive: { key: 'API_KEY_MAX_ACTIVE', def: 20, min: 1, max: 200 },
   apiKeyDefaultTtlDays: { key: 'API_KEY_DEFAULT_TTL_DAYS', def: 90, min: 1, max: 365, ceiling: 365 },
   rateLimitApiKeyMax: { key: 'RATE_LIMIT_API_KEY_MAX', def: 300, min: 1, max: 100000 },
@@ -629,6 +633,7 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
     intelligence: { pendingWeightPercent: s4.pendingWeightPercent, similarCandidateLimit: s4.similarCandidateLimit },
     rateLimitPlatformMax: s4.rateLimitPlatformMax,
     rateLimitIntelligenceMax: s4.rateLimitIntelligenceMax,
+    rateLimitAnalysisMax: s4.rateLimitAnalysisMax,
     apiKeys: {
       pepper: apiKeyPepper,
       maxActive: s4.apiKeyMaxActive,

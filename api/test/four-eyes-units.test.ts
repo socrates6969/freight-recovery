@@ -37,8 +37,9 @@ describe('four-eyes error contract', () => {
     expect(toHttpError(e)).toBe(e);
   });
 
-  it('appends authz.four_eyes_denied as the last audit action', () => {
-    expect(AUDIT_ACTIONS.at(-1)).toBe('authz.four_eyes_denied');
+  it('appends authz.four_eyes_denied after the step-4 actions (step 5 appends after it)', () => {
+    // Append-only list: four-eyes was appended last in its step; step 5 adds exactly two actions after it.
+    expect(AUDIT_ACTIONS.slice(-3)).toEqual(['authz.four_eyes_denied', 'claim.analyzed', 'claim.bulk_analyzed']);
   });
 
   it('keeps the basis code in audit metadata', () => {

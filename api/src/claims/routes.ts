@@ -3,8 +3,10 @@
  * "send" only marks a demand send-ready (asserted by api/test/send-no-egress.test.ts).
  */
 import {
+  AnalyzeBody,
   ApproveBody,
   ApprovalsQuery,
+  BulkAnalyzeBody,
   AssignBody,
   ClaimsQuery,
   IdParams,
@@ -16,6 +18,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { defineRoute, requireTenant, userRole } from '../http/route.js';
 
+import { analyzeAwaiting, analyzeClaim } from './analysis.js';
 import { assignClaim, createRevision, getClaim, getPacket, listApprovalQueue, listClaims, transition, type Actor } from './service.js';
 
 const P = '/api/v1';
@@ -96,6 +99,29 @@ export function registerClaimRoutes(app: FastifyInstance): void {
     schema: { params: IdParams, body: TransitionBody },
     handler: async (req, _reply, { params, body }) =>
       requireTenant(req).db.tx((tx) => transition(tx, 'send', params.id, body, actorOf(req))),
+  });
+
+  // Step 5 (REQ-20261010-step5-analysis): AWAITING_ANALYSIS -> PENDING_REVIEW. No API-key scope (P4);
+  // per-user `analysis` bucket (P11). Bulk runs each claim in its own tenant transaction.
+  defineRoute(app, {
+    method: 'POST',
+    url: `${P}/claims/analyze-awaiting`,
+    access: { kind: 'permission', permission: 'claims:analyze' },
+    rateGroup: 'analysis',
+    schema: { body: BulkAnalyzeBody },
+    handler: async (req, _reply, { body }) => analyzeAwaiting(requireTenant(req).db, actorOf(req), body.limit),
+  });
+
+  defineRoute(app, {
+    method: 'POST',
+    url: `${P}/claims/:id/analyze`,
+    access: { kind: 'permission', permission: 'claims:analyze' },
+    rateGroup: 'analysis',
+    schema: { params: IdParams, body: AnalyzeBody },
+    handler: async (req, reply, { params }) => {
+      const r = await requireTenant(req).db.tx((tx) => analyzeClaim(tx, params.id, actorOf(req), { bulk: false }));
+      return reply.code(201).send(r);
+    },
   });
 
   defineRoute(app, {

@@ -43,6 +43,8 @@ const Y: Record<Permission, readonly Role[]> = {
   'platform:eval': ['PLATFORM_DEV'],
   'platform:audit': ['SUPER_ADMIN'],
   'apikeys:manage': ['OWNER', 'ADMIN'],
+  // Step 5 (P4, policy D1): no VIEWER, no platform role, no API-key scope.
+  'claims:analyze': ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER', 'ANALYST'],
 };
 
 describe('permission matrix', () => {

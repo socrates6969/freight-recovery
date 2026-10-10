@@ -15,5 +15,6 @@ export * from './platform-dto.js';
 export * from './intelligence-dto.js';
 export * from './api-key-dto.js';
 export * from './four-eyes.js';
+export * from './analysis-dto.js';
 // Step 5 (REQ-20261010-step5-analysis): rules engine, evidence renderers and analysis copy.
 export * from './analysis/index.js';
