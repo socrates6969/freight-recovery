@@ -1,4 +1,6 @@
-# Freight Recovery
+# scoup.ai
+
+(codebase name: freight-recovery)
 
 (c) 2026 Marius Carlsson (socrates6969) - owner and copyright holder. Proprietary; all rights reserved.
 

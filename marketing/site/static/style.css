@@ -5,9 +5,13 @@ body { margin:0; font:17px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
 main, header.site, footer.site { max-width:46rem; margin:0 auto; padding:0 1rem; }
 a { color:var(--accent); }
 .status { margin:0; padding:.5rem 1rem; text-align:center; background:var(--warnbg); color:var(--warn); font-size:.9rem; }
-header.site { display:flex; flex-wrap:wrap; justify-content:space-between; gap:.5rem 1rem; align-items:baseline; padding-top:1rem; padding-bottom:1rem; }
-.brand { font-weight:700; font-size:1.15rem; text-decoration:none; color:var(--fg); }
-nav a { margin-left:1rem; } nav a[aria-current="page"] { font-weight:700; }
+header.site { display:flex; flex-wrap:wrap; justify-content:space-between; gap:1.1rem 1.25rem; align-items:center; padding-top:1.1rem; padding-bottom:1.1rem; }
+/* Logo lockup (brand/README.md): clear space >= 1x x-height (about 0.61 x lockup height) on all sides; never text-transform the name. */
+.brand { display:inline-block; text-decoration:none; line-height:0; }
+.brand img { display:block; height:28px; width:auto; }
+.brand-footer { margin:.25rem 0 .75rem; }
+.brand-footer img { height:20px; }
+nav { display:flex; flex-wrap:wrap; gap:.25rem 1rem; } nav a[aria-current="page"] { font-weight:700; }
 h1 { font-size:2rem; line-height:1.2; margin:1.5rem 0 .5rem; } h2 { font-size:1.35rem; margin:2rem 0 .5rem; }
 .lead { font-size:1.15rem; color:var(--muted); }
 .cta { display:inline-block; padding:.6rem 1.1rem; border-radius:6px; background:var(--accent); color:var(--bg); text-decoration:none; font-weight:600; margin:.5rem .5rem .5rem 0; }

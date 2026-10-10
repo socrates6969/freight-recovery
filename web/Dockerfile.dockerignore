@@ -16,6 +16,7 @@
 !web/security-headers.json
 !web/nginx.conf
 !web/src/**
+!web/public/**
 !web/tools/**
 **/*.test.ts
 **/*.test.tsx

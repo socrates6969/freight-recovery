@@ -1,4 +1,4 @@
-# Freight Recovery API
+# scoup.ai API
 
 !!! warning "Pre-product software"
     This documents the **real, current** API of a pre-product codebase. Nothing here has been

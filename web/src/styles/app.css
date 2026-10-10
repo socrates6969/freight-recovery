@@ -241,3 +241,28 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Brand lockup (brand/README.md): dark tile on light surfaces (the SVG's own colours), light tile
+   on dark surfaces (the -on-dark palette below; #0f766e only ever sits on the light tile). */
+.brand-lockup {
+  display: block;
+  flex-shrink: 0;
+}
+[data-theme='dark'] .brand-lockup .brand-tile {
+  fill: #e2e8f0;
+}
+[data-theme='dark'] .brand-lockup .brand-upper {
+  stroke: #0f172a;
+}
+[data-theme='dark'] .brand-lockup .brand-lower {
+  stroke: #0f766e;
+}
+[data-theme='dark'] .brand-lockup .brand-letters {
+  stroke: #e2e8f0;
+}
+[data-theme='dark'] .brand-lockup .brand-ai-dots {
+  fill: #8b9ab0;
+}
+[data-theme='dark'] .brand-lockup .brand-ai {
+  stroke: #8b9ab0;
+}

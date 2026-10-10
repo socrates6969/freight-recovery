@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
 import { useApi, useServices, useSession } from '../../app-context';
+import { BrandLockup } from '../../components/ui/BrandLockup';
 import { SafeText } from '../../components/ui/SafeText';
 import { ToastRegion } from '../../components/ui/ToastRegion';
 import { signOut } from '../auth/session-actions';
@@ -124,7 +125,11 @@ export function AppShell() {
   return (
     <div className="flex min-h-screen">
       <aside className="w-56 shrink-0 border-r border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-        <p className="mb-4 px-3 text-sm font-semibold">Freight Recovery</p>
+        <div className="mb-4 px-3 pt-1">
+          <BrandLockup height={24} />
+          {/* Optional descriptor line (brand/README.md); remove freely. */}
+          <p className="mt-1 text-xs text-[var(--color-text-subtle)]">Freight invoice recovery</p>
+        </div>
         <nav aria-label="Main" className="flex flex-col gap-1">
           {isTenantUser ? (
             <>

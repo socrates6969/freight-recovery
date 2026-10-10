@@ -961,7 +961,7 @@
   },
   "info": {
     "description": "Ingest freight invoice / rate confirmation / BOL, apply detention and invoice-error rules, and return a recovery estimate with an evidence packet and DRAFT demand letter. Pre-product software foundation: authentication, tenant isolation, persistence and sandboxed parsing are implemented; real integrations, a third-party security audit and compliance sign-off are required before real customer data.",
-    "title": "Freight Recovery API (pre-product)",
+    "title": "scoup.ai API (pre-product)",
     "version": "0.1.0"
   },
   "openapi": "3.1.0",

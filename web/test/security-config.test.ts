@@ -56,7 +56,7 @@ describe('web/security-headers.json', () => {
 
 describe('dist checker', () => {
   const ok =
-    '<!doctype html><html lang="en"><head><meta name="robots" content="noindex" /><title>Freight Recovery</title><script type="module" src="/assets/a.js"></script><link rel="stylesheet" href="/assets/a.css"></head><body><div id="root"></div></body></html>';
+    '<!doctype html><html lang="en"><head><meta name="robots" content="noindex" /><title>scoup.ai</title><script type="module" src="/assets/a.js"></script><link rel="stylesheet" href="/assets/a.css"></head><body><div id="root"></div></body></html>';
   it('accepts a clean index.html', () => {
     expect(checkHtml(ok)).toEqual([]);
   });

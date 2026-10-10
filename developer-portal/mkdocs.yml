@@ -1,5 +1,5 @@
-site_name: Freight Recovery API (pre-product)
-site_description: Developer documentation for the Freight Recovery detention/accessorial recovery API. Pre-product; documents the real current API.
+site_name: scoup.ai API (pre-product)
+site_description: Developer documentation for the scoup.ai detention/accessorial recovery API. Pre-product; documents the real current API.
 # No site_url on purpose: nothing is deployed yet. Set it when a real host exists.
 docs_dir: docs
 strict: true
