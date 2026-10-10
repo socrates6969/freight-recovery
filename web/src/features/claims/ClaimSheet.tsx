@@ -1,4 +1,4 @@
-import { ClaimDetail, ClaimDocumentsResponse, ClaimSummary, Packet, displayText, type PacketDto } from '@fr/shared';
+import { ANALYSIS_TEXT, AnalyzeResponse, ClaimDetail, ClaimDocumentsResponse, ClaimSummary, Packet, displayText, type PacketDto } from '@fr/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { useCallback, useId, useRef, useState, type KeyboardEvent } from 'react';
@@ -12,6 +12,8 @@ import { useFocusTrap } from '../../components/ui/use-focus-trap';
 import { formatDateTime, formatDay, formatUsdCents, STATUS_LABEL } from '../../lib/format';
 import { ProvenancePanel, SimilarPanel } from '../intelligence/ClaimIntelligenceTabs';
 import { useFeatures } from '../intelligence/use-features';
+
+import { AnalyzeClaimSection, analyzeErrorText } from './AnalyzeClaimSection';
 
 const ALL_TABS = ['Summary', 'Evidence', 'History', 'Documents', 'Similar', 'Provenance'] as const;
 export const NO_PACKET_TEXT = 'No evidence packet yet. Analysis has not run for this claim.';
@@ -179,6 +181,7 @@ export function ClaimSheet() {
   const location = useLocation();
   const canAssign = useCan('claims:assign');
   const canExportPackets = useCan('export:packets');
+  const canAnalyze = useCan('claims:analyze');
   const me = useSession((s) => s.user);
   const [tab, setTab] = useState<Tab>('Summary');
   const features = useFeatures();
@@ -230,6 +233,21 @@ export function ClaimSheet() {
       toast(e instanceof ApiError && e.status === 422 ? 'That person cannot be assigned to this claim.' : 'Assignment failed.', 'error'),
   });
 
+  // Step 5 (P10): analyze an AWAITING_ANALYSIS claim. The error is kept per claim id (inline alert).
+  const [analyzeError, setAnalyzeError] = useState<{ id: string; text: string } | null>(null);
+  const analyze = useMutation({
+    mutationFn: () => api.post(`/api/v1/claims/${encodeURIComponent(id)}/analyze`, {}, AnalyzeResponse),
+    onMutate: () => setAnalyzeError(null),
+    onSuccess: async () => {
+      toast(ANALYSIS_TEXT.success, 'success');
+      await Promise.all(
+        [['claim', id], ['packet', id], ['claims'], ['approvals']].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+      );
+      setTab('Evidence');
+    },
+    onError: (e) => setAnalyzeError({ id, text: analyzeErrorText(e) }),
+  });
+
   const onTabKey = (e: KeyboardEvent<HTMLButtonElement>) => {
     const i = TABS.indexOf(tab);
     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
@@ -242,6 +260,10 @@ export function ClaimSheet() {
 
   const c = claim.data;
   const title = c ? `Claim ${c.claimNumber}` : 'Claim';
+  const analyzeSection =
+    c?.status === 'AWAITING_ANALYSIS' && canAnalyze ? (
+      <AnalyzeClaimSection pending={analyze.isPending} errorText={analyzeError?.id === id ? analyzeError.text : null} onAnalyze={() => analyze.mutate()} />
+    ) : null;
 
   return (
     <>
@@ -344,9 +366,13 @@ export function ClaimSheet() {
                     </Field>
                   </dl>
                 ) : null}
+                {tab === 'Summary' ? analyzeSection : null}
                 {tab === 'Evidence' ? (
                   !hasPacket ? (
-                    <p className="muted">{NO_PACKET_TEXT}</p>
+                    <>
+                      <p className="muted">{NO_PACKET_TEXT}</p>
+                      {analyzeSection}
+                    </>
                   ) : packet.isError ? (
                     <p role="alert">The evidence packet could not be loaded.</p>
                   ) : packet.data ? (
