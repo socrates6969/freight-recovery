@@ -25,6 +25,12 @@ export type ChargeCategory = (typeof CHARGE_CATEGORIES)[number];
  */
 export const CHARGE_QUERY_TEXT_MAX = 200;
 
+/**
+ * At most this many influencing tenant label ids are reported per analysis (fix round 1, S3; the audit
+ * sanitizer keeps 50 array items).
+ */
+export const LEARNED_LABEL_IDS_MAX = 50;
+
 /** Labels per tenant (service check; bounds the CPU of one classification). */
 export const CHARGE_LABELS_MAX = 2000;
 

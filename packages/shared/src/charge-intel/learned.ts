@@ -22,12 +22,10 @@ import type { ChargeSuggestion, NearestExample } from '../charge-intel-dto.js';
 import { plain } from '../text-sanitize.js';
 
 import { formatSimilarity, type ChargeClassifier } from './classifier.js';
-import type { LearnedRuleId } from './constants.js';
+import { LEARNED_LABEL_IDS_MAX, type LearnedRuleId } from './constants.js';
 
 /** Confidence of a learned finding (fixed; always needs human review). */
 export const LEARNED_CONFIDENCE = 0.5;
-/** At most this many influencing label ids are reported (audit sanitizer keeps 50 array items). */
-export const LEARNED_LABEL_IDS_MAX = 50;
 /** Cap of a nearest-example text quoted in findings. */
 const EXAMPLE_TEXT_LIMIT = 200;
 const REVIEW_FLAG_RULES: ReadonlySet<string> = new Set(['DET-UNBILLED', 'DET-UNDERBILLED']);

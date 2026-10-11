@@ -30,7 +30,6 @@ export {
 export { evaluateLeaveOneCarrierOut, type ChargeEvalReportData } from './evaluate.js';
 export {
   LEARNED_CONFIDENCE,
-  LEARNED_LABEL_IDS_MAX,
   applyLearning,
   buildEvidenceLearned,
   type AnalysisFinding,

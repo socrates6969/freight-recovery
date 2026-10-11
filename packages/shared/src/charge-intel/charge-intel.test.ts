@@ -199,6 +199,18 @@ describe('DTOs and copy', () => {
   });
 });
 
+describe('package root exports (C1)', () => {
+  it('the root exports every C1 constant, including the fix-round constants', async () => {
+    const root = await import('../index.js');
+    expect([root.LEARNED_LABEL_IDS_MAX, root.CHARGE_QUERY_TEXT_MAX, root.CHARGE_LABELS_MAX, root.CHARGE_CLASSIFIER_VERSION, root.SEED_VERSION, root.SUGGESTION_THRESHOLD]).toEqual([
+      50, 200, 2000, 'charge-knn-v1', 'tariff-seed-v1', 0.3,
+    ]);
+    expect(root.LEARNED_RULE_IDS).toEqual(['LRN-ACCESSORIAL-REVIEW']);
+    expect('SEED_V1' in root).toBe(false);
+    expect('buildChargeClassifier' in root).toBe(false);
+  });
+});
+
 describe('package root isolation', () => {
   const importsOf = (file: string): string[] => [...readFileSync(file, 'utf8').matchAll(/^(?:import|export)[^;]*?from\s+'([^']+)'/gmu)].map((m) => m[1] ?? '');
 
