@@ -31,7 +31,7 @@ export function buildDdDisputeLetter(invoice: DdInvoiceDataDto, result: DdAuditR
       : [
           `Confirmed amount: $${result.recoverable}. Amount for review: $${result.pendingReview}.`,
           'We request a credit, refund or waiver of these amounts. Supporting calculations are attached in the evidence packet.',
-          'Under 46 CFR 541.8(b) the billing party must attempt to resolve this request within 30 calendar days of receiving it.',
+          'Under 46 CFR 541.8(b) the billing party must attempt to resolve the request "within thirty (30) calendar days of receiving such a request or at a later date as agreed upon by both parties."',
           `(Reminder for sender: remove items that do not apply. 46 CFR 541.8(a) allows at least 30 calendar days from the invoice date to request mitigation, refund or waiver; ${deadline()}. Check the dates before sending.)`,
         ];
   return [

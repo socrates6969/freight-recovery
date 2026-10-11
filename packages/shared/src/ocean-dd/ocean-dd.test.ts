@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import * as root from '../index.js';
+import { plain } from '../text-sanitize.js';
 import { DdCalendarData, DdInvoiceBody, DdInvoiceData, DdTariffData, type DdCalendarDataDto, type DdInvoiceDataDto, type DdTariffDataDto } from '../ocean-dd-dto.js';
 
 import {
@@ -274,7 +275,9 @@ describe('auditDdInvoice (C5, C6) - synthetic invoices', () => {
     ]);
     const ret = r.findings[1];
     expect(ret?.calculation).toEqual(['2026-07-15: $250.00 (tariff tier 2).', '2026-07-16: $250.00 (tariff tier 2).', 'Total = $500.00.']);
-    expect(ret?.explanation.startsWith('Container SYNU0000001: 2 charged day(s) fall on dates when the empty container could not be returned (2026-07-15, 2026-07-16).')).toBe(true);
+    expect(ret?.explanation).toBe(
+      'Container SYNU0000001: 2 charged day(s) fall on dates when the empty container could not be returned (2026-07-15, 2026-07-16). Under 46 CFR 545.5(c)(2)(ii), "Absent extenuating circumstances, practices and regulations that provide for imposition of detention when it does not serve its incentivizing purposes, such as when empty containers cannot be returned, are likely to be found unreasonable." - review.',
+    );
     expect(ret?.clause?.key).toBe('46 CFR 545.5(c)(2)(ii)');
     expect(ret?.citations).toEqual([{ source: 'invoice', pointer: '/containers/0/evidence/emptyReturnRefusedDates', excerpt: '2026-07-15, 2026-07-16, 2026-07-30' }]);
     expect(r.findings[0]?.citations.map((c) => `${c.source}${c.pointer}`)).toContain('calendar/shutoutDates');
@@ -414,6 +417,33 @@ describe('auditDdInvoice (C5, C6) - synthetic invoices', () => {
     ]);
   });
 
+  it('CONTENT with only inaccurate items: inaccurate texts and the 541.6(d) / 541.6(b) clause (fix round 3, F3)', () => {
+    const d = auditDdInvoice({ invoice: invoice({ disputeRequestDays: 20, invoiceDate: '2026-04-19' }), tariff: null, calendar: null });
+    const cd = d.findings.find((f) => f.ruleId === 'DD-541-6-CONTENT');
+    expect(cd?.title).toBe('Required invoice information inaccurate (46 CFR 541.6)');
+    expect(cd?.explanation).toBe(
+      'The invoice misstates 1 item(s) that 46 CFR 541.6 requires: Dispute and resolution timeframes. 46 CFR 541.6 requires this information to be accurate - review whether to dispute the charge.',
+    );
+    expect(cd?.calculation).toEqual([
+      '46 CFR 541.6(d)(3) Dispute and resolution timeframes: request window of 20 days is shorter than the 30 calendar days required by 46 CFR 541.8(a).',
+      'Remaining invoice charges = $4350.00.',
+    ]);
+    expect(cd?.clause).toEqual({ source: 'regulation', key: '46 CFR 541.6(d)', label: '46 CFR 541.6(d)', excerpt: plain(DD_REGULATION_TEXT['46 CFR 541.6(d)'], 200) });
+    const b = auditDdInvoice({ invoice: invoice({ invoiceDate: '2026-04-19' }, { freeTimeEnd: '2026-03-06', periods: [{ from: '2026-03-07', to: '2026-03-20', rate: '290', amount: '4060' }] }), tariff: MAERSK, calendar: null });
+    const cb = b.findings.find((f) => f.ruleId === 'DD-541-6-CONTENT');
+    expect(cb?.title).toBe('Required invoice information inaccurate (46 CFR 541.6)');
+    expect(cb?.clause?.key).toBe('46 CFR 541.6(b)');
+    // A missing item keeps the 541.5 texts and clause.
+    const m = auditDdInvoice({ invoice: invoice({ disputeRequestDays: 20, dueDate: null, invoiceDate: '2026-04-19' }), tariff: null, calendar: null });
+    const cm = m.findings.find((f) => f.ruleId === 'DD-541-6-CONTENT');
+    expect([cm?.title, cm?.clause?.key]).toEqual(['Required invoice information missing or inaccurate (46 CFR 541.6)', '46 CFR 541.5']);
+  });
+
+  it('an NVOCC invoice without charge dates is evaluated under 541.7(b), never no_charge_dates (C6)', () => {
+    const r = auditDdInvoice({ invoice: invoice({ billingPartyType: 'NVOCC', upstreamInvoiceDate: '2026-03-01', totalDue: null }, { periods: [] }), tariff: null, calendar: null });
+    expect(r.checks.find((c) => c.id === 'issuance')).toMatchObject({ status: 'ok', reason: null });
+  });
+
   it('Part 541 does not apply before 2024-05-28', () => {
     const r = auditDdInvoice({ invoice: invoice({ invoiceDate: '2024-05-27', ruleReference: null }, { periods: [{ from: '2024-03-06', to: '2024-03-20', rate: '290', amount: '4350' }], freeTimeStart: '2024-03-01', freeTimeEnd: '2024-03-05' }), tariff: null, calendar: null });
     expect(r.findings).toEqual([]);
@@ -469,6 +499,7 @@ describe('dispute letter (C7)', () => {
     expect(lines[10]?.startsWith('   Container SYNU0000001 (40DV, detention)')).toBe(true);
     expect(lines[11]).toBe('2. Invoice issued more than 30 days late (46 CFR 541.7): $3910.00 (needs review)');
     expect(lines[14]).toBe('Confirmed amount: $440.00. Amount for review: $3910.00.');
+    expect(lines[16]).toBe('Under 46 CFR 541.8(b) the billing party must attempt to resolve the request "within thirty (30) calendar days of receiving such a request or at a later date as agreed upon by both parties."');
     expect(letter).toContain('based on the invoice date 2026-04-25, request by 2026-06-09. Check the dates before sending.)');
     expect(lines.slice(-2)).toEqual(['Sincerely,', '[Name / Title / Contact - to be completed by sender]']);
   });

@@ -89,7 +89,7 @@ const TEXT = {
   ret: {
     title: 'Detention charged while empty return was refused (46 CFR 545.5)',
     explanation: (ctr: string, k: number, list: string) =>
-      `${ctr}: ${k} charged day(s) fall on dates when the empty container could not be returned (${list}). Detention that does not serve its incentive purpose, such as when empty containers cannot be returned, is likely to be found unreasonable under 46 CFR 545.5(c)(2)(ii) - review.`,
+      `${ctr}: ${k} charged day(s) fall on dates when the empty container could not be returned (${list}). Under 46 CFR 545.5(c)(2)(ii), "Absent extenuating circumstances, practices and regulations that provide for imposition of detention when it does not serve its incentivizing purposes, such as when empty containers cannot be returned, are likely to be found unreasonable." - review.`,
     rated: (date: string, rate: number, source: string) => `${date}: ${$(rate)} (${source}).`,
     unrated: (date: string) => `${date}: no rate stated on the invoice.`,
     total: (v: number) => `Total = ${$(v)}.`,
@@ -117,6 +117,10 @@ const TEXT = {
     title: 'Required invoice information missing or inaccurate (46 CFR 541.6)',
     explanation: (m: number, labels: string) =>
       `The invoice lacks or misstates ${m} item(s) that 46 CFR 541.6 requires: ${labels}. Under 46 CFR 541.5, failure to include required information eliminates the obligation to pay the charge - review whether this applies.`,
+    /** Only inaccurate items (A01-A05; review fix F3). */
+    inaccurateTitle: 'Required invoice information inaccurate (46 CFR 541.6)',
+    inaccurateExplanation: (m: number, labels: string) =>
+      `The invoice misstates ${m} item(s) that 46 CFR 541.6 requires: ${labels}. 46 CFR 541.6 requires this information to be accurate - review whether to dispute the charge.`,
     line: (citation: string, label: string, problem: string) => `${citation} ${label}: ${problem}.`,
     remaining: (v: number) => `Remaining invoice charges = ${$(v)}.`,
   },
@@ -586,17 +590,21 @@ export function auditDdInvoice(input: DdAuditInput): DdAuditResult {
       const remaining = calcs.reduce((s, c) => s + c.remaining, 0);
       const citer = cite();
       for (const is of issues) citer.add('invoice', is.pointer);
+      // Missing items (E..) keep the 541.5 texts and clause; only inaccurate items (A..) cite 541.6(b) or (d).
+      const anyMissing = issues.some((is) => is.id.startsWith('E'));
+      const firstCitation = issues[0] === undefined ? '' : ELEMENTS[issues[0].id][0];
+      const clauseKey: DdRegulationKey = anyMissing ? '46 CFR 541.5' : firstCitation.startsWith('46 CFR 541.6(b)') ? '46 CFR 541.6(b)' : '46 CFR 541.6(d)';
       contentF.push(
         finding(
           'DD-541-6-CONTENT',
-          TEXT.content.title,
+          anyMissing ? TEXT.content.title : TEXT.content.inaccurateTitle,
           remaining,
-          TEXT.content.explanation(labels.length, labels.join('; ')),
+          anyMissing ? TEXT.content.explanation(labels.length, labels.join('; ')) : TEXT.content.inaccurateExplanation(labels.length, labels.join('; ')),
           [...issues.map((is) => TEXT.content.line(ELEMENTS[is.id][0], ELEMENTS[is.id][1], is.problem)), TEXT.content.remaining(remaining)],
           true,
           DD_CONFIDENCE_541,
           citer.list(),
-          regulationClause('46 CFR 541.5'),
+          regulationClause(clauseKey),
         ),
       );
     }

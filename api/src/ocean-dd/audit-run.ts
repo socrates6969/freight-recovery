@@ -292,7 +292,8 @@ export async function runDdAudit(tx: TenantTx, tenantId: string, id: string, act
   });
   const updated = await tx.ddInvoice.updateMany({
     where: { id, status: 'DRAFT' },
-    data: { status: 'AUDITED', claimId, auditedAt: now, auditSnapshot: built.snapshot, version: { increment: 1 }, updatedById: actor.userId },
+    // Fix round 3 (review F1): updated_by_id keeps the last data editor; the audit run is not an edit.
+    data: { status: 'AUDITED', claimId, auditedAt: now, auditSnapshot: built.snapshot, version: { increment: 1 } },
   });
   if (updated.count !== 1) throw errors.invalidState();
   const findingsCount = findings.length;

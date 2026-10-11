@@ -244,7 +244,7 @@ describe.skipIf(!canRunDb)('ocean D&D audit (PostgreSQL)', () => {
   describe('routes', () => {
     let fastify: FastifyInstance;
     let c: Client;
-    const tok = { owner: '', manager: '', reviewer: '', analyst: '', viewer: '', globexOwner: '' };
+    const tok = { owner: '', admin: '', manager: '', reviewer: '', analyst: '', viewer: '', globexOwner: '' };
 
     beforeAll(async () => {
       fastify = await buildApp(step4Env(), { logStream: new Writable({ write: (_c, _e, cb) => cb() }) });
@@ -252,6 +252,7 @@ describe.skipIf(!canRunDb)('ocean D&D audit (PostgreSQL)', () => {
       c = await new Client(fastify).init();
       tok.owner = await c.login('owner@acme.test');
       tok.manager = await c.login('manager@acme.test');
+      tok.admin = await c.login('admin@acme.test');
       tok.reviewer = await c.login('reviewer@acme.test');
       tok.analyst = await c.login('analyst@acme.test');
       tok.viewer = await c.login('viewer@acme.test');
@@ -376,20 +377,29 @@ describe.skipIf(!canRunDb)('ocean D&D audit (PostgreSQL)', () => {
       expect([r.statusCode, errorOf(r).code]).toEqual([403, 'forbidden']);
     });
 
-    it('fix round 1 S3: the creator or last editor of the D&D invoice cannot approve or reject the claim', async () => {
-      const created = await c.send('POST', '/api/v1/dd/invoices', tok.reviewer, invoiceBody(`${marker}-fe`));
-      expect(created.statusCode, created.body).toBe(201);
-      const d = DdInvoiceDetail.parse(created.json());
-      const out = DdAuditResponse.parse((await c.send('POST', `/api/v1/dd/invoices/${d.id}/audit`, tok.owner, {})).json());
-      for (const action of ['approve', 'reject'] as const) {
-        const r = await c.send('POST', `/api/v1/claims/${out.claim.id}/packet/${action}`, tok.reviewer, { packetRevision: 1, reason: REASON, acknowledgePendingFindings: true });
-        expect([r.statusCode, errorOf(r).code]).toEqual([403, 'four_eyes_required']);
+    it('C14 (fix round 3): every editor of the D&D invoice (creator R1, intermediate R2, last R4) is refused; the auditor M1 does not edit; R3 approves', async () => {
+      // R1 = reviewer creates, R2 = admin edits, R4 = owner makes the last edit, M1 = analyst audits, R3 = manager approves.
+      const r1 = DdInvoiceDetail.parse((await c.send('POST', '/api/v1/dd/invoices', tok.reviewer, invoiceBody(`${marker}-fe`))).json());
+      const r2 = await c.send('PUT', `/api/v1/dd/invoices/${r1.id}`, tok.admin, { version: 1, invoice: invoiceBody(`${marker}-fe`, { dueDate: '2026-04-25' }) });
+      expect(r2.statusCode, r2.body).toBe(200);
+      const r4 = await c.send('PUT', `/api/v1/dd/invoices/${r1.id}`, tok.owner, { version: 2, invoice: invoiceBody(`${marker}-fe`, { dueDate: '2026-04-26' }) });
+      expect(r4.statusCode, r4.body).toBe(200);
+      const out = DdAuditResponse.parse((await c.send('POST', `/api/v1/dd/invoices/${r1.id}/audit`, tok.analyst, {})).json());
+      const ownerRow = await admin.query<{ id: string }>(`SELECT id FROM users WHERE email = 'owner@acme.test'`);
+      const row = await admin.query<{ updated_by_id: string; status: string }>(`SELECT updated_by_id::text AS updated_by_id, status FROM dd_invoices WHERE id = $1`, [r1.id]);
+      expect(row.rows[0]).toEqual({ updated_by_id: ownerRow.rows[0]?.id, status: 'AUDITED' });
+      for (const t of [tok.reviewer, tok.admin, tok.owner]) {
+        for (const action of ['approve', 'reject'] as const) {
+          const r = await c.send('POST', `/api/v1/claims/${out.claim.id}/packet/${action}`, t, { packetRevision: 1, reason: REASON, acknowledgePendingFindings: true });
+          expect([action, r.statusCode, errorOf(r).code]).toEqual([action, 403, 'four_eyes_required']);
+        }
       }
       const denied = await admin.query<{ metadata: { basis: string } }>(`SELECT metadata FROM audit_events WHERE action = 'authz.four_eyes_denied' AND target_id = $1 ORDER BY seq`, [out.claim.id]);
-      expect(denied.rows.map((r) => r.metadata.basis)).toEqual(['dd_invoice_editor', 'dd_invoice_editor']);
-      // The approval queue marks the claim as self-authored for the invoice creator.
-      const queue = (await c.get('/api/v1/approvals', tok.reviewer)).json() as { items: { id: string; selfAuthored: boolean }[] };
-      expect(queue.items.find((i) => i.id === out.claim.id)?.selfAuthored).toBe(true);
+      expect(denied.rows.map((r) => r.metadata.basis)).toEqual(Array.from({ length: 6 }, () => 'dd_invoice_editor'));
+      for (const t of [tok.reviewer, tok.admin, tok.owner]) {
+        const queue = (await c.get('/api/v1/approvals?pageSize=100', t)).json() as { items: { id: string; selfAuthored: boolean }[] };
+        expect(queue.items.find((i) => i.id === out.claim.id)?.selfAuthored).toBe(true);
+      }
       const ok = await c.send('POST', `/api/v1/claims/${out.claim.id}/packet/approve`, tok.manager, { packetRevision: 1, reason: REASON, acknowledgePendingFindings: true });
       expect(ok.statusCode, ok.body).toBe(200);
     });

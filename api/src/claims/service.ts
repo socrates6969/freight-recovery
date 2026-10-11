@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import type { ApprovalItemDto, ClaimDetailDto, ClaimSummaryDto, ClaimsQueryInput, PacketDto, PacketStatus, Role } from '@fr/shared';
 
 import { appendAudit } from '../audit/audit.js';
+import { ddInvoiceEditorsByClaim } from '../audit/dd-editors.js';
 import { isUuid } from '../db/errors.js';
 import { lockClaimForUpdate, type TenantTx } from '../db/tenant.js';
 import { UNPROCESSABLE, errors } from '../http/errors.js';
@@ -135,15 +136,9 @@ export async function listApprovalQueue(
           select: { claimId: true },
           distinct: ['claimId'],
         });
-  // Step 8 fix round 1 (S3): a D&D invoice creator/editor is also refused, so mark those claims too.
-  const ddEdited =
-    pageIds.length === 0
-      ? []
-      : await tx.ddInvoice.findMany({
-          where: { claimId: { in: pageIds }, OR: [{ createdById: viewerId }, { updatedById: viewerId }] },
-          select: { claimId: true },
-        });
-  const authoredSet = new Set([...authored.map((a) => a.claimId), ...ddEdited.flatMap((d) => (d.claimId === null ? [] : [d.claimId]))]);
+  // Step 8 (C14): D&D invoice editors are refused too, so mark those claims (one query per page).
+  const ddEditors = await ddInvoiceEditorsByClaim(tx, pageIds);
+  const authoredSet = new Set([...authored.map((a) => a.claimId), ...pageIds.filter((id) => ddEditors.get(id)?.has(viewerId) === true)]);
   const items = rows.map((r) => {
     const p = r.packets[0];
     const summary = toClaimSummary(r as unknown as SummaryRow);
@@ -383,10 +378,10 @@ export async function transition(
         metadata: { claimId, packetId: latest.id, packetRevision: latest.revision, action: ACTION_FOR[kind], basis: 'revision_author' },
       });
     }
-    // Step 8 fix round 1 (S3): for an OCEAN_DD claim, the creator and the last editor of its D&D invoice
-    // are excluded too (the invoice data is the evidence of revision 1).
-    const ddEditor = await tx.ddInvoice.findFirst({ where: { claimId, OR: [{ createdById: actor.userId }, { updatedById: actor.userId }] }, select: { id: true } });
-    if (ddEditor) {
+    // Step 8 (fix rounds 1 and 3, C14): for an OCEAN_DD claim, every editor of its D&D invoice (actors of
+    // dd_invoice.created / dd_invoice.updated in the tenant audit chain) is excluded too.
+    const ddEditors = await ddInvoiceEditorsByClaim(tx, [claimId]);
+    if (ddEditors.get(claimId)?.has(actor.userId) === true) {
       throw errors.fourEyes({
         tenantId,
         targetType: 'claim',
