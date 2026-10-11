@@ -5,9 +5,11 @@
  *   npm run prices:import -- --bundled
  *   npm run prices:import -- --list
  *   npm run prices:import -- --series <key> --fetch
+ *   (fix round 1, L1) add --accept-revisions to any import to allow changed values of already covered dates
  * Uses only MIGRATE_DATABASE_URL (the owner connection) and never prints it. Exit codes: 0 imported,
  * unchanged or the list; 2 usage, validation or parse error, or would_remove_history (nothing written);
- * 3 database or network failure (nothing written).
+ * 3 database or network failure (nothing written). A refusal because of revised values
+ * (`revisions_refused`, fix round 1 L1) is exit 2 and prints the number of changed values.
  */
 import { lstatSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -27,9 +29,9 @@ const DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/u;
 
 export type PricesCliArgs =
   | { mode: 'list' }
-  | { mode: 'bundled' }
-  | { mode: 'file'; series: PriceSeriesKey; file: string; sourceUrl: string; retrievedAt: string }
-  | { mode: 'fetch'; series: PriceSeriesKey };
+  | { mode: 'bundled'; acceptRevisions: boolean }
+  | { mode: 'file'; series: PriceSeriesKey; file: string; sourceUrl: string; retrievedAt: string; acceptRevisions: boolean }
+  | { mode: 'fetch'; series: PriceSeriesKey; acceptRevisions: boolean };
 
 export class PricesUsageError extends Error {}
 class PricesNetworkError extends Error {}
@@ -50,7 +52,7 @@ export interface PricesCliDeps {
 }
 
 const FLAGS_WITH_VALUE = new Set(['--series', '--file', '--source-url', '--retrieved-at']);
-const BARE_FLAGS = new Set(['--bundled', '--list', '--fetch']);
+const BARE_FLAGS = new Set(['--bundled', '--list', '--fetch', '--accept-revisions']);
 
 function isRealDate(v: string): boolean {
   if (!DATE.test(v)) return false;
@@ -83,25 +85,26 @@ export function parseArgs(argv: readonly string[], today: string): PricesCliArgs
     only([], ['--list']);
     return { mode: 'list' };
   }
+  const acceptRevisions = bare.has('--accept-revisions');
   if (bare.has('--bundled')) {
-    only([], ['--bundled']);
-    return { mode: 'bundled' };
+    only([], ['--bundled', '--accept-revisions']);
+    return { mode: 'bundled', acceptRevisions };
   }
   const series = values.get('--series');
   if (series === undefined) throw new PricesUsageError('one of --list, --bundled or --series is required');
   if (!isPriceSeriesKey(series)) throw new PricesUsageError(`--series must be one of ${PRICE_SERIES_KEYS.join(', ')}`);
   if (bare.has('--fetch')) {
-    only(['--series'], ['--fetch']);
-    return { mode: 'fetch', series };
+    only(['--series'], ['--fetch', '--accept-revisions']);
+    return { mode: 'fetch', series, acceptRevisions };
   }
-  only(['--series', '--file', '--source-url', '--retrieved-at'], []);
+  only(['--series', '--file', '--source-url', '--retrieved-at'], ['--accept-revisions']);
   const file = values.get('--file');
   const sourceUrl = values.get('--source-url');
   const retrievedAt = values.get('--retrieved-at');
   if (file === undefined || sourceUrl === undefined || retrievedAt === undefined) throw new PricesUsageError('--file, --source-url and --retrieved-at are required with --series');
   if (sourceUrl !== PRICE_SERIES[series].sourceUrl) throw new PricesUsageError(`--source-url must be the pinned URL of ${series}`);
   if (!isRealDate(retrievedAt) || retrievedAt > today) throw new PricesUsageError('--retrieved-at must be a real date not after today (UTC)');
-  return { mode: 'file', series, file, sourceUrl, retrievedAt };
+  return { mode: 'file', series, file, sourceUrl, retrievedAt, acceptRevisions };
 }
 
 /** Read a local CSV: a regular file (no symlink), at most 1 MiB; the same bytes are hashed and parsed. */
@@ -171,11 +174,15 @@ interface PendingImport {
   sourceUrl: string;
   retrievedAt: string;
   parsed: ParsedPriceCsv;
+  acceptRevisions: boolean;
 }
 
 function outcomeLine(p: PendingImport, r: InsertImportOutcome): string {
   const range = `rows ${p.parsed.rows.length} ${p.parsed.firstDate}..${p.parsed.lastDate}`;
-  if (r.outcome === 'imported') return `${p.key}: imported (import ${r.importId}, sha256 ${p.parsed.sha256}, ${range}, source ${p.sourceKind})\n`;
+  if (r.outcome === 'imported') return `${p.key}: imported (import ${r.importId}, sha256 ${p.parsed.sha256}, ${range}, source ${p.sourceKind}, revised values ${r.revisedValues})\n`;
+  if (r.outcome === 'revisions_refused') {
+    return `${p.key}: refused: ${r.revisedValues} revised value(s) of dates the active import ${r.active.id} already covers; re-run with --accept-revisions to import them\n`;
+  }
   if (r.outcome === 'unchanged') return `${p.key}: unchanged (active import ${r.importId} has the same sha256)\n`;
   return `${p.key}: refused: would_remove_history (the file covers ${p.parsed.firstDate}..${p.parsed.lastDate}; the active import covers ${r.active.firstDate}..${r.active.lastDate})\n`;
 }
@@ -204,16 +211,23 @@ export async function main(argv: readonly string[], out: (s: string) => void, er
   try {
     if (args.mode === 'file') {
       const parsed = parsePriceCsv(readPriceFile(args.file), args.series);
-      pending.push({ key: args.series, sourceKind: 'file', sourceUrl: args.sourceUrl, retrievedAt: args.retrievedAt, parsed });
+      pending.push({ key: args.series, sourceKind: 'file', sourceUrl: args.sourceUrl, retrievedAt: args.retrievedAt, parsed, acceptRevisions: args.acceptRevisions });
     } else if (args.mode === 'bundled') {
       for (const { entry, bytes } of readBundledPrices(deps.dataDir ?? defaultPriceDataDir()).files) {
         const parsed = parsePriceCsv(bytes, entry.series);
         if (parsed.rows.length !== entry.rows || parsed.firstDate !== entry.firstDate || parsed.lastDate !== entry.lastDate) throw new PriceDataError(`manifest rows or dates do not match ${entry.file}`);
-        pending.push({ key: entry.series, sourceKind: 'bundled', sourceUrl: entry.sourceUrl, retrievedAt: entry.retrievedAt, parsed });
+        pending.push({ key: entry.series, sourceKind: 'bundled', sourceUrl: entry.sourceUrl, retrievedAt: entry.retrievedAt, parsed, acceptRevisions: args.acceptRevisions });
       }
     } else if (args.mode === 'fetch') {
       const bytes = await fetchPinned(args.series, deps.fetch ?? fetch);
-      pending.push({ key: args.series, sourceKind: 'fetch', sourceUrl: PRICE_SERIES[args.series].sourceUrl, retrievedAt: today, parsed: parsePriceCsv(bytes, args.series) });
+      pending.push({
+        key: args.series,
+        sourceKind: 'fetch',
+        sourceUrl: PRICE_SERIES[args.series].sourceUrl,
+        retrievedAt: today,
+        parsed: parsePriceCsv(bytes, args.series),
+        acceptRevisions: args.acceptRevisions,
+      });
     }
   } catch (e) {
     if (e instanceof PricesNetworkError) {
@@ -250,7 +264,7 @@ export async function main(argv: readonly string[], out: (s: string) => void, er
     for (const p of pending) {
       const r = await db.insertImport(p);
       out(outcomeLine(p, r));
-      if (r.outcome === 'would_remove_history') refused = true;
+      if (r.outcome === 'would_remove_history' || r.outcome === 'revisions_refused') refused = true;
     }
     return refused ? 2 : 0;
   } catch {

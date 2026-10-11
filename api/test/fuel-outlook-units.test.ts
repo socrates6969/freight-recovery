@@ -14,9 +14,9 @@ import { parsePriceCsv, type PriceSeriesKey } from '@fr/shared/outlook';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { buildAnalysisPacket } from '../src/claims/analysis.js';
-import type { ActiveImportRow, InsertImportArgs, InsertImportOutcome } from '../src/db/prices.js';
+import { countRevisedValues, type ActiveImportRow, type InsertImportArgs, type InsertImportOutcome } from '../src/db/prices.js';
 import { assembleBundleWithProvenance, type BundleDocument, type BundleField } from '../src/imports/bundle.js';
-import { milesText } from '../src/intelligence/fuel.js';
+import { fscParamsSha256, milesText } from '../src/intelligence/fuel.js';
 import { outlookSeriesDto } from '../src/intelligence/outlook-routes.js';
 import { defaultPriceDataDir } from '../src/platform/price-files.js';
 import { PriceStore, dieselSeriesOrNull, type PriceReader } from '../src/platform/price-store.js';
@@ -134,6 +134,14 @@ describe('buildAnalysisPacket with the fuel layer (A12)', () => {
     expect([b.summary.fuelCheckStatus, b.summary.priceDate]).toEqual(['contract_amount', null]);
   });
 
+  it('fix round 1 (L2): paramsSha256 is the sha256 of the canonical params JSON, in the summary when inputs exist', () => {
+    const b = buildAnalysisPacket({ input: input(docs('435.00')), claim: { perspective: 'SHIPPER' }, now: NOW, actorId: ACTOR, fuel: FUEL });
+    expect(b.summary.paramsSha256).toBe(fscParamsSha256(TABLE.params));
+    expect(fscParamsSha256({ stepSize: '0.06', basePrice: '1.20', bracket: 'above_base', ratePerStep: '0.01' })).toBe(fscParamsSha256(TABLE.params));
+    expect(fscParamsSha256(TABLE.params)).toMatch(/^[0-9a-f]{64}$/u);
+    expect(buildAnalysisPacket({ input: input(docs('435.00')), claim: { perspective: 'SHIPPER' }, now: NOW, actorId: ACTOR }).summary.paramsSha256).toBeNull();
+  });
+
   it('milesText writes one decimal without leading zeros', () => {
     expect([milesText('500'), milesText('0500.5'), milesText('0.1'), milesText('10000')]).toEqual(['500.0', '500.5', '0.1', '10000.0']);
   });
@@ -164,14 +172,17 @@ class FakeDb implements PriceImportDb {
   constructor(
     private readonly current: Partial<Record<PriceSeriesKey, ActiveImportRow>> = {},
     private readonly fail = false,
+    private readonly activeRows: { date: string; value: string }[] = [],
   ) {}
   async insertImport(args: InsertImportArgs): Promise<InsertImportOutcome> {
     if (this.fail) throw new Error('connect ECONNREFUSED postgresql://owner:secret@db:5432/x');
     const a = this.current[args.key] ?? null;
     if (a && a.sha256 === args.parsed.sha256) return { outcome: 'unchanged', importId: a.id, active: a };
     if (a && (args.parsed.firstDate > a.firstDate || args.parsed.lastDate < a.lastDate)) return { outcome: 'would_remove_history', importId: null, active: a };
+    const revisedValues = a ? countRevisedValues(this.activeRows, args.parsed.rows) : 0;
+    if (a && revisedValues > 0 && args.acceptRevisions !== true) return { outcome: 'revisions_refused', importId: null, active: a, revisedValues };
     this.inserted.push(args);
-    return { outcome: 'imported', importId: '22222222-2222-4222-8222-222222222222', active: a };
+    return { outcome: 'imported', importId: '22222222-2222-4222-8222-222222222222', active: a, revisedValues };
   }
   async readActiveImport(key: PriceSeriesKey): Promise<ActiveImportRow | null> {
     if (this.fail) throw new Error('db down');
@@ -203,16 +214,19 @@ const DIESEL_URL = PRICE_SERIES.diesel_us.sourceUrl;
 describe('prices:import CLI (F9)', () => {
   it('parses the four invocations and refuses everything else', () => {
     expect(pricesArgs(['--list'], '2026-10-11')).toEqual({ mode: 'list' });
-    expect(pricesArgs(['--bundled'], '2026-10-11')).toEqual({ mode: 'bundled' });
-    expect(pricesArgs(['--series', 'ppi_tl', '--fetch'], '2026-10-11')).toEqual({ mode: 'fetch', series: 'ppi_tl' });
+    expect(pricesArgs(['--bundled'], '2026-10-11')).toEqual({ mode: 'bundled', acceptRevisions: false });
+    expect(pricesArgs(['--bundled', '--accept-revisions'], '2026-10-11')).toEqual({ mode: 'bundled', acceptRevisions: true });
+    expect(pricesArgs(['--series', 'ppi_tl', '--fetch'], '2026-10-11')).toEqual({ mode: 'fetch', series: 'ppi_tl', acceptRevisions: false });
     expect(pricesArgs(['--series', 'diesel_us', '--file', 'x.csv', '--source-url', DIESEL_URL, '--retrieved-at', '2026-10-11'], '2026-10-11')).toEqual({
       mode: 'file',
       series: 'diesel_us',
       file: 'x.csv',
       sourceUrl: DIESEL_URL,
       retrievedAt: '2026-10-11',
+      acceptRevisions: false,
     });
     for (const bad of [
+      ['--list', '--accept-revisions'],
       [],
       ['--bogus'],
       ['--list', '--bundled'],
@@ -250,6 +264,44 @@ describe('prices:import CLI (F9)', () => {
     const c = await runCli(argv, longer);
     expect([c.code, longer.inserted.length]).toEqual([2, 0]);
     expect(c.out).toContain('would_remove_history');
+  });
+
+  it('fix round 1 (L1): revised values of covered dates are counted and refused unless --accept-revisions', async () => {
+    expect(
+      countRevisedValues(
+        [
+          { date: '2000-01-03', value: '1.300' },
+          { date: '2000-01-10', value: '1.300' },
+        ],
+        [
+          { date: '2000-01-03', value: '1.300' },
+          { date: '2000-01-10', value: '1.310' },
+          { date: '2000-01-17', value: '1.320' },
+        ],
+      ),
+    ).toBe(1);
+    const file = tempFile('revised.csv', WEEKLY);
+    const argv = ['--series', 'diesel_us', '--file', file, '--source-url', DIESEL_URL, '--retrieved-at', '2026-10-11'];
+    const cur = { diesel_us: active('diesel_us', { firstDate: '2000-01-03', lastDate: '2000-01-10' }) };
+    const old = [
+      { date: '2000-01-03', value: '1.300' },
+      { date: '2000-01-10', value: '1.300' },
+    ];
+    const refused = new FakeDb(cur, false, old);
+    const r = await runCli(argv, refused);
+    expect([r.code, refused.inserted.length]).toEqual([2, 0]);
+    expect(r.out).toContain('refused: 1 revised value(s)');
+    expect(r.out).toContain('--accept-revisions');
+    const accepted = new FakeDb(cur, false, old);
+    const a = await runCli([...argv, '--accept-revisions'], accepted);
+    expect([a.code, accepted.inserted.length, accepted.inserted[0]?.acceptRevisions]).toEqual([0, 1, true]);
+    expect(a.out).toContain('revised values 1');
+    // Extending the series without changing covered values needs no flag.
+    const extend = new FakeDb(cur, false, [
+      { date: '2000-01-03', value: '1.300' },
+      { date: '2000-01-10', value: '1.310' },
+    ]);
+    expect((await runCli(argv, extend)).code).toBe(0);
   });
 
   it('bad files are exit 2 before any database access; database failures are exit 3 without the URL', async () => {

@@ -225,6 +225,9 @@ const METADATA_KEYS = new Set([
   'sourceKind',
   'sourceUrl',
   'retrievedAt',
+  // Step 7 fix round 1: changed values of a re-import (L1) and the sha256 of a fuel table's canonical params (L2).
+  'revisedValues',
+  'paramsSha256',
 ]);
 const MAX_STRING = 2000;
 

@@ -9,10 +9,10 @@
  *   AWAITING_ANALYSIS only, 422s, fuel-check view + intelligence.viewed, outlook (pinned values, S2 rates),
  *   RBAC, flag OFF 404, byte-identical cross-tenant 404.
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
 
-import { FscTable, FscTableList, FuelCheckView, OutlookResponse, SetFuelInputsResponse } from '@fr/shared';
+import { ApiKeyCreated, FscTable, FscTableList, FuelCheckView, OutlookResponse, SetFuelInputsResponse, canonicalJson } from '@fr/shared';
 import { parsePriceCsv } from '@fr/shared/outlook';
 import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
@@ -27,6 +27,8 @@ type Inject = Awaited<ReturnType<FastifyInstance['inject']>>;
 const errorOf = (r: Inject) => (r.json() as { error: { code: string; message: string } }).error;
 const marker = `zz fuel ${Date.now().toString(36)}`;
 const STEP = { basePrice: '1.20', stepSize: '0.06', ratePerStep: '0.01', bracket: 'above_base' };
+/** Fix round 1 (L2): sha256 of the canonical params JSON. */
+const PARAMS_SHA = createHash('sha256').update(canonicalJson(STEP), 'utf8').digest('hex');
 
 let admin: pg.Client;
 let app: pg.Client;
@@ -225,6 +227,31 @@ describe.skipIf(!canRunDb)('fuel check, price store and outlook (PostgreSQL)', (
       expect((await admin.query<{ n: string }>(`SELECT count(*)::text AS n FROM price_imports`)).rows[0]?.n).toBe(before.rows[0]?.n);
     });
 
+    it('fix round 1 (L1): a re-import that changes covered values is refused without --accept-revisions', async () => {
+      const { mkdtempSync, readFileSync, writeFileSync, rmSync } = await import('node:fs');
+      const { tmpdir } = await import('node:os');
+      const path = await import('node:path');
+      const { defaultPriceDataDir } = await import('../../src/platform/price-files.js');
+      const dir = mkdtempSync(path.join(tmpdir(), 'fr-int-revise-'));
+      try {
+        const original = readFileSync(path.join(defaultPriceDataDir(), 'GASDESW.csv'), 'utf8');
+        const revised = original.replace('\n2026-10-05,6.199', '\n2026-10-05,6.200');
+        expect(revised).not.toBe(original);
+        const file = path.join(dir, 'revised.csv');
+        writeFileSync(file, revised);
+        const args = ['--series', 'diesel_us', '--file', file, '--source-url', 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=GASDESW', '--retrieved-at', '2026-10-11'];
+        const before = (await admin.query<{ n: string }>(`SELECT count(*)::text AS n FROM price_imports`)).rows[0]?.n;
+        const out: string[] = [];
+        expect(await pricesMain(args, (s) => out.push(s), (s) => out.push(s), { env: { MIGRATE_DATABASE_URL: adminUrl } })).toBe(2);
+        expect(out.join('')).toContain('refused: 1 revised value(s)');
+        expect((await admin.query<{ n: string }>(`SELECT count(*)::text AS n FROM price_imports`)).rows[0]?.n).toBe(before);
+        // Accepting the revision would change the shared active import for every other test; the accept path is
+        // covered by the unit tests (fake DB). Here only the refusal is checked against the real store.
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
     it('a file that does not cover the active range is refused (exit 2, nothing written)', async () => {
       const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
       const { tmpdir } = await import('node:os');
@@ -292,11 +319,21 @@ describe.skipIf(!canRunDb)('fuel check, price store and outlook (PostgreSQL)', (
       expect((await del(`/api/v1/fuel-tables/${t.id}`, owner)).statusCode).toBe(204);
       const archived = await c.send('PUT', `/api/v1/fuel-tables/${t.id}`, owner, { ...body(`${marker} a`), expectedVersion: 3 });
       expect([archived.statusCode, errorOf(archived).code]).toEqual([409, 'invalid_state']);
-      expect(await auditOf('fsc_table.created', t.id)).toEqual([{ fscTableId: t.id, version: 1, kind: 'step', unit: 'per_mile', priceSeries: 'diesel_us', effectiveOffsetDays: 2 }]);
+      expect(await auditOf('fsc_table.created', t.id)).toEqual([{ fscTableId: t.id, version: 1, kind: 'step', unit: 'per_mile', priceSeries: 'diesel_us', effectiveOffsetDays: 2, paramsSha256: PARAMS_SHA }]);
       expect(await auditOf('fsc_table.updated', t.id)).toEqual([
-        { fscTableId: t.id, version: 2, previousVersion: 1, kind: 'step', unit: 'per_mile', priceSeries: 'diesel_us', effectiveOffsetDays: 0, changedFields: ['effectiveOffsetDays'] },
+        {
+          fscTableId: t.id,
+          version: 2,
+          previousVersion: 1,
+          kind: 'step',
+          unit: 'per_mile',
+          priceSeries: 'diesel_us',
+          effectiveOffsetDays: 0,
+          changedFields: ['effectiveOffsetDays'],
+          paramsSha256: PARAMS_SHA,
+        },
       ]);
-      expect(await auditOf('fsc_table.archived', t.id)).toEqual([{ fscTableId: t.id, version: 3 }]);
+      expect(await auditOf('fsc_table.archived', t.id)).toEqual([{ fscTableId: t.id, version: 3, paramsSha256: PARAMS_SHA }]);
       const list = FscTableList.parse((await c.get('/api/v1/fuel-tables?includeArchived=true', viewer)).json());
       expect(list.items.some((x) => x.id === t.id && x.archived)).toBe(true);
       expect(FscTableList.parse((await c.get('/api/v1/fuel-tables', viewer)).json()).items.some((x) => x.id === t.id)).toBe(false);
@@ -384,6 +421,37 @@ describe.skipIf(!canRunDb)('fuel check, price store and outlook (PostgreSQL)', (
       expect((await c.send('PUT', `/api/v1/claims/${randomUUID()}/fuel-inputs`, analyst, { shipDate: '2026-02-30', miles: '5', fscTableId: randomUUID() })).statusCode).toBe(400);
       expect((await c.get('/api/v1/outlook?fscTableId=x', viewer)).statusCode).toBe(400);
       expect((await c.get('/api/v1/fuel-tables?includeArchived=yes', viewer)).statusCode).toBe(400);
+    });
+
+    it('fix round 1 (I1): an API key (every scope) gets 403 forbidden on all 8 step-7 routes', async () => {
+      const created = await c.send('POST', '/api/v1/api-keys', owner, { name: `${marker} key`, scopes: ['claims.read', 'imports.write', 'exports.claims'] });
+      expect(created.statusCode, created.body).toBe(201);
+      const key = ApiKeyCreated.parse(created.json());
+      const id = randomUUID();
+      const claimId = randomUUID();
+      const routes: [string, string, unknown][] = [
+        ['GET', '/api/v1/fuel-tables', undefined],
+        ['POST', '/api/v1/fuel-tables', body(`${marker} key`)],
+        ['PUT', `/api/v1/fuel-tables/${id}`, { ...body(`${marker} key`), expectedVersion: 1 }],
+        ['DELETE', `/api/v1/fuel-tables/${id}`, undefined],
+        ['GET', `/api/v1/claims/${claimId}/fuel-check`, undefined],
+        ['PUT', `/api/v1/claims/${claimId}/fuel-inputs`, { shipDate: '2026-10-07', miles: '5', fscTableId: id }],
+        ['DELETE', `/api/v1/claims/${claimId}/fuel-inputs`, undefined],
+        ['GET', '/api/v1/outlook', undefined],
+      ];
+      try {
+        for (const [method, url, payload] of routes) {
+          const r = await fastify.inject({
+            method: method as 'GET' | 'POST' | 'PUT' | 'DELETE',
+            url,
+            headers: { authorization: `Bearer ${key.secret}`, ...(payload === undefined ? {} : { 'content-type': 'application/json' }) },
+            ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }),
+          });
+          expect([method, url, r.statusCode, errorOf(r).code]).toEqual([method, url, 403, 'forbidden']);
+        }
+      } finally {
+        await c.send('POST', `/api/v1/api-keys/${key.key.id}/revoke`, owner, { reason: 'Fuel integration key cleanup' });
+      }
     });
 
     it('outlook: pinned live values and backtest, S2 rates, archived/foreign table 404', async () => {

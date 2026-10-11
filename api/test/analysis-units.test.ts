@@ -114,7 +114,7 @@ describe('buildAnalysisPacket', () => {
     expect(b.packet.demandLetter).toContain('Date: 2026-10-10');
     expect(b.summary).toEqual({ findingsCount: 3, pendingFindingsCount: 1, ignoredFindingsCount: 0, recoverableCents: 32500, pendingReviewCents: 15000, learnedFindingsCount: 0, reviewFlagsCount: 0, learnedLabelIds: [],
       // Step 7: no fuel inputs -> no_inputs (the packet equals step 6).
-      fuelFindingsCount: 0, fuelCheckStatus: 'no_inputs', fscTableId: null, fscTableVersion: null, priceImportId: null, priceDate: null,
+      fuelFindingsCount: 0, fuelCheckStatus: 'no_inputs', fscTableId: null, fscTableVersion: null, paramsSha256: null, priceImportId: null, priceDate: null,
     });
     expect(b.sources.map((s) => [s.ordinal, s.filename, s.docType, s.sizeBytes])).toEqual([
       [1, 'bol.txt', 'BILL_OF_LADING', 100],
@@ -175,7 +175,7 @@ describe('buildAnalysisPacket', () => {
     expect(carrier.findings).toEqual([]);
     expect(carrier.summary).toEqual({ findingsCount: 0, pendingFindingsCount: 0, ignoredFindingsCount: 3, recoverableCents: 0, pendingReviewCents: 0, learnedFindingsCount: 0, reviewFlagsCount: 0, learnedLabelIds: [],
       // Step 7: no fuel inputs -> no_inputs (the packet equals step 6).
-      fuelFindingsCount: 0, fuelCheckStatus: 'no_inputs', fscTableId: null, fscTableVersion: null, priceImportId: null, priceDate: null,
+      fuelFindingsCount: 0, fuelCheckStatus: 'no_inputs', fscTableId: null, fscTableVersion: null, paramsSha256: null, priceImportId: null, priceDate: null,
     });
     expect(carrier.packet.demandLetter).toContain('No amount is requested');
   });

@@ -42,6 +42,8 @@ const CLAIM_ANALYZED_KEYS = [
   'learnedFindingsCount',
   'learnedLabelIds',
   'packetId',
+  // Step 7 fix round 1 (L2): sha256 of the fuel table's canonical params (null without inputs).
+  'paramsSha256',
   'pendingFindingsCount',
   'pendingReviewCents',
   'perspective',

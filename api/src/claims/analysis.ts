@@ -38,7 +38,7 @@ import { HttpError, errors } from '../http/errors.js';
 import { pointerToLocator, loadAnalysisInput, type AnalysisSource, type BundleProvenance, type FieldRef } from '../imports/bundle.js';
 import { parseInvoiceDate } from '../imports/commit-service.js';
 import { loadClassifier, type LoadedClassifier } from '../intelligence/charges.js';
-import { loadFuelInput } from '../intelligence/fuel.js';
+import { fscParamsSha256, loadFuelInput } from '../intelligence/fuel.js';
 
 import { packetContentHash, type HashCitation, type HashPacket } from './content-hash.js';
 import type { Actor } from './service.js';
@@ -137,6 +137,8 @@ export interface AnalysisPacketBuild {
     fuelCheckStatus: Exclude<FuelCheckStatus, 'off'>;
     fscTableId: string | null;
     fscTableVersion: number | null;
+    /** Fix round 1 (L2): sha256 of the canonical params JSON of the table version used (null without inputs). */
+    paramsSha256: string | null;
     priceImportId: string | null;
     priceDate: string | null;
   };
@@ -360,6 +362,7 @@ export function buildAnalysisPacket(args: {
       fuelCheckStatus: fuel.status,
       fscTableId: fuelInput === null ? null : fuelInput.table.id,
       fscTableVersion: fuelInput === null ? null : fuelInput.table.version,
+      paramsSha256: fuelInput === null ? null : fscParamsSha256(fuelInput.table.params),
       priceImportId: fuel.priceImport === null ? null : fuel.priceImport.id,
       priceDate: fuel.postedDate,
     },
@@ -422,6 +425,7 @@ export async function analyzeClaim(
     fuelCheckStatus,
     fscTableId: fuelOn ? summary.fscTableId : null,
     fscTableVersion: fuelOn ? summary.fscTableVersion : null,
+    paramsSha256: fuelOn ? summary.paramsSha256 : null,
     priceImportId: fuelOn ? summary.priceImportId : null,
     priceDate: fuelOn ? summary.priceDate : null,
     fuelFindingsCount: fuelOn ? summary.fuelFindingsCount : 0,

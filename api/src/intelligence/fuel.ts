@@ -32,6 +32,8 @@ import {
 } from '@fr/shared';
 import { checkFuel, type FscTableSpec, type FuelCheckInput, type PriceSeriesData } from '@fr/shared/fuel';
 
+import { createHash } from 'node:crypto';
+
 import { appendAudit } from '../audit/audit.js';
 import type { Actor } from '../claims/service.js';
 import { isUuid } from '../db/errors.js';
@@ -102,6 +104,14 @@ function dbSeries(v: string): 'diesel_us' {
 /** `YYYY-MM-DD` of a DATE column (UTC components). */
 const dateText = (d: Date): string => d.toISOString().slice(0, 10);
 const dateValue = (s: string): Date => new Date(`${s}T00:00:00.000Z`);
+
+/**
+ * Fix round 1 (L2): sha256 (hex) of the canonical JSON of a fuel table's params, so audit events and analyses
+ * identify the exact schedule that was stored or used (the table name is never audited).
+ */
+export function fscParamsSha256(params: unknown): string {
+  return createHash('sha256').update(canonicalJson(params), 'utf8').digest('hex');
+}
 
 /** A miles text (`^[0-9]{1,5}(\.[0-9])?$`) with exactly one decimal and no leading zeros. */
 export function milesText(miles: string): string {
@@ -224,6 +234,7 @@ export async function createTable(db: TenantDb, actor: Actor, body: FscTableBody
         unit: body.unit,
         priceSeries: body.priceSeries,
         effectiveOffsetDays: body.effectiveOffsetDays,
+        paramsSha256: fscParamsSha256(body.params),
       });
       return toTableDto(created);
     });
@@ -270,6 +281,7 @@ export async function updateTable(db: TenantDb, actor: Actor, id: string, body: 
         priceSeries: body.priceSeries,
         effectiveOffsetDays: body.effectiveOffsetDays,
         changedFields: [...changedFields],
+        paramsSha256: fscParamsSha256(body.params),
       });
       return toTableDto(fresh);
     });
@@ -283,7 +295,7 @@ export async function updateTable(db: TenantDb, actor: Actor, id: string, body: 
 export async function archiveTable(db: TenantDb, actor: Actor, id: string): Promise<void> {
   if (!isUuid(id)) throw errors.notFound();
   await db.tx(async (tx) => {
-    const row = await tx.fscTable.findFirst({ where: { id }, select: { id: true, version: true, archivedAt: true } });
+    const row = await tx.fscTable.findFirst({ where: { id }, select: { id: true, version: true, archivedAt: true, params: true } });
     if (!row) throw errors.notFound();
     if (row.archivedAt !== null) return;
     const updated = await tx.fscTable.updateMany({
@@ -291,7 +303,7 @@ export async function archiveTable(db: TenantDb, actor: Actor, id: string): Prom
       data: { archivedAt: new Date(), version: { increment: 1 }, updatedById: actor.userId },
     });
     if (updated.count !== 1) throw errors.staleRevision();
-    await auditTable(tx, db, actor, 'fsc_table.archived', id, { fscTableId: id, version: row.version + 1 });
+    await auditTable(tx, db, actor, 'fsc_table.archived', id, { fscTableId: id, version: row.version + 1, paramsSha256: fscParamsSha256(row.params) });
   });
 }
 

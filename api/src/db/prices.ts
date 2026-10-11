@@ -4,7 +4,9 @@
  * transaction (the runtime role has SELECT only). Writes happen ONLY through `insertImport`, called by
  * the owner-connection importer CLI and the seed: one system transaction takes a per-series advisory lock,
  * re-reads the active import, refuses a shrinking snapshot, inserts the import row and all observations and
- * appends `price_data.imported` to the PLATFORM audit chain (actor null). The tables are append-only
+ * appends `price_data.imported` to the PLATFORM audit chain (actor null). Fix round 1 (L1): a snapshot that
+ * changes any value of a date the active import already covers (a source revision) is refused unless the
+ * caller passes `acceptRevisions`; the count is reported and audited (`revisedValues`). The tables are append-only
  * (triggers); the newest import per series (imported_at desc, id desc) is the active one.
  */
 import type { ParsedPriceCsv, PriceSeriesKey } from '@fr/shared/outlook';
@@ -96,12 +98,26 @@ export interface InsertImportArgs {
   sourceUrl: string;
   retrievedAt: string;
   parsed: ParsedPriceCsv;
+  /** Fix round 1 (L1): allow an import that changes values of dates the active import covers. */
+  acceptRevisions?: boolean;
 }
 
 export type InsertImportOutcome =
-  | { outcome: 'imported'; importId: string; active: ActiveImportRow | null }
+  | { outcome: 'imported'; importId: string; active: ActiveImportRow | null; revisedValues: number }
   | { outcome: 'unchanged'; importId: string; active: ActiveImportRow }
-  | { outcome: 'would_remove_history'; importId: null; active: ActiveImportRow };
+  | { outcome: 'would_remove_history'; importId: null; active: ActiveImportRow }
+  | { outcome: 'revisions_refused'; importId: null; active: ActiveImportRow; revisedValues: number };
+
+/** Number of dates present in both snapshots whose value differs (exact 3-decimal text comparison). */
+export function countRevisedValues(active: readonly { date: string; value: string }[], next: readonly { date: string; value: string }[]): number {
+  const byDate = new Map(active.map((o) => [o.date, o.value]));
+  let n = 0;
+  for (const o of next) {
+    const old = byDate.get(o.date);
+    if (old !== undefined && old !== o.value) n += 1;
+  }
+  return n;
+}
 
 /**
  * F9 import semantics for one series, in ONE system transaction on the OWNER connection. Imports of one
@@ -117,6 +133,15 @@ export async function insertImport(ownerBase: BaseClient, args: InsertImportArgs
       if (active !== null && active.sha256 === parsed.sha256) return { outcome: 'unchanged', importId: active.id, active };
       if (active !== null && (parsed.firstDate > active.firstDate || parsed.lastDate < active.lastDate)) {
         return { outcome: 'would_remove_history', importId: null, active };
+      }
+      let revisedValues = 0;
+      if (active !== null) {
+        const old = await tx.priceObservation.findMany({ where: { importId: active.id }, orderBy: { periodDate: 'asc' }, select: { periodDate: true, value: true } });
+        revisedValues = countRevisedValues(
+          old.map((r) => ({ date: dateText(r.periodDate), value: r.value.toFixed(3) })),
+          parsed.rows,
+        );
+        if (revisedValues > 0 && args.acceptRevisions !== true) return { outcome: 'revisions_refused', importId: null, active, revisedValues };
       }
       const created = await tx.priceImport.create({
         data: {
@@ -153,9 +178,10 @@ export async function insertImport(ownerBase: BaseClient, args: InsertImportArgs
           sourceKind: args.sourceKind,
           sourceUrl: args.sourceUrl,
           retrievedAt: args.retrievedAt,
+          revisedValues,
         },
       });
-      return { outcome: 'imported', importId: created.id, active };
+      return { outcome: 'imported', importId: created.id, active, revisedValues };
     },
     { timeoutMs: IMPORT_TX_TIMEOUT_MS },
   );
