@@ -31,7 +31,7 @@ const err = (status: number, code: string) => json(status, { error: { code, mess
 
 const claim = (status: string) => ({
   id: U(500),
-  claimNumber: 'CLM-0500',
+  kind: 'FREIGHT', claimNumber: 'CLM-0500',
   loadNumber: null,
   invoiceNumber: null,
   carrierName: 'Carrier',

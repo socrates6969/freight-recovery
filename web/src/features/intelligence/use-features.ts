@@ -13,6 +13,8 @@ export interface Features {
   fuel: boolean;
   /** Step 7: cost outlook page. */
   outlook: boolean;
+  /** Step 8: ocean D&D invoice audit page. */
+  oceanDd: boolean;
 }
 
 /** Tenant feature flags, loaded once per session; any failure hides every intelligence feature (fail closed). */
@@ -38,5 +40,6 @@ export function useFeatures(): Features {
     charges: flags['intelligence.charge_suggestions'] === true,
     fuel: flags['intelligence.fuel_check'] === true,
     outlook: flags['intelligence.cost_outlook'] === true,
+    oceanDd: flags['intelligence.ocean_dd'] === true,
   };
 }

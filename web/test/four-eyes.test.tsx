@@ -33,7 +33,7 @@ function authed(handler: (u: string, init?: RequestInit) => Response | undefined
 
 const approvalItem = (n: number, overrides: Record<string, unknown> = {}) => ({
   id: U(20 + n),
-  claimNumber: `CLM-00${20 + n}`,
+  kind: 'FREIGHT', claimNumber: `CLM-00${20 + n}`,
   loadNumber: 'LD-1',
   invoiceNumber: 'INV-1',
   carrierName: 'Carrier',

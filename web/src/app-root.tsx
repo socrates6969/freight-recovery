@@ -50,6 +50,8 @@ export const routes: RouteObject[] = [
       // Step 7 (REQ-20261011-fuel-outlook): fuel tables and the cost outlook (flag-gated in the nav; the API 404s when off).
       { path: 'settings/fuel-tables', lazy: async () => ({ Component: (await import('./features/fuel/FuelTablesPage')).FuelTablesPage }) },
       { path: 'outlook', lazy: async () => ({ Component: (await import('./features/outlook/OutlookPage')).OutlookPage }) },
+      // Step 8 (REQ-20261011-ocean-dd): ocean D&D invoices, tariffs, calendars and CSV import.
+      { path: 'ocean', lazy: async () => ({ Component: (await import('./features/ocean-dd/OceanDdPage')).OceanDdPage }) },
       { path: 'settings/api-keys', lazy: async () => ({ Component: (await import('./features/apikeys/ApiKeysPage')).ApiKeysPage }) },
       {
         path: 'dev',

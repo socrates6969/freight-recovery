@@ -1,4 +1,4 @@
-import { ANALYSIS_TEXT, AnalyzeResponse, ClaimDetail, ClaimDocumentsResponse, ClaimSummary, Packet, displayText, type PacketDto } from '@fr/shared';
+import { ANALYSIS_TEXT, AnalyzeResponse, ClaimDetail, ClaimDocumentsResponse, ClaimSummary, DD_TEXT, Packet, displayText, type PacketDto } from '@fr/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { useCallback, useId, useRef, useState, type KeyboardEvent } from 'react';
@@ -286,6 +286,7 @@ export function ClaimSheet() {
             {c ? (
               <>
                 Claim <SafeText value={c.claimNumber} />
+                {c.kind === 'OCEAN_DD' ? <span className="badge ml-2">{DD_TEXT.kindBadge}</span> : null}
               </>
             ) : (
               title

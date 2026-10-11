@@ -1,4 +1,4 @@
-import { ANALYSIS_TEXT, ClaimsPage as ClaimsPageSchema, type ClaimSortField } from '@fr/shared';
+import { ANALYSIS_TEXT, ClaimsPage as ClaimsPageSchema, DD_TEXT, type ClaimSortField } from '@fr/shared';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -180,6 +180,7 @@ export function ClaimsPage() {
                         <Link to={`/claims/${c.id}${listSearch ? `?${listSearch}` : ''}`} data-claim-id={c.id} className="num font-medium text-[var(--color-accent)]">
                           <SafeText value={c.claimNumber} />
                         </Link>
+                        {c.kind === 'OCEAN_DD' ? <span className="badge ml-2">{DD_TEXT.kindBadge}</span> : null}
                       </td>
                       <td className="num max-w-40">
                         <SafeText value={c.loadNumber ?? '—'} />

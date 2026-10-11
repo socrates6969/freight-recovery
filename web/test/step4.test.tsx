@@ -364,7 +364,7 @@ describe('Recovery intelligence', () => {
 describe('claim sheet Similar and Provenance tabs', () => {
   const claim = {
     id: U(500),
-    claimNumber: 'CLM-0500',
+    kind: 'FREIGHT', claimNumber: 'CLM-0500',
     loadNumber: null,
     invoiceNumber: null,
     carrierName: 'Carrier',

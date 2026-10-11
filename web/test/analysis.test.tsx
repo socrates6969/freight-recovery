@@ -27,7 +27,7 @@ const errorBody = (code: string) => ({ error: { code, message: '<b>SERVER TEXT</
 function claim(status: string, overrides: Record<string, unknown> = {}) {
   return {
     id: CLAIM_ID,
-    claimNumber: 'CLM-0042',
+    kind: 'FREIGHT', claimNumber: 'CLM-0042',
     loadNumber: 'LD-42',
     invoiceNumber: 'INV-42',
     invoiceDate: null,

@@ -116,7 +116,7 @@ describe('AppRoot routing and auth', () => {
   it('gates approval actions on reason length and acknowledgement', async () => {
     const item = {
       id: U(20),
-      claimNumber: 'CLM-0013',
+      kind: 'FREIGHT', claimNumber: 'CLM-0013',
       loadNumber: 'LD-6091',
       invoiceNumber: 'INV-3169',
       carrierName: 'Northwind Haulage Co',
@@ -234,7 +234,7 @@ describe('fix round 1: fixed error texts, retry, Retry-After', () => {
   it('never renders server error text on 422 in the approval dialog', async () => {
     const item = {
       id: U(20),
-      claimNumber: 'CLM-0013',
+      kind: 'FREIGHT', claimNumber: 'CLM-0013',
       loadNumber: 'LD-1',
       invoiceNumber: 'INV-1',
       carrierName: 'C',

@@ -1,6 +1,6 @@
-import { ApprovalsPage as ApprovalsPageSchema, FUEL_TABLES_TEXT, OUTLOOK_TEXT } from '@fr/shared';
+import { ApprovalsPage as ApprovalsPageSchema, DD_TEXT, FUEL_TABLES_TEXT, OUTLOOK_TEXT } from '@fr/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ClipboardCheck, Command as CommandIcon, FileText, Fuel, KeyRound, ListChecks, ListOrdered, LogOut, TrendingUp, Upload, UserRound } from 'lucide-react';
+import { Activity, ClipboardCheck, Command as CommandIcon, FileText, Fuel, KeyRound, ListChecks, ListOrdered, LogOut, Ship, TrendingUp, Upload, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
@@ -77,6 +77,7 @@ export function AppShell() {
   const paletteButton = useRef<HTMLButtonElement>(null);
   const isTenantUser = Boolean(user?.tenant) && permissions.includes('claims:read');
   const canImport = permissions.includes('import:run');
+  const canReadClaims = permissions.includes('claims:read');
   const canReview = permissions.includes('import:review');
   const canManageKeys = isTenantUser && permissions.includes('apikeys:manage');
   // Platform users (no tenant) with platform:health get the Dev dashboard and never tenant links.
@@ -153,6 +154,12 @@ export function AppShell() {
                 <NavLink to="/intelligence" className={navClass}>
                   <ListOrdered size={16} aria-hidden="true" />
                   Intelligence
+                </NavLink>
+              ) : null}
+              {features.oceanDd && canReadClaims ? (
+                <NavLink to="/ocean" className={navClass}>
+                  <Ship size={16} aria-hidden="true" />
+                  {DD_TEXT.nav}
                 </NavLink>
               ) : null}
               {features.outlook ? (

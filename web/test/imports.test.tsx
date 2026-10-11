@@ -335,7 +335,7 @@ describe('review queue', () => {
 describe('exports and claim sheet', () => {
   const claim = {
     id: U(20),
-    claimNumber: 'CLM-0200',
+    kind: 'FREIGHT', claimNumber: 'CLM-0200',
     loadNumber: 'LD-1',
     invoiceNumber: null,
     carrierName: '',
