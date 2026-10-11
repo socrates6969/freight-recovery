@@ -3,7 +3,7 @@
 // page (CI-W12), untrusted names (CI-W13). Part C F15 screens. AppRoot with a scripted fetch serving contract-shaped
 // DTOs. Set ACC_SKIP_FUEL_UI=1 when S1 was cut and ACC_SKIP_S2=1 when S2 was cut (recorded in test-plan.md).
 import { screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { renderApp, setupDom } from './helpers/render.js';
 import { PERMS, createStub, json, mkClaim, type RoleName } from './helpers/stub.js';
 
@@ -68,6 +68,10 @@ function outlook(withFsc: boolean) {
 const err = (status: number, code: string) => json(status, { error: { code, message: SERVER_TEXT, requestId: 'r' } });
 
 setupDom();
+/** /me serves the shared RBAC matrix (the API's source of truth, F12). The step-4 `PERMS` fixture predates
+ *  `claims:analyze` for ANALYST and `settings:manage` for OWNER/ADMIN, so it cannot drive the fuel screens. */
+let MATRIX: Record<string, readonly string[]> = {};
+beforeAll(async () => { MATRIX = ((await import('@fr/shared')) as unknown as { PERMISSION_MATRIX: Record<string, readonly string[]> }).PERMISSION_MATRIX; });
 
 interface StubO { status?: string; features?: Record<string, boolean>; check?: () => Response; put?: () => Response; tables?: unknown[] }
 function mkStub(role: RoleName, o: StubO = {}) {
@@ -75,13 +79,14 @@ function mkStub(role: RoleName, o: StubO = {}) {
   const stub = createStub({ role, claims: [c] });
   const calls: { method: string; path: string; body: unknown }[] = [];
   let tables = o.tables ?? [T1, TP];
+  stub.on('GET', /\/api\/v1\/me$/, () => json(200, { user: stub.user, permissions: [...(MATRIX[role] ?? [])] }));
   stub.on('GET', /\/features$/, () => json(200, { flags: o.features ?? FEATS }));
   stub.on('GET', /\/claims\/[^/]+\/charge-lines$/, () => err(404, 'not_found'));
   stub.on('GET', /\/claims\/[^/]+\/fuel-check$/, () => (o.check ? o.check() : json(200, { claimId: c.id, inputs: { claimId: c.id, shipDate: '2026-10-07', miles: '500.0', fscTableId: TID, version: 1, updatedAt: NOW }, table: T1, result })));
   stub.on('PUT', /\/claims\/[^/]+\/fuel-inputs$/, (call) => { calls.push({ method: 'PUT', path: call.path, body: call.body }); return o.put ? o.put() : json(200, { inputs: { claimId: c.id, shipDate: '2026-10-07', miles: '500.0', fscTableId: TID, version: 2, updatedAt: NOW }, outcome: 'changed' }); });
   stub.on('GET', /\/fuel-tables(\?.*)?$/, () => json(200, { items: tables }));
   stub.on('POST', /\/fuel-tables$/, (call) => { calls.push({ method: 'POST', path: call.path, body: call.body }); return json(201, { ...T1, id: '00000000-0000-4000-8000-00000000f003', ...(call.body as object) }); });
-  stub.on('PUT', /\/fuel-tables\/[^/]+$/, (call) => { calls.push({ method: 'PUT', path: call.path, body: call.body }); const b = call.body as Record<string, unknown>; return json(200, { ...TP, ...b, version: 2 }); });
+  stub.on('PUT', /\/fuel-tables\/[^/]+$/, (call) => { calls.push({ method: 'PUT', path: call.path, body: call.body }); const { expectedVersion: _ev, ...b } = call.body as Record<string, unknown>; return json(200, { ...TP, ...b, version: 2 }); }); // FscTable has no expectedVersion (F10)
   stub.on('DELETE', /\/fuel-tables\/[^/]+$/, (call) => { calls.push({ method: 'DELETE', path: call.path, body: null }); tables = tables.filter((t) => !call.path.endsWith((t as { id: string }).id)); return new Response(null, { status: 204 }); });
   stub.on('GET', /\/outlook(\?.*)?$/, (call) => json(200, outlook(call.query.has('fscTableId'))));
   return { stub, c, calls };
@@ -139,7 +144,7 @@ describe.skipIf(SKIP)('T16 web (F15 screens)', () => {
     const { stub, calls } = mkStub('OWNER');
     const r = await renderApp(stub, ['/settings/fuel-tables']);
     await screen.findByRole('heading', { name: 'Fuel tables' }, WAIT);
-    expect(screen.getByText('Std DOE table')).toBeTruthy();
+    await screen.findByText('Std DOE table', {}, WAIT); // the list loads after the heading
     expect(screen.getByRole('button', { name: 'Add fuel table' })).toBeTruthy();
     expect(screen.getByRole('link', { name: 'Fuel tables' })).toBeTruthy();
     const editPct = screen.getAllByRole('button', { name: /edit/i }).find((b) => (b.getAttribute('aria-label') ?? b.closest('tr')?.textContent ?? '').includes('Pct table'));
@@ -179,8 +184,8 @@ describe.skipIf(SKIP)('T16 web (F15 screens)', () => {
     const { stub } = mkStub('VIEWER');
     const r = await renderApp(stub, ['/outlook']);
     await screen.findByRole('heading', { name: 'Cost outlook' }, WAIT);
+    await screen.findByText('Backtested on public data 2011-2026; not a guarantee.', {}, WAIT); // the outlook loads after the heading
     expect(screen.getAllByText(OUTLOOK_NOTE)).toHaveLength(1);
-    expect(screen.getByText('Backtested on public data 2011-2026; not a guarantee.')).toBeTruthy();
     expect(screen.getByText('Backtested on public data 2009-2026; not a guarantee.')).toBeTruthy();
     for (const t of ['Trend model', 'Average of trend model and no change', 'No change', 'Beat "no change" in the backtest', 'No model beat "no change" at this horizon'])
       expect(screen.getAllByText(t, { exact: false }).length, t).toBeGreaterThan(0);
@@ -190,7 +195,7 @@ describe.skipIf(SKIP)('T16 web (F15 screens)', () => {
     expect(screen.getAllByText('Data: U.S. Energy Information Administration', { exact: false }).length).toBeGreaterThan(0);
     expect(screen.getByRole('link', { name: 'Outlook' })).toBeTruthy();
     if (S2) {
-      await r.user.selectOptions(screen.getByLabelText('Fuel table'), TID);
+      await r.user.selectOptions(await screen.findByLabelText('Fuel table', {}, WAIT), TID); // the table list loads after the outlook
       for (const t of ['0.83', '0.79', '0.87', '1.37']) await screen.findAllByText(t, { exact: false }, WAIT);
     }
     r.view.unmount();
