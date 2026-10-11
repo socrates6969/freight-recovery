@@ -166,13 +166,16 @@ describe('C8-C10 shared registries (additive)', () => {
     const a = [...R.AUDIT_ACTIONS];
     const i = a.indexOf('charge_label.deleted');
     expect(a.slice(i - 3, i + 1)).toEqual(['claim.analyzed', 'claim.bulk_analyzed', 'charge_label.set', 'charge_label.deleted']);
-    expect(a.slice(i + 1)).toEqual(['fsc_table.created', 'fsc_table.updated', 'fsc_table.archived', 'claim.fuel_inputs_set', 'claim.fuel_inputs_cleared', 'price_data.imported']);
+    expect(a.slice(i + 1)).toEqual(['fsc_table.created', 'fsc_table.updated', 'fsc_table.archived', 'claim.fuel_inputs_set', 'claim.fuel_inputs_cleared', 'price_data.imported',
+      // REQ-20261011-ocean-dd C15 (additive): the eight step-8 actions follow price_data.imported.
+      'dd_tariff.created', 'dd_tariff.updated', 'dd_calendar.created', 'dd_calendar.updated', 'dd_invoice.created', 'dd_invoice.updated', 'dd_invoice.deleted', 'dd_invoice.audited']);
     expect(new Set(R.AUDIT_ACTIONS).size).toBe(R.AUDIT_ACTIONS.length);
   });
   it('C10 flag registry entry', () => {
     const f = R.FEATURE_FLAGS.find((x: any) => x.key === 'intelligence.charge_suggestions');
     expect({ ...f }).toEqual({ key: 'intelligence.charge_suggestions', description: 'Charge-line suggestions and team labels', defaultEnabled: true, tenantVisible: true });
     // REQ-20261011-fuel-outlook F14 (additive): two step-7 flags, registry ordered by key.
-    expect(R.FEATURE_FLAGS.map((x: any) => x.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+    // REQ-20261011-ocean-dd C16 (additive): intelligence.ocean_dd, registry ordered by key.
+    expect(R.FEATURE_FLAGS.map((x: any) => x.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
   });
 });

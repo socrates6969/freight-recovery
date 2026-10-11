@@ -150,6 +150,36 @@ describe('AN-D08 migrations', () => {
     });
     for (const t of ['fsc_tables', 'claim_fuel_inputs', 'price_imports', 'price_observations']) expect(raw.includes(`@@map("${t}")`), `schema maps ${t}`).toBe(true);
     for (const name of step7) s = s.split(/\r?\n/).filter((l) => !new RegExp(`\\b${name}\\b`).test(l)).join('\n');
+    // REQ-20261011-ocean-dd C11/C17 (additive pin update): step 8 adds the models mapped to dd_tariffs, dd_calendars
+    // and dd_invoices (and their relation fields), the claim-kind enum (exactly FREIGHT and OCEAN_DD) and the single
+    // `kind <enum> @default(FREIGHT)` field of model Claim. Exactly those are removed; everything else must still equal d678827.
+    const step8 = new Set<string>();
+    s = s.replace(/^model (\w+) \{[\s\S]*?^\}[ \t]*$/gm, (block, name: string) => {
+      if (!/@@map\("(dd_tariffs|dd_calendars|dd_invoices)"\)/.test(block)) return block;
+      step8.add(name);
+      return '';
+    });
+    for (const t of ['dd_tariffs', 'dd_calendars', 'dd_invoices']) expect(raw.includes(`@@map("${t}")`), `schema maps ${t}`).toBe(true);
+    for (const name of step8) s = s.split(/\r?\n/).filter((l) => !new RegExp(`\\b${name}\\b`).test(l)).join('\n');
+    const kindEnums: string[] = [];
+    s = s.replace(/^enum (\w+) \{([^}]*)^\}[ \t]*$/gm, (block, name: string, body: string) => {
+      const values = body.split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean);
+      if (values.join(',') !== 'FREIGHT,OCEAN_DD') return block;
+      kindEnums.push(name);
+      return '';
+    });
+    expect(kindEnums, 'exactly one claim-kind enum').toHaveLength(1);
+    const kindLine = new RegExp(`^\\s*kind\\s+${kindEnums[0]}\\s+@default\\(FREIGHT\\)\\s*(//.*)?$`);
+    const lines = s.split(/\r?\n/);
+    expect(lines.filter((l) => kindLine.test(l)), 'exactly one Claim.kind field').toHaveLength(1);
+    s = lines.filter((l) => !kindLine.test(l)).join('\n');
+    // Step 8 fix round 4 (additive pin update): exactly one `@@index([tenantId, targetType, targetId])` line inside model
+    // AuditEvent (migration 20261017000000_audit_target_index) is removed; nothing else in AuditEvent may change.
+    const auditBlock = /^model AuditEvent \{[\s\S]*?^\}[ \t]*$/m.exec(s)?.[0] ?? '';
+    const idxLine = /^\s*@@index\(\[tenantId, targetType, targetId\]\)\s*(\/\/.*)?$/;
+    expect(auditBlock.split(/\r?\n/).filter((l) => idxLine.test(l)), 'exactly one AuditEvent target index').toHaveLength(1);
+    expect(s.split(/\r?\n/).filter((l) => idxLine.test(l)), 'the target index appears only in AuditEvent').toHaveLength(1);
+    s = s.split(/\r?\n/).filter((l) => !idxLine.test(l)).join('\n');
     // `prisma format` re-aligns columns when a field is added, so internal whitespace runs are collapsed too. The
     // pinned value below was computed with this normalization from `git show d678827:api/prisma/schema.prisma`.
     const n = s.split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, '').trim().replace(/\s+/g, ' ')).filter(Boolean).join('\n');

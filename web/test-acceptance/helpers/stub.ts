@@ -34,6 +34,7 @@ export function mkClaim(i: number, over: Record<string, any> = {}) {
   return {
     id: uuid(),
     claimNumber: `CLM-${n}`,
+    kind: 'FREIGHT', // REQ-20261011-ocean-dd C17 (additive): ClaimSummary.kind
     loadNumber: `LD-${5000 + i}`,
     invoiceNumber: `INV-${1000 + i}`,
     carrierName: `Carrier ${n}`,

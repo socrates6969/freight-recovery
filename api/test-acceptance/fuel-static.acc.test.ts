@@ -35,7 +35,14 @@ describe('CI-D04 migrations (F14)', () => {
   });
   it('exactly one new migration folder 20261014000000_fuel_outlook, after the earlier ones', () => {
     const dirs = readdirSync(MIG).filter((d) => statSync(join(MIG, d)).isDirectory()).sort();
-    expect(dirs).toEqual([...new Set(Object.keys(FROZEN_5F7EB7E).map((f) => f.split('/')[0] ?? ''))].sort().concat(['20261014000000_fuel_outlook']));
+    // REQ-20261011-ocean-dd C11 (additive pin update): step 8 adds exactly one later folder ending in _ocean_dd; the
+    // step-7 folder itself is pinned byte-for-byte in dd-static.acc.test.ts.
+    // Step 8 fix round 4 (additive): plus exactly one index-only folder 20261017000000_audit_target_index (both step-8
+    // folders are pinned byte-for-byte in dd-static.acc.test.ts).
+    const step8 = dirs.filter((d) => /^\d{14}_ocean_dd$/.test(d) || d === '20261017000000_audit_target_index');
+    expect(step8, 'exactly the two step-8 migration folders').toHaveLength(2);
+    expect(dirs.filter((d) => !step8.includes(d))).toEqual([...new Set(Object.keys(FROZEN_5F7EB7E).map((f) => f.split('/')[0] ?? ''))].sort().concat(['20261014000000_fuel_outlook']));
+    expect(dirs.slice(-2), 'the step-8 folders sort last').toEqual(step8);
     const sql = readFileSync(join(MIG, '20261014000000_fuel_outlook', 'migration.sql'), 'utf8');
     for (const t of ['fsc_tables', 'claim_fuel_inputs', 'price_imports', 'price_observations']) {
       expect(sql, `${t} RLS enabled`).toMatch(new RegExp(`ALTER\\s+TABLE\\s+"?${t}"?\\s+ENABLE\\s+ROW\\s+LEVEL\\s+SECURITY`, 'i'));
