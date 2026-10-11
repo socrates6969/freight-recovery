@@ -19,6 +19,9 @@ export const APPROVAL_ACTIONS = ['EDIT', 'APPROVE', 'REJECT', 'SEND_READY'] as c
 export const DOC_TYPES = ['INVOICE', 'RATE_CONFIRMATION', 'BILL_OF_LADING', 'OTHER'] as const;
 export const TIMELINE_KINDS = ['APPOINTMENT', 'ARRIVAL', 'DEPARTURE', 'INVOICE', 'RATE_CONFIRMATION', 'NOTE'] as const;
 export const DIRECTIONS = ['OVERCHARGE', 'UNDERBILLED'] as const;
+/** Step 8 (REQ-20261011-ocean-dd): claim kinds; OCEAN_DD claims come from the D&D invoice audit. */
+export const CLAIM_KINDS = ['FREIGHT', 'OCEAN_DD'] as const;
+export type ClaimKind = (typeof CLAIM_KINDS)[number];
 export const VERIFIER_STATUSES = ['NOT_RUN', 'PASSED', 'FAILED', 'NEEDS_REVIEW'] as const;
 export const CLAIM_SORT_FIELDS = [
   'createdAt',
@@ -272,6 +275,8 @@ export const InviteInspectResponse = z.object({ email: z.string(), tenantName: z
 export const ClaimSummary = z.object({
   id: uuid,
   claimNumber: z.string(),
+  // Step 8 (REQ-20261011-ocean-dd, C17).
+  kind: z.enum(CLAIM_KINDS),
   loadNumber: z.string().nullable(),
   invoiceNumber: z.string().nullable(),
   carrierName: z.string(),

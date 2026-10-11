@@ -32,3 +32,7 @@ export * from './fuel-dto.js';
 export * from './outlook/constants.js';
 export * from './outlook/copy.js';
 export * from './outlook-dto.js';
+// Step 8 (REQ-20261011-ocean-dd): ocean demurrage and detention invoice audit (engine, presets, regulation
+// text, copy) and its DTOs, exported from the root (Part C C1).
+export * from './ocean-dd/index.js';
+export * from './ocean-dd-dto.js';
