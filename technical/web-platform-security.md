@@ -17,7 +17,9 @@ of duties for claim approvals and document acceptance) is covered in
 and bulk-analyze routes, the lifecycle triggers and the `analysis` rate budget) is covered in
 [section 9](#9-step-5-claim-analysis). Step 6 (charge intelligence: charge-line suggestions, the
 `charge_labels` tenant table, review-only learned findings and the seed-set evaluation gate) is covered in
-[section 10](#10-step-6-charge-intelligence). Every secret, its rotation and
+[section 10](#10-step-6-charge-intelligence). Step 7 (the fuel-surcharge check, the global public price
+tables and their owner-only importer, and the cost outlook with its backtest gate) is covered in
+[section 11](#11-step-7-fuel-check-public-price-data-and-cost-outlook). Every secret, its rotation and
 the buyer handover checklist are in [docs/secrets.md](../docs/secrets.md). The structure is in [ARCHITECTURE.md](../ARCHITECTURE.md#web-platform-typescript-steps-1-2). The
 infrastructure is in [infra/README.md](../infra/README.md).
 
@@ -790,3 +792,152 @@ RBAC, cap, audit key sets) and the additive pin updates in four integration file
 database, cross-tenant, RBAC, audit, flag, CLI, web), including the Tier H cases added after fix round 1;
 the parity suites; `verify-ci-locally`. Not run at all: GitHub CI, container images, the compose stack,
 Playwright, any AWS deployment.
+
+## 11. Step 7: fuel check, public price data and cost outlook
+
+Run `REQ-20261011-fuel-outlook` (branch `feat/fuel-outlook`, build commits `a164f56`..`cbb340f`, fix round 1
+`1a95245`) adds tenant fuel-surcharge (FSC) tables and per-claim fuel inputs, a review-only
+`FSC-INDEX-MISMATCH` finding in analysis, two **global** append-only price tables fed by an owner-only
+command-line importer, a cost outlook route with a backtest gate in CI, and three web screens. The structure
+is in [ARCHITECTURE.md, step 7](../ARCHITECTURE.md#web-platform-fuel-check-public-price-data-and-cost-outlook-step-7).
+The user view is in [README, fuel check and cost outlook](../README.md#fuel-check-and-cost-outlook-step-7).
+
+**Honesty.** The FSC finding is a recomputation from a table, miles and a ship date that people enter; it
+always needs human review (fixed confidence 0.7, not a probability) and never enters the recoverable total
+or the draft letter. The outlook is backtested on public data (diesel 2011-2026, PPI 2009-2026); it is not a
+guarantee, and each 80% range shows its measured backtest coverage. The CI step is a regression check of the
+forecast and range rules on bundled history, not an accuracy measure. The shared acceptance tests scan the
+copy and the data README for accuracy, prediction and guarantee wording.
+
+**Data provenance.** `api/data/public-prices/` holds two public U.S. government series downloaded from FRED
+on 2026-10-11: EIA weekly diesel (`GASDESW`) and the BLS long-distance truckload PPI (`PCU4841214841212`),
+pinned by sha256 in `manifest.json`. Both FRED series pages show "Public Domain: Citation Requested"
+(re-checked by scriber on 2026-10-11). No customer, carrier or shipment data. Committing real public data is
+an **owner decision** recorded in the run request and is in tension with the wording of CLAUDE.md hard rule
+4 ("synthetic data only"), which was not changed; a dated exception note is open question **OQ1**.
+
+### 11.1 New assets, permission and trust boundaries
+
+| Item | Detail |
+| --- | --- |
+| Permissions | No new permission. Fuel tables: write `settings:manage` (OWNER, ADMIN), read `claims:read`. Fuel inputs: write `claims:analyze` (OWNER, ADMIN, MANAGER, REVIEWER, ANALYST), read `claims:read`. Outlook: `claims:read`. Platform roles 403. **No API-key scope** grants any of the 8 new routes, so any API-key request is 403. |
+| Routes | `GET/POST /api/v1/fuel-tables`, `PUT/DELETE /api/v1/fuel-tables/:id`, `GET /api/v1/claims/:id/fuel-check`, `PUT/DELETE /api/v1/claims/:id/fuel-inputs`, `GET /api/v1/outlook`. All use the per-user `intelligence` rate bucket; the mutating ones go through the Origin and CSRF checks. Each checks its flag after auth, permission and schema. |
+| New tenant tables | `fsc_tables`, `claim_fuel_inputs`: `ENABLE` + `FORCE ROW LEVEL SECURITY`, a `FOR ALL` policy `USING`/`WITH CHECK` `tenant_id = fr_current_tenant()`, `REVOKE ALL FROM PUBLIC`, column-limited UPDATE grants that exclude `tenant_id` and `created_by_id`, no DELETE on `fsc_tables`. Composite FKs `(claim_id, tenant_id)` and `(fsc_table_id, tenant_id)` stop cross-tenant references in the database. Both are in `TENANT_MODELS` and `TenantTx`. |
+| New global tables | `price_imports`, `price_observations`: no tenant column. `ENABLE` + `FORCE` RLS with a SELECT policy and an INSERT policy that requires `fr_system_mode()`. `freight_app` has **SELECT only**. `fr_append_only()` triggers refuse UPDATE, DELETE and TRUNCATE for every role. CHECKs pin `source_url` to the two FRED URLs, `sha256` to 64 hex characters and `row_count` to 1..5000. |
+| New writes | fuel tables and inputs (tenant); audit `fsc_table.created/updated/archived` (with `paramsSha256`), `claim.fuel_inputs_set/cleared`, `intelligence.viewed` (`kind: fuel_check`), fuel keys in `claim.analyzed`; FSC findings in packet revision 1; platform audit `price_data.imported` (with `revisedValues`) |
+| Untrusted input | Table names (strict Zod: single line, 1..80, no control or bidi characters), table params (regex formats plus exact decimal comparisons, at most 200 rows, at most 16 KB in the database), ship date and miles (bounded), price CSV files (operator-supplied or fetched; strict parser), invoice line descriptions (ingest-validated, as before). |
+| Outbound network | Only `npm run prices:import -- --series <key> --fetch` (CLI) to the pinned FRED URL. No route, store or analysis path makes an outbound request. |
+| Database | Migration `20261014000000_fuel_outlook`: the four tables, their security part and the flag rows `intelligence.cost_outlook` and `intelligence.fuel_check` (both enabled). Earlier migrations unchanged. |
+| Kill switches | `intelligence.fuel_check` (off: 404 on the seven fuel routes, analysis exactly step 6) and `intelligence.cost_outlook` (off: 404 on the outlook). A flag read error counts as off. |
+| Configuration | `PRICE_CACHE_TTL_MS` (default 60000, 0..3600000). The importer uses only `MIGRATE_DATABASE_URL` and never prints it. The API image contains `api/data` (4 public files). |
+
+### 11.2 Threats and mitigations (step 7)
+
+| # | Threat | Mitigation (where) | Verified by | Residual risk |
+| --- | --- | --- | --- | --- |
+| T58 | Price poisoning: someone changes the diesel or PPI history, which every tenant's FSC check and outlook uses | Only the owner connection can write (`freight_app` SELECT only; INSERT policy needs system mode); no API route writes prices; append-only triggers for every role; the source URL is pinned by a CHECK; every import stores sha256, source kind, retrieved-at and row count and writes `price_data.imported` on the platform chain in the same transaction; a shrinking range is refused (`would_remove_history`); since fix round 1 (L1) a re-import that changes values of already covered dates is refused (`revisions_refused`, the count printed) unless `--accept-revisions` is given, and `revisedValues` is audited; the bundled files are checked against the manifest sha256 | `fuel-outlook-units.test.ts` (importer outcomes with a fake DB, including `revisions_refused`); acceptance CI-P01..P05, CI-D04 file part, CI-I06 (Tier L, passed at `cbb340f`); `fuel-outlook.int.test.ts` grants, append-only and L1 refusal, acceptance CI-I01..I05, CI-D01..D03 (**written, not run**) | FO-1, FO-2 |
+| T59 | Hostile or malformed CSV (size, encoding, ReDoS, absurd values) | `parsePriceCsv` checks the size (1 MiB) before anything else, refuses a BOM, allows only LF, CR and printable ASCII, uses anchored regexes without nested quantifiers, checks real dates, frequency and gaps, exact decimal bounds per series, at most 5,000 rows (counted before parsing). `--file` refuses symlinks and non-regular files. All input is validated before the database is opened | `outlook.test.ts`; acceptance CI-C01..C04 (1 MB adversarial input under 1 s; Tier L, passed) | None known |
+| T60 | Outbound requests from the server (SSRF, data exfiltration, a hijacked redirect) | `fetch(` exists only in `prices-cli.ts` (architecture test; no route, store or analysis module imports it); the URL comes from the frozen registry, `redirect: 'error'`, default TLS verification, a 20 s timeout covering the body, a 1 MiB streaming cap, status 200 required; the downloaded bytes go through the same parser and import rules | acceptance CI-I06 (Tier L, passed); CI-I05 (Tier H, not run) | FO-3 |
+| T61 | CPU exhaustion through the outlook or the FSC evaluation | The outlook is computed from the active import only, memoized per import id (at most 2 per series) and never from request data; both series take about 25-30 ms. `evaluateFscTable` uses BigInt arithmetic without step loops; rows are capped at 200 and params at 16 KB; extreme but valid params produce a 422 in analysis, not a 500 or a loop. All routes use the `intelligence` bucket | acceptance CI-O05 (24.6 ms, bound 2 s); CI-W04 (2,000 pairs vs a BigInt oracle) | FO-8 (I4), FO-9 (I3) |
+| T62 | Money manipulation through fuel inputs or tables (wrong miles, a convenient table, a late edit) | The FSC finding is always `needs_human_review`, counts only in the pending total and never in the draft letter or `recoverableCents`; approval with pending findings still needs `acknowledgePendingFindings`; four-eyes is unchanged. Inputs can change only while the claim is `AWAITING_ANALYSIS`, under the claim row lock. Tables need `settings:manage`, are versioned, and are archived rather than deleted. Every change is audited; since fix round 1 (L2) `paramsSha256` is in the three table events, the packet summary and `claim.analyzed`, so the exact parameters behind a finding stay traceable after an edit. A fixed contract FSC skips the check (no double counting with step 5) | `fuel.test.ts`, `fuel-outlook-units.test.ts`; acceptance CI-F01..F12 (Tier L, passed); CI-A01..A17 (Tier H, not run) | FO-5, FO-6 |
+| T63 | Cross-tenant disclosure or influence through fuel tables, inputs or the outlook cache | RLS FORCE and tenant policies on both tenant tables; every query in the tenant transaction; composite FKs; another tenant's id is a 404 byte-identical to an unknown id (also for `?fscTableId` on the outlook, read in a tenant transaction). The `PriceStore` cache holds only public data keyed by series and import id; the tenant table overlay (S2) is computed per request and never cached. Audit metadata is allow-listed (no table names, no invoice text) | `tenant-scope.test.ts` (unit); `fuel-outlook.int.test.ts` cross-tenant cases and acceptance CI-X01..X03 (**written, not run**) | FO-4 |
+| T64 | API keys or platform roles reaching the new routes | No route declares `apiKeyScope`, so `api-key-auth.ts` denies keys with 403; platform roles hold no tenant permission. Fix round 1 (I1) added an integration case: a key with every scope gets 403 on all 8 routes | route-registration unit test; `fuel-outlook.int.test.ts` I1 case (**written, not run**) | None known |
+| T65 | Overclaiming: users read the outlook or the FSC finding as certain | Fixed copy: `OUTLOOK_NOTE`, "Backtested on public data <from>-<to>; not a guarantee.", method and reason labels, `rangeText` with the measured coverage, "for review" titles; horizons without a significant edge show "no change"; the CI gate fails if a required model stops beating "no change" or if any coverage leaves 70-90% | acceptance CI-K02/K03 (honesty scan; Tier L, passed); CI-E01..E06 (gate CLI; passed) | FO-7 |
+
+### 11.3 How it works
+
+1. **Week rule.** The Monday diesel posting applies from `Monday + effectiveOffsetDays` for 7 days (default 2,
+   Wednesday to Tuesday, the GSA rule). No posting, or a ship date past the window, gives
+   `price_unavailable`, never a guess.
+2. **FSC check.** Exact decimal recomputation (step, mpg or rows tables; per mile or percent of linehaul),
+   compared with the billed fuel lines; above the tolerance one review-only finding citing the price week,
+   the table line, the file sha256 and every arithmetic step; a wrong-week probe (-1, -2, -3, +1 weeks).
+3. **Price store.** One active import per series (newest); data read only from it; the runtime reads only.
+   Imports go through the owner-connection CLI in one transaction per series under an advisory lock, with
+   the outcomes `unchanged`, `would_remove_history`, `revisions_refused` or `imported`.
+4. **Outlook.** AR(2), the naive/AR(2) average or "no change" per horizon; a model is used only with at least
+   100 walk-forward origins, `maeRatio < 1` and DM >= 1.96, otherwise "no change" automatically;
+   volatility-scaled empirical 80% ranges.
+5. **Errors.** New 409 `fuel_table_limit_reached`, 422 `fuel_table_unavailable`, 422 `miles_required`; 503
+   `service_unavailable` when the price store cannot be read. Precedence: origin/CSRF 403 -> 401 -> 429 ->
+   403 -> 400 -> 404 -> 409 -> 422.
+
+### 11.4 Policy defaults (step 7; each can be flipped later)
+
+- **D1.** Ship date and miles are entered per claim, only while `AWAITING_ANALYSIS`.
+- **D2.** Week rule per table, default Wednesday to Tuesday.
+- **D5.** One review-only finding, confidence 0.7, tolerance = the analysis tolerance.
+- **D8.** Gate: >= 100 origins, maeRatio < 1, DM >= 1.96.
+- **D10.** Only the owner connection writes prices; append-only; shrinking refused; revisions need
+  `--accept-revisions`.
+- **D11.** Tables `settings:manage`, inputs `claims:analyze`, reads `claims:read`, no API keys.
+- **D12.** Both flags on by default.
+
+D1, D2, D5, D8, D11 and D12 await the owner's confirmation (OQ2). The importer needing the owner database URL
+in production is OQ3. The full list D1-D13 is in ARCHITECTURE.
+
+### 11.5 Accepted residuals (step 7)
+
+These are open. The security review of `5f7eb7e..cbb340f` found no Critical, High or Medium issue. L1, L2 and
+I1 were fixed in `1a95245`; I2, I3 and I4 were accepted.
+
+1. **FO-1 (Low; L1 residual): `--file` provenance is asserted by the operator.** In `--file` mode the import
+   records the pinned FRED URL as `source_url`, but the bytes did not necessarily come from it. The row
+   stores `source_kind = 'file'`, and `--list` and the audit event show it; the Outlook page and the FSC
+   finding show the citation, retrieval date and sha256 but not the source kind. The operator holds the
+   owner database credentials and is trusted.
+2. **FO-2 (Low): revisions accepted by flag.** With `--accept-revisions`, revised history (for example
+   preliminary PPI months) becomes active. Old imports stay, the count is audited, and packets keep the
+   import id they used, but there is no second-person approval of a price revision.
+3. **FO-3 (Info): trust in FRED.** `--fetch` trusts FRED's TLS endpoint and content; nothing compares a
+   fetched file with an independent source. The parser bounds and the revision refusal limit what a bad file
+   can do.
+4. **FO-4 (Info): database isolation not yet run.** RLS, grants, append-only triggers and the cross-tenant
+   refusals of the four new tables are checked by code review and unit tests; the integration and Tier H
+   tests that exercise them in PostgreSQL are written but not run (OQ4).
+5. **FO-5 (Info): manual miles and ship date.** Both are typed by a user with `claims:analyze`; nothing
+   checks them against documents yet. A wrong value produces a wrong review item, never confirmed money.
+6. **FO-6 (Info): national average only.** The check uses the U.S. national average diesel price. Tables
+   indexed to a PADD region or another index will disagree; regional prices are deferred (OQ5).
+7. **FO-7 (Info): model selection and the gate use the same history.** The horizons and candidate models were
+   chosen on the same public history the CI gate replays, so the gate is a regression check, not an
+   independent out-of-sample confirmation. A future edge decay shows up only as new data is imported.
+8. **FO-8 (Info; I4, accepted): synchronous first computation.** The first outlook request after a new import
+   computes on the event loop (about 30 ms today); re-check if series or horizons grow.
+9. **FO-9 (Info; I3, accepted): extreme table parameters.** Valid but extreme params (step size 0.0001, a
+   percent rate of 100 per step) give very large rates; analysis of a claim using such a table returns 422
+   `analysis_input_invalid` (handled, no 500).
+10. **FO-10 (Info; I2, accepted): the cap counts archived tables.** Archived tables are never deleted, so a
+    tenant can create at most 50 tables in total. Only `settings:manage` can reach that ceiling.
+11. **FO-11 (Info): preliminary data.** The latest PPI months are preliminary; the outlook and the gate follow
+    whatever import is active.
+12. **FO-12 (Info): real public data in the repository.** The bundled series are real government data under
+    the owner decision above (OQ1); the NOTICE file does not yet carry the EIA and BLS attribution (the data
+    README does).
+
+Deferred features (not residual risks): PADD prices, deep-sea and lane-rate forecasts, scheduled imports, a
+platform upload route, miles and date extraction, re-checking analysed packets, non-USD FSC, Canadian prices,
+alerts, a version-history table for fuel tables, showing the source kind in the UI.
+
+### 11.6 What was run
+
+Local runs on Windows, Node 22.23.3, **not GitHub CI**. Low-memory mode; the validation is **not complete**.
+
+| Step | Commit | Result |
+| --- | --- | --- |
+| lint, typecheck (repo-wide, acceptance files included), builder | `cbb340f`, `1a95245` | clean |
+| targeted unit tests, builder (`--maxWorkers=1`) | `cbb340f` | shared fuel and outlook, api eval CLI, fuel-outlook units and touched pins, web fuel/outlook/charges/analysis/ui (35) passed |
+| `prisma generate`; `prisma migrate diff` from the `5f7eb7e` schema (no database) | `8ce71b8` | DDL generated; the drift check against a shadow database was not run |
+| `eval:outlook` `main()` with the CI bounds | `cbb340f`, `1a95245` | exit 0; tampered data, bad manifest, escaping path, missing dir exit 2; tight bounds exit 1 |
+| Tier L acceptance, tester, first run | builder work in progress (before `d87db5e`) | shared 241/263; all 22 failures one product defect D1 (`checkFuel` return shape) |
+| Tier L acceptance, tester, re-run | `cbb340f` | shared **263/263** (17 files), api **13/13**; eslint exit 0; tsc 0 errors |
+| security review (static) | `5f7eb7e..cbb340f` | no Critical/High/Medium; L1, L2 Low; I1-I4 Info |
+| fix round 1 (L1, L2, I1), builder | `1a95245` | lint, typecheck clean; 52 api unit tests passed; `eval:outlook` exit 0 |
+
+**Written but not run** (waiting for the owner's go-ahead, OQ4): `api/test/integration/fuel-outlook.int.test.ts`
+(RLS and FORCE, policies, grants and column grants, cross-tenant refusal as `freight_app`, composite FKs,
+CHECKs, SELECT-only and append-only price tables, the pinned-URL CHECK, importer end-to-end including the L1
+refusal, routes, RBAC including the I1 API-key case, audit key sets, the cap race, flags) and the additive
+pins in three integration files; Tier H acceptance (API, database, importer, web); `npm run build` and the
+built `eval:outlook`; the parity suites; `verify-ci-locally`. The tester's Tier L run predates fix round 1.
+Not run at all: GitHub CI, container images, the compose stack, Playwright, any AWS deployment.

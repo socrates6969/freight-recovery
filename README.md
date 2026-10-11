@@ -174,7 +174,7 @@ The software foundation above is necessary, not sufficient. Still required:
 > [technical/web-platform-security.md](technical/web-platform-security.md). Architecture:
 > [ARCHITECTURE.md, "Web platform"](ARCHITECTURE.md#web-platform-typescript-steps-1-2).
 
-A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 to 6
+A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 to 7
 are done:
 
 - **Step 1:** email + password login (argon2id), a short-lived access token plus a rotating refresh
@@ -207,13 +207,21 @@ are done:
   analysis can add review-only findings for possible unauthorized accessorials, and moves detention
   findings to review when a line looks like detention under another name. Suggestions are not verified
   and never confirm an amount. See [Charge suggestions and team labels (step 6)](#charge-suggestions-and-team-labels-step-6).
+- **Step 7:** **fuel check and cost outlook**. Organizations store their carriers' fuel-surcharge tables;
+  for a claim with a ship date and miles, the analysis recomputes the surcharge from the public weekly U.S.
+  diesel price and adds a review-only finding when the bill differs. Public price history (U.S. EIA diesel
+  and BLS truckload index via FRED) lives in global, append-only tables that only an owner-run importer
+  writes. An Outlook page shows diesel and truckload index forecasts only at horizons where a model beat
+  "no change" in a walk-forward backtest, with 80% ranges; backtested on public data, not a guarantee. See
+  [Fuel check and cost outlook (step 7)](#fuel-check-and-cost-outlook-step-7).
 
 "Send" only marks a demand send-ready and audits it. No email is sent and no money moves. The seeded claims and
 packets are synthetic and are transcribed from the Python CLI output on `tests/fixtures/`. Claims created
 by import have no amounts or packet until someone runs the analysis (step 5). Findings are rule outputs on
 extracted fields and are drafts that need human review. Step 6 charge suggestions compare names with
-labelled examples; there is no trained model. OCR, email-forward ingestion and any LLM call are later
-steps.
+labelled examples; there is no trained model. Step 7 fuel findings are recomputations from tables and
+inputs that people enter, and the cost outlook is backtested on public data, not a guarantee. OCR,
+email-forward ingestion and any LLM call are later steps.
 
 **The Python service and the `webapp/` pilot dashboard are unchanged and remain.** The web platform has
 its own compose file (`compose.web.yml`), CI workflow (`.github/workflows/web-ci.yml`) and Terraform
@@ -481,7 +489,10 @@ LLM or other "AI" call, and no accuracy or speed-up figure** anywhere. The brief
 [ARCHITECTURE.md, "Brief terms vs what is built"](ARCHITECTURE.md#brief-terms-vs-what-is-built).
 This rule covers the step 4 screens. Step 6 later added charge-line suggestions on the claim sheet: a
 nearest-example comparison with labelled charge names, with no trained model and no LLM call (see
-[Charge suggestions and team labels (step 6)](#charge-suggestions-and-team-labels-step-6)).
+[Charge suggestions and team labels (step 6)](#charge-suggestions-and-team-labels-step-6)). Step 7 added an
+Outlook page: a small autoregressive model on public price indexes, refitted from the stored history and
+shown only where its walk-forward backtest beat "no change", with the backtest figures next to every number
+(see [Fuel check and cost outlook (step 7)](#fuel-check-and-cost-outlook-step-7)).
 
 ### Who can see what
 
@@ -949,6 +960,197 @@ who can label can, by labelling a line as detention, move detention findings of 
 (it is audited and attributable, and it never creates money). The full list is in
 [technical/web-platform-security.md, section 10.5](technical/web-platform-security.md#105-accepted-residuals-step-6).
 
+## Fuel check and cost outlook (step 7)
+
+Run `REQ-20261011-fuel-outlook` adds a fuel-surcharge check to the analysis, a store of public price data,
+and a cost outlook. Architecture:
+[ARCHITECTURE.md, step 7](ARCHITECTURE.md#web-platform-fuel-check-public-price-data-and-cost-outlook-step-7).
+Threat model and residual risks:
+[technical/web-platform-security.md, section 11](technical/web-platform-security.md#11-step-7-fuel-check-public-price-data-and-cost-outlook).
+
+**What it is, and what it is not.**
+
+- **Fuel check.** Your organization stores its carriers' fuel-surcharge (FSC) tables. For a claim, a
+  reviewer enters the ship date, the miles and the table. The analysis then takes the public weekly U.S.
+  average diesel price that applies to the ship date, recomputes the surcharge exactly and compares it with
+  the billed fuel lines. A difference becomes a finding **for review** ("Fuel surcharge differs from the
+  fuel table (review)") that shows the price week, the table row and every step of the arithmetic, and says
+  so when the bill matches a neighbouring week's price. It never confirms an amount and never appears in the
+  draft letter.
+- **Cost outlook.** A page with diesel at 1, 4, 8 and 13 weeks and the long-distance truckload producer
+  price index at 1 month, each with an 80% range. A model forecast is shown only where it beat "no change"
+  in a walk-forward backtest on the public history; elsewhere the page shows "no change" with a range. It
+  is **backtested on public data 2011-2026 (diesel) and 2009-2026 (truckload index); not a guarantee.** It
+  forecasts national indexes, not your lane rates: on lane-level rates "no change" was not beaten in our
+  tests, so no lane forecast is offered.
+
+**Data provenance.** The price history comes from FRED (Federal Reserve Bank of St. Louis): U.S. Energy
+Information Administration weekly diesel (`GASDESW`) and U.S. Bureau of Labor Statistics PPI
+`PCU4841214841212`, both marked "Public Domain: Citation Requested" on FRED. The bundled copy is in
+`api/data/public-prices/` with sha256 values and citations. It contains no customer, carrier or shipment
+data. Committing this real public data is an owner decision of 2026-10-11; the rule "synthetic data only" in
+`CLAUDE.md` has not been changed, and adding a dated exception there is an open question for the owner
+(OQ1).
+
+### Who can do what
+
+| Role | See fuel tables, the Fuel tab and the Outlook | Add, edit, archive fuel tables | Enter or clear fuel inputs on a claim |
+| --- | --- | --- | --- |
+| OWNER, ADMIN | yes | yes | yes |
+| MANAGER, REVIEWER, ANALYST | yes | no | yes |
+| VIEWER | yes | no | no |
+| PLATFORM_DEV, SUPER_ADMIN | no | no | no |
+
+The permissions are the existing ones: `settings:manage` for tables, `claims:analyze` for inputs,
+`claims:read` for reading. API keys cannot call any of these routes (403).
+
+### Add a fuel table
+
+Open **Fuel tables** (`/settings/fuel-tables`). The page starts with "Fuel tables are your carriers'
+surcharge schedules. The fuel check applies them to the public weekly U.S. diesel price." With
+`settings:manage`, **Add fuel table** and choose:
+
+| Kind | Fill in | Rate |
+| --- | --- | --- |
+| Step, above base | base price, step size, rate per step | one step for each step size or part of it above the base (the classic "1 cent per mile for every 6 cents above $1.20") |
+| Step, from base | base price, step size, rate per step | the first step starts at the base price (tables like "from $1.12, +1 cent per 5 cents") |
+| MPG | base price, miles per gallon, 2-4 decimals | (price - base) / mpg, rounded half up; per mile only |
+| Rows | one `atLeast,rate` pair per line (up to 200) | the rate of the last row whose price is at or below the diesel price |
+
+The unit is **per mile** or **percent** (of the contract linehaul from the rate confirmation, otherwise of
+the invoice's linehaul lines). **Week rule:** by default the Monday price applies Wednesday to Tuesday (the
+GSA rule); a table can shift this by 0 to 6 days (0 = Monday to Sunday). Names must be unique in your
+organization. An organization can create at most 50 tables, archived ones included. A table in use is
+archived, not deleted; editing it raises its version, and the analysis records the version and a sha256 of
+the parameters it used.
+
+### Enter fuel inputs on a claim
+
+Open a claim that is **awaiting analysis** and select **Fuel**. Enter the **Ship date**, the **Miles** (one
+decimal, 0.1 to 10,000; not needed for a percent table) and the **Fuel table**, then **Save fuel inputs**
+("Fuel inputs saved. They apply when the claim is analysed."). **Clear fuel inputs** removes them. After
+analysis the inputs are locked ("Fuel inputs can only change before the claim is analysed."). The tab shows
+the check at any time as a preview: the status, the posted date and price, expected, billed, difference and
+the calculation. It never changes a stored packet. Then run **Analyze** as usual.
+
+What the statuses mean:
+
+| Status | Meaning |
+| --- | --- |
+| No fuel inputs yet | nothing entered; the analysis is exactly as without step 7 |
+| The selected fuel table is archived | choose another table |
+| The rate confirmation states a fixed fuel surcharge; that amount is checked instead | the existing fixed-amount rule applies; no FSC check |
+| No fuel surcharge line on the invoice | nothing to compare |
+| No public diesel price is available for this ship date | no posting covers the date (for example, newer than the imported data) |
+| Miles are required for a per-mile fuel table | enter miles |
+| No linehaul amount to apply a percent table to | no contract linehaul and no linehaul line |
+| The billed fuel surcharge matches the fuel table | within the analysis tolerance |
+| The billed fuel surcharge differs from the fuel table. Review the finding. | one review-only finding `FSC-INDEX-MISMATCH` |
+
+**Example** (a table with base $1.20, step $0.06 and $0.01 per mile per step; ship date 2026-10-07, so the
+2026-10-05 posting of $6.199 applies): 84 steps, $0.84 per mile, expected $420.00 for 500.0 miles. A billed
+$435.00 gives a finding for review of $15.00, which notes that $435.00 equals the table result for the
+2026-09-28 price ($6.382), one week earlier than the applicable posting. Check the table, the miles and the
+ship date before disputing.
+
+### The Outlook page
+
+Open **Outlook** (`/outlook`). It starts with: 'Forecasts are shown only at horizons where a model beat "no
+change" in a walk-forward backtest on public data; other horizons show "no change" with a range. Not a
+guarantee.' For each series it shows the latest value, "Backtested on public data <from>-<to>; not a
+guarantee.", one row per horizon with the target date, the method ("Trend model", "Average of trend model and
+no change" or "No change"), the reason, the point, the range, "80% range. In the backtest, <n>% of outcomes
+fell inside ranges built this way." and the backtest ratio and DM statistic, and the data source line with
+the file's sha256. If you can see fuel tables, a **Fuel table** select adds your surcharge rate at each
+diesel horizon.
+
+On the bundled history (latest diesel 2026-10-05, latest index 2026-08-01) the page shows:
+
+| Horizon | Method | Point | 80% range | Backtest: MASE vs no change, DM | Range coverage in backtest |
+| --- | --- | --- | --- | --- | --- |
+| Diesel 1 week | Trend model | 6.124 | 5.903 - 6.392 | 0.85, 5.64 | 78% |
+| Diesel 4 weeks | Average of trend model and no change | 6.136 | 5.301 - 7.175 | 0.96, 2.75 | 79% |
+| Diesel 8 weeks | No change | 6.199 | 4.777 - 8.189 | by design | 78% |
+| Diesel 13 weeks | No change | 6.199 | 4.384 - 9.395 | by design | 77% |
+| Truckload index 1 month | Trend model | 218.0 | 210.9 - 225.9 | 0.87, 2.33 | 74% |
+
+A model is used only if, over at least 100 walk-forward origins, its error is below that of "no change"
+(MASE < 1) and the difference is statistically significant (Diebold-Mariano >= 1.96). If a later import
+makes a model fail, that horizon switches to "no change" automatically. Not shown: the truckload index at 3
+months (edge not significant, and the range coverage was too far from 80%), deep-sea freight rates and
+lane-level truck rates (no reliable edge over "no change" in our backtests).
+
+### Import or update price data (operators)
+
+Prices are global (shared by all organizations) and can only be written with the **owner database
+connection**; the running API can only read them. The seed already imports the bundled history.
+
+```bash
+npm run build
+export MIGRATE_DATABASE_URL=...           # owner connection; never printed
+npm run prices:import -- --list           # active import per series: id, sha256, rows, dates, source kind
+npm run prices:import -- --bundled        # the files in api/data/public-prices (sha256 checked)
+npm run prices:import -- --series diesel_us --fetch      # download the pinned FRED CSV (CLI only)
+npm run prices:import -- --series ppi_tl --file ./PCU4841214841212.csv \
+  --source-url "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCU4841214841212" --retrieved-at 2026-10-11
+```
+
+- An import is all or nothing and always a full history. The newest import becomes active; older ones are
+  kept and can never be changed or deleted.
+- Same file again: `unchanged`. A file that covers less history than the active one: refused
+  (`would_remove_history`). A file that changes values already imported (for example revised preliminary
+  index months): refused with the number of changed values (`revisions_refused`); add `--accept-revisions`
+  to import it on purpose.
+- Exit codes: 0 imported or unchanged, 2 usage, validation or refusal (nothing written), 3 database or
+  network failure (nothing written). Each import is recorded in the platform audit trail
+  (`price_data.imported`).
+- `--fetch` contacts only the pinned FRED address (no redirects, 20 s timeout, 1 MiB cap). The API itself
+  never downloads anything.
+
+### Backtest gate
+
+```bash
+npm run build
+npm run eval:outlook -- --min-coverage 0.70 --max-coverage 0.90 --require-model diesel_us:1,diesel_us:4,ppi_tl:1
+```
+
+It replays the backtest on the bundled files (no database, no network, nothing written; `--json` prints the
+full report). CI runs exactly this command; it fails if a range coverage leaves 70-90% or if one of the
+three model horizons no longer beats "no change". It is a regression check of the forecast and range rules,
+not a guarantee about future prices.
+
+### API
+
+| Route | Permission | Success |
+| --- | --- | --- |
+| `GET /api/v1/fuel-tables?includeArchived=false` | `claims:read` | 200: `{ "items": [...] }` |
+| `POST /api/v1/fuel-tables` | `settings:manage` | 201: the table. Body e.g. `{ "name": "Carrier A 2026", "kind": "step", "unit": "per_mile", "priceSeries": "diesel_us", "params": { "basePrice": "1.20", "stepSize": "0.06", "ratePerStep": "0.01", "bracket": "above_base" } }` |
+| `PUT /api/v1/fuel-tables/:id` | `settings:manage` | 200: the same body plus `"expectedVersion"` |
+| `DELETE /api/v1/fuel-tables/:id` | `settings:manage` | 204 (archives) |
+| `GET /api/v1/claims/:id/fuel-check` | `claims:read` | 200: inputs, table and the computed result |
+| `PUT /api/v1/claims/:id/fuel-inputs` | `claims:analyze` | 200: `{ "inputs": ..., "outcome": "created" \| "changed" \| "unchanged" }`; body `{ "shipDate": "2026-10-07", "miles": "500.0", "fscTableId": "<uuid>" }` |
+| `DELETE /api/v1/claims/:id/fuel-inputs` | `claims:analyze` | 204 |
+| `GET /api/v1/outlook?fscTableId=<uuid>` | `claims:read` | 200: the outlook (`fscTableId` optional) |
+
+All use the per-user `intelligence` rate limit. New errors: 409 `fuel_table_limit_reached`, 422
+`fuel_table_unavailable`, 422 `miles_required`; 503 `service_unavailable` when the price data cannot be read.
+The analysis response adds `fuelCheckStatus` and `fuelFindingsCount`.
+
+### Switching it off and configuration
+
+Platform staff can switch off **`intelligence.fuel_check`** ("Fuel tables and fuel-surcharge check") and
+**`intelligence.cost_outlook`** ("Cost outlook from public price data") on the Dev dashboard's Flags tab
+(both on by default). With the fuel check off, the analysis is exactly step 6 and the fuel routes, tab and
+page disappear; tables and inputs stay stored. `PRICE_CACHE_TTL_MS` (default 60000) sets how long the API
+caches which import is active.
+
+### Not covered (accepted for now)
+
+Only the U.S. national average diesel price (no regional prices); miles and ship date are typed in, not read
+from documents; packets analysed before inputs were entered are not re-checked; USD only. The outlook models
+were chosen on the same public history the CI gate replays. The full list is in
+[technical/web-platform-security.md, section 11.5](technical/web-platform-security.md#115-accepted-residuals-step-7).
+
 ## Tests and checks
 
 ```bash
@@ -964,6 +1166,8 @@ npm run test:integration     # api, against a migrated + seeded test DB (TEST_DA
 npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
 npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1   # step 4: after npm run build
 npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1   # step 6: after npm run build
+npm run eval:outlook -- --min-coverage 0.70 --max-coverage 0.90 --require-model diesel_us:1,diesel_us:4,ppi_tl:1   # step 7: after npm run build
+npm run prices:import -- --list   # step 7: owner connection (MIGRATE_DATABASE_URL); the seed imports the bundled prices
 npm run audit && npm audit signatures
 terraform -chdir=infra fmt -check -recursive && terraform -chdir=infra init -backend=false && terraform -chdir=infra validate
 ```
@@ -1019,4 +1223,18 @@ round 1 they found one missing root export, fixed in `a1b1c2a`, where the full s
 passed 153 of 153. **Written but not run** (waiting for the owner's go-ahead): the integration tests for
 the new table (RLS, grants, cross-tenant refusal), the API, database, CLI and web acceptance tests (Tier H)
 and the parity suites.
+**Not run:** GitHub CI, container images, Playwright, any AWS deployment.
+
+Step 7 (2026-10-11, run `REQ-20261011-fuel-outlook`, Windows, Node 22.23.3, **local runs, not GitHub CI**;
+low-memory mode, so the validation is **not complete**): the builder ran lint and typecheck (clean,
+repo-wide), targeted unit tests (shared fuel and outlook, the api evaluation CLI and fuel units, the web fuel,
+outlook, charges, analysis and ui files with 35 tests), `prisma generate`, `prisma migrate diff` (no
+database) and the `eval:outlook` gate with the CI bounds (exit 0; bad data exit 2, tight bounds exit 1), at
+`cbb340f`. The tester's pure acceptance tests (Tier L) passed: shared 263 of 263, api 13 of 13 (the first
+run found one product defect, the return shape of `checkFuel`, fixed in `d87db5e` without changing a test).
+The security review found no Critical, High or Medium issue; fix round 1 (`1a95245`: refusal of revised
+price values, a parameter hash for fuel tables, an API-key test) was checked with lint, typecheck and 52 api
+unit tests. **Written but not run** (waiting for the owner's go-ahead): `npm run build`, the integration
+tests for the four new tables (RLS, grants, cross-tenant refusal, append-only price tables), the API,
+database, importer and web acceptance tests (Tier H) and the parity suites.
 **Not run:** GitHub CI, container images, Playwright, any AWS deployment.

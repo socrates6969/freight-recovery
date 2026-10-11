@@ -2443,3 +2443,682 @@ per-request time budget for classification (suggested by the security review; no
 - Step 6 builds on step 5, whose own validation rerun (R3) is still open on `feat/analysis`.
 - Review verdict: pending (the reviewer runs after these docs).
 - Not verified: GitHub CI, container images, the compose stack, Playwright, any AWS deployment.
+
+---
+
+# Web platform: fuel check, public price data and cost outlook (step 7)
+
+> Written by scriber for run `REQ-20261011-fuel-outlook` on 2026-10-11 (branch `feat/fuel-outlook` from
+> `feat/charge-intelligence` at `5f7eb7e`, build commits `a164f56`..`cbb340f`, fix round 1 `1a95245`).
+> **Pre-product, never deployed.** Tenant data stays synthetic. The one new kind of real data is two public
+> U.S. government price series (diesel and a truckload producer price index), committed with attribution
+> under an owner decision (open question OQ1, see below). Threat rows T58-T65 and the residuals FO-1..FO-12
+> are in [technical/web-platform-security.md, section 11](technical/web-platform-security.md#11-step-7-fuel-check-public-price-data-and-cost-outlook).
+> User-facing description: [README, fuel check and cost outlook](README.md#fuel-check-and-cost-outlook-step-7).
+
+## Why (step 7)
+
+Two costs on a freight bill move with time and are computed by someone else: the fuel surcharge (FSC) and
+the underlying truckload rate. Step 7 adds three things, without changing any step 5 or step 6 rule output:
+
+1. **Fuel-surcharge check.** A tenant stores its carriers' FSC tables. A reviewer records the ship date,
+   the miles and the table for a claim. The analysis looks up the public weekly U.S. diesel price that
+   applies to the ship date, recomputes the surcharge in exact decimals and compares it with the billed fuel
+   lines. A difference above the tolerance becomes one **review-only** finding `FSC-INDEX-MISMATCH` that
+   cites the price week, the table row and every step of the arithmetic. If the billed amount equals the
+   table result for a neighbouring week, the finding says so (the "wrong-week probe"). Billing with the
+   wrong posting week is the error mode the owner examined on the public diesel history; those figures stay
+   in the run's business case and are not product claims.
+2. **Global public price store.** Weekly diesel and the monthly truckload PPI live in two append-only,
+   non-tenant tables. Only an owner-connection command-line importer writes them, from a strictly parsed
+   CSV, and every import records its source URL, retrieval date and sha256. No request path fetches
+   anything.
+3. **Cost outlook.** Diesel at 1, 4, 8 and 13 weeks and the truckload PPI at 1 month, each with an 80%
+   range. A model forecast is shown only at a horizon where a walk-forward backtest on the stored history
+   says it beats "no change"; otherwise the horizon falls back to "no change" automatically. A CI step
+   repeats the backtest on the bundled history.
+
+**Honesty.** The outlook is backtested on public data 2011-2026 (diesel) and 2009-2026 (PPI); it is not a
+guarantee. The coverage shown next to each range is the backtest coverage, not a promise. No accuracy,
+savings or recovery figure appears in the product. The FSC finding is for review: the table, the miles and
+the ship date are entered by people and must be checked before disputing.
+
+## Public price data and provenance
+
+`api/data/public-prices/` holds exactly four files: `GASDESW.csv`, `PCU4841214841212.csv`, `manifest.json`
+and `README.md`. The two CSVs are byte-identical to the files the owner downloaded from FRED on 2026-10-11
+and are marked `-text` in `.gitattributes`, so no line-ending conversion changes their sha256.
+
+| Series key | FRED id | Content | Rows | First .. last | sha256 (prefix) | Pinned source URL |
+| --- | --- | --- | --- | --- | --- | --- |
+| `diesel_us` | `GASDESW` | U.S. average diesel retail price, USD per gallon, weekly (Monday dates) | 1,699 | 1994-03-21 .. 2026-10-05 | `aca8fefdbb54` | `https://fred.stlouisfed.org/graph/fredgraph.csv?id=GASDESW` |
+| `ppi_tl` | `PCU4841214841212` | Producer price index, general freight trucking, long-distance truckload, Jun 1992 = 100, monthly | 411 | 1992-06-01 .. 2026-08-01 | `83894390a4fd` | `https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCU4841214841212` |
+
+- **Sources.** U.S. Energy Information Administration (diesel) and U.S. Bureau of Labor Statistics (PPI),
+  both retrieved from FRED, Federal Reserve Bank of St. Louis. The citation strings are in `PRICE_SERIES`
+  (`packages/shared/src/outlook/constants.ts`) and appear on the Outlook page and in every FSC finding.
+- **Licence.** Both FRED series pages carry the notice **"Public Domain: Citation Requested"** (re-checked by
+  scriber on 2026-10-11 on `https://fred.stlouisfed.org/series/GASDESW` and
+  `https://fred.stlouisfed.org/series/PCU4841214841212`). EIA and BLS state that their published data is in
+  the public domain and ask to be cited as the source.
+- **Citation detail.** FRED's own suggested citation for the PPI uses the full series title "Producer Price
+  Index by Industry: General Freight Trucking, Long-Distance Truckload: General Freight Trucking,
+  Long-Distance, Truckload [PCU4841214841212]". The product citation (Part C F2, pinned by tests) uses the
+  shorter title without the repeated part. The data README now also gives FRED's exact suggested citations.
+- **Not bundled.** The deep-sea freight PPI and the USDA lane reefer truck rates were used only in the
+  owner's backtests and stay in the run directory.
+- **Owner decision and OQ1.** CLAUDE.md hard rule 4 says "synthetic data only". The owner allowed real
+  public data in this run's request. The committed series hold no customer, carrier or shipment data. A
+  dated exception note in CLAUDE.md for committed public government price series is open question OQ1 for
+  the owner; the agents did not change CLAUDE.md.
+- **Revisions.** The latest PPI months are preliminary and BLS revises them. A later import becomes the
+  active snapshot; earlier imports are kept. Since fix round 1 a re-import that changes already covered
+  values is refused unless the operator passes `--accept-revisions` (see the importer).
+
+## Module Structure (step 7)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src/features"]
+        CSH["claims/ClaimSheet.tsx"]
+        FP["fuel/FuelPanel.tsx"]
+        FTP["fuel/FuelTablesPage.tsx"]
+        OP["outlook/OutlookPage.tsx"]
+        SH["shell/AppShell + routes"]
+    end
+    subgraph Shared["packages/shared/src"]
+        FW["fuel/week"]
+        FT["fuel/table"]
+        FC["fuel/check"]
+        FE["fuel/evidence"]
+        OC["outlook/csv + sha256"]
+        OA["outlook/ar + backtest"]
+        OO["outlook/outlook"]
+        DTO["fuel-dto, outlook-dto, copy"]
+        LRN["charge-intel/learned (step 6)"]
+    end
+    subgraph API["api/src"]
+        FR["intelligence/fuel-routes"]
+        FS["intelligence/fuel.ts"]
+        OR["intelligence/outlook-routes"]
+        PS["platform/price-store"]
+        PF["platform/price-files"]
+        CLI["platform/prices-cli"]
+        DBP["db/prices.ts"]
+        CA["claims/analysis + routes"]
+        EV["eval/outlook.ts (CLI)"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261014000000_fuel_outlook"]
+        TT["fsc_tables, claim_fuel_inputs"]
+        GT["price_imports, observations"]
+    end
+
+    SH --> FTP
+    SH --> OP
+    CSH --> FP
+    FP --> DTO
+    OP --> DTO
+    FP -. "HTTP" .-> FR
+    FTP -. "HTTP" .-> FR
+    OP -. "HTTP" .-> OR
+    FR --> FS
+    FS --> FC
+    FS --> TT
+    CA --> FS
+    CA --> PS
+    CA --> FE
+    FE --> FC
+    FE --> LRN
+    FC --> FW
+    FC --> FT
+    OR --> PS
+    OR --> FT
+    PS --> DBP
+    PS --> OO
+    OO --> OA
+    DBP --> GT
+    CLI --> PF
+    CLI --> OC
+    CLI --> DBP
+    EV --> PF
+    EV --> OC
+    EV --> OA
+    MIG --> TT
+    MIG --> GT
+
+    style CSH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FTP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FW fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DBP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GT fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Module/Function | Purpose | Key Dependencies | Changed in This Run |
+| --- | --- | --- | --- |
+| `packages/shared/src/fuel/constants.ts`, `fuel/copy.ts` | `FUEL_CHECK_VERSION` `fsc-v1`, `FUEL_RULE_IDS` `['FSC-INDEX-MISMATCH']`, `FSC_CONFIDENCE` 0.7, `FSC_TABLES_MAX` 50, `FSC_ROWS_MAX` 200, `FUEL_CHECK_STATUSES`, kinds, units, brackets; UI copy `FUEL_NOTE`, `FUEL_STATUS_TEXT`, `FUEL_TEXT`, `FUEL_TABLES_TEXT` | none | new |
+| `fuel/week.ts` | `applicablePosting`, `addDays`, `weekdayIndex`, `weekRuleText`, `civilFromDays` (integer civil-date arithmetic, no `Date` parsing) | step 5 `local-datetime` `daysFromCivil` | new |
+| `fuel/table.ts` | `evaluateFscTable` (integers scaled by 10^4 in BigInt, mpg half-up), `expectedAmount` | step 5 `py-decimal`, DTO schemas | new |
+| `fuel/check.ts` | `checkFuel` (returns `FuelCheckResult`), `computeFuelCheck` (adds the finding and the fuel-line trace) | week, table, step 5 `classifyLine`/`dedupe`, optional step 6 classifier | new |
+| `fuel/evidence.ts` | `buildEvidenceFuel`: the step 6 evidence plus the FSC finding; with input null it equals `buildEvidenceLearned` exactly | `applyRulesTraced`, `applyLearning`, letter and Markdown renderers | new |
+| `outlook/constants.ts`, `outlook/copy.ts` | `PRICE_SERIES` (frozen registry with pinned URLs, citations, bounds), `OUTLOOK_SERIES`, `GATE_MIN_ORIGINS` 100, `GATE_MIN_DM` 1.96, `RANGE_QUANTILES` [0.1, 0.9]; `OUTLOOK_NOTE`, `outlookBacktestText`, `rangeText`, `METHOD_LABELS`, `REASON_LABELS`, `OUTLOOK_TEXT`, `OUTLOOK_EVAL_NOTE` | none | new |
+| `outlook/sha256.ts`, `outlook/csv.ts` | pure-JS SHA-256 (no Node built-ins in shared); `parsePriceCsv`, `PriceCsvError` | step 5 `py-decimal`, `local-datetime` | new |
+| `outlook/ar.ts`, `outlook/backtest.ts`, `outlook/outlook.ts` | `ar2Forecast`, `backtestSeries` (walk-forward, DM, gate, ranges), `computeOutlook` (status, horizons, `backtestYears`) | constants | new |
+| `fuel-dto.ts`, `outlook-dto.ts`, `index.ts`, `package.json`, `audit-actions.ts`, `feature-flags.ts`, `analysis-dto.ts` | Zod schemas of the routes; root exports (no engines); subpaths `./fuel` and `./outlook`; six audit actions; two flags; `fuelCheckStatus`, `fuelFindingsCount` in `AnalyzeResponse` | zod | new / changed |
+| `api/src/intelligence/fuel.ts`, `fuel-routes.ts` | fuel tables (list, create, update, archive), fuel inputs (set, clear), fuel-check view; `fscParamsSha256` (fix round 1) | tenant tx, `db/fuel-locks.ts`, `checkFuel`, `appendAudit` | new |
+| `api/src/intelligence/outlook-routes.ts` | `GET /api/v1/outlook` (with optional `fscTableId`, S2) | `app.prices`, `evaluateFscTable` | new |
+| `api/src/platform/price-store.ts` | `PriceStore`: active import per series cached for `PRICE_CACHE_TTL_MS`; observations and the computed outlook memoized per import id (at most 2 per series); `dbPriceReader`, `dieselSeriesOrNull` | `db/prices.ts`, `computeOutlook` | new |
+| `api/src/platform/price-files.ts` | strict manifest reader, guarded file reader (regular file inside the data dir, sha256 checked), `defaultPriceDataDir()` | `node:fs`, `node:crypto` | new |
+| `api/src/platform/prices-cli.ts` | `npm run prices:import` (`--file`, `--bundled`, `--list`, `--fetch`, `--accept-revisions`); the only module that calls `fetch(` | `price-files`, `parsePriceCsv`, `db/prices.ts` | new |
+| `api/src/db/prices.ts` | `readActiveImport`, `readObservations`, `insertImport` (advisory lock, import semantics, `countRevisedValues`, platform audit `price_data.imported`) | `withSystemTx`, `appendAudit` | new |
+| `api/src/db/fuel-locks.ts` | per-tenant advisory lock for table creation (the cap of 50) | `advisoryXactLock` | new |
+| `api/src/claims/analysis.ts`, `claims/routes.ts` | fuel layer in single and bulk analysis; flag and diesel series read once per request; summary and `claim.analyzed` fuel fields | `buildEvidenceFuel`, `fuel.ts`, `app.prices` | changed |
+| `api/src/eval/outlook.ts` | `npm run eval:outlook` (no database, no network, no env, no writes) | `price-files`, `parsePriceCsv`, `backtestSeries` | new |
+| `api/src/db/tenant.ts`, `http/errors.ts`, `audit/chain.ts`, `config.ts`, `app.ts`, `scripts/seed.ts` | `FscTable`, `ClaimFuelInput` in `TENANT_MODELS`; three new error codes and `serviceUnavailable`; metadata allow-list; `PRICE_CACHE_TTL_MS`; `prices` decoration; the seed imports the bundled data | none | changed |
+| `api/prisma/migrations/20261014000000_fuel_outlook/` | four tables, CHECKs, RLS FORCE, grants, append-only triggers, two flag rows | `tenants`, `users`, `claims`, `feature_flags` | new |
+| `api/data/public-prices/` | bundled history, manifest, README | none | new |
+| `web/src/features/fuel/*`, `outlook/OutlookPage.tsx`, `claims/ClaimSheet.tsx`, `shell/AppShell.tsx`, `app-root.tsx`, `intelligence/use-features.ts`, `api/client.ts` | Fuel tab, Fuel tables page, Outlook page, nav links, lazy routes, `fuel` and `outlook` flags, `delete()` helper | shared copy and DTOs | new / changed |
+| `.github/workflows/web-ci.yml`, `api/Dockerfile`, `.gitattributes`, `.env.example`, `package.json` (root and api) | the outlook gate step; `COPY api/data`; `-text`; `PRICE_CACHE_TTL_MS`; `eval:outlook` and `prices:import` scripts | none | changed |
+
+The package root `@fr/shared` exports constants, copy and DTOs only. The engines (`table`, `check`,
+`evidence`, `csv`, `ar`, `backtest`, `outlook`) are under the subpaths `@fr/shared/fuel` and
+`@fr/shared/outlook`. No file under `packages/shared/src/analysis/` or `packages/shared/src/charge-intel/`
+was changed (`git diff --stat 5f7eb7e` on both is empty).
+
+## Function Call Graph (step 7)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST claims/:id/analyze"] --> FL["flags read (once)"]
+    R2["POST analyze-awaiting"] --> FL
+    FL --> GS["prices.getSeries diesel"]
+    GS --> AC["analyzeClaim (one tx)"]
+    AC --> LI["loadAnalysisInput"]
+    AC --> IN["read claim fuel inputs"]
+    IN --> BP["buildAnalysisPacket"]
+    BP --> BEF["buildEvidenceFuel"]
+    BEF --> LRN["step 6 learned result"]
+    BEF --> CF["computeFuelCheck"]
+    CF --> AP["applicablePosting"]
+    CF --> EVT["evaluateFscTable"]
+    AC --> AUD["audit claim.analyzed"]
+    R3["GET /outlook"] --> GO["prices.getOutlook"]
+    GO --> CO["computeOutlook (memo)"]
+    CO --> BT["backtestSeries"]
+    BT --> AR["ar2Forecast"]
+    R4["prices:import CLI"] --> PC["parsePriceCsv"]
+    PC --> II["insertImport (owner tx)"]
+
+    style FL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BEF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EVT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R3 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R4 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style II fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Function | Defined In | Called By | Purpose |
+| --- | --- | --- | --- |
+| `applicablePosting(observations, shipDate, offsetDays)` | `fuel/week.ts` | `computeFuelCheck` | the weekly posting that applies to a ship date, or null |
+| `evaluateFscTable(table, price)` | `fuel/table.ts` | `computeFuelCheck`, outlook route (S2) | exact table rate `{ rate, steps, row, reachesFirstStep }` |
+| `checkFuel(bundle, input, classify, settings?)` | `fuel/check.ts` | fuel-check view | the `FuelCheckResult` only |
+| `computeFuelCheck(...)` | `fuel/check.ts` | `buildEvidenceFuel` | the result plus the finding and the fuel-line trace |
+| `buildEvidenceFuel(docs, bundle, persp, settings, now, classifier, input)` | `fuel/evidence.ts` | `buildAnalysisPacket` | step 6 evidence plus the FSC finding and `fuel` |
+| `parsePriceCsv(bytes, seriesKey)` | `outlook/csv.ts` | importer, eval CLI | strict parse with sha256 |
+| `backtestSeries(dates, values, key)`, `computeOutlook(...)` | `outlook/backtest.ts`, `outlook/outlook.ts` | eval CLI, `PriceStore.getOutlook` | walk-forward, gate, ranges, live point and range |
+| `insertImport(ownerBase, args)` | `api/src/db/prices.ts` | importer CLI, seed | one owner transaction: lock, compare, insert, audit |
+| `PriceStore.getSeries(key)`, `getOutlook(key)` | `platform/price-store.ts` | analysis routes, fuel-check route, outlook route | cached reads of the active import |
+
+## Data Flow (fuel check)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["Step 6 result (unchanged)"] --> B{"Flag on and inputs set?"}
+    B -- no --> Z["Step 6 packet, exactly"]
+    B -- yes --> C{"Table archived or contract FSC?"}
+    C -- yes --> Z
+    C -- no --> D{"Fuel line and posting found?"}
+    D -- no --> Z
+    D -- yes --> E["Rate from table at posted price"]
+    E --> F{"Miles or linehaul present?"}
+    F -- no --> Z
+    F -- yes --> G{"Difference above tolerance?"}
+    G -- no --> Z
+    G -- yes --> H["Probe weeks -1, -2, -3, +1"]
+    H --> I["FSC-INDEX-MISMATCH (review)"]
+
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style C fill:#1e90ff,stroke:#1565c0,color:#fff
+    style D fill:#1e90ff,stroke:#1565c0,color:#fff
+    style E fill:#1e90ff,stroke:#1565c0,color:#fff
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style G fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+    style I fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+"Step 6 packet, exactly" means the stored findings, totals, letter and content hash are what step 6 stores
+for the same input and time; the response and the audit event still report the fuel status (for example
+`no_fuel_line`).
+
+## Week rule
+
+The EIA publishes the national average diesel price weekly, dated Monday. The GSA fuel-surcharge rule (as
+recorded by the planner from the GSA Freight Management Program fuel-surcharge page on 2026-10-11) applies
+the Monday posting to shipments picked up from the ensuing Wednesday through the following Tuesday, with the
+pickup date controlling.
+
+`applicablePosting(observations, shipDate, o)`: the applicable observation is the last `w` with
+`w.date + o <= shipDate`, and only if `shipDate <= w.date + o + 6`; otherwise there is no price. The window
+is `effectiveFrom = w.date + o` to `effectiveTo = effectiveFrom + 6`. Each table carries its own
+`effectiveOffsetDays` `o` (0..6, **default 2 = Wednesday to Tuesday**, the GSA rule; 0 = Monday to Sunday).
+The rule text in a finding is `Monday posting applies <day o> to <day o+6>`.
+
+With the bundled data and the default: a ship date of 2026-10-07 (Wednesday) uses the 2026-10-05 posting
+($6.199); 2026-10-05 and 2026-10-06 use 2026-09-28 ($6.382); 2026-10-14 has no posting yet (status
+`price_unavailable`).
+
+## Fuel tables (exact evaluation)
+
+P = posted price (3 decimals), B = base price, S = step size, R = rate per step, M = miles per gallon.
+
+| Kind | Params | Unit | Rate |
+| --- | --- | --- | --- |
+| `step`, `above_base` | `basePrice`, `stepSize`, `ratePerStep` | per_mile or percent | P > B: k = ceil((P - B) / S), rate = R x k; else 0 |
+| `step`, `from_base` | same | per_mile or percent | P >= B: k = floor((P - B) / S) + 1, rate = R x k; else 0 |
+| `mpg` | `basePrice`, `mpg`, `decimals` 2/3/4 | per_mile only | P > B: (P - B) / M rounded half-up to `decimals`; else 0 |
+| `rows` | 1..200 `{ atLeast, rate }`, `atLeast` strictly increasing | per_mile or percent | the rate of the last row with `atLeast <= P`; else 0 |
+
+- All arithmetic is exact: decimals are converted to integers scaled by 10^4 and divided in BigInt; rates
+  are formatted like Python `str(Decimal)`. No floating point and no step loop, so extreme parameters cost
+  no CPU.
+- Expected surcharge: per mile `Q(miles x rate)`; percent `Q(rate x L / 100)`, where L is the rate
+  confirmation's `linehaul_rate` when present (basis "rate confirmation"), else the sum of the unique invoice
+  lines `classifyLine` calls `linehaul` (basis "invoice linehaul lines"). Q is half-even rounding to cents.
+- Formats: `basePrice`, `stepSize`, `atLeast` up to 2 integer and 4 fraction digits, > 0. Per-mile rates
+  `0..9.9999`; percent rates up to 100 with 3 decimals; `mpg` 1..20. Miles have one decimal, 0.1..10000.0.
+- Worked example (unit-tested): table base $1.20, step $0.06, $0.01 per mile per step, `above_base`; ship date
+  2026-10-07; price $6.199 gives ceil(4.999 / 0.06) = 84 steps, $0.84 per mile, **$420.00** at 500.0 miles.
+  A bill of $435.00 gives an overcharge finding of $15.00, and the probe cites the 2026-09-28 posting
+  ($6.382, 87 steps), one week earlier than the applicable posting. A Bison-style `from_base` table
+  (base $1.12, step $0.05) gives 102 steps at $6.199.
+
+## Fuel check in analysis
+
+**Status, first match:** `no_inputs` -> `table_archived` -> `contract_amount` (the rate confirmation states
+a fixed `fuel_surcharge`: step 5 `INV-FUEL-SURCHARGE` already checks that amount, so the FSC check is skipped
+to avoid double counting) -> `no_fuel_line` -> `price_unavailable` -> `miles_missing` -> `no_linehaul` ->
+`finding` (|billed - expected| above `settings.amountTolerance`) -> `within_tolerance`. With the flag off the
+status is `off`.
+
+**Billed fuel lines** are the unique invoice lines (step 5 de-duplication) that `classifyLine` calls
+`fuel`. When the charge-suggestion flag is on, unique `other` lines whose step 6 suggestion is a
+non-abstained `fuel` are added and marked "(suggested fuel line)".
+
+**The finding** `FSC-INDEX-MISMATCH`, title "Fuel surcharge differs from the fuel table (review)":
+confidence 0.7 (a fixed value, not a probability), `needs_human_review = true`, direction `overcharge` or
+`underbilled`, amount `Q(|billed - expected|)`, no governing clause, citations = the billed fuel lines. Its
+calculation lists, in order: the ship date and the posting window with the rule text; the posted price with
+the citation and the first 12 hex digits of the import's sha256; the table line (version, steps or row,
+rate); the expected amount; the billed lines; the difference; and, only when a neighbouring posting explains
+the bill, "The billed amount equals the table result for the price posted <date> ($<price>), <n> week(s)
+earlier|later than the applicable posting." The explanation ends with "Verify the table, the miles and the
+ship date before disputing."
+
+**Wrong-week probe.** Only for `finding`: the observations 1, 2 and 3 weeks earlier, then 1 week later, are
+evaluated with the same table, miles and L; the first whose expected amount equals the billed amount exactly
+is cited.
+
+**Placement and totals.** An own-perspective FSC finding is appended after the step 6 own findings; an
+other-direction one goes to `ignored_findings` and is not stored. It counts in `pendingReviewCents` only:
+`recoverableCents` is unchanged and the draft letter never lists it. Approval with pending findings still
+needs `acknowledgePendingFindings`, and four-eyes is unchanged.
+
+**Parity.** With input null, or any status other than `finding`, the evidence equals
+`buildEvidenceLearned(...)` exactly; with the flag off, the stored packet, totals, letter and content hash
+equal step 6.
+
+**Recorded in the packet summary and `claim.analyzed`:** `fuelCheckStatus`, `fscTableId`, `fscTableVersion`,
+`priceImportId`, `priceDate`, `fuelFindingsCount` (0 or 1) and, since fix round 1 (L2), `paramsSha256`: the
+sha256 of the canonical JSON of the table params that were used (null without inputs or with the flag off).
+Tables are edited in place (version + 1); the hash in the audit events and the packet keeps the exact
+parameters traceable.
+
+**Fuel inputs** are one per claim (`claim_fuel_inputs`): ship date, miles (null allowed for percent tables)
+and the table. They can be created, changed or cleared only while the claim is `AWAITING_ANALYSIS` (409
+`invalid_state` otherwise; the claim row is locked). PUT reports `created`, `changed` or `unchanged`. The
+fuel-check view (`GET /claims/:id/fuel-check`) computes a preview in any status and never changes a stored
+packet.
+
+## Price store and importer
+
+Tables (migration `20261014000000_fuel_outlook`):
+
+| Table | Scope | Key points |
+| --- | --- | --- |
+| `fsc_tables` | tenant | name unique per tenant; CHECKs on the kind, unit and bracket values, `mpg` implies `per_mile`, `price_series = 'diesel_us'`, offset 0..6, name 1..80, `params` a JSON object of at most 16 KB, `version >= 1`; RLS ENABLE + FORCE with the tenant policy; `freight_app`: SELECT, INSERT, column-limited UPDATE, **no DELETE** (tables are archived) |
+| `claim_fuel_inputs` | tenant | unique `(tenant_id, claim_id)`; composite FKs `(claim_id, tenant_id)` and `(fsc_table_id, tenant_id)`; `miles numeric(6,1)` 0.1..10000.0 or null; ship date 1994-01-01..2100-12-31; RLS ENABLE + FORCE; SELECT, INSERT, DELETE, column-limited UPDATE |
+| `price_imports` | global | `series_key`, `source_kind` (`file`, `bundled`, `fetch`), `source_url` (CHECK: the series' pinned FRED URL), `retrieved_at`, `sha256` (64 hex), `row_count` 1..5000, `first_date <= last_date`, `imported_at` |
+| `price_observations` | global | primary key `(import_id, period_date)`, `value numeric(10,3) > 0` |
+
+The two global tables have RLS ENABLE + FORCE with a SELECT policy for everyone holding the grant and an
+INSERT policy that requires system mode. `freight_app` has **SELECT only**, so the running API cannot write
+price data. Row triggers refuse UPDATE and DELETE and a statement trigger refuses TRUNCATE for every role
+(`fr_append_only()`). Neither model is in `TENANT_MODELS`, so the tenant client cannot reach them; reads go
+through `withSystemTx` in `db/prices.ts`.
+
+**Active import.** Per series, the newest `imported_at` (ties: the higher id) is active. Data is read only
+from the active import; older imports stay as history.
+
+**Importer** (`npm run prices:import`; owner connection `MIGRATE_DATABASE_URL` only, never printed):
+
+| Invocation | Source kind |
+| --- | --- |
+| `-- --series <key> --file <path> --source-url <pinned url> --retrieved-at <YYYY-MM-DD>` | `file` |
+| `-- --bundled` (also run by `npm run db:seed`) | `bundled` (manifest URL and date, sha256 checked) |
+| `-- --series <key> --fetch` | `fetch` (retrieved-at = today, UTC) |
+| `-- --list` | prints key, import id, sha256, rows, first and last date, source kind, retrieved-at |
+
+`--accept-revisions` may be added to any import form. Rules:
+
+- `--source-url` must equal the pinned URL; `--retrieved-at` must be a real date not after today (UTC).
+- `--file` refuses symlinks and non-regular files and reads at most 1 MiB; the bytes are hashed and parsed
+  once. All input is validated before the database is opened.
+- `--fetch` downloads only the pinned https URL: `redirect: 'error'`, a 20 s timeout that covers the body, a
+  1 MiB streaming cap, status 200 required. `prices-cli.ts` is the only module under `api/src` that calls
+  `fetch(` (architecture test), and no route, store or analysis module imports it.
+- One owner transaction per series, under an advisory lock on the series key. Outcomes, in order:
+  `unchanged` (same sha256 as the active import; no write, no audit); `would_remove_history` (the new file
+  does not cover the active import's date range); **`revisions_refused`** (fix round 1, L1: values of dates
+  the active import already covers have changed; the count is printed; re-run with `--accept-revisions` to
+  import them); otherwise `imported`, with the import row, all observations and the platform audit event
+  `price_data.imported` (`seriesKey`, `importId`, `sha256`, `rowCount`, `firstDate`, `lastDate`,
+  `sourceKind`, `sourceUrl`, `retrievedAt`, `revisedValues`) in the same transaction.
+- Exit codes: 0 imported, unchanged or list; 2 usage, validation, parse, `would_remove_history` or
+  `revisions_refused` (nothing written); 3 database or network failure (nothing written; driver errors are
+  never echoed). The seed passes no `--accept-revisions`, so a revised bundled file is refused and logged,
+  not fatal.
+
+**CSV format** (`parsePriceCsv`): at most 1,048,576 bytes; a UTF-8 BOM is refused; only LF, CR and printable
+ASCII; CR only directly before LF; header exactly `observation_date,<fredId>`; 1..5000 rows of
+`YYYY-MM-DD,<value>` with value `^[0-9]{1,4}(\.[0-9]{1,3})?$`; real dates, strictly increasing; weekly
+series: Mondays exactly 7 days apart; monthly series: the 1st of consecutive months; values within the
+series bounds (diesel 0.5..20, PPI 10..2000). Errors carry a code and a 1-based line number. All regexes are
+anchored and free of nested quantifiers.
+
+**Provenance shown to users.** The Outlook page prints `Data: <citation>. Retrieved <date>; last observation
+<date>; file sha256 <12 hex>.`, and every FSC finding cites the series and the first 12 hex digits of the
+import's sha256. The source kind is visible in `--list` and in the audit event, not in the UI.
+
+## Cost outlook
+
+`OUTLOOK_SERIES`: `diesel_us` (season m = 52, evaluation over the last 15 years, warm-up 104) with horizons
+1 week `ar2`, 4 weeks `combo`, 8 and 13 weeks `naive`; `ppi_tl` (m = 12, evaluation over the second half
+of the history, warm-up 36) with horizon 1 month `ar2`.
+
+**Methods.**
+
+- `naive` ("No change"): the latest value.
+- `ar2` ("Trend model"): an AR(2) with intercept on log changes `z_i = ln y_i - ln y_{i-1}`, fitted by least
+  squares on the last 8 seasons (`W = 8m` levels) before each origin (Gaussian elimination with partial
+  pivoting), iterated h steps and turned back into a level `y_t x exp(sum of the steps)`. A zero pivot or a
+  non-finite coefficient gives the naive value.
+- `combo` ("Average of trend model and no change"): `(naive + ar2) / 2` in levels.
+
+**Walk-forward backtest.** Origins `t = s0 .. n-1-h`, with `s0 = max(floor(n/2), n - 15 x 52)` for diesel and
+`floor(n/2)` for the PPI; every forecast uses only data up to its origin. `maeRatio` (labelled "MASE vs no
+change") is the sum of absolute candidate errors divided by the sum of absolute naive errors over the same
+origins. The Diebold-Mariano statistic uses `d = |e_naive| - |e_candidate|` with a Bartlett-weighted
+variance over `h - 1` lags.
+
+**Gate (per horizon).** The candidate model is used (reason `model_beats_naive`) only if it is not naive,
+there are **at least 100 origins**, **`maeRatio < 1`** and **DM >= 1.96**. A model that fails falls back to
+"no change" automatically (reason `fallback_gate`, shown as 'The model no longer beats "no change"; showing
+"no change"'). Naive horizons show reason `naive_by_design`. The gate runs on the active import, so it is
+re-evaluated whenever a new import becomes active; nothing is computed from data fetched during a request.
+
+**Ranges (80%).** For each origin j: the log error `l_j = ln y_{t_j+h} - ln f_j`, the volatility `vol_j` (the
+population standard deviation of the last m log changes, floor 1e-9) and the scaled error
+`r_j = l_j / vol_j`. At origin i the range is `[q0.1, q0.9]` of the scaled errors whose outcome was already
+known (`r_0..r_{i-h}`), times `vol_i` (type-7 quantiles). **Coverage** is the share of origins from the
+warm-up on whose outcome fell inside. The live range uses all N scaled errors and today's volatility:
+`low = f x exp(q0.1 x vol)`, `high = f x exp(q0.9 x vol)`. The range therefore widens when prices are
+volatile. In the owner's interval check, plain error quantiles covered 62-76% of outcomes and
+volatility-scaled ranges 74-81%, which is why this method was chosen. Every range on the page carries its
+measured coverage: "80% range. In the backtest, <c>% of outcomes fell inside ranges built this way."
+
+**Pinned backtest on the bundled history** (deterministic; reproduced by the planner in Python, by the
+builder, and by the tester's independent oracle):
+
+| Series, horizon | Method used (reason) | Origins | maeRatio | DM | Range coverage |
+| --- | --- | --- | --- | --- | --- |
+| Diesel, 1 week | `ar2` (beats no change) | 779 (from 2011-10-31) | 0.850 | 5.64 | 526 / 675 = 77.9% |
+| Diesel, 4 weeks | `combo` (beats no change) | 776 | 0.960 | 2.75 | 530 / 672 = 78.9% |
+| Diesel, 8 weeks | `naive` (by design) | 772 | 1 | 0 | 520 / 668 = 77.8% |
+| Diesel, 13 weeks | `naive` (by design) | 767 | 1 | 0 | 510 / 663 = 76.9% |
+| TL PPI, 1 month | `ar2` (beats no change) | 205 (from 2009) | 0.872 | 2.33 | 125 / 169 = 74.0% |
+
+Unrounded: diesel 1 week 0.850402 / 5.6375, 4 weeks 0.960302 / 2.7485, PPI 0.872139 / 2.3327.
+
+**Live example** (latest diesel posting 2026-10-05 at $6.199; latest PPI value 2026-08-01):
+
+| Horizon | Target | Point | 80% range |
+| --- | --- | --- | --- |
+| Diesel 1 week | 2026-10-12 | 6.124 | 5.903 - 6.392 |
+| Diesel 4 weeks | 2026-11-02 | 6.136 | 5.301 - 7.175 |
+| Diesel 8 weeks | 2026-11-30 | 6.199 | 4.777 - 8.189 |
+| Diesel 13 weeks | 2027-01-04 | 6.199 | 4.384 - 9.395 |
+| TL PPI 1 month | 2026-09-01 | 218.0 | 210.9 - 225.9 |
+
+These numbers change with every new import. They are a backtest on public data, not a guarantee.
+
+**Horizons not shown, and why** (the owner's backtests in the run directory, reproduced by the planner):
+
+| Horizon | Evidence | Decision |
+| --- | --- | --- |
+| Diesel 8-13 weeks with a model | No model beats "no change" significantly: the best at 8 weeks is the combo with maeRatio 0.982 and DM 1.65; at 13 weeks every model is worse than naive | shown as "no change" with a range |
+| TL PPI 3 months | Weak: AR(2) maeRatio 0.888 with DM 1.53 (below 1.96). The planner also measured only 64.7% coverage for a no-change range there, too far from 80% to label it an 80% range | not shown |
+| Deep-sea freight PPI | At 1 month every model is worse than naive; at 6 months no model reaches DM 1.96. The only signal (combo at 3 months, maeRatio 0.959, DM 2.27) was not pursued; the owner's verdict was "essentially random walk" | not built, not bundled |
+| Lane-level reefer truck rates (USDA, 10,551 lanes, 78,824 forecasts at 1 week) | "No change" beats pooled AR, fuel pass-through, seasonal and combined models (MAE ratios 1.002 to 9.36 at 1 and 4 weeks) | not built. The business case notes that this agrees with Rana and Caplice, "Forecasting Long Haul Truckload Spot Market Rates", MIT Center for Transportation & Logistics, 2020, https://dspace.mit.edu/handle/1721.1/124451 |
+
+**Cost and caching.** Both bundled series compute in about 25-30 ms on Node 22 (builder and tester
+measurements). `PriceStore` caches the active import id per series for `PRICE_CACHE_TTL_MS` (default 60 s;
+0 disables) and memoizes observations and the outlook per import id (at most 2 per series). The first
+request after a new import computes synchronously on the event loop (security finding I4, accepted).
+
+**FSC per horizon (S2).** `GET /outlook?fscTableId=<id>` evaluates one of the tenant's non-archived diesel
+tables at the rounded point, low and high of each diesel horizon and at the latest price (`fscTable.current`).
+The table is read in a tenant transaction; the public outlook itself is shared and holds no tenant data.
+
+## Evaluation gate (`eval:outlook`)
+
+```bash
+npm run build
+npm run eval:outlook                    # human summary; line 2 is OUTLOOK_EVAL_NOTE
+npm run eval:outlook -- --json          # one JSON line (OutlookEvalReport, unrounded)
+npm run eval:outlook -- --min-coverage 0.70 --max-coverage 0.90 --require-model diesel_us:1,diesel_us:4,ppi_tl:1
+```
+
+It reads `api/data/public-prices/manifest.json` (or `--data-dir`), checks every sha256, parses the files and
+runs the backtest for every configured horizon. No database, no network, no environment variables, no
+writes. Exit 0: every bound met; 1: a bound not met (`bound not met: <flag> (<detail>)` on stderr); 2: usage,
+manifest, sha256 or parse error. CI runs the last line in the step "Cost outlook backtest gate (walk-forward
+on bundled public data; not a guarantee)", after the charge evaluation. The gate fails if any coverage
+leaves 70-90% or if a required horizon falls back to "no change". `OUTLOOK_EVAL_NOTE`: "Walk-forward backtest
+on bundled public price history (U.S. EIA and BLS data via FRED). It is a regression check of the forecast and
+range rules, not a guarantee about future prices."
+
+## Web
+
+- **Claim sheet, tab `Fuel`** (`FuelPanel.tsx`, flag `intelligence.fuel_check`): `FUEL_NOTE`, the inputs
+  (ship date, miles, fuel table) and the status text; for a computed result also the posted date, price,
+  expected, billed, difference and the calculation lines. Editable with `claims:analyze` while the claim is
+  `AWAITING_ANALYSIS`; otherwise "Fuel inputs can only change before the claim is analysed." Errors are fixed
+  texts in `role="alert"` (403, 409, 422 `miles_required`, 422 `fuel_table_unavailable`, 429, other); a 404
+  hides the tab.
+- **Fuel tables page** (`/settings/fuel-tables`, nav "Fuel tables"): lists all tables, archived included.
+  With `settings:manage`: add, edit (sends `expectedVersion`) and archive. Fields depend on the kind; a rows
+  table is edited as one `atLeast,rate` pair per line and validated client-side with the shared schema.
+  Fixed 409 texts for the cap, a stale version and a taken name.
+- **Outlook page** (`/outlook`, nav "Outlook", flag `intelligence.cost_outlook`): `OUTLOOK_NOTE` once; per
+  series the label, unit, latest value and date, "Backtested on public data <from>-<to>; not a guarantee.",
+  one row per horizon (target date, method label, reason label, point, range, `rangeText(coverage)`,
+  maeRatio and DM) and the provenance line. With the fuel flag on, a "Fuel table" select adds the surcharge
+  rate per diesel horizon.
+- All untrusted strings (table names, line descriptions) render as React text (`SafeText`); numbers are the
+  DTO strings as given.
+
+## Routes, RBAC, audit, errors and configuration
+
+| Route | Permission | Flag | Success |
+| --- | --- | --- | --- |
+| `GET /api/v1/fuel-tables?includeArchived=true\|false` | `claims:read` | fuel_check | 200 `FscTableList` (name, then id) |
+| `POST /api/v1/fuel-tables` | `settings:manage` | fuel_check | 201 `FscTable` |
+| `PUT /api/v1/fuel-tables/:id` | `settings:manage` | fuel_check | 200 (`expectedVersion` required) |
+| `DELETE /api/v1/fuel-tables/:id` | `settings:manage` | fuel_check | 204 (archive; idempotent) |
+| `GET /api/v1/claims/:id/fuel-check` | `claims:read` | fuel_check | 200 `FuelCheckView` |
+| `PUT /api/v1/claims/:id/fuel-inputs` | `claims:analyze` | fuel_check | 200 `{ inputs, outcome }` |
+| `DELETE /api/v1/claims/:id/fuel-inputs` | `claims:analyze` | fuel_check | 204 (idempotent) |
+| `GET /api/v1/outlook?fscTableId=<uuid>` | `claims:read` | cost_outlook | 200 `OutlookResponse` |
+
+- **RBAC.** No new permission. `settings:manage` = OWNER, ADMIN; `claims:analyze` = OWNER, ADMIN, MANAGER,
+  REVIEWER, ANALYST; `claims:read` = all tenant roles. Platform roles get 403. No API-key scope grants any of
+  these routes, so an API-key request gets 403 (fix round 1, I1: an integration case asserts this for all 8
+  routes; written, not run).
+- **Rate limit.** All eight use the per-user `intelligence` bucket; analysis keeps its `analysis` bucket.
+- **Errors.** New: 409 `fuel_table_limit_reached` (50 tables per tenant, archived included), 422
+  `fuel_table_unavailable`, 422 `miles_required`. Reused: 409 `conflict` (name taken), `stale_revision`,
+  `invalid_state`; 404 `not_found`; 503 `service_unavailable` (outlook when the price store cannot be read).
+  A malformed bundle in the fuel-check view gives 422 `analysis_input_invalid`, never 500. Precedence:
+  origin/CSRF 403 -> 401 -> 429 -> 403 -> 400 -> 404 (flag off, unknown, non-UUID or other-tenant id;
+  byte-identical) -> 409 -> 422.
+- **Audit.** Tenant chain: `fsc_table.created`, `fsc_table.updated` (with sorted `changedFields`),
+  `fsc_table.archived` (each with `paramsSha256` since fix round 1), `claim.fuel_inputs_set`,
+  `claim.fuel_inputs_cleared`, `intelligence.viewed` (`kind: fuel_check`), and the fuel keys of
+  `claim.analyzed`. Platform chain: `price_data.imported` (actor null). No table name and no invoice text in
+  any metadata. Writes that change nothing, refusals and outlook reads write no event.
+- **Flags.** `intelligence.fuel_check` ("Fuel tables and fuel-surcharge check") and
+  `intelligence.cost_outlook` ("Cost outlook from public price data"), registry entries plus migration
+  rows, enabled, visible to tenants. Off: the routes answer 404 after 401/429/403/400, the web hides the tab,
+  the pages and the nav links, and with `fuel_check` off analysis is exactly step 6 (`fuelCheckStatus 'off'`).
+  A flag read error counts as off. A `fscTableId` on the outlook while `fuel_check` is off gets 404.
+- **Configuration.** `PRICE_CACHE_TTL_MS` (default 60000, 0..3600000). The importer uses only
+  `MIGRATE_DATABASE_URL`. The API image now contains `api/data` (4 public files), so `--bundled` works there.
+
+## Python parity: registered divergences (RD11-RD13)
+
+RD1-RD10 are unchanged.
+
+| ID | Divergence (TS vs Python) | Rationale |
+| --- | --- | --- |
+| RD11 | With the fuel flag on and fuel inputs present, stored packets may contain `FSC-INDEX-MISMATCH` findings, which Python never produces. Their amounts are in `pendingReviewCents` only. | Fuel tables and public prices have no Python counterpart. Review only. |
+| RD12 | `AnalyzeResponse.analysis` and `claim.analyzed` carry the fuel fields (`fuelCheckStatus` is `off` when the flag is off). | Traceability of the fuel check. |
+| RD13 | The outlook and the price store have no Python counterpart. | New feature. The step 5 rule outputs keep their parity guarantee. |
+
+## Policy defaults (step 7)
+
+| ID | Default | Flip point |
+| --- | --- | --- |
+| D1 | Ship date and miles entered per claim (no extraction), only while `AWAITING_ANALYSIS` | `fuel.ts`; extraction deferred |
+| D2 | Week rule per table, `effectiveOffsetDays` default 2 (Wednesday-Tuesday, GSA) | DTO default |
+| D3 | Table kinds step (above/from base), mpg (half-up), rows; percent base = contract linehaul, else invoice linehaul lines | `table.ts`, `check.ts` |
+| D4 | A fixed contract FSC (`fuel_surcharge` set) skips the check (`contract_amount`) | `check.ts` |
+| D5 | One review-only `FSC-INDEX-MISMATCH`, confidence 0.7, tolerance = the analysis tolerance | `fuel/constants.ts` |
+| D6 | Wrong-week probe order -1, -2, -3, +1 weeks | `check.ts` |
+| D7 | Horizons diesel 1/4/8/13 weeks, TL PPI 1 month; candidates ar2/combo/naive/naive and ar2 | `OUTLOOK_SERIES` |
+| D8 | Gate: >= 100 origins, maeRatio < 1, DM >= 1.96; otherwise "no change" | `outlook/constants.ts` |
+| D9 | Range: volatility-scaled empirical q0.1/q0.9, warm-up 104/36, volatility floor 1e-9 | `outlook/constants.ts` |
+| D10 | Only the owner connection writes prices; append-only; full-snapshot imports; shrinking refused; revisions need `--accept-revisions` | migration, `db/prices.ts` |
+| D11 | Tables `settings:manage`; inputs `claims:analyze`; reads `claims:read`; no API keys | routes |
+| D12 | Both flags on by default; a read error counts as off | registry and migration |
+| D13 | Bundled history committed under `api/data/public-prices/` (`-text`) and copied into the API image | `.gitattributes`, `Dockerfile` |
+
+D1, D2, D5, D8, D11 and D12 are open for the owner to confirm (OQ2).
+
+## Deferred (step 7)
+
+PADD (regional) diesel prices (EIA offers the history only as XLS; OQ5); deep-sea PPI and lane-rate
+forecasts; scheduled or automatic imports; a platform upload route for prices; extraction of miles or ship
+date from documents; re-checking packets that were already analysed; FSC in currencies other than USD;
+Canadian (NRCan) prices; other interval methods; alerts; a version history table for fuel tables (the
+`paramsSha256` hash keeps the parameters traceable for now); showing the import's source kind in the UI.
+
+## Interfaces for later steps (after step 7)
+
+- `packet_findings.rule_id` can now also be `FSC-INDEX-MISMATCH` (`FUEL_RULE_IDS`), versioned by
+  `FUEL_CHECK_VERSION` `fsc-v1`. The outlook is versioned by `OUTLOOK_VERSION` `outlook-v1`.
+- A new price series needs a `PRICE_SERIES` entry with a pinned URL, a new pairs CHECK on `price_imports`
+  (new migration), bundled data plus a manifest entry if the gate should cover it, and, for FSC use, loading
+  the series by the table's `priceSeries` (today the routes load `diesel_us` only).
+- Changing a horizon, candidate or gate constant changes the pinned backtest numbers and the CI bounds
+  together; re-run `eval:outlook` and record the new table.
+- Extracting miles and ship date from documents would need new extraction field keys, an allow-list
+  migration and a registered extraction-parity divergence, like the deferred tariff terms of step 6.
+
+## Notes (step 7)
+
+- What ran (local, Windows, Node 22.23.3, **not GitHub CI**; low-memory mode, so heavy suites were not run):
+  - Builder at `cbb340f`: lint and typecheck clean repo-wide (acceptance files included); targeted unit
+    tests pass (shared fuel and outlook; api `outlook-eval-cli`, `fuel-outlook-units` and the touched pins;
+    web fuel, outlook, charges, analysis and ui, 35 tests); `prisma generate`; `prisma migrate diff` from the
+    `5f7eb7e` schema (no database). `eval:outlook` `main()` with the CI bounds exits 0; a tampered copy, a bad
+    manifest, an escaping path and a missing directory exit 2; tight bounds exit 1. All pinned numbers
+    reproduce.
+  - Tester, Tier L at `cbb340f` (after the D1 fix in `d87db5e`), shared `dist` rebuilt: the whole shared
+    acceptance project **263/263** (17 files), api `outlook-eval-cli` and `fuel-static` **13/13**; eslint on the
+    three acceptance directories exit 0; tsc 0 errors for shared, api and web. The first run had 22 failures,
+    all from one product defect D1 (`checkFuel` returned a wrapper instead of the `FuelCheckResult`), fixed
+    without changing a test. Independent oracles (BigInt rationals for the FSC, a separate AR(2), DM and
+    range implementation for the outlook) reproduce every pinned number.
+  - Security review of `5f7eb7e..cbb340f` (static): no Critical, High or Medium. L1, L2 and I1 were fixed in
+    `1a95245`; I2, I3 and I4 were accepted.
+  - Builder at `1a95245` (fix round 1): lint and typecheck clean; 52 api unit tests pass
+    (`fuel-outlook-units`, `analysis-units`, `outlook-eval-cli` including the CI-bounds run, `audit-chain`,
+    `seed`). The tester's Tier L run predates this commit.
+- **Not run yet (Tier H, waiting for the owner's go-ahead, OQ4):** `npm run build` and the built
+  `eval:outlook`; `api/test/integration/fuel-outlook.int.test.ts` (RLS FORCE, grants, cross-tenant refusal,
+  append-only for the owner, the pinned-URL CHECK, importer end-to-end, the API-key 403 case, the L1
+  refusal) and the additive pins in three other integration files; the Tier H acceptance files (API,
+  database, importer, web); the parity suites; the migration drift check against a shadow database;
+  `verify-ci-locally`. Database-level isolation of the two new tenant tables and the append-only behaviour
+  of the price tables are therefore checked by code review and unit tests only. At the time of writing, the
+  tester's working tree holds uncommitted Tier H updates for the fix-round contract additions
+  (`paramsSha256`, `revisions_refused`).
+- Steps 5 and 6 are still waiting for their own heavy validation runs.
+- Review verdict: pending (the reviewer runs after these docs).
+- Not verified: GitHub CI, container images, the compose stack, Playwright, any AWS deployment.

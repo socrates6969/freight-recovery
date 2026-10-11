@@ -2430,3 +2430,700 @@ tidsbudsjett per forespørsel for klassifisering (foreslått av sikkerhetsgjenno
 - Steg 6 bygger på steg 5, der den bekreftende kjøringen (R3) fortsatt er åpen på `feat/analysis`.
 - Gjennomgangens vurdering: venter (gjennomgåeren kjører etter denne dokumentasjonen).
 - Ikke verifisert: GitHub CI, container-images, compose-stacken, Playwright, enhver AWS-utrulling.
+
+---
+
+# Nettplattform: drivstoffkontroll, offentlige prisdata og kostnadsutsikt (steg 7)
+
+> Skrevet av scriber for kjøringen `REQ-20261011-fuel-outlook` 2026-10-11 (grenen `feat/fuel-outlook` fra
+> `feat/charge-intelligence` ved `5f7eb7e`, byggecommits `a164f56`..`cbb340f`, rettingsrunde 1 `1a95245`).
+> **Før produkt, aldri utrullet.** Tenantdata er fortsatt syntetiske. Den eneste nye typen reelle data er to
+> offentlige prisserier fra amerikanske myndigheter (diesel og en produsentprisindeks for trailerlast), lagt
+> inn med kildehenvisning etter en eierbeslutning (åpent spørsmål OQ1, se nedenfor). Trusselradene T58-T65
+> og restrisikoene FO-1..FO-12 står i
+> [technical/web-platform-security.md, del 11](technical/web-platform-security.md#11-step-7-fuel-check-public-price-data-and-cost-outlook)
+> (engelsk). Beskrivelse for brukere: [README.no.md, drivstoffkontroll og kostnadsutsikt](README.no.md#drivstoffkontroll-og-kostnadsutsikt-steg-7).
+> Mermaid-diagrammene er de samme som i den engelske originalen
+> ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-fuel-check-public-price-data-and-cost-outlook-step-7)).
+
+## Hvorfor (steg 7)
+
+To kostnader på en fraktfaktura endrer seg over tid og beregnes av noen andre: drivstofftillegget (FSC) og
+den underliggende prisen for trailerlast. Steg 7 legger til tre ting, uten å endre noe regelresultat fra
+steg 5 eller steg 6:
+
+1. **Kontroll av drivstofftillegg.** En tenant lagrer drivstofftabellene (FSC-tabellene) til sine
+   transportører. En gjennomgåer registrerer sendingsdato, miles og tabell for et krav. Analysen slår opp den
+   offentlige ukentlige amerikanske dieselprisen som gjelder for sendingsdatoen, regner tillegget på nytt med
+   eksakte desimaler og sammenligner med de fakturerte drivstofflinjene. En differanse over toleransen blir
+   ett funn `FSC-INDEX-MISMATCH` som **bare går til gjennomgang**, og som viser prisuken, tabellraden og hvert
+   steg i regnestykket. Hvis det fakturerte beløpet er lik tabellresultatet for en naboukes pris, sier funnet
+   det («feil uke-sonden»). Fakturering med feil publiseringsuke er feiltypen eieren undersøkte på den
+   offentlige dieselhistorikken; de tallene står i forretningscaset i kjøringen og er ikke produktpåstander.
+2. **Globalt lager for offentlige priser.** Ukentlig diesel og den månedlige produsentprisindeksen for
+   trailerlast (PPI) ligger i to tabeller som bare kan utvides, og som ikke tilhører noen tenant. Bare et
+   kommandolinjeverktøy for import med eierforbindelsen skriver dem, fra en strengt tolket CSV, og hver import
+   lagrer kilde-URL, hentedato og sha256. Ingen forespørselsvei henter noe utenfra.
+3. **Kostnadsutsikt.** Diesel om 1, 4, 8 og 13 uker og PPI for trailerlast om 1 måned, hver med et
+   80 %-intervall. En modellprognose vises bare for en horisont der en walk-forward-backtest på den lagrede
+   historikken viser at den slår «ingen endring»; ellers faller horisonten automatisk tilbake til «ingen
+   endring». Et CI-steg gjentar backtesten på den medfølgende historikken.
+
+**Ærlighet.** Utsikten er backtestet på offentlige data 2011-2026 (diesel) og 2009-2026 (PPI); den er ingen
+garanti. Dekningen som vises ved hvert intervall, er dekningen i backtesten, ikke et løfte. Ingen tall for
+treffsikkerhet, besparelser eller innkreving finnes i produktet. FSC-funnet er til gjennomgang: tabellen,
+milene og sendingsdatoen legges inn av mennesker og må kontrolleres før noe bestrides.
+
+## Offentlige prisdata og opphav
+
+`api/data/public-prices/` inneholder nøyaktig fire filer: `GASDESW.csv`, `PCU4841214841212.csv`,
+`manifest.json` og `README.md`. De to CSV-filene er byte for byte like filene eieren lastet ned fra FRED
+2026-10-11, og er merket `-text` i `.gitattributes`, slik at ingen konvertering av linjeskift endrer sha256.
+
+| Serienøkkel | FRED-id | Innhold | Rader | Første .. siste | sha256 (prefiks) | Fast kilde-URL |
+| --- | --- | --- | --- | --- | --- | --- |
+| `diesel_us` | `GASDESW` | Gjennomsnittlig dieselpris i USA, USD per gallon, ukentlig (mandagsdatoer) | 1 699 | 1994-03-21 .. 2026-10-05 | `aca8fefdbb54` | `https://fred.stlouisfed.org/graph/fredgraph.csv?id=GASDESW` |
+| `ppi_tl` | `PCU4841214841212` | Produsentprisindeks, stykkgods med lastebil, langdistanse trailerlast, juni 1992 = 100, månedlig | 411 | 1992-06-01 .. 2026-08-01 | `83894390a4fd` | `https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCU4841214841212` |
+
+- **Kilder.** U.S. Energy Information Administration (diesel) og U.S. Bureau of Labor Statistics (PPI),
+  begge hentet fra FRED, Federal Reserve Bank of St. Louis. Kildehenvisningene står i `PRICE_SERIES`
+  (`packages/shared/src/outlook/constants.ts`) og vises på siden Outlook og i hvert FSC-funn.
+- **Lisens.** Begge seriesidene på FRED har merknaden **«Public Domain: Citation Requested»** (kontrollert på
+  nytt av scriber 2026-10-11 på `https://fred.stlouisfed.org/series/GASDESW` og
+  `https://fred.stlouisfed.org/series/PCU4841214841212`). EIA og BLS opplyser at publiserte data er i det
+  fri (public domain), og ber om å bli oppgitt som kilde.
+- **Detalj om kildehenvisningen.** FREDs egen foreslåtte kildehenvisning for PPI bruker hele serietittelen
+  «Producer Price Index by Industry: General Freight Trucking, Long-Distance Truckload: General Freight
+  Trucking, Long-Distance, Truckload [PCU4841214841212]». Produktets kildehenvisning (Part C F2, låst av
+  tester) bruker den kortere tittelen uten gjentakelsen. README for dataene gir nå også FREDs nøyaktige
+  foreslåtte kildehenvisninger.
+- **Ikke med.** PPI for dyphavsfrakt og USDAs ukentlige rater for kjølebil per rute ble bare brukt i eierens
+  backtester og blir liggende i kjøringskatalogen.
+- **Eierbeslutning og OQ1.** Harde regel 4 i CLAUDE.md sier «kun syntetiske data». Eieren tillot reelle
+  offentlige data i forespørselen for denne kjøringen. Seriene i repoet inneholder ingen kunde-,
+  transportør- eller sendingsdata. Et datert unntak i CLAUDE.md for offentlige prisserier fra myndigheter er
+  åpent spørsmål OQ1 for eieren; agentene endret ikke CLAUDE.md.
+- **Revisjoner.** De siste PPI-månedene er foreløpige, og BLS reviderer dem. En senere import blir det
+  aktive øyeblikksbildet; tidligere importer beholdes. Siden rettingsrunde 1 avvises en ny import som endrer
+  verdier som allerede er dekket, med mindre operatøren gir `--accept-revisions` (se importen).
+
+## Modulstruktur (steg 7)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src/features"]
+        CSH["claims/ClaimSheet.tsx"]
+        FP["fuel/FuelPanel.tsx"]
+        FTP["fuel/FuelTablesPage.tsx"]
+        OP["outlook/OutlookPage.tsx"]
+        SH["shell/AppShell + routes"]
+    end
+    subgraph Shared["packages/shared/src"]
+        FW["fuel/week"]
+        FT["fuel/table"]
+        FC["fuel/check"]
+        FE["fuel/evidence"]
+        OC["outlook/csv + sha256"]
+        OA["outlook/ar + backtest"]
+        OO["outlook/outlook"]
+        DTO["fuel-dto, outlook-dto, copy"]
+        LRN["charge-intel/learned (step 6)"]
+    end
+    subgraph API["api/src"]
+        FR["intelligence/fuel-routes"]
+        FS["intelligence/fuel.ts"]
+        OR["intelligence/outlook-routes"]
+        PS["platform/price-store"]
+        PF["platform/price-files"]
+        CLI["platform/prices-cli"]
+        DBP["db/prices.ts"]
+        CA["claims/analysis + routes"]
+        EV["eval/outlook.ts (CLI)"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261014000000_fuel_outlook"]
+        TT["fsc_tables, claim_fuel_inputs"]
+        GT["price_imports, observations"]
+    end
+
+    SH --> FTP
+    SH --> OP
+    CSH --> FP
+    FP --> DTO
+    OP --> DTO
+    FP -. "HTTP" .-> FR
+    FTP -. "HTTP" .-> FR
+    OP -. "HTTP" .-> OR
+    FR --> FS
+    FS --> FC
+    FS --> TT
+    CA --> FS
+    CA --> PS
+    CA --> FE
+    FE --> FC
+    FE --> LRN
+    FC --> FW
+    FC --> FT
+    OR --> PS
+    OR --> FT
+    PS --> DBP
+    PS --> OO
+    OO --> OA
+    DBP --> GT
+    CLI --> PF
+    CLI --> OC
+    CLI --> DBP
+    EV --> PF
+    EV --> OC
+    EV --> OA
+    MIG --> TT
+    MIG --> GT
+
+    style CSH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FTP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FW fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DBP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GT fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Modul/funksjon | Formål | Viktige avhengigheter | Endret i denne kjøringen |
+| --- | --- | --- | --- |
+| `packages/shared/src/fuel/constants.ts`, `fuel/copy.ts` | `FUEL_CHECK_VERSION` `fsc-v1`, `FUEL_RULE_IDS` `['FSC-INDEX-MISMATCH']`, `FSC_CONFIDENCE` 0.7, `FSC_TABLES_MAX` 50, `FSC_ROWS_MAX` 200, `FUEL_CHECK_STATUSES`, typer, enheter, trinnvarianter; UI-tekstene `FUEL_NOTE`, `FUEL_STATUS_TEXT`, `FUEL_TEXT`, `FUEL_TABLES_TEXT` | ingen | ny |
+| `fuel/week.ts` | `applicablePosting`, `addDays`, `weekdayIndex`, `weekRuleText`, `civilFromDays` (heltallsaritmetikk på kalenderdatoer, ingen `Date`-tolking) | `daysFromCivil` fra steg 5 `local-datetime` | ny |
+| `fuel/table.ts` | `evaluateFscTable` (heltall skalert med 10^4 i BigInt, mpg avrundet halv opp), `expectedAmount` | steg 5 `py-decimal`, DTO-skjemaer | ny |
+| `fuel/check.ts` | `checkFuel` (returnerer `FuelCheckResult`), `computeFuelCheck` (legger til funnet og sporet av drivstofflinjer) | week, table, steg 5 `classifyLine`/`dedupe`, valgfri klassifiserer fra steg 6 | ny |
+| `fuel/evidence.ts` | `buildEvidenceFuel`: bevisene fra steg 6 pluss FSC-funnet; med input null er resultatet nøyaktig `buildEvidenceLearned` | `applyRulesTraced`, `applyLearning`, renderere for brev og Markdown | ny |
+| `outlook/constants.ts`, `outlook/copy.ts` | `PRICE_SERIES` (fryst register med faste URL-er, kildehenvisninger, grenser), `OUTLOOK_SERIES`, `GATE_MIN_ORIGINS` 100, `GATE_MIN_DM` 1.96, `RANGE_QUANTILES` [0.1, 0.9]; `OUTLOOK_NOTE`, `outlookBacktestText`, `rangeText`, `METHOD_LABELS`, `REASON_LABELS`, `OUTLOOK_TEXT`, `OUTLOOK_EVAL_NOTE` | ingen | ny |
+| `outlook/sha256.ts`, `outlook/csv.ts` | SHA-256 i ren JS (ingen innebygde Node-moduler i shared); `parsePriceCsv`, `PriceCsvError` | steg 5 `py-decimal`, `local-datetime` | ny |
+| `outlook/ar.ts`, `outlook/backtest.ts`, `outlook/outlook.ts` | `ar2Forecast`, `backtestSeries` (walk-forward, DM, terskel, intervaller), `computeOutlook` (status, horisonter, `backtestYears`) | konstanter | ny |
+| `fuel-dto.ts`, `outlook-dto.ts`, `index.ts`, `package.json`, `audit-actions.ts`, `feature-flags.ts`, `analysis-dto.ts` | Zod-skjemaer for rutene; eksporter fra roten (ingen motorer); underveiene `./fuel` og `./outlook`; seks revisjonshandlinger; to flagg; `fuelCheckStatus`, `fuelFindingsCount` i `AnalyzeResponse` | zod | ny / endret |
+| `api/src/intelligence/fuel.ts`, `fuel-routes.ts` | drivstofftabeller (liste, opprette, endre, arkivere), drivstoffdata (sette, fjerne), visningen av drivstoffkontrollen; `fscParamsSha256` (rettingsrunde 1) | tenanttransaksjon, `db/fuel-locks.ts`, `checkFuel`, `appendAudit` | ny |
+| `api/src/intelligence/outlook-routes.ts` | `GET /api/v1/outlook` (med valgfri `fscTableId`, S2) | `app.prices`, `evaluateFscTable` | ny |
+| `api/src/platform/price-store.ts` | `PriceStore`: aktiv import per serie hurtigbufret i `PRICE_CACHE_TTL_MS`; observasjoner og beregnet utsikt lagret per import-id (høyst 2 per serie); `dbPriceReader`, `dieselSeriesOrNull` | `db/prices.ts`, `computeOutlook` | ny |
+| `api/src/platform/price-files.ts` | streng leser for manifestet, beskyttet fillesing (vanlig fil inne i datakatalogen, sha256 kontrollert), `defaultPriceDataDir()` | `node:fs`, `node:crypto` | ny |
+| `api/src/platform/prices-cli.ts` | `npm run prices:import` (`--file`, `--bundled`, `--list`, `--fetch`, `--accept-revisions`); den eneste modulen som kaller `fetch(` | `price-files`, `parsePriceCsv`, `db/prices.ts` | ny |
+| `api/src/db/prices.ts` | `readActiveImport`, `readObservations`, `insertImport` (advisory lock, importreglene, `countRevisedValues`, plattformhendelsen `price_data.imported`) | `withSystemTx`, `appendAudit` | ny |
+| `api/src/db/fuel-locks.ts` | advisory lock per tenant når tabeller opprettes (taket på 50) | `advisoryXactLock` | ny |
+| `api/src/claims/analysis.ts`, `claims/routes.ts` | drivstofflaget i enkelt- og masseanalyse; flagg og dieselserie lest én gang per forespørsel; drivstoffeltene i sammendraget og i `claim.analyzed` | `buildEvidenceFuel`, `fuel.ts`, `app.prices` | endret |
+| `api/src/eval/outlook.ts` | `npm run eval:outlook` (ingen database, intet nettverk, ingen miljøvariabler, ingen skriving) | `price-files`, `parsePriceCsv`, `backtestSeries` | ny |
+| `api/src/db/tenant.ts`, `http/errors.ts`, `audit/chain.ts`, `config.ts`, `app.ts`, `scripts/seed.ts` | `FscTable`, `ClaimFuelInput` i `TENANT_MODELS`; tre nye feilkoder og `serviceUnavailable`; tillatte metadatanøkler; `PRICE_CACHE_TTL_MS`; dekorasjonen `prices`; seed importerer de medfølgende dataene | ingen | endret |
+| `api/prisma/migrations/20261014000000_fuel_outlook/` | fire tabeller, CHECK-er, RLS FORCE, tilganger, triggere som bare tillater utvidelse, to flaggrader | `tenants`, `users`, `claims`, `feature_flags` | ny |
+| `api/data/public-prices/` | medfølgende historikk, manifest, README | ingen | ny |
+| `web/src/features/fuel/*`, `outlook/OutlookPage.tsx`, `claims/ClaimSheet.tsx`, `shell/AppShell.tsx`, `app-root.tsx`, `intelligence/use-features.ts`, `api/client.ts` | fanen Fuel, siden Fuel tables, siden Outlook, menylenker, late ruter, flaggene `fuel` og `outlook`, hjelperen `delete()` | tekster og DTO-er fra shared | ny / endret |
+| `.github/workflows/web-ci.yml`, `api/Dockerfile`, `.gitattributes`, `.env.example`, `package.json` (rot og api) | CI-steget for utsikten; `COPY api/data`; `-text`; `PRICE_CACHE_TTL_MS`; skriptene `eval:outlook` og `prices:import` | ingen | endret |
+
+Pakkeroten `@fr/shared` eksporterer bare konstanter, tekster og DTO-er. Motorene (`table`, `check`,
+`evidence`, `csv`, `ar`, `backtest`, `outlook`) ligger under underveiene `@fr/shared/fuel` og
+`@fr/shared/outlook`. Ingen fil under `packages/shared/src/analysis/` eller `packages/shared/src/charge-intel/`
+ble endret (`git diff --stat 5f7eb7e` er tom for begge).
+
+## Funksjonskall (steg 7)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST claims/:id/analyze"] --> FL["flags read (once)"]
+    R2["POST analyze-awaiting"] --> FL
+    FL --> GS["prices.getSeries diesel"]
+    GS --> AC["analyzeClaim (one tx)"]
+    AC --> LI["loadAnalysisInput"]
+    AC --> IN["read claim fuel inputs"]
+    IN --> BP["buildAnalysisPacket"]
+    BP --> BEF["buildEvidenceFuel"]
+    BEF --> LRN["step 6 learned result"]
+    BEF --> CF["computeFuelCheck"]
+    CF --> AP["applicablePosting"]
+    CF --> EVT["evaluateFscTable"]
+    AC --> AUD["audit claim.analyzed"]
+    R3["GET /outlook"] --> GO["prices.getOutlook"]
+    GO --> CO["computeOutlook (memo)"]
+    CO --> BT["backtestSeries"]
+    BT --> AR["ar2Forecast"]
+    R4["prices:import CLI"] --> PC["parsePriceCsv"]
+    PC --> II["insertImport (owner tx)"]
+
+    style FL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BEF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EVT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R3 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R4 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style II fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalles av | Formål |
+| --- | --- | --- | --- |
+| `applicablePosting(observations, shipDate, offsetDays)` | `fuel/week.ts` | `computeFuelCheck` | den ukentlige publiseringen som gjelder for en sendingsdato, eller null |
+| `evaluateFscTable(table, price)` | `fuel/table.ts` | `computeFuelCheck`, ruten for utsikten (S2) | eksakt tabellsats `{ rate, steps, row, reachesFirstStep }` |
+| `checkFuel(bundle, input, classify, settings?)` | `fuel/check.ts` | visningen av drivstoffkontrollen | bare `FuelCheckResult` |
+| `computeFuelCheck(...)` | `fuel/check.ts` | `buildEvidenceFuel` | resultatet pluss funnet og sporet av drivstofflinjer |
+| `buildEvidenceFuel(docs, bundle, persp, settings, now, classifier, input)` | `fuel/evidence.ts` | `buildAnalysisPacket` | bevisene fra steg 6 pluss FSC-funnet og `fuel` |
+| `parsePriceCsv(bytes, seriesKey)` | `outlook/csv.ts` | import, evalueringsverktøy | streng tolking med sha256 |
+| `backtestSeries(dates, values, key)`, `computeOutlook(...)` | `outlook/backtest.ts`, `outlook/outlook.ts` | evalueringsverktøy, `PriceStore.getOutlook` | walk-forward, terskel, intervaller, punkt og intervall i dag |
+| `insertImport(ownerBase, args)` | `api/src/db/prices.ts` | importverktøyet, seed | én transaksjon med eierforbindelsen: lås, sammenlign, sett inn, revisjonsspor |
+| `PriceStore.getSeries(key)`, `getOutlook(key)` | `platform/price-store.ts` | analyserutene, ruten for drivstoffkontrollen, ruten for utsikten | hurtigbufret lesing av den aktive importen |
+
+## Dataflyt (drivstoffkontroll)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["Step 6 result (unchanged)"] --> B{"Flag on and inputs set?"}
+    B -- no --> Z["Step 6 packet, exactly"]
+    B -- yes --> C{"Table archived or contract FSC?"}
+    C -- yes --> Z
+    C -- no --> D{"Fuel line and posting found?"}
+    D -- no --> Z
+    D -- yes --> E["Rate from table at posted price"]
+    E --> F{"Miles or linehaul present?"}
+    F -- no --> Z
+    F -- yes --> G{"Difference above tolerance?"}
+    G -- no --> Z
+    G -- yes --> H["Probe weeks -1, -2, -3, +1"]
+    H --> I["FSC-INDEX-MISMATCH (review)"]
+
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style C fill:#1e90ff,stroke:#1565c0,color:#fff
+    style D fill:#1e90ff,stroke:#1565c0,color:#fff
+    style E fill:#1e90ff,stroke:#1565c0,color:#fff
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style G fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+    style I fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+«Step 6 packet, exactly» betyr at lagrede funn, summer, brev og innholdshash er det steg 6 lagrer for samme
+input og tidspunkt; svaret og revisjonshendelsen rapporterer likevel drivstoffstatusen (for eksempel
+`no_fuel_line`).
+
+## Ukeregelen
+
+EIA publiserer den nasjonale gjennomsnittsprisen for diesel ukentlig, datert mandag. GSAs regel for
+drivstofftillegg (slik planleggeren registrerte den fra GSA Freight Management Programs side om
+drivstofftillegg 2026-10-11) bruker mandagens pris for sendinger som hentes fra den påfølgende onsdagen til og
+med tirsdagen etter, og hentedatoen avgjør.
+
+`applicablePosting(observations, shipDate, o)`: gjeldende observasjon er den siste `w` med
+`w.date + o <= shipDate`, og bare hvis `shipDate <= w.date + o + 6`; ellers finnes det ingen pris. Vinduet er
+`effectiveFrom = w.date + o` til `effectiveTo = effectiveFrom + 6`. Hver tabell har sin egen
+`effectiveOffsetDays` `o` (0..6, **standard 2 = onsdag til tirsdag**, GSA-regelen; 0 = mandag til søndag).
+Regelteksten i et funn er `Monday posting applies <dag o> to <dag o+6>`.
+
+Med de medfølgende dataene og standardverdien: sendingsdato 2026-10-07 (onsdag) bruker publiseringen
+2026-10-05 ($6.199); 2026-10-05 og 2026-10-06 bruker 2026-09-28 ($6.382); 2026-10-14 har ingen publisering
+ennå (status `price_unavailable`).
+
+## Drivstofftabeller (eksakt beregning)
+
+P = publisert pris (3 desimaler), B = basispris, S = trinnstørrelse, R = sats per trinn, M = miles per gallon.
+
+| Type | Parametere | Enhet | Sats |
+| --- | --- | --- | --- |
+| `step`, `above_base` | `basePrice`, `stepSize`, `ratePerStep` | per_mile eller percent | P > B: k = ceil((P - B) / S), sats = R x k; ellers 0 |
+| `step`, `from_base` | samme | per_mile eller percent | P >= B: k = floor((P - B) / S) + 1, sats = R x k; ellers 0 |
+| `mpg` | `basePrice`, `mpg`, `decimals` 2/3/4 | bare per_mile | P > B: (P - B) / M avrundet halv opp til `decimals`; ellers 0 |
+| `rows` | 1..200 `{ atLeast, rate }`, `atLeast` strengt stigende | per_mile eller percent | satsen i den siste raden med `atLeast <= P`; ellers 0 |
+
+- All aritmetikk er eksakt: desimaler gjøres om til heltall skalert med 10^4 og deles i BigInt; satser
+  formateres som Python `str(Decimal)`. Ingen flyttall og ingen løkke over trinn, så ekstreme parametere
+  koster ingen CPU.
+- Forventet tillegg: per mile `Q(miles x sats)`; prosent `Q(sats x L / 100)`, der L er
+  fraktavtalens `linehaul_rate` når den finnes (grunnlag «rate confirmation»), ellers summen av de unike
+  fakturalinjene som `classifyLine` kaller `linehaul` (grunnlag «invoice linehaul lines»). Q er avrunding
+  til hele cent med halv-til-partall.
+- Formater: `basePrice`, `stepSize`, `atLeast` med opptil 2 heltallssifre og 4 desimaler, > 0. Satser per
+  mile `0..9.9999`; prosentsatser opptil 100 med 3 desimaler; `mpg` 1..20. Miles har én desimal,
+  0.1..10000.0.
+- Regneeksempel (enhetstestet): tabell med basis $1.20, trinn $0.06, $0.01 per mile per trinn, `above_base`;
+  sendingsdato 2026-10-07; prisen $6.199 gir ceil(4.999 / 0.06) = 84 trinn, $0.84 per mile, **$420.00** for
+  500.0 miles. En faktura på $435.00 gir et funn om overfakturering på $15.00, og sonden viser til
+  publiseringen 2026-09-28 ($6.382, 87 trinn), én uke før gjeldende publisering. En tabell i Bison-stil med
+  `from_base` (basis $1.12, trinn $0.05) gir 102 trinn ved $6.199.
+
+## Drivstoffkontrollen i analysen
+
+**Status, første treff:** `no_inputs` -> `table_archived` -> `contract_amount` (fraktavtalen oppgir et fast
+`fuel_surcharge`: steg 5 `INV-FUEL-SURCHARGE` kontrollerer allerede det beløpet, så FSC-kontrollen hoppes over
+for å unngå dobbelttelling) -> `no_fuel_line` -> `price_unavailable` -> `miles_missing` -> `no_linehaul` ->
+`finding` (|fakturert - forventet| over `settings.amountTolerance`) -> `within_tolerance`. Med flagget av er
+statusen `off`.
+
+**Fakturerte drivstofflinjer** er de unike fakturalinjene (duplikatfjerningen fra steg 5) som
+`classifyLine` kaller `fuel`. Når flagget for gebyrforslag er på, legges unike `other`-linjer til der
+forslaget fra steg 6 er `fuel` uten å avstå, merket «(suggested fuel line)».
+
+**Funnet** `FSC-INDEX-MISMATCH`, tittel «Fuel surcharge differs from the fuel table (review)»: confidence 0.7
+(en fast verdi, ikke en sannsynlighet), `needs_human_review = true`, retning `overcharge` eller
+`underbilled`, beløp `Q(|fakturert - forventet|)`, ingen styrende klausul, kildehenvisninger = de fakturerte
+drivstofflinjene. Beregningen viser i rekkefølge: sendingsdatoen og publiseringsvinduet med regelteksten;
+publisert pris med kildehenvisning og de første 12 heks-sifrene i importens sha256; tabellinjen (versjon,
+trinn eller rad, sats); forventet beløp; de fakturerte linjene; differansen; og, bare når en naboukes
+publisering forklarer fakturaen, «The billed amount equals the table result for the price posted <dato>
+($<pris>), <n> week(s) earlier|later than the applicable posting.» Forklaringen slutter med «Verify the
+table, the miles and the ship date before disputing.»
+
+**Feil uke-sonden.** Bare for `finding`: observasjonene 1, 2 og 3 uker før, deretter 1 uke etter, beregnes med
+samme tabell, miles og L; den første der forventet beløp er nøyaktig lik det fakturerte, oppgis.
+
+**Plassering og summer.** Et FSC-funn i eget perspektiv legges etter egne funn fra steg 6; et funn i motsatt
+retning går til `ignored_findings` og lagres ikke. Det telles bare i `pendingReviewCents`:
+`recoverableCents` er uendret, og utkastet til kravbrev viser det aldri. Godkjenning med funn til gjennomgang
+krever fortsatt `acknowledgePendingFindings`, og firøyeprinsippet er uendret.
+
+**Paritet.** Med input null, eller enhver annen status enn `finding`, er bevisene nøyaktig
+`buildEvidenceLearned(...)`; med flagget av er lagret pakke, summer, brev og innholdshash som i steg 6.
+
+**Lagret i pakkesammendraget og i `claim.analyzed`:** `fuelCheckStatus`, `fscTableId`, `fscTableVersion`,
+`priceImportId`, `priceDate`, `fuelFindingsCount` (0 eller 1) og, siden rettingsrunde 1 (L2), `paramsSha256`:
+sha256 av kanonisk JSON for tabellparameterne som ble brukt (null uten drivstoffdata eller med flagget av).
+Tabeller endres på stedet (versjon + 1); hashen i revisjonshendelsene og i pakken gjør de nøyaktige
+parameterne sporbare.
+
+**Drivstoffdata** er ett sett per krav (`claim_fuel_inputs`): sendingsdato, miles (null tillatt for
+prosenttabeller) og tabell. De kan opprettes, endres eller fjernes bare mens kravet er `AWAITING_ANALYSIS`
+(ellers 409 `invalid_state`; kravraden låses). PUT rapporterer `created`, `changed` eller `unchanged`.
+Visningen av drivstoffkontrollen (`GET /claims/:id/fuel-check`) beregner en forhåndsvisning i alle statuser og
+endrer aldri en lagret pakke.
+
+## Prislager og import
+
+Tabeller (migreringen `20261014000000_fuel_outlook`):
+
+| Tabell | Omfang | Hovedpunkter |
+| --- | --- | --- |
+| `fsc_tables` | tenant | navn unikt per tenant; CHECK-er på verdiene for type, enhet og trinnvariant, `mpg` krever `per_mile`, `price_series = 'diesel_us'`, forskyvning 0..6, navn 1..80, `params` et JSON-objekt på høyst 16 KB, `version >= 1`; RLS ENABLE + FORCE med tenantpolicyen; `freight_app`: SELECT, INSERT, UPDATE begrenset til kolonner, **ingen DELETE** (tabeller arkiveres) |
+| `claim_fuel_inputs` | tenant | unik `(tenant_id, claim_id)`; sammensatte fremmednøkler `(claim_id, tenant_id)` og `(fsc_table_id, tenant_id)`; `miles numeric(6,1)` 0.1..10000.0 eller null; sendingsdato 1994-01-01..2100-12-31; RLS ENABLE + FORCE; SELECT, INSERT, DELETE, UPDATE begrenset til kolonner |
+| `price_imports` | global | `series_key`, `source_kind` (`file`, `bundled`, `fetch`), `source_url` (CHECK: seriens faste FRED-URL), `retrieved_at`, `sha256` (64 heks), `row_count` 1..5000, `first_date <= last_date`, `imported_at` |
+| `price_observations` | global | primærnøkkel `(import_id, period_date)`, `value numeric(10,3) > 0` |
+
+De to globale tabellene har RLS ENABLE + FORCE med en SELECT-policy for alle som har tilgangen, og en
+INSERT-policy som krever systemmodus. `freight_app` har **bare SELECT**, så API-et i drift kan ikke skrive
+prisdata. Radtriggere avviser UPDATE og DELETE, og en setningstrigger avviser TRUNCATE for alle roller
+(`fr_append_only()`). Ingen av modellene er i `TENANT_MODELS`, så tenantklienten når dem ikke; lesing skjer
+gjennom `withSystemTx` i `db/prices.ts`.
+
+**Aktiv import.** Per serie er den nyeste `imported_at` (likt: høyeste id) aktiv. Data leses bare fra den
+aktive importen; eldre importer blir liggende som historikk.
+
+**Import** (`npm run prices:import`; bare eierforbindelsen `MIGRATE_DATABASE_URL`, som aldri skrives ut):
+
+| Kall | Kildetype |
+| --- | --- |
+| `-- --series <key> --file <path> --source-url <fast url> --retrieved-at <YYYY-MM-DD>` | `file` |
+| `-- --bundled` (kjøres også av `npm run db:seed`) | `bundled` (URL og dato fra manifestet, sha256 kontrollert) |
+| `-- --series <key> --fetch` | `fetch` (hentedato = i dag, UTC) |
+| `-- --list` | skriver nøkkel, import-id, sha256, rader, første og siste dato, kildetype, hentedato |
+
+`--accept-revisions` kan legges til alle importformene. Regler:
+
+- `--source-url` må være den faste URL-en; `--retrieved-at` må være en ekte dato som ikke er etter i dag
+  (UTC).
+- `--file` avviser symbolske lenker og filer som ikke er vanlige filer, og leser høyst 1 MiB; bytene hashes og
+  tolkes én gang. All input valideres før databasen åpnes.
+- `--fetch` laster bare ned den faste https-URL-en: `redirect: 'error'`, tidsavbrudd 20 s som også dekker
+  innholdet, et tak på 1 MiB under strømming, status 200 påkrevd. `prices-cli.ts` er den eneste modulen under
+  `api/src` som kaller `fetch(` (arkitekturtest), og ingen rute, lagermodul eller analysemodul importerer den.
+- Én transaksjon med eierforbindelsen per serie, under en advisory lock på serienøkkelen. Utfall, i
+  rekkefølge: `unchanged` (samme sha256 som den aktive importen; ingen skriving, ingen revisjonshendelse);
+  `would_remove_history` (den nye filen dekker ikke datointervallet til den aktive importen);
+  **`revisions_refused`** (rettingsrunde 1, L1: verdier for datoer som den aktive importen allerede dekker, er
+  endret; antallet skrives ut; kjør på nytt med `--accept-revisions` for å importere dem); ellers `imported`,
+  med importraden, alle observasjoner og plattformhendelsen `price_data.imported` (`seriesKey`, `importId`,
+  `sha256`, `rowCount`, `firstDate`, `lastDate`, `sourceKind`, `sourceUrl`, `retrievedAt`, `revisedValues`) i
+  samme transaksjon.
+- Avslutningskoder: 0 importert, uendret eller liste; 2 bruk, validering, tolking, `would_remove_history`
+  eller `revisions_refused` (ingenting skrevet); 3 feil i database eller nettverk (ingenting skrevet;
+  driverfeil gjentas aldri). Seed sender ikke `--accept-revisions`, så en revidert medfølgende fil avvises og
+  logges, uten å stoppe seed.
+
+**CSV-format** (`parsePriceCsv`): høyst 1 048 576 byte; en UTF-8-BOM avvises; bare LF, CR og skrivbar ASCII;
+CR bare rett før LF; overskriften nøyaktig `observation_date,<fredId>`; 1..5000 rader `YYYY-MM-DD,<verdi>`
+med verdi `^[0-9]{1,4}(\.[0-9]{1,3})?$`; ekte datoer, strengt stigende; ukeserier: mandager med nøyaktig 7
+dagers avstand; månedsserier: den 1. i påfølgende måneder; verdier innenfor seriens grenser (diesel 0.5..20,
+PPI 10..2000). Feil har en kode og et linjenummer som starter på 1. Alle regulære uttrykk er forankret og uten
+nøstede kvantorer.
+
+**Opphav som vises til brukere.** Siden Outlook skriver `Data: <kildehenvisning>. Retrieved <dato>; last
+observation <dato>; file sha256 <12 heks>.`, og hvert FSC-funn viser serien og de første 12 heks-sifrene i
+importens sha256. Kildetypen er synlig i `--list` og i revisjonshendelsen, ikke i brukergrensesnittet.
+
+## Kostnadsutsikt
+
+`OUTLOOK_SERIES`: `diesel_us` (sesong m = 52, evaluering over de siste 15 årene, oppvarming 104) med
+horisontene 1 uke `ar2`, 4 uker `combo`, 8 og 13 uker `naive`; `ppi_tl` (m = 12, evaluering over andre
+halvdel av historikken, oppvarming 36) med horisonten 1 måned `ar2`.
+
+**Metoder.**
+
+- `naive` («No change»): siste verdi.
+- `ar2` («Trend model»): en AR(2) med konstantledd på logaritmiske endringer `z_i = ln y_i - ln y_{i-1}`,
+  tilpasset med minste kvadraters metode på de siste 8 sesongene (`W = 8m` nivåer) før hvert startpunkt
+  (Gauss-eliminasjon med delvis pivotering), iterert h steg og gjort om til et nivå
+  `y_t x exp(summen av stegene)`. En pivot på null eller en koeffisient som ikke er endelig, gir den naive
+  verdien.
+- `combo` («Average of trend model and no change»): `(naive + ar2) / 2` i nivåer.
+
+**Walk-forward-backtest.** Startpunkter `t = s0 .. n-1-h`, med `s0 = max(floor(n/2), n - 15 x 52)` for diesel
+og `floor(n/2)` for PPI; hver prognose bruker bare data fram til sitt startpunkt. `maeRatio` (merket «MASE vs
+no change») er summen av absolutte kandidatfeil delt på summen av absolutte naive feil over de samme
+startpunktene. Diebold-Mariano-statistikken bruker `d = |e_naive| - |e_candidate|` med en Bartlett-vektet
+varians over `h - 1` etterslep.
+
+**Terskel (per horisont).** Kandidatmodellen brukes (grunn `model_beats_naive`) bare hvis den ikke er naiv,
+det finnes **minst 100 startpunkter**, **`maeRatio < 1`** og **DM >= 1.96**. En modell som ikke består, faller
+automatisk tilbake til «ingen endring» (grunn `fallback_gate`, vist som «The model no longer beats "no
+change"; showing "no change"»). Naive horisonter viser grunnen `naive_by_design`. Terskelen kjøres på den
+aktive importen, så den vurderes på nytt hver gang en ny import blir aktiv; ingenting beregnes fra data hentet
+under en forespørsel.
+
+**Intervaller (80 %).** For hvert startpunkt j: den logaritmiske feilen `l_j = ln y_{t_j+h} - ln f_j`,
+volatiliteten `vol_j` (populasjonsstandardavviket til de siste m logaritmiske endringene, gulv 1e-9) og den
+skalerte feilen `r_j = l_j / vol_j`. Ved startpunkt i er intervallet `[q0.1, q0.9]` av de skalerte feilene
+der utfallet allerede var kjent (`r_0..r_{i-h}`), ganger `vol_i` (kvantiler av type 7). **Dekning** er andelen
+startpunkter fra og med oppvarmingen der utfallet havnet innenfor. Dagens intervall bruker alle N skalerte
+feil og dagens volatilitet: `low = f x exp(q0.1 x vol)`, `high = f x exp(q0.9 x vol)`. Intervallet blir derfor
+bredere når prisene svinger. I eierens kontroll av intervaller dekket vanlige feilkvantiler 62-76 % av
+utfallene og volatilitetsskalerte intervaller 74-81 %, og derfor ble denne metoden valgt. Hvert intervall på
+siden har sin målte dekning: «80% range. In the backtest, <c>% of outcomes fell inside ranges built this way.»
+
+**Låst backtest på den medfølgende historikken** (deterministisk; gjenskapt av planleggeren i Python, av
+byggeren og av testerens uavhengige orakel):
+
+| Serie, horisont | Metode brukt (grunn) | Startpunkter | maeRatio | DM | Intervalldekning |
+| --- | --- | --- | --- | --- | --- |
+| Diesel, 1 uke | `ar2` (slår ingen endring) | 779 (fra 2011-10-31) | 0.850 | 5.64 | 526 / 675 = 77,9 % |
+| Diesel, 4 uker | `combo` (slår ingen endring) | 776 | 0.960 | 2.75 | 530 / 672 = 78,9 % |
+| Diesel, 8 uker | `naive` (bevisst) | 772 | 1 | 0 | 520 / 668 = 77,8 % |
+| Diesel, 13 uker | `naive` (bevisst) | 767 | 1 | 0 | 510 / 663 = 76,9 % |
+| PPI trailerlast, 1 måned | `ar2` (slår ingen endring) | 205 (fra 2009) | 0.872 | 2.33 | 125 / 169 = 74,0 % |
+
+Uavrundet: diesel 1 uke 0.850402 / 5.6375, 4 uker 0.960302 / 2.7485, PPI 0.872139 / 2.3327.
+
+**Eksempel i dag** (siste dieselpublisering 2026-10-05 på $6.199; siste PPI-verdi 2026-08-01):
+
+| Horisont | Måldato | Punkt | 80 %-intervall |
+| --- | --- | --- | --- |
+| Diesel 1 uke | 2026-10-12 | 6.124 | 5.903 - 6.392 |
+| Diesel 4 uker | 2026-11-02 | 6.136 | 5.301 - 7.175 |
+| Diesel 8 uker | 2026-11-30 | 6.199 | 4.777 - 8.189 |
+| Diesel 13 uker | 2027-01-04 | 6.199 | 4.384 - 9.395 |
+| PPI trailerlast 1 måned | 2026-09-01 | 218.0 | 210.9 - 225.9 |
+
+Tallene endres med hver nye import. De er en backtest på offentlige data, ingen garanti.
+
+**Horisonter som ikke vises, og hvorfor** (eierens backtester i kjøringskatalogen, gjenskapt av
+planleggeren):
+
+| Horisont | Grunnlag | Beslutning |
+| --- | --- | --- |
+| Diesel 8-13 uker med modell | Ingen modell slår «ingen endring» signifikant: best ved 8 uker er combo med maeRatio 0.982 og DM 1.65; ved 13 uker er alle modeller dårligere enn naiv | vises som «ingen endring» med intervall |
+| PPI trailerlast 3 måneder | Svakt: AR(2) maeRatio 0.888 med DM 1.53 (under 1.96). Planleggeren målte også bare 64,7 % dekning for et intervall med ingen endring der, for langt fra 80 % til å kalle det et 80 %-intervall | vises ikke |
+| PPI dyphavsfrakt | Ved 1 måned er alle modeller dårligere enn naiv; ved 6 måneder når ingen modell DM 1.96. Det eneste signalet (combo ved 3 måneder, maeRatio 0.959, DM 2.27) ble ikke fulgt opp; eierens vurdering var «i praksis en tilfeldig gang» | ikke bygget, ikke med |
+| Kjølebilrater per rute (USDA, 10 551 ruter, 78 824 prognoser ved 1 uke) | «Ingen endring» slår samlet AR, videreføring av drivstoff, sesongmodeller og kombinasjon (MAE-forhold 1.002 til 9.36 ved 1 og 4 uker) | ikke bygget. Forretningscaset merker at dette stemmer med Rana og Caplice, «Forecasting Long Haul Truckload Spot Market Rates», MIT Center for Transportation & Logistics, 2020, https://dspace.mit.edu/handle/1721.1/124451 |
+
+**Kostnad og hurtigbuffer.** Begge medfølgende serier beregnes på omtrent 25-30 ms på Node 22 (målinger fra
+byggeren og testeren). `PriceStore` hurtigbufrer id-en til den aktive importen per serie i
+`PRICE_CACHE_TTL_MS` (standard 60 s; 0 slår av) og lagrer observasjoner og utsikt per import-id (høyst 2 per
+serie). Den første forespørselen etter en ny import beregner synkront i hendelsesløkken (sikkerhetsfunn I4,
+akseptert).
+
+**FSC per horisont (S2).** `GET /outlook?fscTableId=<id>` beregner en av tenantens ikke-arkiverte
+dieseltabeller ved avrundet punkt, nedre og øvre grense for hver dieselhorisont og ved siste pris
+(`fscTable.current`). Tabellen leses i en tenanttransaksjon; selve den offentlige utsikten er felles og
+inneholder ingen tenantdata.
+
+## Evalueringsterskel (`eval:outlook`)
+
+```bash
+npm run build
+npm run eval:outlook                    # human summary; line 2 is OUTLOOK_EVAL_NOTE
+npm run eval:outlook -- --json          # one JSON line (OutlookEvalReport, unrounded)
+npm run eval:outlook -- --min-coverage 0.70 --max-coverage 0.90 --require-model diesel_us:1,diesel_us:4,ppi_tl:1
+```
+
+Verktøyet leser `api/data/public-prices/manifest.json` (eller `--data-dir`), kontrollerer hver sha256, tolker
+filene og kjører backtesten for hver konfigurerte horisont. Ingen database, intet nettverk, ingen
+miljøvariabler, ingen skriving. Avslutningskode 0: alle grenser oppfylt; 1: en grense ikke oppfylt
+(`bound not met: <flagg> (<detalj>)` på stderr); 2: feil i bruk, manifest, sha256 eller tolking. CI kjører den
+siste linjen i steget «Cost outlook backtest gate (walk-forward on bundled public data; not a guarantee)»,
+etter gebyrevalueringen. Terskelen feiler hvis en dekning havner utenfor 70-90 %, eller hvis en påkrevd
+horisont faller tilbake til «ingen endring». `OUTLOOK_EVAL_NOTE`: «Walk-forward backtest on bundled public
+price history (U.S. EIA and BLS data via FRED). It is a regression check of the forecast and range rules, not
+a guarantee about future prices.»
+
+## Nett
+
+- **Kravarket, fanen `Fuel`** (`FuelPanel.tsx`, flagget `intelligence.fuel_check`): `FUEL_NOTE`,
+  drivstoffdataene (sendingsdato, miles, drivstofftabell) og statusteksten; for et beregnet resultat også
+  publiseringsdato, pris, forventet, fakturert, differanse og beregningslinjene. Kan redigeres med
+  `claims:analyze` mens kravet er `AWAITING_ANALYSIS`; ellers vises «Fuel inputs can only change before the
+  claim is analysed.» Feil er faste tekster i `role="alert"` (403, 409, 422 `miles_required`, 422
+  `fuel_table_unavailable`, 429, annet); en 404 skjuler fanen.
+- **Siden Fuel tables** (`/settings/fuel-tables`, menyen «Fuel tables»): viser alle tabeller, også arkiverte.
+  Med `settings:manage`: legge til, endre (sender `expectedVersion`) og arkivere. Feltene avhenger av typen;
+  en radtabell redigeres som ett par `atLeast,rate` per linje og valideres i nettleseren med skjemaet fra
+  shared. Faste 409-tekster for taket, en utdatert versjon og et navn som er tatt.
+- **Siden Outlook** (`/outlook`, menyen «Outlook», flagget `intelligence.cost_outlook`): `OUTLOOK_NOTE` én
+  gang; per serie navn, enhet, siste verdi og dato, «Backtested on public data <fra>-<til>; not a
+  guarantee.», én rad per horisont (måldato, metodenavn, grunn, punkt, intervall, `rangeText(coverage)`,
+  maeRatio og DM) og opphavslinjen. Med drivstoffflagget på legger en liste «Fuel table» til
+  drivstofftillegget per dieselhorisont.
+- Alle upålitelige tekster (tabellnavn, linjebeskrivelser) vises som React-tekst (`SafeText`); tall er
+  DTO-strengene slik de kommer.
+
+## Ruter, roller, revisjonsspor, feil og konfigurasjon
+
+| Rute | Tillatelse | Flagg | Suksess |
+| --- | --- | --- | --- |
+| `GET /api/v1/fuel-tables?includeArchived=true\|false` | `claims:read` | fuel_check | 200 `FscTableList` (navn, så id) |
+| `POST /api/v1/fuel-tables` | `settings:manage` | fuel_check | 201 `FscTable` |
+| `PUT /api/v1/fuel-tables/:id` | `settings:manage` | fuel_check | 200 (`expectedVersion` påkrevd) |
+| `DELETE /api/v1/fuel-tables/:id` | `settings:manage` | fuel_check | 204 (arkiverer; idempotent) |
+| `GET /api/v1/claims/:id/fuel-check` | `claims:read` | fuel_check | 200 `FuelCheckView` |
+| `PUT /api/v1/claims/:id/fuel-inputs` | `claims:analyze` | fuel_check | 200 `{ inputs, outcome }` |
+| `DELETE /api/v1/claims/:id/fuel-inputs` | `claims:analyze` | fuel_check | 204 (idempotent) |
+| `GET /api/v1/outlook?fscTableId=<uuid>` | `claims:read` | cost_outlook | 200 `OutlookResponse` |
+
+- **Roller.** Ingen ny tillatelse. `settings:manage` = OWNER, ADMIN; `claims:analyze` = OWNER, ADMIN,
+  MANAGER, REVIEWER, ANALYST; `claims:read` = alle tenantroller. Plattformroller får 403. Ingen omfang for
+  API-nøkler gir tilgang til disse rutene, så en forespørsel med API-nøkkel får 403 (rettingsrunde 1, I1: en
+  integrasjonstest kontrollerer dette for alle 8 rutene; skrevet, ikke kjørt).
+- **Ratebegrensning.** Alle åtte bruker bøtta `intelligence` per bruker; analysen beholder bøtta `analysis`.
+- **Feil.** Nye: 409 `fuel_table_limit_reached` (50 tabeller per tenant, arkiverte medregnet), 422
+  `fuel_table_unavailable`, 422 `miles_required`. Gjenbrukt: 409 `conflict` (navnet er tatt),
+  `stale_revision`, `invalid_state`; 404 `not_found`; 503 `service_unavailable` (utsikten når prislageret
+  ikke kan leses). En ugyldig samling dokumenter i visningen av drivstoffkontrollen gir 422
+  `analysis_input_invalid`, aldri 500. Rekkefølge: origin/CSRF 403 -> 401 -> 429 -> 403 -> 400 -> 404 (flagg
+  av, ukjent id, id som ikke er UUID, eller id fra en annen tenant; byte for byte like) -> 409 -> 422.
+- **Revisjonsspor.** Tenantkjeden: `fsc_table.created`, `fsc_table.updated` (med sortert `changedFields`),
+  `fsc_table.archived` (alle med `paramsSha256` siden rettingsrunde 1), `claim.fuel_inputs_set`,
+  `claim.fuel_inputs_cleared`, `intelligence.viewed` (`kind: fuel_check`) og drivstoffnøklene i
+  `claim.analyzed`. Plattformkjeden: `price_data.imported` (ingen aktør). Ingen tabellnavn og ingen
+  fakturatekst i metadata. Skriving som ikke endrer noe, avvisninger og lesing av utsikten gir ingen
+  hendelse.
+- **Flagg.** `intelligence.fuel_check` («Fuel tables and fuel-surcharge check») og
+  `intelligence.cost_outlook` («Cost outlook from public price data»), oppføringer i registeret pluss
+  migreringsrader, på, synlige for tenanter. Av: rutene svarer 404 etter 401/429/403/400, nettappen skjuler
+  fanen, sidene og menylenkene, og med `fuel_check` av er analysen nøyaktig steg 6 (`fuelCheckStatus 'off'`).
+  En lesefeil for et flagg teller som av. En `fscTableId` på utsikten mens `fuel_check` er av, gir 404.
+- **Konfigurasjon.** `PRICE_CACHE_TTL_MS` (standard 60000, 0..3600000). Importen bruker bare
+  `MIGRATE_DATABASE_URL`. API-imaget inneholder nå `api/data` (4 offentlige filer), slik at `--bundled`
+  virker der.
+
+## Python-paritet: registrerte avvik (RD11-RD13)
+
+RD1-RD10 er uendret.
+
+| ID | Avvik (TS mot Python) | Begrunnelse |
+| --- | --- | --- |
+| RD11 | Med drivstoffflagget på og drivstoffdata registrert kan lagrede pakker inneholde funnet `FSC-INDEX-MISMATCH`, som Python aldri lager. Beløpene står bare i `pendingReviewCents`. | Drivstofftabeller og offentlige priser har ingen motpart i Python. Bare til gjennomgang. |
+| RD12 | `AnalyzeResponse.analysis` og `claim.analyzed` har drivstoffeltene (`fuelCheckStatus` er `off` når flagget er av). | Sporbarhet for drivstoffkontrollen. |
+| RD13 | Utsikten og prislageret har ingen motpart i Python. | Ny funksjon. Regelresultatene fra steg 5 beholder paritetsgarantien. |
+
+## Standardvalg (steg 7)
+
+| ID | Standard | Hvor det kan endres |
+| --- | --- | --- |
+| D1 | Sendingsdato og miles legges inn per krav (ingen uttrekking), bare mens `AWAITING_ANALYSIS` | `fuel.ts`; uttrekking utsatt |
+| D2 | Ukeregel per tabell, `effectiveOffsetDays` standard 2 (onsdag-tirsdag, GSA) | standard i DTO |
+| D3 | Tabelltyper trinn (over/fra basis), mpg (halv opp), rader; prosentgrunnlag = avtalt linehaul, ellers fakturaens linehaul-linjer | `table.ts`, `check.ts` |
+| D4 | Et fast avtalt drivstofftillegg (`fuel_surcharge` satt) hopper over kontrollen (`contract_amount`) | `check.ts` |
+| D5 | Ett funn `FSC-INDEX-MISMATCH` bare til gjennomgang, confidence 0.7, toleranse = analysens toleranse | `fuel/constants.ts` |
+| D6 | Rekkefølge for feil uke-sonden -1, -2, -3, +1 uker | `check.ts` |
+| D7 | Horisonter diesel 1/4/8/13 uker, PPI trailerlast 1 måned; kandidater ar2/combo/naive/naive og ar2 | `OUTLOOK_SERIES` |
+| D8 | Terskel: >= 100 startpunkter, maeRatio < 1, DM >= 1.96; ellers «ingen endring» | `outlook/constants.ts` |
+| D9 | Intervall: volatilitetsskalert empirisk q0.1/q0.9, oppvarming 104/36, volatilitetsgulv 1e-9 | `outlook/constants.ts` |
+| D10 | Bare eierforbindelsen skriver priser; bare utvidelse; importer er fulle øyeblikksbilder; krymping avvises; revisjoner krever `--accept-revisions` | migrering, `db/prices.ts` |
+| D11 | Tabeller `settings:manage`; drivstoffdata `claims:analyze`; lesing `claims:read`; ingen API-nøkler | ruter |
+| D12 | Begge flagg på som standard; en lesefeil teller som av | register og migrering |
+| D13 | Medfølgende historikk i `api/data/public-prices/` (`-text`), kopiert inn i API-imaget | `.gitattributes`, `Dockerfile` |
+
+D1, D2, D5, D8, D11 og D12 venter på eierens bekreftelse (OQ2).
+
+## Utsatt (steg 7)
+
+Regionale dieselpriser (PADD; EIA tilbyr historikken bare som XLS; OQ5); prognoser for PPI dyphavsfrakt og
+rater per rute; planlagte eller automatiske importer; en plattformrute for opplasting av priser; uttrekking av
+miles eller sendingsdato fra dokumenter; ny kontroll av pakker som allerede er analysert; drivstofftillegg i
+andre valutaer enn USD; kanadiske priser (NRCan); andre intervallmetoder; varsler; en versjonshistorikktabell
+for drivstofftabeller (hashen `paramsSha256` holder parameterne sporbare inntil videre); visning av
+importens kildetype i brukergrensesnittet.
+
+## Grensesnitt for senere steg (etter steg 7)
+
+- `packet_findings.rule_id` kan nå også være `FSC-INDEX-MISMATCH` (`FUEL_RULE_IDS`), versjonert med
+  `FUEL_CHECK_VERSION` `fsc-v1`. Utsikten er versjonert med `OUTLOOK_VERSION` `outlook-v1`.
+- En ny prisserie trenger en oppføring i `PRICE_SERIES` med fast URL, en ny CHECK for parene i
+  `price_imports` (ny migrering), medfølgende data og en manifestoppføring hvis terskelen skal dekke den, og,
+  for bruk i FSC, at serien lastes etter tabellens `priceSeries` (i dag laster rutene bare `diesel_us`).
+- En endring av horisont, kandidat eller terskelkonstant endrer de låste backtesttallene og CI-grensene
+  samtidig; kjør `eval:outlook` på nytt og dokumenter den nye tabellen.
+- Uttrekking av miles og sendingsdato fra dokumenter vil kreve nye feltnøkler for uttrekking, en migrering av
+  listen over tillatte nøkler og et registrert paritetsavvik for uttrekking, som de utsatte tariffvilkårene i
+  steg 6.
+
+## Merknader (steg 7)
+
+- Hva som ble kjørt (lokalt, Windows, Node 22.23.3, **ikke GitHub CI**; modus for lite minne, så tunge
+  testsett ble ikke kjørt):
+  - Byggeren ved `cbb340f`: lint og typecheck rene i hele repoet (akseptansefilene medregnet); utvalgte
+    enhetstester besto (shared fuel og outlook; api `outlook-eval-cli`, `fuel-outlook-units` og de berørte
+    låsingene; nett fuel, outlook, charges, analysis og ui, 35 tester); `prisma generate`; `prisma migrate
+    diff` fra skjemaet ved `5f7eb7e` (ingen database). `eval:outlook` `main()` med CI-grensene gir
+    avslutningskode 0; en manipulert kopi, et ugyldig manifest, en sti som rømmer og en manglende katalog gir
+    2; for stramme grenser gir 1. Alle låste tall gjenskapes.
+  - Testeren, nivå L ved `cbb340f` (etter rettingen av D1 i `d87db5e`), `dist` for shared bygget på nytt: hele
+    akseptanseprosjektet for shared **263/263** (17 filer), api `outlook-eval-cli` og `fuel-static`
+    **13/13**; eslint på de tre akseptansekatalogene avslutningskode 0; tsc 0 feil for shared, api og web.
+    Første kjøring hadde 22 feil, alle fra én produktfeil D1 (`checkFuel` returnerte en innpakning i stedet
+    for `FuelCheckResult`), rettet uten å endre noen test. Uavhengige orakler (BigInt-rasjonaler for FSC, en
+    separat implementasjon av AR(2), DM og intervaller for utsikten) gjenskaper alle låste tall.
+  - Sikkerhetsgjennomgang av `5f7eb7e..cbb340f` (statisk): ingen Critical, High eller Medium. L1, L2 og I1
+    ble rettet i `1a95245`; I2, I3 og I4 ble akseptert.
+  - Byggeren ved `1a95245` (rettingsrunde 1): lint og typecheck rene; 52 enhetstester i api besto
+    (`fuel-outlook-units`, `analysis-units`, `outlook-eval-cli` inkludert kjøringen med CI-grensene,
+    `audit-chain`, `seed`). Testerens kjøring på nivå L er eldre enn denne commiten.
+- **Ikke kjørt ennå (nivå H, venter på eierens klarsignal, OQ4):** `npm run build` og den bygde
+  `eval:outlook`; `api/test/integration/fuel-outlook.int.test.ts` (RLS FORCE, tilganger, avvisning på tvers
+  av tenanter, bare utvidelse også for eieren, CHECK for fast URL, import fra ende til ende, 403 for
+  API-nøkler, avvisningen fra L1) og de tilføyde låsingene i tre andre integrasjonsfiler; akseptansefilene
+  på nivå H (API, database, import, nett); paritetstestene; kontrollen av migreringsavvik mot en
+  skyggedatabase; `verify-ci-locally`. Isolasjonen på databasenivå for de to nye tenanttabellene og
+  utvidelsesregelen for pristabellene er derfor kontrollert med kodegjennomgang og enhetstester alene. Da
+  dette ble skrevet, hadde testerens arbeidskatalog ikke-committede oppdateringer på nivå H for tilleggene i
+  kontrakten fra rettingsrunden (`paramsSha256`, `revisions_refused`).
+- Steg 5 og 6 venter fortsatt på sine egne tunge valideringskjøringer.
+- Gjennomgangens vurdering: venter (gjennomgåeren kjører etter denne dokumentasjonen).
+- Ikke verifisert: GitHub CI, container-images, compose-stacken, Playwright, enhver AWS-utrulling.
