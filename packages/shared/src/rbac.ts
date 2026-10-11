@@ -53,6 +53,9 @@ export const PERMISSIONS = [
   'claims:analyze',
   // Step 6 (REQ-20261011-charge-intelligence): confirm/correct charge-line categories (tenant labels).
   'charge_labels:manage',
+  // Step 8 (REQ-20261011-ocean-dd): enter/import/edit D&D invoices; maintain D&D tariffs and calendars.
+  'dd_invoices:manage',
+  'dd_tariffs:manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -81,6 +84,8 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'apikeys:manage',
     'claims:analyze',
     'charge_labels:manage',
+    'dd_invoices:manage',
+    'dd_tariffs:manage',
   ] as const),
   ADMIN: Object.freeze([
     'claims:read',
@@ -101,6 +106,8 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'apikeys:manage',
     'claims:analyze',
     'charge_labels:manage',
+    'dd_invoices:manage',
+    'dd_tariffs:manage',
   ] as const),
   MANAGER: Object.freeze([
     'claims:read',
@@ -115,6 +122,8 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'export:outcomes',
     'claims:analyze',
     'charge_labels:manage',
+    'dd_invoices:manage',
+    'dd_tariffs:manage',
   ] as const),
   REVIEWER: Object.freeze([
     'claims:read',
@@ -127,9 +136,12 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'export:outcomes',
     'claims:analyze',
     'charge_labels:manage',
+    'dd_invoices:manage',
+    'dd_tariffs:manage',
   ] as const),
   // Step 5 policy D1: ANALYST may run the analysis (creates a draft only; cannot approve).
-  ANALYST: Object.freeze(['claims:read', 'import:run', 'export:claims', 'claims:analyze'] as const),
+  // Step 8 policy D7: ANALYST may enter D&D invoices (not tariffs/calendars).
+  ANALYST: Object.freeze(['claims:read', 'import:run', 'export:claims', 'claims:analyze', 'dd_invoices:manage'] as const),
   VIEWER: Object.freeze(['claims:read'] as const),
   PLATFORM_DEV: Object.freeze(['platform:health', 'platform:flags', 'platform:logs', 'platform:eval'] as const),
   SUPER_ADMIN: Object.freeze([

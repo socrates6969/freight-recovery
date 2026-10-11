@@ -228,6 +228,21 @@ const METADATA_KEYS = new Set([
   // Step 7 fix round 1: changed values of a re-import (L1) and the sha256 of a fuel table's canonical params (L2).
   'revisedValues',
   'paramsSha256',
+  // Step 8 (REQ-20261011-ocean-dd, C15): D&D ids, versions, fixed enumerations, counts and sha256 of the
+  // normalized data / audit snapshot. Never names, invoice numbers or other invoice text. Already listed:
+  // version, claimId, claimNumber, packetId, revision, contentHash, rulesVersion, findingsCount,
+  // pendingFindingsCount, recoverableCents, pendingReviewCents.
+  'tariffId',
+  'calendarId',
+  'invoiceId',
+  'chargeType',
+  'direction',
+  'tierCount',
+  'closedCount',
+  'shutoutCount',
+  'containerCount',
+  'dataSha256',
+  'snapshotSha256',
 ]);
 const MAX_STRING = 2000;
 

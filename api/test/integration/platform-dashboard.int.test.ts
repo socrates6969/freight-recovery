@@ -212,7 +212,7 @@ describe.skipIf(!canRunDb)('Dev dashboard routes R60-R68 (PostgreSQL)', () => {
 
   it('flags: stale version, same value, unknown key, invalid reason, CSRF, then a real change audited in the same transaction', async () => {
     const list = (await c.get('/api/v1/platform/flags', dev)).json() as { items: { key: string; enabled: boolean; version: number }[] };
-    expect(list.items.map((f) => f.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+    expect(list.items.map((f) => f.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
     const f = list.items.find((x) => x.key === 'intelligence.provenance');
     if (!f) throw new Error('missing flag');
     const url = '/api/v1/platform/flags/intelligence.provenance';

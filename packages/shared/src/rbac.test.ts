@@ -46,6 +46,9 @@ const Y: Record<Permission, readonly Role[]> = {
   // Step 5 (P4, policy D1): no VIEWER, no platform role, no API-key scope.
   'claims:analyze': ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER', 'ANALYST'],
   'charge_labels:manage': ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER'],
+  // Step 8 (REQ-20261011-ocean-dd, C14, policy D7): no VIEWER, no platform role.
+  'dd_invoices:manage': ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER', 'ANALYST'],
+  'dd_tariffs:manage': ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER'],
 };
 
 describe('permission matrix', () => {

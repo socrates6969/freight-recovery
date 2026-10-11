@@ -397,6 +397,20 @@ describe('auditDdInvoice (C5, C6) - synthetic invoices', () => {
     expect(r.checks.find((x) => x.id === 'part541')).toMatchObject({ status: 'not_evaluated', reason: 'no_invoice_date' });
     expect(r.checks.find((x) => x.id === 'total')).toMatchObject({ status: 'not_evaluated', reason: 'no_total' });
     expect(r.checks.filter((x) => x.id === 'tariff').map((x) => x.reason)).toEqual([null, 'no_dates']);
+    // C6 order: invoice-level checks, then each container's checks grouped, in container order.
+    expect(r.checks.map((x) => `${x.id}:${x.containerIndex ?? '-'}`)).toEqual([
+      'part541:-',
+      'content:-',
+      'issuance:-',
+      'total:-',
+      'line_arithmetic:-',
+      'tariff:0',
+      'availability:0',
+      'return_refused:0',
+      'tariff:1',
+      'availability:1',
+      'return_refused:1',
+    ]);
   });
 
   it('Part 541 does not apply before 2024-05-28', () => {

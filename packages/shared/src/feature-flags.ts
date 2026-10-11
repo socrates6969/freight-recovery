@@ -19,6 +19,8 @@ export const FEATURE_FLAGS = Object.freeze([
   // Step 7 (REQ-20261011-fuel-outlook): cost outlook page and fuel tables / fuel-surcharge check.
   Object.freeze({ key: 'intelligence.cost_outlook', description: 'Cost outlook from public price data', defaultEnabled: true, tenantVisible: true }),
   Object.freeze({ key: 'intelligence.fuel_check', description: 'Fuel tables and fuel-surcharge check', defaultEnabled: true, tenantVisible: true }),
+  // Step 8 (REQ-20261011-ocean-dd): kill switch of the ocean D&D routes (existing OCEAN_DD claims stay usable).
+  Object.freeze({ key: 'intelligence.ocean_dd', description: 'Ocean demurrage and detention invoice audit', defaultEnabled: true, tenantVisible: true }),
   Object.freeze({ key: 'intelligence.provenance', description: 'Provenance summary on the claim sheet', defaultEnabled: true, tenantVisible: true }),
   Object.freeze({ key: 'intelligence.similar_claims', description: 'Similar past claims on the claim sheet', defaultEnabled: true, tenantVisible: true }),
   Object.freeze({ key: 'intelligence.worklist', description: 'Prioritised worklist page', defaultEnabled: true, tenantVisible: true }),

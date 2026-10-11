@@ -38,13 +38,14 @@ import { registerImportRoutes } from './imports/routes.js';
 import { ChildProcessExecutor, type ParseExecutor } from './imports/sandbox/executor.js';
 import { KeyedGate } from './imports/sandbox/semaphore.js';
 import { TenantScopeError } from './db/errors.js';
-import { isAnalysisDbError, isFourEyesDbError } from './http/db-guard.js';
+import { isAnalysisDbError, isDdDbError, isFourEyesDbError } from './http/db-guard.js';
 import { ERROR_MESSAGES, FourEyesRefusal, HttpError, errors } from './http/errors.js';
 import { enforceRouteAccess, requireTenant, zodDetails } from './http/route.js';
 import { registerSecurityHeaders, registerSecurityPipeline, type Limiter } from './http/security.js';
 import { registerChargeRoutes } from './intelligence/charge-routes.js';
 import { registerFuelRoutes } from './intelligence/fuel-routes.js';
 import { registerOutlookRoutes } from './intelligence/outlook-routes.js';
+import { registerOceanDdRoutes } from './ocean-dd/routes.js';
 import { registerIntelligenceRoutes } from './intelligence/routes.js';
 import { createLogger } from './logging.js';
 import { MetricsRegistry, UNMATCHED_ROUTE, ZERO_PARSER_COUNTERS } from './observability/metrics.js';
@@ -106,6 +107,8 @@ export function toHttpError(err: unknown): HttpError {
     ANALYSIS_GUARD_ERRORS.add(mapped);
     return mapped;
   }
+  // Step 8 D&D guards (AUDITED invoice immutable, claim kind fixed): plain 409 invalid_state.
+  if (isDdDbError(err)) return errors.invalidState();
   const fe = err as Partial<FastifyError> & { code?: string; statusCode?: number };
   switch (fe.code) {
     case 'FST_ERR_CTP_BODY_TOO_LARGE':
@@ -408,6 +411,8 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   // Step 7 (REQ-20261011-fuel-outlook): fuel tables, claim fuel inputs, fuel-check view and the cost outlook.
   registerFuelRoutes(app, { flags, prices });
   registerOutlookRoutes(app, { flags, prices });
+  // Step 8 (REQ-20261011-ocean-dd): ocean D&D tariffs, calendars, invoices and the audit run (flag-gated).
+  registerOceanDdRoutes(app, { flags });
 
   app.addHook('onClose', async () => {
     await base.$disconnect();

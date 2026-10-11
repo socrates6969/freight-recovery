@@ -8,6 +8,8 @@
 export const GUARD_SQLSTATE = 'P0001';
 export const FOUR_EYES_DB_MESSAGES: ReadonlySet<string> = new Set(['four_eyes_required']);
 export const ANALYSIS_DB_MESSAGES: ReadonlySet<string> = new Set(['claim_transition_invalid', 'analysis_packet_invalid']);
+/** Step 8 (REQ-20261011-ocean-dd, migration 20261016000000_ocean_dd): D&D invoice and claim-kind guards. */
+export const DD_DB_MESSAGES: ReadonlySet<string> = new Set(['dd_invoice_immutable', 'dd_invoice_claim_invalid', 'dd_invoice_insert_invalid', 'claim_kind_immutable']);
 
 /** Bound on how far the error chain is followed (cause / meta / driverAdapterError links). */
 const MAX_ERROR_CHAIN_DEPTH = 5;
@@ -43,4 +45,9 @@ export function isFourEyesDbError(err: unknown): boolean {
 /** A step-5 analysis guard raise: SQLSTATE P0001 and message exactly `claim_transition_invalid` or `analysis_packet_invalid`. */
 export function isAnalysisDbError(err: unknown): boolean {
   return isTriggerRaise(err, GUARD_SQLSTATE, ANALYSIS_DB_MESSAGES);
+}
+
+/** A step-8 D&D guard raise (exact message match): the service checks were bypassed. */
+export function isDdDbError(err: unknown): boolean {
+  return isTriggerRaise(err, GUARD_SQLSTATE, DD_DB_MESSAGES);
 }

@@ -40,6 +40,8 @@ export const ERROR_MESSAGES = {
   fuel_table_limit_reached: 'This organization has reached the maximum number of fuel tables.',
   fuel_table_unavailable: 'The fuel table does not exist or is archived.',
   miles_required: 'Miles are required for a per-mile fuel table.',
+  // Step 8 (REQ-20261011-ocean-dd, C13)
+  dd_limit_reached: 'This organization has reached the maximum number of D&D tariffs or calendars.',
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;
@@ -116,6 +118,7 @@ export const errors = {
   fuelTableLimitReached: () => new HttpError(409, 'fuel_table_limit_reached'),
   fuelTableUnavailable: () => new HttpError(422, 'fuel_table_unavailable'),
   milesRequired: () => new HttpError(422, 'miles_required'),
+  ddLimitReached: () => new HttpError(409, 'dd_limit_reached'),
   serviceUnavailable: () => new HttpError(503, 'service_unavailable'),
   parserBusy: () => new HttpError(503, 'parser_busy', { retryAfterSeconds: 5 }),
   accountLocked: (retryAfterSeconds: number) => new HttpError(429, 'account_locked', { retryAfterSeconds }),

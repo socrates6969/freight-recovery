@@ -602,7 +602,8 @@ export function auditDdInvoice(input: DdAuditInput): DdAuditResult {
     }
   }
 
-  // Checks (C6), in table order; per-container rows repeat for every container.
+  // Checks (C6): invoice-level checks first, then per container in container order, each container's checks
+  // grouped together (tariff, availability, return_refused).
   if (!part541) check('part541', null, 'not_applicable', 'before_effective_date');
   else if (invoice.invoiceDate === null) check('part541', null, 'not_evaluated', 'no_invoice_date');
   else check('part541', null, 'ok');
@@ -615,12 +616,8 @@ export function auditDdInvoice(input: DdAuditInput): DdAuditResult {
   for (const c of calcs) {
     if (c.charge === null) check('tariff', c.index, 'not_evaluated', c.reason);
     else check('tariff', c.index, c.tariffCut > 0 ? 'finding' : 'ok');
-  }
-  for (const c of calcs) {
     const a = availReason.get(c.index) ?? { status: 'not_applicable' as const, reason: 'not_import_demurrage' };
     check('availability', c.index, a.status, a.reason);
-  }
-  for (const c of calcs) {
     const ctr = containers[c.index];
     if (!ctr || ctr.chargeType !== 'DETENTION') check('return_refused', c.index, 'not_applicable', 'not_detention');
     else if (ctr.evidence.emptyReturnRefusedDates.length === 0) check('return_refused', c.index, 'not_evaluated', 'no_evidence');

@@ -206,6 +206,18 @@ describe('architecture', () => {
     }
   });
 
+  it('ocean D&D code reads only through the tenant transaction (step 8, REQ-20261011-ocean-dd)', () => {
+    const dd = files.filter((f) => f.path.startsWith('src/ocean-dd/'));
+    expect(dd.length).toBeGreaterThanOrEqual(3);
+    for (const f of dd) {
+      for (const spec of imports(f.text)) {
+        const target = resolves(f.path, spec);
+        expect([f.path, spec, /db\/(system|client)(\.js)?$/u.test(target) || /generated\/prisma|@prisma\//u.test(spec)]).toEqual([f.path, spec, false]);
+      }
+      expect([f.path, /\b(PrismaClient|BaseClient|withSystemTx|withTenantTx\s*\(|\$queryRaw|\$executeRaw|unwrapRawTx)\b/u.test(f.text)]).toEqual([f.path, false]);
+    }
+  });
+
   it('no learning, speed-up or accuracy claims appear in source (honest labeling, Q8)', () => {
     const FORBIDDEN = [
       /neural mesh/iu,

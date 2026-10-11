@@ -70,6 +70,15 @@ export const AUDIT_ACTIONS = [
   'claim.fuel_inputs_set',
   'claim.fuel_inputs_cleared',
   'price_data.imported',
+  // Step 8 (REQ-20261011-ocean-dd): D&D tariffs, calendars and invoices (tenant chain), in C15 order.
+  'dd_tariff.created',
+  'dd_tariff.updated',
+  'dd_calendar.created',
+  'dd_calendar.updated',
+  'dd_invoice.created',
+  'dd_invoice.updated',
+  'dd_invoice.deleted',
+  'dd_invoice.audited',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
