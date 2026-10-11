@@ -38,6 +38,10 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   // (PriceImport, PriceObservation) stay out: the tenant client cannot reach them.
   'FscTable',
   'ClaimFuelInput',
+  // Step 8 (REQ-20261011-ocean-dd): tenant D&D tariffs, terminal calendars and D&D invoices.
+  'DdTariff',
+  'DdCalendar',
+  'DdInvoice',
 ]);
 
 const TENANT_READ_OPS: ReadonlySet<string> = new Set(['findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow']);
@@ -160,6 +164,9 @@ export type TenantTx = Pick<
   | 'chargeLabel'
   | 'fscTable'
   | 'claimFuelInput'
+  | 'ddTariff'
+  | 'ddCalendar'
+  | 'ddInvoice'
 >;
 
 const RAW = Symbol('fr.rawTx');

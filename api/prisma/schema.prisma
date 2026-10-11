@@ -40,6 +40,12 @@ enum TenantStatus {
   SUSPENDED
 }
 
+// Step 8 (REQ-20261011-ocean-dd): OCEAN_DD claims come from the D&D invoice audit; fixed at creation (trigger).
+enum ClaimKind {
+  FREIGHT
+  OCEAN_DD
+}
+
 enum Perspective {
   SHIPPER
   CARRIER
@@ -196,6 +202,9 @@ model Tenant {
   chargeLabels    ChargeLabel[]
   fscTables       FscTable[]
   claimFuelInputs ClaimFuelInput[]
+  ddTariffs       DdTariff[]
+  ddCalendars     DdCalendar[]
+  ddInvoices      DdInvoice[]
 
   @@map("tenants")
 }
@@ -235,6 +244,12 @@ model User {
   fscTablesUpdated    FscTable[]             @relation("FscTableUpdatedBy")
   fuelInputsCreated   ClaimFuelInput[]       @relation("ClaimFuelInputCreatedBy")
   fuelInputsUpdated   ClaimFuelInput[]       @relation("ClaimFuelInputUpdatedBy")
+  ddTariffsCreated    DdTariff[]             @relation("DdTariffCreatedBy")
+  ddTariffsUpdated    DdTariff[]             @relation("DdTariffUpdatedBy")
+  ddCalendarsCreated  DdCalendar[]           @relation("DdCalendarCreatedBy")
+  ddCalendarsUpdated  DdCalendar[]           @relation("DdCalendarUpdatedBy")
+  ddInvoicesCreated   DdInvoice[]            @relation("DdInvoiceCreatedBy")
+  ddInvoicesUpdated   DdInvoice[]            @relation("DdInvoiceUpdatedBy")
 
   @@map("users")
 }
@@ -377,6 +392,7 @@ model Claim {
   id                 String      @id @default(uuid()) @db.Uuid
   tenantId           String      @map("tenant_id") @db.Uuid
   claimNumber        String      @map("claim_number")
+  kind               ClaimKind   @default(FREIGHT)
   loadNumber         String?     @map("load_number")
   invoiceNumber      String?     @map("invoice_number")
   invoiceDate        DateTime?   @map("invoice_date") @db.Timestamptz(3)
@@ -399,6 +415,7 @@ model Claim {
   approvals  Approval[]
   documents  ClaimDocument[]
   fuelInputs ClaimFuelInput[]
+  ddInvoice  DdInvoice?
 
   @@unique([tenantId, claimNumber])
   @@unique([id, tenantId])
@@ -895,4 +912,89 @@ model PriceObservation {
 
   @@id([importId, periodDate])
   @@map("price_observations")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 8 (REQ-20261011-ocean-dd): ocean demurrage and detention invoices, tariffs and terminal calendars.
+// Tenant tables (RLS FORCE, tenant policy, column grants); AUDITED invoices are immutable (trigger).
+// ---------------------------------------------------------------------------------------------
+
+model DdTariff {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  carrier     String
+  chargeType  String   @map("charge_type")
+  direction   String
+  data        Json
+  version     Int      @default(1)
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedById String   @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  createdBy User        @relation("DdTariffCreatedBy", fields: [createdById], references: [id])
+  updatedBy User        @relation("DdTariffUpdatedBy", fields: [updatedById], references: [id])
+  invoices  DdInvoice[]
+
+  @@unique([tenantId, name])
+  @@unique([id, tenantId])
+  @@map("dd_tariffs")
+}
+
+model DdCalendar {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  data        Json
+  version     Int      @default(1)
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedById String   @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  createdBy User        @relation("DdCalendarCreatedBy", fields: [createdById], references: [id])
+  updatedBy User        @relation("DdCalendarUpdatedBy", fields: [updatedById], references: [id])
+  invoices  DdInvoice[]
+
+  @@unique([tenantId, name])
+  @@unique([id, tenantId])
+  @@map("dd_calendars")
+}
+
+model DdInvoice {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  status           String    @default("DRAFT")
+  invoiceNumber    String    @map("invoice_number")
+  billingPartyName String    @map("billing_party_name")
+  invoiceDate      DateTime? @map("invoice_date") @db.Date
+  totalDueCents    Int?      @map("total_due_cents")
+  data             Json
+  tariffId         String?   @map("tariff_id") @db.Uuid
+  calendarId       String?   @map("calendar_id") @db.Uuid
+  claimId          String?   @unique @map("claim_id") @db.Uuid
+  auditedAt        DateTime? @map("audited_at") @db.Timestamptz(3)
+  auditSnapshot    Json?     @map("audit_snapshot")
+  version          Int       @default(1)
+  createdById      String    @map("created_by_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedById      String    @map("updated_by_id") @db.Uuid
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  tariff    DdTariff?   @relation(fields: [tariffId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  calendar  DdCalendar? @relation(fields: [calendarId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  claim     Claim?      @relation(fields: [claimId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  createdBy User        @relation("DdInvoiceCreatedBy", fields: [createdById], references: [id])
+  updatedBy User        @relation("DdInvoiceUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([tenantId, billingPartyName, invoiceNumber])
+  @@unique([id, tenantId])
+  // Required by the one-to-one composite relation to claims (claim_id is also unique on its own).
+  @@unique([claimId, tenantId])
+  @@index([tenantId, updatedAt])
+  @@map("dd_invoices")
 }

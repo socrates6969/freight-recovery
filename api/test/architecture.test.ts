@@ -185,8 +185,8 @@ describe('architecture', () => {
   it('platform dashboard modules never touch tenant models or tables (only fr_platform_pipeline_stats)', () => {
     const platformFiles = files.filter((f) => ['src/platform/pipeline.ts', 'src/platform/flags.ts', 'src/platform/eval-read.ts', 'src/platform/dashboard-routes.ts'].includes(f.path));
     expect(platformFiles).toHaveLength(4);
-    const tenantModels = /\.(claim|evidencePacket|packetFinding|packetSource|packetTimelineEvent|approval|importDocument|importBatch|extractedField|importReviewDecision|claimDocument|membership|invite|apiKey|chargeLabel|tenant)\s*\.(find|count|aggregate|group|create|update|delete|upsert)/u;
-    const tenantTables = /\b(FROM|JOIN|INTO|UPDATE)\s+"?(claims|evidence_packets|packet_findings|packet_sources|approvals|import_documents|import_batches|extracted_fields|claim_documents|memberships|invites|api_keys|charge_labels)\b/iu;
+    const tenantModels = /\.(claim|evidencePacket|packetFinding|packetSource|packetTimelineEvent|approval|importDocument|importBatch|extractedField|importReviewDecision|claimDocument|membership|invite|apiKey|chargeLabel|ddTariff|ddCalendar|ddInvoice|tenant)\s*\.(find|count|aggregate|group|create|update|delete|upsert)/u;
+    const tenantTables = /\b(FROM|JOIN|INTO|UPDATE)\s+"?(claims|evidence_packets|packet_findings|packet_sources|approvals|import_documents|import_batches|extracted_fields|claim_documents|memberships|invites|api_keys|charge_labels|dd_tariffs|dd_calendars|dd_invoices)\b/iu;
     for (const f of platformFiles) {
       expect([f.path, tenantModels.test(f.text)]).toEqual([f.path, false]);
       expect([f.path, tenantTables.test(f.text)]).toEqual([f.path, false]);

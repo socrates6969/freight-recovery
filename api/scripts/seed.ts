@@ -179,6 +179,10 @@ async function resetSeedData(base: BaseClient): Promise<void> {
     await tx.$executeRaw`DELETE FROM packet_timeline_events WHERE tenant_id = ANY(${ids}::uuid[])`;
     await tx.$executeRaw`DELETE FROM packet_sources WHERE tenant_id = ANY(${ids}::uuid[])`;
     await tx.$executeRaw`DELETE FROM evidence_packets WHERE tenant_id = ANY(${ids}::uuid[])`;
+    // Step 8 (REQ-20261011-ocean-dd): D&D invoices reference claims, tariffs and calendars (seed creates none).
+    await tx.$executeRaw`DELETE FROM dd_invoices WHERE tenant_id = ANY(${ids}::uuid[]) OR created_by_id = ANY(${userIds}::uuid[]) OR updated_by_id = ANY(${userIds}::uuid[])`;
+    await tx.$executeRaw`DELETE FROM dd_calendars WHERE tenant_id = ANY(${ids}::uuid[]) OR created_by_id = ANY(${userIds}::uuid[]) OR updated_by_id = ANY(${userIds}::uuid[])`;
+    await tx.$executeRaw`DELETE FROM dd_tariffs WHERE tenant_id = ANY(${ids}::uuid[]) OR created_by_id = ANY(${userIds}::uuid[]) OR updated_by_id = ANY(${userIds}::uuid[])`;
     await tx.$executeRaw`DELETE FROM claims WHERE tenant_id = ANY(${ids}::uuid[])`;
     // Step 4: tenant API keys of the seed tenants/users; flags back to their registry defaults (version 1).
     await tx.$executeRaw`DELETE FROM api_keys WHERE tenant_id = ANY(${ids}::uuid[]) OR created_by_id = ANY(${userIds}::uuid[]) OR revoked_by_id = ANY(${userIds}::uuid[])`;

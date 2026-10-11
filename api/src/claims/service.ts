@@ -30,6 +30,7 @@ const SUMMARY_INCLUDE = {
 interface SummaryRow {
   id: string;
   claimNumber: string;
+  kind: 'FREIGHT' | 'OCEAN_DD';
   loadNumber: string | null;
   invoiceNumber: string | null;
   invoiceDate: Date | null;
@@ -52,6 +53,7 @@ export function toClaimSummary(c: SummaryRow): ClaimSummaryDto {
   return {
     id: c.id,
     claimNumber: c.claimNumber,
+    kind: c.kind,
     loadNumber: c.loadNumber,
     invoiceNumber: c.invoiceNumber,
     carrierName: c.carrierName,

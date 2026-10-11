@@ -153,11 +153,20 @@ export type DdPeriodDto = z.output<typeof DdPeriod>;
 export const DdInvoiceBody = z.strictObject({ ...invoiceShape, tariffId: uuid.nullable(), calendarId: uuid.nullable() });
 export type DdInvoiceBodyDto = z.output<typeof DdInvoiceBody>;
 
-/** `https://` URL without credentials or whitespace that `new URL` accepts. */
+/** The WHATWG URL constructor (Node and browsers); the package is built without DOM or Node types. */
+interface UrlLike {
+  protocol: string;
+  username: string;
+  password: string;
+  hostname: string;
+}
+const URL_CTOR = (globalThis as unknown as { URL?: new (input: string) => UrlLike }).URL;
+
+/** `https://` URL without credentials or whitespace that `new URL` accepts (fails closed without URL). */
 function isHttpsUrl(v: string): boolean {
-  if (!v.startsWith('https://') || /\s/u.test(v)) return false;
+  if (URL_CTOR === undefined || !v.startsWith('https://') || /\s/u.test(v)) return false;
   try {
-    const u = new URL(v);
+    const u = new URL_CTOR(v);
     return u.protocol === 'https:' && u.username === '' && u.password === '' && u.hostname !== '';
   } catch {
     return false;

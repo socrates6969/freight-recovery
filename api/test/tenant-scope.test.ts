@@ -66,6 +66,17 @@ describe('tenant scope (fail-closed Prisma extension logic)', () => {
     expect(() => scopeArgs('ChargeLabel', 'update', { where: { id: 'x' }, data: { tenantId: OTHER } }, T)).toThrow(TenantScopeError);
   });
 
+  it('classifies the step-8 D&D models as tenant-scoped (REQ-20261011-ocean-dd)', () => {
+    for (const m of ['DdTariff', 'DdCalendar', 'DdInvoice']) {
+      expect([m, TENANT_MODELS.has(m)]).toEqual([m, true]);
+      expect(scopeArgs(m, 'findFirst', { where: { id: 'x' } }, T)).toEqual({ where: { id: 'x', tenantId: T } });
+      expect(scopeArgs(m, 'count', {}, T)).toEqual({ where: { tenantId: T } });
+      expect(() => scopeArgs(m, 'create', { data: { tenantId: OTHER } }, T)).toThrow(TenantScopeError);
+      expect(() => scopeArgs(m, 'updateMany', { where: { id: 'x' }, data: { tenantId: OTHER } }, T)).toThrow(TenantScopeError);
+      expect(() => scopeArgs(m, 'create', { data: { tenant: { connect: { id: OTHER } } } }, T)).toThrow(TenantScopeError);
+    }
+  });
+
   it('allows Tenant only as a read of the own tenant', () => {
     expect(scopeArgs('Tenant', 'findUnique', { where: { id: T } }, T)).toEqual({ where: { id: T } });
     expect(scopeArgs('Tenant', 'findFirst', {}, T)).toEqual({ where: { id: T } });

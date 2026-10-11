@@ -398,9 +398,11 @@ export async function analyzeClaim(
 ): Promise<AnalyzeResponseDto> {
   if (!isUuid(claimId)) throw errors.notFound();
   if (!(await lockClaimForUpdate(tx, claimId))) throw errors.notFound();
-  const claim = await tx.claim.findFirst({ where: { id: claimId }, select: { id: true, tenantId: true, status: true, perspective: true, claimNumber: true } });
+  const claim = await tx.claim.findFirst({ where: { id: claimId }, select: { id: true, tenantId: true, status: true, perspective: true, claimNumber: true, kind: true } });
   if (!claim) throw errors.notFound();
   if (claim.status !== 'AWAITING_ANALYSIS') throw errors.invalidState();
+  // Step 8 (REQ-20261011-ocean-dd, C17): OCEAN_DD claims are never analysed by the freight rules.
+  if (claim.kind !== 'FREIGHT') throw errors.invalidState();
   if (await tx.evidencePacket.findFirst({ where: { claimId }, select: { id: true } })) throw errors.invalidState();
   const input = await loadAnalysisInput(tx, claimId);
   if (input.sources.length === 0) throw errors.invalidState();
@@ -521,7 +523,7 @@ export async function analyzeAwaiting(
   const take = Math.min(SCAN_FACTOR * limit, SCAN_CAP);
   const candidates = await db.tx((tx) =>
     tx.claim.findMany({
-      where: { status: 'AWAITING_ANALYSIS', documents: { some: { document: { status: 'ACCEPTED' } } } },
+      where: { status: 'AWAITING_ANALYSIS', kind: 'FREIGHT', documents: { some: { document: { status: 'ACCEPTED' } } } },
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
       take,
       select: { id: true, claimNumber: true },
