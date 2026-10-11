@@ -138,7 +138,7 @@ export const rowCounts = async (c: PgClient, tables: string[]) => {
   for (const t of tables) out[t] = Number((await c.query(`select count(*)::int n from "${t}"`)).rows[0].n);
   return out;
 };
-export const NON_AUDIT_TABLES = ['tenants', 'users', 'memberships', 'invites', 'claims', 'evidence_packets', 'packet_sources', 'packet_findings', 'approvals', 'import_batches', 'import_documents', 'extracted_fields', 'claim_documents', 'feature_flags', 'eval_runs', 'eval_case_results'];
+export const NON_AUDIT_TABLES = ['tenants', 'users', 'memberships', 'invites', 'claims', 'evidence_packets', 'packet_sources', 'packet_findings', 'approvals', 'import_batches', 'import_documents', 'extracted_fields', 'claim_documents', 'feature_flags', 'eval_runs', 'eval_case_results', 'charge_labels'];
 
 // ---------------------------------------------------------------------------------------------
 // Log capture
@@ -377,8 +377,10 @@ export async function loadOClaims(tenantId: string): Promise<OClaim[]> {
 // ---------------------------------------------------------------------------------------------
 // Flags
 // ---------------------------------------------------------------------------------------------
-export const FLAG_KEYS = ['intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist'] as const;
+// REQ-20261011-charge-intelligence C10: intelligence.charge_suggestions added (registry is ordered by key).
+export const FLAG_KEYS = ['intelligence.charge_suggestions', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist'] as const;
 export const FLAG_DESCRIPTIONS: Record<string, string> = {
+  'intelligence.charge_suggestions': 'Charge-line suggestions and team labels',
   'intelligence.provenance': 'Provenance summary on the claim sheet',
   'intelligence.similar_claims': 'Similar past claims on the claim sheet',
   'intelligence.worklist': 'Prioritised worklist page',

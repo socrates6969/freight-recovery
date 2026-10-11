@@ -1,11 +1,12 @@
 // Test-owned oracle for the permission matrix (C2) and canonical DTO examples (C3/C4).
+// REQ-20261011-charge-intelligence C8: charge_labels:manage added for OWNER, ADMIN, MANAGER, REVIEWER (additive).
 export const ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER', 'ANALYST', 'VIEWER', 'PLATFORM_DEV', 'SUPER_ADMIN'] as const;
 export type Role = (typeof ROLES)[number];
 export const EXPECTED: Record<Role, string[]> = {
-  OWNER: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'admins:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'billing:manage', 'tenant:delete', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage'],
-  ADMIN: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage'],
-  MANAGER: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes'],
-  REVIEWER: ['claims:read', 'claims:analyze', 'packets:edit', 'packets:approve', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes'],
+  OWNER: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'admins:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'billing:manage', 'tenant:delete', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage', 'charge_labels:manage'],
+  ADMIN: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage', 'charge_labels:manage'],
+  MANAGER: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'charge_labels:manage'],
+  REVIEWER: ['claims:read', 'claims:analyze', 'packets:edit', 'packets:approve', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'charge_labels:manage'],
   ANALYST: ['claims:read', 'claims:analyze', 'import:run', 'export:claims'],
   VIEWER: ['claims:read'],
   PLATFORM_DEV: ['platform:health', 'platform:flags', 'platform:logs', 'platform:eval'],

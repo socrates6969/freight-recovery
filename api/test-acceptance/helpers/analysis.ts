@@ -20,7 +20,11 @@ export const MSG = {
 
 export const PACKET_DISCLAIMER =
   'MVP / pre-product output. Extracted values and calculations are unverified against real customer data and must be reviewed by a person before any dispute is sent. This is not legal or financial advice.';
-export const P7_ANALYZED_KEYS = ['claimId', 'claimNumber', 'packetId', 'revision', 'contentHash', 'perspective', 'fromStatus', 'toStatus', 'documentIds', 'findingsCount', 'pendingFindingsCount', 'ignoredFindingsCount', 'recoverableCents', 'pendingReviewCents', 'rulesVersion', 'bulk'];
+export const P7_ANALYZED_KEYS = ['claimId', 'claimNumber', 'packetId', 'revision', 'contentHash', 'perspective', 'fromStatus', 'toStatus', 'documentIds', 'findingsCount', 'pendingFindingsCount', 'ignoredFindingsCount', 'recoverableCents', 'pendingReviewCents', 'rulesVersion', 'bulk',
+  // REQ-20261011-charge-intelligence C9 (additive)
+  'classifierVersion', 'seedVersion', 'tenantLabelCount', 'learnedFindingsCount', 'reviewFlagsCount',
+  // fix round 1 (C9 amended)
+  'learnedLabelIds'];
 export const P7_BULK_KEYS = ['limit', 'examined', 'analyzed', 'skipped', 'failed', 'remaining'];
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 

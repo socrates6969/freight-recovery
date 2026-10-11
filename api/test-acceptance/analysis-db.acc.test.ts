@@ -21,8 +21,9 @@ const FROZEN: Record<string, string> = {
   '20261010000000_intelligence': '4f9717fc5428503c5e005c08cc7808b54514bdf5a077c9c8b98d2e301378d916',
   '20261011000000_four_eyes': '2ad97a26f2b93813773ee990bfb58748d4cd9e6ede1c4631eb0977feb5790d1d',
 };
-// sha256 of schema.prisma at d678827 with comments removed, lines trimmed and blank lines dropped (models/enums/datasource).
-const SCHEMA_NORMALIZED_D678827 = 'a49c5b7d17f62df0146547a5e0fcbff62f11b7842e67c45965b09ada61cd422e';
+// sha256 of schema.prisma at d678827 with comments removed, lines trimmed, internal whitespace runs collapsed and blank
+// lines dropped (models/enums/datasource). REQ-20261011-charge-intelligence pin update: whitespace collapsing added.
+const SCHEMA_NORMALIZED_D678827_WS = '24697067fb307aba98ffdf6153af73e6cd7643c28b83e4237dd14cd39c795a1f';
 
 let app: FastifyInstance;
 let an: Session, rv: Session, m: Session, gx: Session;
@@ -133,9 +134,14 @@ describe('AN-D08 migrations', () => {
     }
     expect(/CREATE\s+(OR\s+REPLACE\s+)?(CONSTRAINT\s+)?TRIGGER/i.test(sql), 'adds triggers').toBe(true);
   });
-  it('schema.prisma has no model change (normalized content equals d678827)', () => {
-    const s = readFileSync(resolve(ROOT, 'api', 'prisma', 'schema.prisma'), 'utf8');
-    const n = s.split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, '').trim()).filter(Boolean).join('\n');
-    expect(createHash('sha256').update(n).digest('hex')).toBe(SCHEMA_NORMALIZED_D678827);
+  it('schema.prisma has no model change besides the step-6 ChargeLabel model (normalized content equals d678827)', () => {
+    // REQ-20261011-charge-intelligence (C10, additive pin update): step 6 adds `model ChargeLabel { ... }` and its
+    // relation fields on Tenant/User. Only those are removed before hashing; everything else must equal d678827.
+    const raw = readFileSync(resolve(ROOT, 'api', 'prisma', 'schema.prisma'), 'utf8');
+    const s = raw.replace(/^model ChargeLabel \{[\s\S]*?^\}[ \t]*$/m, '').split(/\r?\n/).filter((l) => !/\bChargeLabel\b/.test(l)).join('\n');
+    // `prisma format` re-aligns columns when a field is added, so internal whitespace runs are collapsed too. The
+    // pinned value below was computed with this normalization from `git show d678827:api/prisma/schema.prisma`.
+    const n = s.split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, '').trim().replace(/\s+/g, ' ')).filter(Boolean).join('\n');
+    expect(createHash('sha256').update(n).digest('hex')).toBe(SCHEMA_NORMALIZED_D678827_WS);
   });
 });

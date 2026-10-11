@@ -63,6 +63,8 @@ beforeAll(async () => {
 }, 180000);
 afterAll(async () => { try { await K.revokeActive(owner); } finally { await closeApps(); reseed(); } });
 
+// REQ-20261011-charge-intelligence (C6, additive): AnalyzeResponse.analysis gains classifierVersion, learnedFindingsCount,
+// reviewFlagsCount; the step-5 fixtures have no keyword-`other` line, so the step-5 values are unchanged (C4.7).
 describe('AN-A01..A06 analyze an ld5001 SHIPPER claim (ANALYST)', () => {
   it('AN-A01: 201 with the exact AnalyzeResponse; version +1 once', async () => {
     a1 = await A.ld5001Claim(an, rv, 'SHIPPER', 'A1');
@@ -77,7 +79,7 @@ describe('AN-A01..A06 analyze an ld5001 SHIPPER claim (ANALYST)', () => {
     expect(r.body.packet.revision).toBe(1);
     expect(r.body.packet.status).toBe('PENDING_REVIEW');
     expect(r.body.packet.contentHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 3, pendingFindingsCount: 1, ignoredFindingsCount: 0 });
+    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 3, pendingFindingsCount: 1, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0 });
     const row = await A.dbClaim(a1.claimId);
     expect(row.version, 'claim version incremented by exactly 1').toBe(a1verBefore + 1);
     expect(await A.packetRows(a1.claimId)).toEqual([{ revision: 1, created_by_id: an.user.id, status: 'PENDING_REVIEW' }]);
@@ -166,7 +168,7 @@ describe('AN-A07/A08 ld5002 in both perspectives', () => {
     const r = await analyzeOk(an, c, 'none');
     a7 = c;
     expect(r.body.claim).toEqual({ id: c.claimId, status: 'PENDING_REVIEW', recoverableCents: 16250, pendingReviewCents: 0, amountClaimedCents: 16250 });
-    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 1, pendingFindingsCount: 0, ignoredFindingsCount: 0 });
+    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 1, pendingFindingsCount: 0, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0 });
     const p = (await vw.get(`/claims/${c.claimId}/packet`)).body;
     validatePacket(p);
     expect(p.findings.map(projectFinding)).toEqual(LD5002_CARRIER);
@@ -186,7 +188,7 @@ describe('AN-A07/A08 ld5002 in both perspectives', () => {
     const c = await A.ld5002Claim(an, rv, 'SHIPPER', 'A8');
     const r = await analyzeOk(an, c, {});
     expect(r.body.claim).toEqual({ id: c.claimId, status: 'PENDING_REVIEW', recoverableCents: 0, pendingReviewCents: 0, amountClaimedCents: 0 });
-    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 0, pendingFindingsCount: 0, ignoredFindingsCount: 1 });
+    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 0, pendingFindingsCount: 0, ignoredFindingsCount: 1, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0 });
     const p = (await vw.get(`/claims/${c.claimId}/packet`)).body;
     validatePacket(p);
     expect(p.findings).toEqual([]);
@@ -325,6 +327,8 @@ describe('AN-U01..U04 audit', () => {
       documentIds: p.sources.map((s: any) => docIdBySha.get(s.sha256)),
       findingsCount: 3, pendingFindingsCount: 1, ignoredFindingsCount: 0, recoverableCents: 32500, pendingReviewCents: 15000,
       rulesVersion: 'rules-v1', bulk: false,
+      // REQ-20261011-charge-intelligence C9 (additive): ld5001 has no keyword-`other` line, so nothing is learned
+      classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v1', tenantLabelCount: 0, learnedFindingsCount: 0, reviewFlagsCount: 0, learnedLabelIds: [],
     });
     expect(e.metadata.contentHash).toBe(p.integrity.contentHash);
   });
