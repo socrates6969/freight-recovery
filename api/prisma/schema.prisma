@@ -706,6 +706,8 @@ model AuditEvent {
 
   @@unique([chainKey, seq])
   @@index([tenantId, seq])
+  // Step 8 fix round 4 (re-review R2): D&D invoice editor lookups by target (migration 20261017000000).
+  @@index([tenantId, targetType, targetId])
   @@map("audit_events")
 }
 
