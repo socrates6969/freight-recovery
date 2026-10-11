@@ -8,3 +8,5 @@ web/nginx.conf text eol=lf
 compose.web.yml text eol=lf
 # Evaluation fixtures are byte-exact test inputs (CRLF/BOM cases, hashed set digest): never convert.
 api/eval/sets/** -text
+# Bundled public price history (step 7) is hashed in manifest.json and checked by eval:outlook: never convert.
+api/data/public-prices/** -text

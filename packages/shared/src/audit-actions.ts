@@ -62,6 +62,14 @@ export const AUDIT_ACTIONS = [
   // Step 6 (REQ-20261011-charge-intelligence): tenant charge-label changes.
   'charge_label.set',
   'charge_label.deleted',
+  // Step 7 (REQ-20261011-fuel-outlook): fuel tables, claim fuel inputs (tenant chain) and price imports
+  // (platform chain, actor null).
+  'fsc_table.created',
+  'fsc_table.updated',
+  'fsc_table.archived',
+  'claim.fuel_inputs_set',
+  'claim.fuel_inputs_cleared',
+  'price_data.imported',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

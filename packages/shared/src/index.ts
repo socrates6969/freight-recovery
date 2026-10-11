@@ -23,3 +23,12 @@ export * from './analysis/index.js';
 export * from './charge-intel/constants.js';
 export * from './charge-intel/copy.js';
 export * from './charge-intel-dto.js';
+// Step 7 (REQ-20261011-fuel-outlook): fuel-check and cost-outlook constants, copy and DTOs only. The engines
+// (table evaluation, week rule, fuel check, CSV parser, models, backtest) are exported from the
+// `@fr/shared/fuel` and `@fr/shared/outlook` subpaths, never from the root.
+export * from './fuel/constants.js';
+export * from './fuel/copy.js';
+export * from './fuel-dto.js';
+export * from './outlook/constants.js';
+export * from './outlook/copy.js';
+export * from './outlook-dto.js';

@@ -5,6 +5,7 @@
 import { z } from 'zod';
 
 import { EmptyBody } from './dto.js';
+import { FUEL_CHECK_STATUSES } from './fuel/constants.js';
 
 /** Bulk batch bounds (policy D9). */
 export const ANALYZE_BATCH_MAX = 25;
@@ -38,6 +39,9 @@ export const AnalyzeResponse = z.object({
     classifierVersion: z.literal('charge-knn-v1').nullable(),
     learnedFindingsCount: z.int().min(0),
     reviewFlagsCount: z.int().min(0),
+    // Step 7 (REQ-20261011-fuel-outlook, F10): `off` when the fuel-check flag is off.
+    fuelCheckStatus: z.enum(FUEL_CHECK_STATUSES),
+    fuelFindingsCount: z.int().min(0).max(1),
   }),
 });
 export type AnalyzeResponseDto = z.infer<typeof AnalyzeResponse>;

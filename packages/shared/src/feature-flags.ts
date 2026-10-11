@@ -16,6 +16,9 @@ export interface FlagDefinition {
 export const FEATURE_FLAGS = Object.freeze([
   // Step 6 (REQ-20261011-charge-intelligence): kill switch of charge suggestions, team labels and the learned layer.
   Object.freeze({ key: 'intelligence.charge_suggestions', description: 'Charge-line suggestions and team labels', defaultEnabled: true, tenantVisible: true }),
+  // Step 7 (REQ-20261011-fuel-outlook): cost outlook page and fuel tables / fuel-surcharge check.
+  Object.freeze({ key: 'intelligence.cost_outlook', description: 'Cost outlook from public price data', defaultEnabled: true, tenantVisible: true }),
+  Object.freeze({ key: 'intelligence.fuel_check', description: 'Fuel tables and fuel-surcharge check', defaultEnabled: true, tenantVisible: true }),
   Object.freeze({ key: 'intelligence.provenance', description: 'Provenance summary on the claim sheet', defaultEnabled: true, tenantVisible: true }),
   Object.freeze({ key: 'intelligence.similar_claims', description: 'Similar past claims on the claim sheet', defaultEnabled: true, tenantVisible: true }),
   Object.freeze({ key: 'intelligence.worklist', description: 'Prioritised worklist page', defaultEnabled: true, tenantVisible: true }),

@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "series": "diesel_us",
+      "file": "GASDESW.csv",
+      "sha256": "aca8fefdbb54bdf16a2ab2c225d8b1f59c033e04d6fb96d8c232c3cc45417bdf",
+      "sourceUrl": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=GASDESW",
+      "retrievedAt": "2026-10-11",
+      "rows": 1699,
+      "firstDate": "1994-03-21",
+      "lastDate": "2026-10-05"
+    },
+    {
+      "series": "ppi_tl",
+      "file": "PCU4841214841212.csv",
+      "sha256": "83894390a4fd80d6033f9d18299e97b27e670427bbb5e6aa090cdca0d4a44bea",
+      "sourceUrl": "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCU4841214841212",
+      "retrievedAt": "2026-10-11",
+      "rows": 411,
+      "firstDate": "1992-06-01",
+      "lastDate": "2026-08-01"
+    }
+  ]
+}
