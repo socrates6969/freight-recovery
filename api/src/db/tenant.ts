@@ -34,6 +34,10 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'ApiKey',
   // Step 6 (REQ-20261011-charge-intelligence): tenant charge-line labels.
   'ChargeLabel',
+  // Step 7 (REQ-20261011-fuel-outlook): tenant fuel tables and claim fuel inputs. The global price tables
+  // (PriceImport, PriceObservation) stay out: the tenant client cannot reach them.
+  'FscTable',
+  'ClaimFuelInput',
 ]);
 
 const TENANT_READ_OPS: ReadonlySet<string> = new Set(['findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow']);
@@ -154,6 +158,8 @@ export type TenantTx = Pick<
   | 'claimDocument'
   | 'apiKey'
   | 'chargeLabel'
+  | 'fscTable'
+  | 'claimFuelInput'
 >;
 
 const RAW = Symbol('fr.rawTx');

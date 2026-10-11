@@ -36,6 +36,10 @@ export const ERROR_MESSAGES = {
   analysis_input_invalid: 'The extracted values of this claim cannot be analysed automatically.',
   // Step 6 (REQ-20261011-charge-intelligence)
   label_limit_reached: 'This organization has reached the maximum number of charge labels.',
+  // Step 7 (REQ-20261011-fuel-outlook, F11)
+  fuel_table_limit_reached: 'This organization has reached the maximum number of fuel tables.',
+  fuel_table_unavailable: 'The fuel table does not exist or is archived.',
+  miles_required: 'Miles are required for a per-mile fuel table.',
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;
@@ -109,6 +113,10 @@ export const errors = {
   fourEyes: (audit: FourEyesAudit) => new FourEyesRefusal(audit),
   analysisInputInvalid: () => new HttpError(422, 'analysis_input_invalid'),
   labelLimitReached: () => new HttpError(409, 'label_limit_reached'),
+  fuelTableLimitReached: () => new HttpError(409, 'fuel_table_limit_reached'),
+  fuelTableUnavailable: () => new HttpError(422, 'fuel_table_unavailable'),
+  milesRequired: () => new HttpError(422, 'miles_required'),
+  serviceUnavailable: () => new HttpError(503, 'service_unavailable'),
   parserBusy: () => new HttpError(503, 'parser_busy', { retryAfterSeconds: 5 }),
   accountLocked: (retryAfterSeconds: number) => new HttpError(429, 'account_locked', { retryAfterSeconds }),
 };

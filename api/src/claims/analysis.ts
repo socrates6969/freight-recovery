@@ -2,8 +2,9 @@
  * Step 5 claim analysis (REQ-20261010-step5-analysis): AWAITING_ANALYSIS -> PENDING_REVIEW.
  *
  * route -> lock claim row -> re-check state -> loadAnalysisInput (linked ACCEPTED documents with field
- * provenance) -> [step 6, flag on: loadClassifier (tenant labels + seed)] -> buildEvidenceLearned (rules
- * engine, learned layer, draft letter; identical to step 5 without a classifier) -> buildAnalysisPacket
+ * provenance) -> [step 6, flag on: loadClassifier (tenant labels + seed)] -> [step 7, flag on: claim fuel
+ * inputs + current fuel table + active diesel import] -> buildEvidenceFuel (rules engine, learned layer, fuel
+ * check, draft letter; identical to step 6 without fuel inputs and to step 5 without a classifier) -> buildAnalysisPacket
  * (rows, citations, governing clauses, timeline, content hash) -> inserts -> claim update -> audit, all in
  * the caller's ONE tenant transaction. Findings are rule outputs on extracted fields; they are drafts that
  * need human review (the packet starts PENDING_REVIEW and the four-eyes rules apply unchanged).
@@ -23,9 +24,11 @@ import {
   type BulkAnalyzeResponseDto,
   type EvidenceDoc,
   type FindingTrace,
+  type FuelCheckStatus,
   type ImportDocType,
 } from '@fr/shared';
-import { buildEvidenceLearned, type ChargeClassifier } from '@fr/shared/charge-intel';
+import type { ChargeClassifier } from '@fr/shared/charge-intel';
+import { buildEvidenceFuel, type FuelCheckInput, type PriceSeriesData } from '@fr/shared/fuel';
 
 import { appendAudit } from '../audit/audit.js';
 import { isUuid } from '../db/errors.js';
@@ -35,6 +38,7 @@ import { HttpError, errors } from '../http/errors.js';
 import { pointerToLocator, loadAnalysisInput, type AnalysisSource, type BundleProvenance, type FieldRef } from '../imports/bundle.js';
 import { parseInvoiceDate } from '../imports/commit-service.js';
 import { loadClassifier, type LoadedClassifier } from '../intelligence/charges.js';
+import { loadFuelInput } from '../intelligence/fuel.js';
 
 import { packetContentHash, type HashCitation, type HashPacket } from './content-hash.js';
 import type { Actor } from './service.js';
@@ -128,6 +132,13 @@ export interface AnalysisPacketBuild {
     reviewFlagsCount: number;
     /** Fix round 1 (S3): tenant label ids that were the nearest example of a learned effect (<= 50). */
     learnedLabelIds: string[];
+    /** Step 7 (F10, F13): stored FSC findings (0 or 1), the fuel-check status and its provenance. */
+    fuelFindingsCount: number;
+    fuelCheckStatus: Exclude<FuelCheckStatus, 'off'>;
+    fscTableId: string | null;
+    fscTableVersion: number | null;
+    priceImportId: string | null;
+    priceDate: string | null;
   };
 }
 
@@ -158,6 +169,8 @@ const GOVERNING_CLAUSE: Readonly<Record<string, { key: string; label: string } |
   'DET-OVERBILLED': { key: 'rate_confirmation.detention_free_hours', label: 'Detention free time' },
   // Step 6 (REQ-20261011-charge-intelligence): learned review-only finding.
   'LRN-ACCESSORIAL-REVIEW': { key: 'rate_confirmation.authorized_accessorials', label: 'Authorized accessorials' },
+  // Step 7 (REQ-20261011-fuel-outlook): the fuel table is tenant data, not a document clause.
+  'FSC-INDEX-MISMATCH': null,
 };
 
 const TIMELINE_ORDER: readonly TimelineKind[] = ['APPOINTMENT', 'ARRIVAL', 'DEPARTURE', 'INVOICE'];
@@ -174,17 +187,21 @@ export function buildAnalysisPacket(args: {
   actorId: string;
   /** Step 6: the tenant's charge classifier (flag on); null/absent = exact step-5 output. */
   classifier?: ChargeClassifier | null;
+  /** Step 7: the claim's fuel inputs (flag on and inputs present); null/absent = exact step-6 output. */
+  fuel?: FuelCheckInput | null;
 }): AnalysisPacketBuild {
   const { input, claim, now, actorId } = args;
   const persp = claim.perspective === 'SHIPPER' ? 'shipper' : 'carrier';
   const docs: EvidenceDoc[] = input.sources.map((s) => ({ filename: s.displayName, doc_type: EVIDENCE_DOC_TYPE[s.docType], sha256: s.sha256 }));
-  const { evidence, traces, extraLines, learnedFindingsCount, reviewFlagsCount, labelIds } = buildEvidenceLearned(
+  const fuelInput = args.fuel ?? null;
+  const { evidence, traces, extraLines, learnedFindingsCount, reviewFlagsCount, labelIds, fuel, fuelFindingsCount } = buildEvidenceFuel(
     docs,
     input.bundle,
     persp,
     DEFAULT_ANALYSIS_SETTINGS,
     now,
     args.classifier ?? null,
+    fuelInput,
   );
   const result = evidence.result;
 
@@ -339,8 +356,20 @@ export function buildAnalysisPacket(args: {
       learnedFindingsCount,
       reviewFlagsCount,
       learnedLabelIds: labelIds,
+      fuelFindingsCount,
+      fuelCheckStatus: fuel.status,
+      fscTableId: fuelInput === null ? null : fuelInput.table.id,
+      fscTableVersion: fuelInput === null ? null : fuelInput.table.version,
+      priceImportId: fuel.priceImport === null ? null : fuel.priceImport.id,
+      priceDate: fuel.postedDate,
     },
   };
+}
+
+/** Step 7: the fuel-check flag and the active diesel import, read once per request before any transaction. */
+export interface AnalysisFuelOptions {
+  enabled: boolean;
+  series: PriceSeriesData | null;
 }
 
 /**
@@ -360,6 +389,8 @@ export async function analyzeClaim(
     learning?: boolean;
     /** Fix round 1 (S1): a classifier already built for this request (bulk); else loaded here. */
     preloaded?: LoadedClassifier;
+    /** Step 7: fuel-check flag and the active diesel import (both read once per request, before the tx). */
+    fuel?: AnalysisFuelOptions;
   },
 ): Promise<AnalyzeResponseDto> {
   if (!isUuid(claimId)) throw errors.notFound();
@@ -372,10 +403,12 @@ export async function analyzeClaim(
   if (input.sources.length === 0) throw errors.invalidState();
   const learning = opts.learning === true;
   const { classifier, labelCount } = learning ? (opts.preloaded ?? (await loadClassifier(tx))) : { classifier: null, labelCount: 0 };
+  const fuelOn = opts.fuel?.enabled === true;
+  const fuel = fuelOn ? ((await loadFuelInput(tx, claimId, opts.fuel?.series ?? null))?.input ?? null) : null;
 
   let built: AnalysisPacketBuild;
   try {
-    built = buildAnalysisPacket({ input, claim: { perspective: claim.perspective }, now: opts.now ?? new Date(), actorId: actor.userId, classifier });
+    built = buildAnalysisPacket({ input, claim: { perspective: claim.perspective }, now: opts.now ?? new Date(), actorId: actor.userId, classifier, fuel });
   } catch (e) {
     if (e instanceof AnalysisInputError || e instanceof RangeError) throw errors.analysisInputInvalid();
     throw e;
@@ -383,6 +416,16 @@ export async function analyzeClaim(
 
   const tenantId = claim.tenantId;
   const { packet, sources, timeline, findings, summary } = built;
+  // F13/F14: with the flag off the fuel fields are 'off' / null / 0 (analysis is exactly step 6).
+  const fuelCheckStatus: FuelCheckStatus = fuelOn ? summary.fuelCheckStatus : 'off';
+  const fuelMeta = {
+    fuelCheckStatus,
+    fscTableId: fuelOn ? summary.fscTableId : null,
+    fscTableVersion: fuelOn ? summary.fscTableVersion : null,
+    priceImportId: fuelOn ? summary.priceImportId : null,
+    priceDate: fuelOn ? summary.priceDate : null,
+    fuelFindingsCount: fuelOn ? summary.fuelFindingsCount : 0,
+  };
   await tx.evidencePacket.create({ data: { ...packet, tenantId, claimId } });
   if (sources.length > 0) await tx.packetSource.createMany({ data: sources.map((s) => ({ ...s, tenantId, packetId: packet.id })) });
   if (timeline.length > 0) await tx.packetTimelineEvent.createMany({ data: timeline.map((t) => ({ ...t, tenantId, packetId: packet.id })) });
@@ -430,6 +473,7 @@ export async function analyzeClaim(
       learnedFindingsCount: summary.learnedFindingsCount,
       reviewFlagsCount: summary.reviewFlagsCount,
       learnedLabelIds: summary.learnedLabelIds,
+      ...fuelMeta,
     },
     ip: actor.ip,
     requestId: actor.requestId,
@@ -445,6 +489,8 @@ export async function analyzeClaim(
       classifierVersion: learning ? CHARGE_CLASSIFIER_VERSION : null,
       learnedFindingsCount: summary.learnedFindingsCount,
       reviewFlagsCount: summary.reviewFlagsCount,
+      fuelCheckStatus,
+      fuelFindingsCount: fuelMeta.fuelFindingsCount,
     },
   };
 }
@@ -466,6 +512,7 @@ export async function analyzeAwaiting(
   limit: number,
   chargeExtra: () => Promise<boolean> = async () => true,
   learning = false,
+  fuel: AnalysisFuelOptions = { enabled: false, series: null },
 ): Promise<BulkAnalyzeResponseDto> {
   const take = Math.min(SCAN_FACTOR * limit, SCAN_CAP);
   const candidates = await db.tx((tx) =>
@@ -484,7 +531,7 @@ export async function analyzeAwaiting(
     if (out.examined > 0 && !(await chargeExtra())) break;
     out.examined += 1;
     try {
-      const r = await db.tx((tx) => analyzeClaim(tx, c.id, actor, { bulk: true, learning, ...(preloaded ? { preloaded } : {}) }));
+      const r = await db.tx((tx) => analyzeClaim(tx, c.id, actor, { bulk: true, learning, fuel, ...(preloaded ? { preloaded } : {}) }));
       out.analyzed.push({
         claimId: c.id,
         claimNumber: c.claimNumber,

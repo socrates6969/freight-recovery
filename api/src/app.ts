@@ -43,12 +43,15 @@ import { ERROR_MESSAGES, FourEyesRefusal, HttpError, errors } from './http/error
 import { enforceRouteAccess, requireTenant, zodDetails } from './http/route.js';
 import { registerSecurityHeaders, registerSecurityPipeline, type Limiter } from './http/security.js';
 import { registerChargeRoutes } from './intelligence/charge-routes.js';
+import { registerFuelRoutes } from './intelligence/fuel-routes.js';
+import { registerOutlookRoutes } from './intelligence/outlook-routes.js';
 import { registerIntelligenceRoutes } from './intelligence/routes.js';
 import { createLogger } from './logging.js';
 import { MetricsRegistry, UNMATCHED_ROUTE, ZERO_PARSER_COUNTERS } from './observability/metrics.js';
 import { LogRingBuffer } from './observability/ring-buffer.js';
 import { registerPlatformDashboardRoutes } from './platform/dashboard-routes.js';
 import { FlagService } from './platform/flags.js';
+import { PriceStore, dbPriceReader } from './platform/price-store.js';
 import { registerHealthRoutes, registerPlatformRoutes } from './platform/routes.js';
 import { emailHash } from './security/crypto.js';
 import { JwtService } from './security/jwt.js';
@@ -132,6 +135,8 @@ declare module 'fastify' {
     logRing: LogRingBuffer;
     startedAt: Date;
     flags: FlagService;
+    /** Step 7: read side of the public price store (cached per active import; never fetches). */
+    prices: PriceStore;
     /** Step 5 (S5-1): the per-user `analysis` bucket, charged per extra bulk candidate; null when rate limiting is off. */
     analysisLimiter: Limiter | null;
   }
@@ -274,6 +279,8 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   app.addHook('onResponse', async (req) => releaseApiKeyRequest(req.frRequestId));
   app.addHook('onRequestAbort', async (req) => releaseApiKeyRequest(req.frRequestId));
   app.decorate('flags', flags);
+  const prices = new PriceStore(dbPriceReader(base), cfg.priceCacheTtlMs);
+  app.decorate('prices', prices);
   app.decorate('analysisLimiter', cfg.rateLimitEnabled ? analysisLimiter : null);
 
   registerSecurityPipeline(app, {
@@ -398,6 +405,9 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   });
   // Step 6 (REQ-20261011-charge-intelligence): charge lines and tenant charge labels (flag-gated).
   registerChargeRoutes(app, { flags });
+  // Step 7 (REQ-20261011-fuel-outlook): fuel tables, claim fuel inputs, fuel-check view and the cost outlook.
+  registerFuelRoutes(app, { flags, prices });
+  registerOutlookRoutes(app, { flags, prices });
 
   app.addHook('onClose', async () => {
     await base.$disconnect();

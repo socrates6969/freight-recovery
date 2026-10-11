@@ -73,6 +73,8 @@ export interface AppConfig {
   rateLimitAnalysisMax: number;
   /** Step 4 (Q13): tenant API keys. */
   apiKeys: ApiKeyConfig;
+  /** Step 7 (F16): maximum age of the cached active price import per series (0 = no cache). */
+  priceCacheTtlMs: number;
 }
 
 export interface ApiKeyConfig {
@@ -247,6 +249,8 @@ const STEP4_KNOBS = {
   apiKeyDefaultTtlDays: { key: 'API_KEY_DEFAULT_TTL_DAYS', def: 90, min: 1, max: 365, ceiling: 365 },
   rateLimitApiKeyMax: { key: 'RATE_LIMIT_API_KEY_MAX', def: 300, min: 1, max: 100000 },
   rateLimitApiKeyFailMax: { key: 'RATE_LIMIT_API_KEY_FAIL_MAX', def: 30, min: 1, max: 100000 },
+  // Step 7 (REQ-20261011-fuel-outlook, F16): active price import cache per series.
+  priceCacheTtlMs: { key: 'PRICE_CACHE_TTL_MS', def: 60000, min: 0, max: 3600000 },
 } as const satisfies Record<string, ImportKnob>;
 
 /** REVIEW_CONFIDENCE_THRESHOLD: decimal 0.50..1.00 (at most 3 fraction digits). */
@@ -642,5 +646,6 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
       rateLimitMax: s4.rateLimitApiKeyMax,
       rateLimitFailMax: s4.rateLimitApiKeyFailMax,
     },
+    priceCacheTtlMs: s4.priceCacheTtlMs,
   };
 }

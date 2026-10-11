@@ -201,6 +201,30 @@ const METADATA_KEYS = new Set([
   // Step 6 fix round 1: influencing label ids (S3, <= 50) and the sha256 of a label's normalized text (S4).
   'learnedLabelIds',
   'normalizedTextSha256',
+  // Step 7 (REQ-20261011-fuel-outlook): fuel-table ids/versions and fixed enumerations, fuel-input values
+  // (ship date, miles), fuel-check status and price provenance (series key, import id, dates, pinned URL).
+  // Never table names or invoice text. Already listed: version, kind, outcome, status, claimId, rowCount,
+  // sha256.
+  'fscTableId',
+  'previousVersion',
+  'unit',
+  'priceSeries',
+  'effectiveOffsetDays',
+  'changedFields',
+  'shipDate',
+  'miles',
+  'fuelCheckStatus',
+  'fscTableVersion',
+  'priceImportId',
+  'priceDate',
+  'fuelFindingsCount',
+  'seriesKey',
+  'importId',
+  'firstDate',
+  'lastDate',
+  'sourceKind',
+  'sourceUrl',
+  'retrievedAt',
 ]);
 const MAX_STRING = 2000;
 

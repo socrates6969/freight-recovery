@@ -18,7 +18,9 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { defineRoute, requireTenant, userRole } from '../http/route.js';
 
-import { analyzeAwaiting, analyzeClaim } from './analysis.js';
+import { dieselSeriesOrNull } from '../platform/price-store.js';
+
+import { analyzeAwaiting, analyzeClaim, type AnalysisFuelOptions } from './analysis.js';
 import { assignClaim, createRevision, getClaim, getPacket, listApprovalQueue, listClaims, transition, type Actor } from './service.js';
 
 const P = '/api/v1';
@@ -116,7 +118,9 @@ export function registerClaimRoutes(app: FastifyInstance): void {
       const charge = limiter ? async () => (await limiter(req)).allowed : async () => true;
       // Step 6: the charge-suggestions flag is read once per request, before any transaction.
       const learning = await app.flags.isEnabled('intelligence.charge_suggestions');
-      return analyzeAwaiting(requireTenant(req).db, actorOf(req), body.limit, charge, learning);
+      // Step 7: the fuel-check flag and the active diesel import, read once per request (never a 500).
+      const fuel = await analysisFuel(app);
+      return analyzeAwaiting(requireTenant(req).db, actorOf(req), body.limit, charge, learning, fuel);
     },
   });
 
@@ -128,7 +132,8 @@ export function registerClaimRoutes(app: FastifyInstance): void {
     schema: { params: IdParams, body: AnalyzeBody },
     handler: async (req, reply, { params }) => {
       const learning = await app.flags.isEnabled('intelligence.charge_suggestions');
-      const r = await requireTenant(req).db.tx((tx) => analyzeClaim(tx, params.id, actorOf(req), { bulk: false, learning }));
+      const fuel = await analysisFuel(app);
+      const r = await requireTenant(req).db.tx((tx) => analyzeClaim(tx, params.id, actorOf(req), { bulk: false, learning, fuel }));
       return reply.code(201).send(r);
     },
   });
@@ -143,4 +148,14 @@ export function registerClaimRoutes(app: FastifyInstance): void {
       return ctx.db.tx((tx) => listApprovalQueue(tx, query, ctx.user.id));
     },
   });
+}
+
+/**
+ * Step 7 (REQ-20261011-fuel-outlook): the fuel-check flag and, when it is on, the active diesel import
+ * (cached per import). The fuel tables are diesel_us only; a store error gives `series: null`
+ * (`price_unavailable`), never a 500.
+ */
+async function analysisFuel(app: FastifyInstance): Promise<AnalysisFuelOptions> {
+  const enabled = await app.flags.isEnabled('intelligence.fuel_check');
+  return { enabled, series: enabled ? await dieselSeriesOrNull(app.prices) : null };
 }
