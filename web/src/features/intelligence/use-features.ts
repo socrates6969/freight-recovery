@@ -7,6 +7,8 @@ export interface Features {
   worklist: boolean;
   similar: boolean;
   provenance: boolean;
+  /** Step 6: charge suggestions and team labels. */
+  charges: boolean;
 }
 
 /** Tenant feature flags, loaded once per session; any failure hides every intelligence feature (fail closed). */
@@ -29,5 +31,6 @@ export function useFeatures(): Features {
     worklist: flags['intelligence.worklist'] === true,
     similar: flags['intelligence.similar_claims'] === true,
     provenance: flags['intelligence.provenance'] === true,
+    charges: flags['intelligence.charge_suggestions'] === true,
   };
 }

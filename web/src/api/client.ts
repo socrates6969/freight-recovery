@@ -165,6 +165,11 @@ export class ApiClient {
     return this.request('POST', path, { body, ...(schema ? { schema } : {}), auth } as RequestOptions<S>);
   }
 
+  /** PUT with the same CSRF and auth handling as `post` (step 6 charge labels). */
+  put<S extends z.ZodType | undefined = undefined>(path: string, body: unknown, schema?: S): Promise<Result<S>> {
+    return this.request('PUT', path, { body, ...(schema ? { schema } : {}) } as RequestOptions<S>);
+  }
+
   // ---------------------------------------------------------------------------------------------
   // Step 4: Dev dashboard, Recovery Intelligence, API keys. Every response is parsed with the shared
   // strict schema; any mismatch is an error (never partial data).
