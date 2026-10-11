@@ -69,7 +69,7 @@ describe.skipIf(!appUrl || !adminUrl)('step 4 tables: database guarantees', () =
   it('feature_flags: readable without context; UPDATE/INSERT/DELETE/TRUNCATE refused without system mode', async () => {
     await asApp({}, async (c) => {
       const r = await c.query(`SELECT key FROM feature_flags ORDER BY key`);
-      expect(r.rows.map((x: { key: string }) => x.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+      expect(r.rows.map((x: { key: string }) => x.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
       const u = await c.query(`UPDATE feature_flags SET enabled = NOT enabled, version = version + 1 WHERE key = 'intelligence.worklist'`);
       expect(u.rowCount).toBe(0);
     });
