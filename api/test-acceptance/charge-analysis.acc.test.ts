@@ -4,7 +4,7 @@
 // Part C C4, C6, C9, C10, C15 (RD7-RD9). Black-box through the import pipeline, the analyze routes and audit rows.
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ACCOUNTS, type Session, buildTestApp, closeApps, sessionFor } from './helpers/client.js';
+import { ACCOUNTS, type Session, buildTestApp, closeApps, sessionFor, resetSessionCache } from './helpers/client.js';
 import * as A from './helpers/analysis.js';
 import { LD5001_SHIPPER, LD5002_CARRIER, projectFinding } from './helpers/analysis-vectors.js';
 import { withAdmin } from './helpers/db.js';
@@ -43,10 +43,10 @@ async function analyzeOk(s: Session, made: A.Made) {
   return r;
 }
 
-beforeAll(async () => {
-  await H.assertS3Reachable();
-  reseed();
-  app = await buildTestApp({ LOCKOUT_THRESHOLD: '50', FLAGS_CACHE_TTL_MS: '0' });
+/** Log every account in again. reseed() recreates the seed users, so sessions made before it are no longer valid
+ *  (REQ-20261011-ocean-dd Tier H run: mid-test reseed() left the file's sessions answering 401 - test design). */
+async function signIn() {
+  resetSessionCache();
   an = await sessionFor(app, ACCOUNTS.ANALYST);
   rv = await sessionFor(app, ACCOUNTS.REVIEWER);
   m = await sessionFor(app, ACCOUNTS.MANAGER);
@@ -56,6 +56,13 @@ beforeAll(async () => {
   gxm = await sessionFor(app, I.GLOBEX.MANAGER);
   gxo = await sessionFor(app, I.GLOBEX.OWNER);
   tid = owner.user.tenant.id;
+}
+
+beforeAll(async () => {
+  await H.assertS3Reachable();
+  reseed();
+  app = await buildTestApp({ LOCKOUT_THRESHOLD: '50', FLAGS_CACHE_TTL_MS: '0' });
+  await signIn();
   await clearLabels(tid);
 }, 180000);
 afterAll(async () => { try { await I.setFlag(dev, 'intelligence.charge_suggestions', true, 'acceptance restore'); } finally { await closeApps(); reseed(); } });
@@ -193,6 +200,7 @@ describe('T9 analysis with learning (C4)', () => {
   });
   it.skipIf(A.SKIP_BULK)('CI-A18 bulk analyze: per-claim outcomes identical to single analyze; events carry the new keys', async () => {
     reseed();
+    await signIn();
     await clearLabels(tid);
     const mk = async (kind: string, tag: string) => {
       const load = H.uniqLoad(tag);
@@ -315,6 +323,7 @@ describe('T17 CI-U04 learnedLabelIds and CI-A21 bulk once-per-request (C4, C9 fi
   }, 300000);
   it.skipIf(A.SKIP_BULK)('CI-A21 one label snapshot per bulk request; a label written after the request started does not change it; a later single analyze uses it', async () => {
     reseed();
+    await signIn();
     await clearLabels(tid);
     const made: A.Made[] = [];
     for (let i = 0; i < 3; i++) {

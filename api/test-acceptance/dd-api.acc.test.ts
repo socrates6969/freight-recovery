@@ -352,7 +352,11 @@ describe('T13 audit chain after the route tests (C15)', () => {
     D.expectCode(await D.postTariff(SS.OWNER, R.DD_TARIFF_PRESETS[0]?.data), 409, 'conflict');
     A.expectExact(await D.postInvoice(SS.ANALYST, { bogus: true }), 400, 'validation_error');
     expectError(await D.postTariff(SS.ANALYST, D.MAERSK), 403, 'forbidden');
-    expect(await I.eventsSince(tid, seq)).toEqual([]);
+    // C15: refused calls write no dd_* event. The 403 writes only the platform's existing authz.denied event
+    // (Tier H run a8a299a: the earlier "no event at all" assertion was test design).
+    const evs = await I.eventsSince(tid, seq);
+    expect(evs.filter((e) => e.action.startsWith('dd_'))).toEqual([]);
+    expect(evs.map((e) => [e.action, e.actor_role, e.metadata])).toEqual([['authz.denied', 'ANALYST', { method: 'POST', permission: 'dd_tariffs:manage', route: '/api/v1/dd/tariffs' }]]);
     const v = await SS.OWNER.get('/audit/verify');
     expect(v.body.valid, v.text).toBe(true);
     expect((await I.eventsSince(gtid, 0, 'dd_')).length, 'Globex events stay in the Globex chain').toBeGreaterThan(0);

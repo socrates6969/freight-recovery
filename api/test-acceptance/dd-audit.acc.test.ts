@@ -41,7 +41,14 @@ afterAll(async () => { try { await closeApps(); } finally { reseed(); } });
 describe('T12 audit run, claim and packet (C12, C17)', () => {
   let made: { invoiceId: string; claimId: string; claimNumber: string; packetId: string; contentHash: string; day0: string; day1: string } | null = null;
   it('DD-X01 audit SI-4 as ANALYST: 201 response; claim row kind OCEAN_DD with the C17 fields; next claim number', async () => {
-    const before = (await SS.VIEWER.get('/claims?pageSize=100')).body.items.map((c: { claimNumber: string }) => Number(c.claimNumber.slice(4)));
+    // only numeric CLM-nnnn numbers count (the seed also has CLM-HOSTILE-* numbers; Tier H run a8a299a, test design)
+    const before: number[] = [];
+    for (let page = 1; ; page++) {
+      const l = await SS.VIEWER.get(`/claims?pageSize=100&page=${page}`);
+      expect(l.status, l.text).toBe(200);
+      for (const c of l.body.items as { claimNumber: string }[]) if (/^CLM-\d{4,}$/.test(c.claimNumber)) before.push(Number(c.claimNumber.slice(4)));
+      if (page * 100 >= l.body.total) break;
+    }
     const inv = await D.newInvoice(SS.ANALYST, D.si4(), maersk);
     const seq = await I.lastSeq(tid);
     const day0 = A.utcDate(new Date().toISOString());

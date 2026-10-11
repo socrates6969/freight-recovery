@@ -194,7 +194,11 @@ describe('T9 fuel tables (F4, F10, F13)', () => {
     expect((await SS.OWNER.destroy(`/fuel-tables/${id}`)).status).toBe(204);
     const ev = await I.eventsSince(tid, seq, 'fsc_table.');
     expect(ev.map((e) => e.action)).toEqual(['fsc_table.archived']);
-    expect(ev[0]?.metadata).toEqual({ fscTableId: id, version: 1, paramsSha256: H_T1 });
+    // F13 names `version` without fixing pre/post archive; the event carries the stored (archived) row version, which the
+    // archive increments (Tier H run a8a299a: the assumed 1 was test design). Pinned to the stored row version.
+    const archived = (await tables(SS.VIEWER, '?includeArchived=true')).body.items.find((x: { id: string }) => x.id === id);
+    expect(archived?.version).toBe(2);
+    expect(ev[0]?.metadata).toEqual({ fscTableId: id, version: archived?.version, paramsSha256: H_T1 });
     expectCode(await updateTable(SS.OWNER, id, { ...T1_BODY, name: 'Archive probe', expectedVersion: 1 }), 409, 'invalid_state');
     expect((await tables(SS.VIEWER)).body.items.some((x: { id: string }) => x.id === id)).toBe(false);
     const all = await tables(SS.VIEWER, '?includeArchived=true');
@@ -294,7 +298,8 @@ describe('T10 fuel inputs, fuel-check view and analysis (F5, F6, F10, F13)', () 
     expect(f).toMatchObject({ title: 'Fuel surcharge differs from the fuel table (review)', direction: 'OVERCHARGE', amountCents: 1500, explanation: F1_EXPL, calculation: F1_CALC, confidence: 0.7, needsHumanReview: true, governingClause: null });
     const inv = c1.docs.find((d: { docType: string }) => d.docType === 'INVOICE');
     const src = p.sources.find((s: { docType: string }) => s.docType === 'INVOICE').id as string;
-    expect(f.citations).toEqual([await A.lineCitation(SS.VIEWER, c1, inv, 'Fuel surcharge', src)]);
+    // document detail needs import access (ANALYST), as in the step-5/6 suites; VIEWER gets 403 (test design)
+    expect(f.citations).toEqual([await A.lineCitation(SS.ANALYST, c1, inv, 'Fuel surcharge', src)]);
     expect(p.demandLetter).not.toContain('Fuel surcharge differs');
     const ev = (await I.eventsSince(tid, seq, 'claim.analyzed')).filter((e) => e.target_id === c1.claimId);
     expect(ev).toHaveLength(1);
@@ -334,7 +339,7 @@ describe('T10 fuel inputs, fuel-check view and analysis (F5, F6, F10, F13)', () 
     const a = await f1Claim('FU-B1');
     const b = await f1Claim('FU-B2');
     for (const c of [a, b]) expect((await putInputs(SS.ANALYST, c.claimId, { shipDate: '2026-10-07', miles: '500', fscTableId: t1 })).status).toBe(200);
-    const r = await A.bulk(SS.MANAGER, { limit: 100 });
+    const r = await A.bulk(SS.MANAGER, { limit: 25 }); // ANALYZE_BATCH_MAX (step 5); 100 is refused with 400 (test design)
     expect(r.status, r.text).toBe(200);
     for (const c of [a, b]) {
       const p = (await SS.VIEWER.get(`/claims/${c.claimId}/packet`)).body;

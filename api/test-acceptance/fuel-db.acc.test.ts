@@ -57,7 +57,8 @@ describe('T14 database (F14)', () => {
       const rel = (await own.query(`select relrowsecurity r, relforcerowsecurity f from pg_class where relname = $1 and relkind = 'r'`, [t])).rows[0];
       expect([rel?.r, rel?.f], t).toEqual([true, true]);
       const pol = (await own.query(`select polcmd, pg_get_expr(polqual, polrelid) q, pg_get_expr(polwithcheck, polrelid) w from pg_policy where polrelid = $1::regclass`, [t])).rows as { polcmd: string; q: string | null; w: string | null }[];
-      expect(pol.some((p) => p.polcmd === '*' && /app\.tenant_id/.test(p.q ?? '') && /app\.tenant_id/.test(p.w ?? p.q ?? '')), `${t} tenant policy for ALL`).toBe(true);
+      // the policies use fr_current_tenant() (which reads app.tenant_id), as charge-db checks (Tier H run a8a299a: test design)
+      expect(pol.some((p) => p.polcmd === '*' && /tenant_id = fr_current_tenant\(\)/.test(p.q ?? '') && /tenant_id = fr_current_tenant\(\)/.test(p.w ?? '')), `${t} tenant policy for ALL`).toBe(true);
       const tp = (await own.query(`select privilege_type from information_schema.role_table_grants where table_name = $1 and grantee = 'freight_app' order by 1`, [t])).rows.map((r: { privilege_type: string }) => r.privilege_type);
       expect(tp, `${t} table grants`).toEqual(g.table);
       const cp = (await own.query(`select column_name from information_schema.column_privileges where table_name = $1 and grantee = 'freight_app' and privilege_type = 'UPDATE' order by 1`, [t])).rows.map((r: { column_name: string }) => r.column_name);
@@ -94,13 +95,13 @@ describe('T14 database (F14)', () => {
     const fk = await inRollback(own, async () => {
       await own.query(`select set_config('app.tenant_id', $1, true)`, [tid]);
       await own.query('delete from claim_fuel_inputs where claim_id = $1', [claimA]);
-      const sql = await buildInsert(own, 'claim_fuel_inputs', { tenant_id: lit(tid), claim_id: lit(claimA), ship_date: `'2026-10-07'`, miles: '500.0', fsc_table_id: lit(tB), version: '1', created_by_id: lit(userA) });
+      const sql = await buildInsert(own, 'claim_fuel_inputs', { tenant_id: lit(tid), claim_id: lit(claimA), ship_date: `'2026-10-07'`, miles: '500.0', fsc_table_id: lit(tB), version: '1', created_by_id: lit(userA), updated_by_id: lit(userA) }); // only the cross-tenant table may make it fail
       return tryQuery(own, sql);
     });
     expect(fk.ok, 'inputs pointing to another tenant table are refused').toBe(false);
   });
   it('CI-D03 CHECK constraints refuse invalid rows', async () => {
-    const base = { tenant_id: lit(tid), name: `'chk base'`, kind: `'step'`, unit: `'per_mile'`, price_series: `'diesel_us'`, effective_offset_days: '2', params: `'${JSON.stringify(T1_BODY.params)}'::jsonb`, version: '1', created_by_id: lit(userA) };
+    const base = { tenant_id: lit(tid), name: `'chk base'`, kind: `'step'`, unit: `'per_mile'`, price_series: `'diesel_us'`, effective_offset_days: '2', params: `'${JSON.stringify(T1_BODY.params)}'::jsonb`, version: '1', created_by_id: lit(userA), updated_by_id: lit(userA) }; // updated_by_id is NOT NULL (Tier H run a8a299a: test design)
     const tryFsc = (o: Record<string, string>) => inRollback(own, async () => {
       await own.query(`select set_config('app.tenant_id', $1, true)`, [tid]);
       return tryQuery(own, await buildInsert(own, 'fsc_tables', { ...base, ...o }));
@@ -109,7 +110,7 @@ describe('T14 database (F14)', () => {
     for (const [label, o] of [['kind x', { kind: `'x'` }], ['mpg + percent', { kind: `'mpg'`, unit: `'percent'`, params: `'{"basePrice":"1.25","mpg":"6","decimals":2}'::jsonb` }], ['offset 7', { effective_offset_days: '7' }], ['params array', { params: `'[]'::jsonb` }], ['price_series ppi_tl', { price_series: `'ppi_tl'` }], ['version 0', { version: '0' }], ['name 81', { name: lit('x'.repeat(81)) }]] as const) {
       expect((await tryFsc(o)).ok, label).toBe(false);
     }
-    const baseIn = { tenant_id: lit(tid), claim_id: lit(claimA), ship_date: `'2026-10-07'`, miles: '500.0', fsc_table_id: lit(tA), version: '1', created_by_id: lit(userA) };
+    const baseIn = { tenant_id: lit(tid), claim_id: lit(claimA), ship_date: `'2026-10-07'`, miles: '500.0', fsc_table_id: lit(tA), version: '1', created_by_id: lit(userA), updated_by_id: lit(userA) };
     const tryIn = (o: Record<string, string>) => inRollback(own, async () => {
       await own.query(`select set_config('app.tenant_id', $1, true)`, [tid]);
       await own.query('delete from claim_fuel_inputs where claim_id = $1', [claimA]);
