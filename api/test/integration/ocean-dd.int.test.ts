@@ -376,6 +376,69 @@ describe.skipIf(!canRunDb)('ocean D&D audit (PostgreSQL)', () => {
       expect([r.statusCode, errorOf(r).code]).toEqual([403, 'forbidden']);
     });
 
+    it('fix round 1 S3: the creator or last editor of the D&D invoice cannot approve or reject the claim', async () => {
+      const created = await c.send('POST', '/api/v1/dd/invoices', tok.reviewer, invoiceBody(`${marker}-fe`));
+      expect(created.statusCode, created.body).toBe(201);
+      const d = DdInvoiceDetail.parse(created.json());
+      const out = DdAuditResponse.parse((await c.send('POST', `/api/v1/dd/invoices/${d.id}/audit`, tok.owner, {})).json());
+      for (const action of ['approve', 'reject'] as const) {
+        const r = await c.send('POST', `/api/v1/claims/${out.claim.id}/packet/${action}`, tok.reviewer, { packetRevision: 1, reason: REASON, acknowledgePendingFindings: true });
+        expect([r.statusCode, errorOf(r).code]).toEqual([403, 'four_eyes_required']);
+      }
+      const denied = await admin.query<{ metadata: { basis: string } }>(`SELECT metadata FROM audit_events WHERE action = 'authz.four_eyes_denied' AND target_id = $1 ORDER BY seq`, [out.claim.id]);
+      expect(denied.rows.map((r) => r.metadata.basis)).toEqual(['dd_invoice_editor', 'dd_invoice_editor']);
+      // The approval queue marks the claim as self-authored for the invoice creator.
+      const queue = (await c.get('/api/v1/approvals', tok.reviewer)).json() as { items: { id: string; selfAuthored: boolean }[] };
+      expect(queue.items.find((i) => i.id === out.claim.id)?.selfAuthored).toBe(true);
+      const ok = await c.send('POST', `/api/v1/claims/${out.claim.id}/packet/approve`, tok.manager, { packetRevision: 1, reason: REASON, acknowledgePendingFindings: true });
+      expect(ok.statusCode, ok.body).toBe(200);
+    });
+
+    it('fix round 1 S4: a 50 x 20 invoice is accepted (201); a 262,145-byte body is refused (413)', async () => {
+      const containers = Array.from({ length: 50 }, (_, i) => ({
+        containerNumber: `SYNU${String(i).padStart(7, '0')}`,
+        sizeType: '40DV',
+        chargeType: 'DETENTION',
+        freeDays: 4,
+        freeTimeStart: '2026-01-01',
+        freeTimeEnd: '2026-01-05',
+        availabilityDate: '2026-01-01',
+        earliestReturnDate: null,
+        periods: Array.from({ length: 20 }, (_, k) => {
+          const day = new Date(Date.UTC(2026, 0, 6 + 2 * k)).toISOString().slice(0, 10);
+          return { from: day, to: day, rate: '290.00', amount: '290.00' };
+        }),
+        evidence: { clockStart: null, clockStop: null, cargoAvailableDate: null, emptyReturnRefusedDates: [] },
+      }));
+      const big = invoiceBody(`${marker}-big`, { totalDue: '290000.00', containers });
+      expect(Buffer.byteLength(JSON.stringify(big))).toBeGreaterThan(65536);
+      const r = await c.send('POST', '/api/v1/dd/invoices', tok.analyst, big);
+      expect(r.statusCode, r.body.slice(0, 200)).toBe(201);
+      const base = JSON.stringify(invoiceBody(`${marker}-pad`));
+      const padded = `${base.slice(0, -1)}${' '.repeat(262145 - Buffer.byteLength(base))}}`;
+      expect(Buffer.byteLength(padded)).toBe(262145);
+      const tooBig = await fastify.inject({ method: 'POST', url: '/api/v1/dd/invoices', headers: { ...c.headers(tok.analyst), 'content-type': 'application/json' }, payload: padded });
+      expect([tooBig.statusCode, errorOf(tooBig).code]).toEqual([413, 'payload_too_large']);
+    });
+
+    it('fix round 1 S1/S2: list pageSize <= 50; the 2,000-invoice cap answers 409 dd_limit_reached', async () => {
+      expect((await c.get('/api/v1/dd/invoices?pageSize=51', tok.viewer)).statusCode).toBe(400);
+      const page = DdInvoiceList.parse((await c.get('/api/v1/dd/invoices?pageSize=50', tok.viewer)).json());
+      expect(page.items.every((i) => i.containerCount >= 1 && (i.direction === 'IMPORT' || i.direction === 'EXPORT'))).toBe(true);
+      const have = Number((await admin.query<{ n: string }>(`SELECT count(*)::text AS n FROM dd_invoices WHERE tenant_id = $1`, [acme])).rows[0]?.n ?? '0');
+      const { tariffId: _t, calendarId: _c, ...data } = invoiceBody(`${marker}-cap`);
+      if (have < 2000) {
+        await admin.query(
+          `INSERT INTO dd_invoices (id, tenant_id, invoice_number, billing_party_name, data, created_by_id, updated_by_id, updated_at)
+           SELECT gen_random_uuid(), $1, $2 || g, $3, $4::jsonb, $5, $5, now() FROM generate_series(1, $6::int) g`,
+          [acme, `${marker}-cap-`, `${marker} line`, JSON.stringify(data), ownerId, 2000 - have],
+        );
+      }
+      const r = await c.send('POST', '/api/v1/dd/invoices', tok.analyst, invoiceBody(`${marker}-over`));
+      expect([r.statusCode, errorOf(r).code]).toEqual([409, 'dd_limit_reached']);
+      await admin.query(`DELETE FROM dd_invoices WHERE invoice_number LIKE $1 AND status = 'DRAFT'`, [`${marker}-cap-%`]);
+    });
+
     it('flag OFF: every D&D route 404s after 401/403/400; OCEAN_DD claims stay readable', async () => {
       await admin.query(`UPDATE feature_flags SET enabled = false, version = version + 1 WHERE key = 'intelligence.ocean_dd'`);
       try {

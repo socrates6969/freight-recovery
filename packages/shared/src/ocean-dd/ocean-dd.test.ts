@@ -630,6 +630,17 @@ describe('CSV import (C8)', () => {
   });
 });
 
+describe('fix round 1 contract changes', () => {
+  it('invoice list pageSize is capped at 50; invoice cap and body limit constants', async () => {
+    const { DdInvoiceListQuery, DdListQuery } = await import('../ocean-dd-dto.js');
+    const { DD_INVOICES_MAX, DD_INVOICE_BODY_LIMIT, DD_INVOICE_PAGE_SIZE_MAX } = await import('./constants.js');
+    expect([DD_INVOICES_MAX, DD_INVOICE_BODY_LIMIT, DD_INVOICE_PAGE_SIZE_MAX]).toEqual([2000, 262144, 50]);
+    expect(DdInvoiceListQuery.safeParse({ pageSize: '50' }).success).toBe(true);
+    expect(DdInvoiceListQuery.safeParse({ pageSize: '51' }).success).toBe(false);
+    expect(DdListQuery.safeParse({ pageSize: '100' }).success).toBe(true);
+  });
+});
+
 describe('module surface (C1, C10)', () => {
   it('root exports the public names', () => {
     const names = [

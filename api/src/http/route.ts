@@ -32,9 +32,17 @@ export interface RouteDef<B extends AnySchema | undefined, Q extends AnySchema |
   url: string;
   access: RouteAccess;
   rateGroup?: RateGroup;
+  /**
+   * Fix round 1 (S4): per-route request body limit in bytes, above the global BODY_LIMIT_BYTES. At most
+   * ROUTE_BODY_LIMIT_MAX (asserted at registration); allow-listed routes only (architecture test).
+   */
+  bodyLimit?: number;
   schema?: RouteSchemas<B, Q, P>;
   handler: (req: FastifyRequest, reply: FastifyReply, input: RouteInput<Out<B>, Out<Q>, Out<P>>) => Promise<unknown>;
 }
+
+/** Largest per-route body limit (bytes); equals the dd_invoices.data size CHECK. */
+export const ROUTE_BODY_LIMIT_MAX = 262144;
 
 export function zodDetails(error: z.ZodError): ErrorDetail[] {
   return error.issues.map((i) => ({ path: i.path.map(String).join('.'), code: i.code }));
@@ -54,9 +62,13 @@ export function defineRoute<
   P extends AnySchema | undefined = undefined,
 >(app: FastifyInstance, def: RouteDef<B, Q, P>): void {
   const schema = def.schema ?? {};
+  if (def.bodyLimit !== undefined && (!Number.isSafeInteger(def.bodyLimit) || def.bodyLimit < 1 || def.bodyLimit > ROUTE_BODY_LIMIT_MAX)) {
+    throw new Error(`route ${def.method} ${def.url}: bodyLimit must be 1..${ROUTE_BODY_LIMIT_MAX}`);
+  }
   const options: RouteOptions = {
     method: def.method,
     url: def.url,
+    ...(def.bodyLimit !== undefined ? { bodyLimit: def.bodyLimit } : {}),
     config: { access: def.access, ...(def.rateGroup ? { rateGroup: def.rateGroup } : {}) },
     preHandler: async (req) => {
       const body = parseOrThrow(schema.body, req.body, true);

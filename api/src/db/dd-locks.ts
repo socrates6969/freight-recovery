@@ -4,7 +4,8 @@
  * - `lockDdInvoiceForUpdate`: row lock of one invoice (`SELECT ... FOR UPDATE`) so updates, deletes and the
  *   audit run serialize; false when the row is not visible (unknown id or another tenant).
  * - `lockDdCatalog`: per-tenant advisory lock so the cap check (count) and the insert of POST /dd/tariffs or
- *   POST /dd/calendars cannot interleave (same pattern as charge-label-locks.ts).
+ *   POST /dd/calendars cannot interleave (same pattern as charge-label-locks.ts); fix round 1 (S2) also
+ *   serializes POST /dd/invoices for the invoice cap.
  */
 import { assertUuid } from './errors.js';
 import { advisoryXactLock } from './import-locks.js';
@@ -17,7 +18,7 @@ export async function lockDdInvoiceForUpdate(tx: TenantTx, id: string): Promise<
   return rows.length === 1;
 }
 
-export async function lockDdCatalog(tx: TenantTx, tenantId: string, kind: 'tariffs' | 'calendars'): Promise<void> {
+export async function lockDdCatalog(tx: TenantTx, tenantId: string, kind: 'tariffs' | 'calendars' | 'invoices'): Promise<void> {
   assertUuid(tenantId, 'tenantId');
   await advisoryXactLock(tx, `dd:${kind}:${tenantId}`);
 }

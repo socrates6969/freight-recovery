@@ -14,6 +14,8 @@
  */
 import {
   DD_CALENDARS_MAX,
+  DD_DIRECTIONS,
+  DD_INVOICES_MAX,
   DD_RULES_VERSION,
   DD_TARIFFS_MAX,
   DdCalendarData,
@@ -46,6 +48,7 @@ import { createHash } from 'node:crypto';
 
 import { appendAudit } from '../audit/audit.js';
 import type { Actor } from '../claims/service.js';
+import { listDdInvoiceRows } from '../db/dd-invoice-list.js';
 import { lockDdCatalog, lockDdInvoiceForUpdate } from '../db/dd-locks.js';
 import { isUuid } from '../db/errors.js';
 import type { TenantDb, TenantTx } from '../db/tenant.js';
@@ -74,8 +77,7 @@ export function parseStored<S extends z.ZodType>(schema: S, value: unknown, what
 
 const isUniqueViolation = (e: unknown): boolean => typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'P2002';
 
-/** `YYYY-MM-DD` of a DATE column (UTC components) and back. */
-const dateText = (d: Date): string => d.toISOString().slice(0, 10);
+/** A `YYYY-MM-DD` date as the UTC-midnight value of a DATE column. */
 export const dateValue = (s: string): Date => new Date(`${s}T00:00:00.000Z`);
 
 function audit(tx: TenantTx, db: TenantDb, actor: Actor, action: AuditAction, targetType: string, targetId: string, metadata: Record<string, unknown>) {
@@ -334,27 +336,36 @@ async function toDetail(tx: TenantTx, r: InvoiceRow): Promise<DdInvoiceDetailDto
   };
 }
 
-/** GET /dd/invoices: updatedAt desc, then id; optional status filter. */
+function listDirection(v: string | null): 'IMPORT' | 'EXPORT' {
+  if (v === null || !(DD_DIRECTIONS as readonly string[]).includes(v)) throw new Error('stored D&D invoice direction failed validation');
+  return v as 'IMPORT' | 'EXPORT';
+}
+
+/**
+ * GET /dd/invoices: updatedAt desc, then id; optional status filter. Fix round 1 (S1): the page never loads
+ * `data` or `audit_snapshot`; direction and container count come from JSON-path reads (pageSize <= 50).
+ */
 export async function listInvoices(db: TenantDb, q: DdInvoiceListQueryInput): Promise<DdInvoiceListDto> {
   return db.tx(async (tx) => {
     const where = q.status === undefined ? {} : { status: q.status };
     const total = await tx.ddInvoice.count({ where });
-    const rows = await tx.ddInvoice.findMany({ where, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], ...pageArgs(q), select: INVOICE_SELECT });
+    const { skip, take } = pageArgs(q);
+    const rows = await listDdInvoiceRows(tx, db.tenantId, { status: q.status, limit: take, offset: skip });
     const items = rows.map((r) => {
-      const data = parseStored(DdInvoiceData, r.data, 'D&D invoice');
+      if (r.containerCount === null || r.containerCount < 1) throw new Error('stored D&D invoice containers failed validation');
       return {
         id: r.id,
         status: invoiceStatus(r.status),
         version: r.version,
         invoiceNumber: r.invoiceNumber,
         billingPartyName: r.billingPartyName,
-        direction: data.direction,
-        invoiceDate: r.invoiceDate === null ? null : dateText(r.invoiceDate),
+        direction: listDirection(r.direction),
+        invoiceDate: r.invoiceDate,
         totalDueCents: r.totalDueCents,
-        containerCount: data.containers.length,
+        containerCount: r.containerCount,
         claimId: r.claimId,
-        auditedAt: r.auditedAt === null ? null : r.auditedAt.toISOString(),
-        updatedAt: r.updatedAt.toISOString(),
+        auditedAt: r.auditedAt,
+        updatedAt: r.updatedAt,
       };
     });
     return { items, page: q.page, pageSize: q.pageSize, total };
@@ -395,12 +406,17 @@ const derived = (data: DdInvoiceDataDto) => ({
 
 const invoiceMeta = (id: string, version: number, data: DdInvoiceDataDto) => ({ invoiceId: id, version, containerCount: data.containers.length, dataSha256: ddSha256(data) });
 
-/** POST /dd/invoices: 400 reference not_found, 409 conflict on a duplicate (billing party, invoice number). */
+/**
+ * POST /dd/invoices: 400 reference not_found, 409 dd_limit_reached at DD_INVOICES_MAX (fix round 1 S2,
+ * serialized per tenant), 409 conflict on a duplicate (billing party, invoice number).
+ */
 export async function createInvoice(db: TenantDb, actor: Actor, body: DdInvoiceBodyDto): Promise<DdInvoiceDetailDto> {
   const { data, tariffId, calendarId } = splitBody(body);
   try {
     return await db.tx(async (tx) => {
+      await lockDdCatalog(tx, db.tenantId, 'invoices');
       await checkReferences(tx, tariffId, calendarId);
+      if ((await tx.ddInvoice.count()) >= DD_INVOICES_MAX) throw errors.ddLimitReached();
       if (await tx.ddInvoice.findFirst({ where: { billingPartyName: data.billingPartyName, invoiceNumber: data.invoiceNumber }, select: { id: true } })) throw errors.conflict();
       const row = await tx.ddInvoice.create({
         data: { tenantId: db.tenantId, status: 'DRAFT', ...derived(data), data, tariffId, calendarId, version: 1, createdById: actor.userId, updatedById: actor.userId },

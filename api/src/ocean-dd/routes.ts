@@ -6,6 +6,7 @@
  * `strictBody`. The audit route uses the per-user `analysis` bucket, all others `intelligence`.
  */
 import {
+  DD_INVOICE_BODY_LIMIT,
   DdAuditResponse,
   DdCalendarData,
   DdCalendarList,
@@ -159,6 +160,8 @@ export function registerOceanDdRoutes(app: FastifyInstance, deps: OceanDdRouteDe
     url: `${P}/invoices`,
     access: { kind: 'permission', permission: 'dd_invoices:manage' },
     rateGroup: 'intelligence',
+    // Fix round 1 (S4): a maximal invoice (50 containers x 20 periods) exceeds the global 64 KiB limit.
+    bodyLimit: DD_INVOICE_BODY_LIMIT,
     schema: { body: DdInvoiceBody },
     handler: async (req, reply, { body }) => {
       const ctx = requireTenant(req);
@@ -186,6 +189,7 @@ export function registerOceanDdRoutes(app: FastifyInstance, deps: OceanDdRouteDe
     url: `${P}/invoices/:id`,
     access: { kind: 'permission', permission: 'dd_invoices:manage' },
     rateGroup: 'intelligence',
+    bodyLimit: DD_INVOICE_BODY_LIMIT,
     schema: { params: IdParams, body: DdInvoicePutBody },
     handler: async (req, _reply, { params, body }) => {
       const ctx = requireTenant(req);

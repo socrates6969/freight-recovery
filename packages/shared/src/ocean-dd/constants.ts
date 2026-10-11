@@ -44,6 +44,12 @@ export const DD_CSV_MAX_INVOICES = 50;
 /** Per-tenant caps (decision D11). */
 export const DD_TARIFFS_MAX = 200;
 export const DD_CALENDARS_MAX = 200;
+/** Fix round 1 (S2): per-tenant cap of D&D invoices (DRAFT + AUDITED); beyond it 409 dd_limit_reached. */
+export const DD_INVOICES_MAX = 2000;
+/** Fix round 1 (S1): largest pageSize of GET /dd/invoices. */
+export const DD_INVOICE_PAGE_SIZE_MAX = 50;
+/** Fix round 1 (S4): request body limit (bytes) of POST/PUT /dd/invoices; equals the dd_invoices.data CHECK. */
+export const DD_INVOICE_BODY_LIMIT = 262144;
 
 export const DD_SOURCE_FILES = Object.freeze({
   invoice: 'dd-invoice.json',

@@ -172,7 +172,8 @@ const METADATA_KEYS = new Set([
   'scopes',
   'expiresAt',
   'viaApiKey',
-  // Four-eyes (REQ-20261009-four-eyes): fixed refusal basis code (revision_author | uploader | field_editor).
+  // Four-eyes (REQ-20261009-four-eyes): fixed refusal basis code (revision_author | uploader | field_editor;
+  // step 8 fix round 1: dd_invoice_editor).
   'basis',
   // Step 5 (REQ-20261010-step5-analysis): analysis counts, cents totals, rules version and bulk summary.
   // Never names, file names, extracted values or letter text.

@@ -17,6 +17,7 @@ import {
   DD_CONTAINERS_MAX,
   DD_DAY_BASES,
   DD_DIRECTIONS,
+  DD_INVOICE_PAGE_SIZE_MAX,
   DD_INVOICE_STATUSES,
   DD_PERIOD_SPAN_MAX_DAYS,
   DD_PERIODS_MAX,
@@ -297,9 +298,10 @@ export const DdListQuery = z.strictObject({
   pageSize: intFromQuery.min(1).max(PAGE_SIZE_MAX).default(PAGE_SIZE_DEFAULT),
 });
 export type DdListQueryInput = z.output<typeof DdListQuery>;
+/** Fix round 1 (S1): invoice pages are capped at DD_INVOICE_PAGE_SIZE_MAX (50). */
 export const DdInvoiceListQuery = z.strictObject({
   page: intFromQuery.min(1).default(1),
-  pageSize: intFromQuery.min(1).max(PAGE_SIZE_MAX).default(PAGE_SIZE_DEFAULT),
+  pageSize: intFromQuery.min(1).max(DD_INVOICE_PAGE_SIZE_MAX).default(PAGE_SIZE_DEFAULT),
   status: z.enum(DD_INVOICE_STATUSES).optional(),
 });
 export type DdInvoiceListQueryInput = z.output<typeof DdInvoiceListQuery>;

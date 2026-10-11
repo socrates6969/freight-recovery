@@ -12,6 +12,9 @@ import { SafeText } from '../../components/ui/SafeText';
 
 import { SelectField, ddErrorText, useDdCatalogs } from './dd-common';
 
+/** Largest file size read: 4 bytes per character at most (UTF-8). */
+export const CSV_MAX_BYTES = 4 * DD_CSV_MAX_CHARS;
+
 interface Outcome {
   key: string;
   label: string;
@@ -36,6 +39,11 @@ export function CsvImportTab() {
     setOutcomes([]);
     setError(null);
     if (!file) return;
+    // Fix round 1 (S5): refuse oversized files before reading them (a character is at most 4 UTF-8 bytes).
+    if (file.size > CSV_MAX_BYTES) {
+      setError('The file is too large to import.');
+      return;
+    }
     const text = await file.text();
     if (text.length > DD_CSV_MAX_CHARS) {
       setError('The file is too large to import.');

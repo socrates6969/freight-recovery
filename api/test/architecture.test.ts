@@ -206,6 +206,16 @@ describe('architecture', () => {
     }
   });
 
+  it('per-route bodyLimit is used only on POST and PUT /api/v1/dd/invoices (step 8 fix round 1, S4)', () => {
+    const uses = files.filter((f) => f.path.startsWith('src/') && /\bbodyLimit\s*:/u.test(f.text) && f.path !== 'src/app.ts' && f.path !== 'src/http/route.ts');
+    expect(uses.map((f) => f.path)).toEqual(['src/ocean-dd/routes.ts']);
+    const text = uses[0]?.text ?? '';
+    const blocks = text.split('defineRoute(app, {').slice(1);
+    const limited = blocks.filter((b) => /\bbodyLimit\s*:/u.test(b)).map((b) => `${/method: '([A-Z]+)'/u.exec(b)?.[1] ?? ''} ${/url: `([^`]+)`/u.exec(b)?.[1] ?? ''}`);
+    expect(limited).toEqual(['POST ${P}/invoices', 'PUT ${P}/invoices/:id']);
+    expect(text).toContain('bodyLimit: DD_INVOICE_BODY_LIMIT');
+  });
+
   it('ocean D&D code reads only through the tenant transaction (step 8, REQ-20261011-ocean-dd)', () => {
     const dd = files.filter((f) => f.path.startsWith('src/ocean-dd/'));
     expect(dd.length).toBeGreaterThanOrEqual(3);

@@ -10,6 +10,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { buildApp } from '../src/app.js';
+import { ROUTE_BODY_LIMIT_MAX, defineRoute } from '../src/http/route.js';
 import { buildDdPacket } from '../src/ocean-dd/audit-run.js';
 import { ddSha256 } from '../src/ocean-dd/service.js';
 
@@ -126,6 +127,19 @@ describe('buildDdPacket', () => {
       { from: '2026-03-08', to: '2026-03-08', rate: '0.01', amount: '9999999.99' },
     ];
     expect(() => buildDdPacket({ invoice: invoice({ totalDue: null }, huge), tariff: null, calendar: null, now: NOW, actorId: ACTOR })).toThrow(AnalysisInputError);
+  });
+});
+
+describe('per-route body limit (fix round 1, S4)', () => {
+  it('accepts 1..262144 and refuses anything larger at registration', async () => {
+    const { default: Fastify } = await import('fastify');
+    const f = Fastify();
+    const def = (bodyLimit: number, url: string) => ({ method: 'POST' as const, url, access: { kind: 'public' as const }, bodyLimit, handler: async () => ({}) });
+    expect(ROUTE_BODY_LIMIT_MAX).toBe(262144);
+    expect(() => defineRoute(f, def(262144, '/ok'))).not.toThrow();
+    expect(() => defineRoute(f, def(262145, '/too-big'))).toThrow(/bodyLimit/u);
+    expect(() => defineRoute(f, def(0, '/zero'))).toThrow(/bodyLimit/u);
+    await f.close();
   });
 });
 

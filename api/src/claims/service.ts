@@ -135,7 +135,15 @@ export async function listApprovalQueue(
           select: { claimId: true },
           distinct: ['claimId'],
         });
-  const authoredSet = new Set(authored.map((a) => a.claimId));
+  // Step 8 fix round 1 (S3): a D&D invoice creator/editor is also refused, so mark those claims too.
+  const ddEdited =
+    pageIds.length === 0
+      ? []
+      : await tx.ddInvoice.findMany({
+          where: { claimId: { in: pageIds }, OR: [{ createdById: viewerId }, { updatedById: viewerId }] },
+          select: { claimId: true },
+        });
+  const authoredSet = new Set([...authored.map((a) => a.claimId), ...ddEdited.flatMap((d) => (d.claimId === null ? [] : [d.claimId]))]);
   const items = rows.map((r) => {
     const p = r.packets[0];
     const summary = toClaimSummary(r as unknown as SummaryRow);
@@ -373,6 +381,17 @@ export async function transition(
         targetType: 'claim',
         targetId: claimId,
         metadata: { claimId, packetId: latest.id, packetRevision: latest.revision, action: ACTION_FOR[kind], basis: 'revision_author' },
+      });
+    }
+    // Step 8 fix round 1 (S3): for an OCEAN_DD claim, the creator and the last editor of its D&D invoice
+    // are excluded too (the invoice data is the evidence of revision 1).
+    const ddEditor = await tx.ddInvoice.findFirst({ where: { claimId, OR: [{ createdById: actor.userId }, { updatedById: actor.userId }] }, select: { id: true } });
+    if (ddEditor) {
+      throw errors.fourEyes({
+        tenantId,
+        targetType: 'claim',
+        targetId: claimId,
+        metadata: { claimId, packetId: latest.id, packetRevision: latest.revision, action: ACTION_FOR[kind], basis: 'dd_invoice_editor' },
       });
     }
   }
