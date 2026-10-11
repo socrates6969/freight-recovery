@@ -34,11 +34,12 @@ export const DD_TEXT = Object.freeze({
   kindBadge: 'D&D',
   forbidden: 'You do not have permission to do this.',
   conflict: 'This item already exists or changed. Reload to continue.',
-  limit: 'This organization has reached the maximum number of D&D tariffs or calendars.',
+  limit: 'This organization has reached the maximum number of D&D tariffs, calendars or invoices.',
   invalid: 'The invoice values cannot be audited automatically.',
   rateLimited: 'Too many requests. Try again later.',
   failed: 'Something went wrong. Try again.',
   csvErrors: 'Rows with errors were not imported.',
+  csvTooLarge: 'The file is too large to import.',
 } as const);
 
 export const DD_CHECK_LABELS: Readonly<Record<DdCheckId, string>> = Object.freeze({

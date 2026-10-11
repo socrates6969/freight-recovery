@@ -10,6 +10,7 @@ import {
   DD_TARIFF_PRESETS,
   DD_TEXT,
   DD_CSV_COLUMNS,
+  DD_CSV_MAX_FILE_BYTES,
   DdInvoiceData,
   PERMISSION_MATRIX,
   auditDdInvoice,
@@ -230,11 +231,11 @@ describe('Ocean D&D page', () => {
     render(<AppRoot fetchImpl={fetchImpl} initialEntries={['/ocean']} />);
     await u.click(await screen.findByRole('tab', { name: DD_TEXT.importCsv }));
     const file = new File(['x'], 'big.csv', { type: 'text/csv' });
-    Object.defineProperty(file, 'size', { value: 4_000_001 });
+    Object.defineProperty(file, 'size', { value: DD_CSV_MAX_FILE_BYTES + 1 });
     let read = false;
     Object.defineProperty(file, 'text', { value: () => { read = true; return Promise.resolve('x'); } });
     await u.upload(screen.getByLabelText('CSV file'), file);
-    expect(await screen.findByText('The file is too large to import.')).toBeInTheDocument();
+    expect(await screen.findByText(DD_TEXT.csvTooLarge)).toBeInTheDocument();
     expect(read).toBe(false);
   });
 

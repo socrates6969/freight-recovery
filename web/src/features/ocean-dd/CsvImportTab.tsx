@@ -3,7 +3,7 @@
  * characters before parsing, parsed with the shared `parseDdCsv`, previewed (invoices and row errors), then
  * each invoice is posted one by one with the chosen tariff/calendar; per-invoice outcomes are listed.
  */
-import { DD_CSV_MAX_CHARS, DD_TEXT, DdInvoiceDetail, parseDdCsv, type DdCsvResult } from '@fr/shared';
+import { DD_CSV_MAX_CHARS, DD_CSV_MAX_FILE_BYTES, DD_TEXT, DdInvoiceDetail, parseDdCsv, type DdCsvResult } from '@fr/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 
@@ -11,9 +11,6 @@ import { useApi, useCan } from '../../app-context';
 import { SafeText } from '../../components/ui/SafeText';
 
 import { SelectField, ddErrorText, useDdCatalogs } from './dd-common';
-
-/** Largest file size read: 4 bytes per character at most (UTF-8). */
-export const CSV_MAX_BYTES = 4 * DD_CSV_MAX_CHARS;
 
 interface Outcome {
   key: string;
@@ -40,13 +37,13 @@ export function CsvImportTab() {
     setError(null);
     if (!file) return;
     // Fix round 1 (S5): refuse oversized files before reading them (a character is at most 4 UTF-8 bytes).
-    if (file.size > CSV_MAX_BYTES) {
-      setError('The file is too large to import.');
+    if (file.size > DD_CSV_MAX_FILE_BYTES) {
+      setError(DD_TEXT.csvTooLarge);
       return;
     }
     const text = await file.text();
     if (text.length > DD_CSV_MAX_CHARS) {
-      setError('The file is too large to import.');
+      setError(DD_TEXT.csvTooLarge);
       return;
     }
     setParsed(parseDdCsv(text));

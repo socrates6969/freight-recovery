@@ -41,7 +41,7 @@ export const ERROR_MESSAGES = {
   fuel_table_unavailable: 'The fuel table does not exist or is archived.',
   miles_required: 'Miles are required for a per-mile fuel table.',
   // Step 8 (REQ-20261011-ocean-dd, C13)
-  dd_limit_reached: 'This organization has reached the maximum number of D&D tariffs or calendars.',
+  dd_limit_reached: 'This organization has reached the maximum number of D&D tariffs, calendars or invoices.',
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;

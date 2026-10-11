@@ -4,7 +4,7 @@
  * in the global onRequest security pipeline (before body parsing); request validation runs afterwards
  * in preHandler, so a caller lacking permission gets 403 even for an invalid body.
  */
-import type { Role } from '@fr/shared';
+import { DD_INVOICE_BODY_LIMIT, type Role } from '@fr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods, RouteOptions } from 'fastify';
 import { type z } from 'zod';
 
@@ -42,7 +42,7 @@ export interface RouteDef<B extends AnySchema | undefined, Q extends AnySchema |
 }
 
 /** Largest per-route body limit (bytes); equals the dd_invoices.data size CHECK. */
-export const ROUTE_BODY_LIMIT_MAX = 262144;
+export const ROUTE_BODY_LIMIT_MAX = DD_INVOICE_BODY_LIMIT;
 
 export function zodDetails(error: z.ZodError): ErrorDetail[] {
   return error.issues.map((i) => ({ path: i.path.map(String).join('.'), code: i.code }));

@@ -6,6 +6,7 @@ import { DdCalendarData, DdInvoiceBody, DdInvoiceData, DdTariffData, type DdCale
 import {
   DD_CHECK_LABELS,
   DD_CSV_COLUMNS,
+  DD_TEXT,
   DD_REGULATION_TEXT,
   DD_RULE_IDS,
   DD_SOURCE_FILES,
@@ -633,8 +634,10 @@ describe('CSV import (C8)', () => {
 describe('fix round 1 contract changes', () => {
   it('invoice list pageSize is capped at 50; invoice cap and body limit constants', async () => {
     const { DdInvoiceListQuery, DdListQuery } = await import('../ocean-dd-dto.js');
-    const { DD_INVOICES_MAX, DD_INVOICE_BODY_LIMIT, DD_INVOICE_PAGE_SIZE_MAX } = await import('./constants.js');
-    expect([DD_INVOICES_MAX, DD_INVOICE_BODY_LIMIT, DD_INVOICE_PAGE_SIZE_MAX]).toEqual([2000, 262144, 50]);
+    const { DD_INVOICES_MAX, DD_INVOICE_BODY_LIMIT, DD_INVOICE_PAGE_SIZE_MAX, DD_CSV_MAX_FILE_BYTES } = root as Record<string, unknown>;
+    expect([DD_INVOICES_MAX, DD_INVOICE_BODY_LIMIT, DD_INVOICE_PAGE_SIZE_MAX, DD_CSV_MAX_FILE_BYTES]).toEqual([2000, 262144, 50, 4000000]);
+    expect(DD_TEXT.limit).toBe('This organization has reached the maximum number of D&D tariffs, calendars or invoices.');
+    expect(DD_TEXT.csvTooLarge).toBe('The file is too large to import.');
     expect(DdInvoiceListQuery.safeParse({ pageSize: '50' }).success).toBe(true);
     expect(DdInvoiceListQuery.safeParse({ pageSize: '51' }).success).toBe(false);
     expect(DdListQuery.safeParse({ pageSize: '100' }).success).toBe(true);

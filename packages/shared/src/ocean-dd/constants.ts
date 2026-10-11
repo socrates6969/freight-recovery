@@ -41,6 +41,8 @@ export const DD_PERIOD_SPAN_MAX_DAYS = 365;
 export const DD_CSV_MAX_CHARS = 1_000_000;
 export const DD_CSV_MAX_ROWS = 2000;
 export const DD_CSV_MAX_INVOICES = 50;
+/** Largest CSV file read by the web import (bytes; 4 x DD_CSV_MAX_CHARS, a character is at most 4 UTF-8 bytes). */
+export const DD_CSV_MAX_FILE_BYTES = 4_000_000;
 /** Per-tenant caps (decision D11). */
 export const DD_TARIFFS_MAX = 200;
 export const DD_CALENDARS_MAX = 200;
