@@ -33,6 +33,11 @@ const CLAIM_ANALYZED_KEYS = [
   'documentIds',
   'findingsCount',
   'fromStatus',
+  // Step 7 (REQ-20261011-fuel-outlook, F13): fuel-check status and provenance (flag on, no inputs here).
+  'fscTableId',
+  'fscTableVersion',
+  'fuelCheckStatus',
+  'fuelFindingsCount',
   'ignoredFindingsCount',
   'learnedFindingsCount',
   'learnedLabelIds',
@@ -40,6 +45,8 @@ const CLAIM_ANALYZED_KEYS = [
   'pendingFindingsCount',
   'pendingReviewCents',
   'perspective',
+  'priceDate',
+  'priceImportId',
   'recoverableCents',
   'reviewFlagsCount',
   'revision',
@@ -150,7 +157,7 @@ describe.skipIf(!canRun)('claim analysis (PostgreSQL + S3 + sandbox)', () => {
     expect(body).toEqual({
       claim: { id: claim.id, status: 'PENDING_REVIEW', recoverableCents: 32500, pendingReviewCents: 15000, amountClaimedCents: 47500 },
       packet: { id: expect.any(String) as string, revision: 1, status: 'PENDING_REVIEW', contentHash: expect.stringMatching(/^[0-9a-f]{64}$/u) as string },
-      analysis: { rulesVersion: 'rules-v1', findingsCount: 3, pendingFindingsCount: 1, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0 },
+      analysis: { rulesVersion: 'rules-v1', findingsCount: 3, pendingFindingsCount: 1, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0, fuelCheckStatus: 'no_inputs', fuelFindingsCount: 0 },
     });
     expect(await claimRow(claim.id)).toMatchObject({
       status: 'PENDING_REVIEW',
