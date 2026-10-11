@@ -144,10 +144,11 @@ function checkInput(input: FuelCheckInput): void {
 }
 
 /**
- * F5: the fuel check of one bundle. `classify` is the step-6 charge classifier (null: keyword fuel lines
- * only). `settings.amountTolerance` is the threshold of a finding (default: the step-5 default).
+ * F5: the fuel check of one bundle with its finding and the billed fuel-line indices (internal form used
+ * by `buildEvidenceFuel`). `classify` is the step-6 charge classifier (null: keyword fuel lines only).
+ * `settings.amountTolerance` is the threshold of a finding (default: the step-5 default).
  */
-export function checkFuel(
+export function computeFuelCheck(
   bundle: ExtractedBundle,
   input: FuelCheckInput | null,
   classify: ((description: string) => ChargeSuggestion) | null,
@@ -246,4 +247,14 @@ export function checkFuel(
     finding,
     traceLines,
   };
+}
+
+/** F5 `checkFuel(bundle, input, classify | null)`: the `FuelCheckResult` of one bundle. */
+export function checkFuel(
+  bundle: ExtractedBundle,
+  input: FuelCheckInput | null,
+  classify: ((description: string) => ChargeSuggestion) | null,
+  settings: AnalysisSettings = DEFAULT_ANALYSIS_SETTINGS,
+): FuelCheckResultDto {
+  return computeFuelCheck(bundle, input, classify, settings).result;
 }

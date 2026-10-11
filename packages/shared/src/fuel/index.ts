@@ -11,5 +11,5 @@ export * from '../outlook/copy.js';
 export * from '../outlook-dto.js';
 export { DAY, addDays, applicablePosting, civilFromDays, fromDays, parseCivilDate, toDays, weekRuleText, weekdayIndex, type ApplicablePosting, type PostingObservation } from './week.js';
 export { checkFscTableSpec, evaluateFscTable, expectedAmount, scaled, type FscEvaluation, type FscTableSpec } from './table.js';
-export { checkFuel, type FuelAnalysisFinding, type FuelCheckComputation, type FuelCheckInput } from './check.js';
+export { checkFuel, computeFuelCheck, type FuelAnalysisFinding, type FuelCheckComputation, type FuelCheckInput } from './check.js';
 export { buildEvidenceFuel, type FuelEvidence, type FuelEvidenceOutcome, type FuelRecoveryResult } from './evidence.js';

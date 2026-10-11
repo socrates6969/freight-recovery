@@ -18,6 +18,7 @@ import {
   applicablePosting,
   buildEvidenceFuel,
   checkFuel,
+  computeFuelCheck,
   evaluateFscTable,
   weekRuleText,
   weekdayIndex,
@@ -215,7 +216,7 @@ describe('checkFuel (F5)', () => {
   ]);
 
   it('produces the exact F5 finding with the wrong-week diagnosis', () => {
-    const c = checkFuel(wrongWeek, input(), null);
+    const c = computeFuelCheck(wrongWeek, input(), null);
     expect(c.result.status).toBe('finding');
     expect(c.traceLines).toEqual([1]);
     expect(c.finding).toEqual({
@@ -255,8 +256,13 @@ describe('checkFuel (F5)', () => {
     });
   });
 
+  it('the public checkFuel returns the FuelCheckResult itself', () => {
+    expect(checkFuel(wrongWeek, input(), null)).toEqual(computeFuelCheck(wrongWeek, input(), null).result);
+    expect(checkFuel(wrongWeek, null, null).status).toBe('no_inputs');
+  });
+
   it('walks every status in the F5 order', () => {
-    const st = (b: ExtractedBundle, i: FuelCheckInput | null) => checkFuel(b, i, null).result.status;
+    const st = (b: ExtractedBundle, i: FuelCheckInput | null) => computeFuelCheck(b, i, null).result.status;
     expect(st(wrongWeek, null)).toBe('no_inputs');
     expect(st(wrongWeek, input({ table: table({ archived: true }) }))).toBe('table_archived');
     expect(st(bundle([['Fuel surcharge', '435.00']], { fuel_surcharge: '420.00' }), input())).toBe('contract_amount');
@@ -273,20 +279,20 @@ describe('checkFuel (F5)', () => {
   });
 
   it('fills the F5.6 fields per status', () => {
-    const none = checkFuel(wrongWeek, input({ series: null }), null).result;
+    const none = computeFuelCheck(wrongWeek, input({ series: null }), null).result;
     expect([none.postedDate, none.billed, none.rate, none.priceImport, none.calculation]).toEqual([null, null, null, null, []]);
-    const mm = checkFuel(wrongWeek, input({ miles: null }), null).result;
+    const mm = computeFuelCheck(wrongWeek, input({ miles: null }), null).result;
     expect([mm.postedDate, mm.price, mm.rate, mm.billed, mm.expected, mm.difference, mm.direction, mm.calculation]).toEqual(['2026-10-05', '6.199', '0.84', '435.00', null, null, null, []]);
-    const ok = checkFuel(bundle([['Fuel surcharge', '420.00']]), input(), null).result;
+    const ok = computeFuelCheck(bundle([['Fuel surcharge', '420.00']]), input(), null).result;
     expect([ok.expected, ok.difference, ok.direction, ok.alternative, ok.calculation.length]).toEqual(['420.00', '0.00', null, null, 6]);
   });
 
   it('percent tables use the contract linehaul, else the unique invoice linehaul lines', () => {
     const pct = table({ unit: 'percent', params: { basePrice: '1.20', stepSize: '0.06', ratePerStep: '0.5', bracket: 'above_base' } });
     // 84 steps x 0.5% = 42.0% of 1500.00 = 630.00
-    const rc = checkFuel(bundle([['Fuel surcharge', '640.00']]), input({ table: pct }), null);
+    const rc = computeFuelCheck(bundle([['Fuel surcharge', '640.00']]), input({ table: pct }), null);
     expect(rc.finding?.calculation[3]).toBe('Expected: 42.0% x linehaul $1500.00 (rate confirmation) = $630.00.');
-    const inv = checkFuel(bundle([['Linehaul', '1000.00'], ['Linehaul', '1000.00'], ['Fuel surcharge', '400.00']], null), input({ table: pct }), null);
+    const inv = computeFuelCheck(bundle([['Linehaul', '1000.00'], ['Linehaul', '1000.00'], ['Fuel surcharge', '400.00']], null), input({ table: pct }), null);
     expect(inv.finding?.calculation[3]).toBe('Expected: 42.0% x linehaul $1000.00 (invoice linehaul lines) = $420.00.');
     expect(inv.finding?.direction).toBe('underbilled');
   });
@@ -294,33 +300,33 @@ describe('checkFuel (F5)', () => {
   it('adds classifier-suggested fuel lines and marks them', () => {
     const c = buildChargeClassifier([{ id: 'l1', description: 'Diesel adjustment', category: 'fuel' }]);
     const b = bundle([['Fuel surcharge', '400.00'], ['Diesel adjustment', '35.00']]);
-    const r = checkFuel(b, input(), (d) => c.classify(d));
+    const r = computeFuelCheck(b, input(), (d) => c.classify(d));
     expect(r.traceLines).toEqual([0, 1]);
     expect(r.result.calculation[4]).toBe("Billed fuel lines: 'Fuel surcharge' $400.00, 'Diesel adjustment' $35.00 (suggested fuel line) = $435.00.");
-    expect(checkFuel(b, input(), null).result.billed).toBe('400.00');
+    expect(computeFuelCheck(b, input(), null).result.billed).toBe('400.00');
   });
 
   it('cites the rows, mpg and not-reached table lines', () => {
     const rows = table({ kind: 'rows', params: { rows: [{ atLeast: '6.10', rate: '0.80' }, { atLeast: '6.30', rate: '0.90' }] } });
-    expect(checkFuel(wrongWeek, input({ table: rows }), null).result.calculation[2]).toBe("Fuel table 'Acme FSC' v1: row from $6.10 applies: $0.80 per mile.");
+    expect(computeFuelCheck(wrongWeek, input({ table: rows }), null).result.calculation[2]).toBe("Fuel table 'Acme FSC' v1: row from $6.10 applies: $0.80 per mile.");
     const rowsHigh = table({ kind: 'rows', params: { rows: [{ atLeast: '7.00', rate: '0.80' }] } });
-    expect(checkFuel(wrongWeek, input({ table: rowsHigh }), null).result.calculation[2]).toBe("Fuel table 'Acme FSC' v1: $6.199 is below the first row ($7.00); rate $0 per mile.");
+    expect(computeFuelCheck(wrongWeek, input({ table: rowsHigh }), null).result.calculation[2]).toBe("Fuel table 'Acme FSC' v1: $6.199 is below the first row ($7.00); rate $0 per mile.");
     const mpg = table({ kind: 'mpg', version: 3, params: { basePrice: '1.20', mpg: '6', decimals: 2 } });
-    expect(checkFuel(wrongWeek, input({ table: mpg }), null).result.calculation[2]).toBe("Fuel table 'Acme FSC' v3: ($6.199 - $1.20) / 6 mpg = $0.83 per mile (rounded half up to 2 decimals).");
+    expect(computeFuelCheck(wrongWeek, input({ table: mpg }), null).result.calculation[2]).toBe("Fuel table 'Acme FSC' v3: ($6.199 - $1.20) / 6 mpg = $0.83 per mile (rounded half up to 2 decimals).");
     const high = table({ params: { basePrice: '9.00', stepSize: '0.05', ratePerStep: '0.01', bracket: 'from_base' } });
-    expect(checkFuel(wrongWeek, input({ table: high }), null).result.calculation[2]).toBe("Fuel table 'Acme FSC' v1: $6.199 does not reach the first step (base $9.00); rate $0 per mile.");
+    expect(computeFuelCheck(wrongWeek, input({ table: high }), null).result.calculation[2]).toBe("Fuel table 'Acme FSC' v1: $6.199 does not reach the first step (base $9.00); rate $0 per mile.");
     const from = table({ params: { basePrice: '1.12', stepSize: '0.05', ratePerStep: '0.01', bracket: 'from_base' } });
-    expect(checkFuel(wrongWeek, input({ table: from }), null).result.calculation[2]).toBe("Fuel table 'Acme FSC' v1: 1 + floor(($6.199 - $1.12) / $0.05) = 102 step(s) x $0.01 per mile = $1.02 per mile.");
+    expect(computeFuelCheck(wrongWeek, input({ table: from }), null).result.calculation[2]).toBe("Fuel table 'Acme FSC' v1: 1 + floor(($6.199 - $1.12) / $0.05) = 102 step(s) x $0.01 per mile = $1.02 per mile.");
   });
 
   it('probes earlier weeks before the later week and reports later postings', () => {
     // Billed equals the 2026-09-21 price (2 weeks earlier): 6.100 -> 82 steps -> 410.00
-    expect(checkFuel(bundle([['Fuel surcharge', '410.00']]), input(), null).result.alternative).toEqual({ postedDate: '2026-09-21', price: '6.100', weeks: 2, later: false });
+    expect(computeFuelCheck(bundle([['Fuel surcharge', '410.00']]), input(), null).result.alternative).toEqual({ postedDate: '2026-09-21', price: '6.100', weeks: 2, later: false });
     // 3 weeks earlier: 2026-09-14 (6.000 -> 80 steps -> 400.00)
-    expect(checkFuel(bundle([['Fuel surcharge', '400.00']]), input(), null).result.alternative).toEqual({ postedDate: '2026-09-14', price: '6.000', weeks: 3, later: false });
+    expect(computeFuelCheck(bundle([['Fuel surcharge', '400.00']]), input(), null).result.alternative).toEqual({ postedDate: '2026-09-14', price: '6.000', weeks: 3, later: false });
     // Ship 2026-09-30 applies 09-28; billed equals the later 10-05 posting (420.00).
-    expect(checkFuel(bundle([['Fuel surcharge', '420.00']]), input({ shipDate: '2026-09-30' }), null).result.alternative).toEqual({ postedDate: '2026-10-05', price: '6.199', weeks: 1, later: true });
-    expect(checkFuel(bundle([['Fuel surcharge', '1.00']]), input(), null).result.alternative).toBeNull();
+    expect(computeFuelCheck(bundle([['Fuel surcharge', '420.00']]), input({ shipDate: '2026-09-30' }), null).result.alternative).toEqual({ postedDate: '2026-10-05', price: '6.199', weeks: 1, later: true });
+    expect(computeFuelCheck(bundle([['Fuel surcharge', '1.00']]), input(), null).result.alternative).toBeNull();
   });
 });
 

@@ -16,7 +16,7 @@ import type { ChargeClassifier } from '../charge-intel/classifier.js';
 import { applyLearning, type LearnedOutcome } from '../charge-intel/learned.js';
 import type { FuelCheckResultDto } from '../fuel-dto.js';
 
-import { checkFuel, type FuelAnalysisFinding, type FuelCheckInput } from './check.js';
+import { computeFuelCheck, type FuelAnalysisFinding, type FuelCheckInput } from './check.js';
 
 /** RecoveryResult whose findings may include learned and fuel findings. */
 export type FuelRecoveryResult = Omit<RecoveryResult, 'findings' | 'ignored_findings'> & {
@@ -57,7 +57,7 @@ export function buildEvidenceFuel(
   const traced = applyRulesTraced(bundle, perspective, settings);
   const classify = classifier === null ? null : (d: string) => classifier.classify(d);
   const learned = applyLearning(bundle, traced, traced.result.perspective, classify);
-  const fuel = checkFuel(bundle, input, classify, settings);
+  const fuel = computeFuelCheck(bundle, input, classify, settings);
   const persp = learned.result.perspective;
 
   let result: FuelRecoveryResult = learned.result;

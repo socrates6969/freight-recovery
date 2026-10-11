@@ -374,7 +374,7 @@ export async function fuelCheck(db: TenantDb, claimId: string, series: PriceSeri
     const input = await loadAnalysisInput(tx, claimId);
     const classifier = classifierFlag ? (await loadClassifier(tx)).classifier : null;
     try {
-      const { result } = checkFuel(input.bundle, loaded?.input ?? null, classifier === null ? null : (d) => classifier.classify(d), DEFAULT_ANALYSIS_SETTINGS);
+      const result = checkFuel(input.bundle, loaded?.input ?? null, classifier === null ? null : (d) => classifier.classify(d), DEFAULT_ANALYSIS_SETTINGS);
       return { claimId, inputs: loaded?.inputs ?? null, table: loaded?.table ?? null, result };
     } catch (e) {
       if (e instanceof AnalysisInputError || e instanceof RangeError) throw errors.analysisInputInvalid();
