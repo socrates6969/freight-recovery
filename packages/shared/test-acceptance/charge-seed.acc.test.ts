@@ -162,12 +162,17 @@ describe('C8-C10 shared registries (additive)', () => {
     for (const r of ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER', 'ANALYST', 'VIEWER', 'PLATFORM_DEV', 'SUPER_ADMIN']) expect(R.can(r, 'charge_labels:manage'), r).toBe(['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER'].includes(r));
   });
   it('CI-U03 AUDIT_ACTIONS ends with claim.analyzed, claim.bulk_analyzed, charge_label.set, charge_label.deleted', () => {
-    expect([...R.AUDIT_ACTIONS].slice(-4)).toEqual(['claim.analyzed', 'claim.bulk_analyzed', 'charge_label.set', 'charge_label.deleted']);
+    // REQ-20261011-fuel-outlook F13 (additive): the six step-7 actions are appended after charge_label.deleted.
+    const a = [...R.AUDIT_ACTIONS];
+    const i = a.indexOf('charge_label.deleted');
+    expect(a.slice(i - 3, i + 1)).toEqual(['claim.analyzed', 'claim.bulk_analyzed', 'charge_label.set', 'charge_label.deleted']);
+    expect(a.slice(i + 1)).toEqual(['fsc_table.created', 'fsc_table.updated', 'fsc_table.archived', 'claim.fuel_inputs_set', 'claim.fuel_inputs_cleared', 'price_data.imported']);
     expect(new Set(R.AUDIT_ACTIONS).size).toBe(R.AUDIT_ACTIONS.length);
   });
   it('C10 flag registry entry', () => {
     const f = R.FEATURE_FLAGS.find((x: any) => x.key === 'intelligence.charge_suggestions');
     expect({ ...f }).toEqual({ key: 'intelligence.charge_suggestions', description: 'Charge-line suggestions and team labels', defaultEnabled: true, tenantVisible: true });
-    expect(R.FEATURE_FLAGS.map((x: any) => x.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+    // REQ-20261011-fuel-outlook F14 (additive): two step-7 flags, registry ordered by key.
+    expect(R.FEATURE_FLAGS.map((x: any) => x.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
   });
 });

@@ -79,7 +79,7 @@ describe('AN-A01..A06 analyze an ld5001 SHIPPER claim (ANALYST)', () => {
     expect(r.body.packet.revision).toBe(1);
     expect(r.body.packet.status).toBe('PENDING_REVIEW');
     expect(r.body.packet.contentHash).toMatch(/^[0-9a-f]{64}$/);
-    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 3, pendingFindingsCount: 1, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0 });
+    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 3, pendingFindingsCount: 1, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0, fuelCheckStatus: 'no_inputs', fuelFindingsCount: 0 });
     const row = await A.dbClaim(a1.claimId);
     expect(row.version, 'claim version incremented by exactly 1').toBe(a1verBefore + 1);
     expect(await A.packetRows(a1.claimId)).toEqual([{ revision: 1, created_by_id: an.user.id, status: 'PENDING_REVIEW' }]);
@@ -168,7 +168,7 @@ describe('AN-A07/A08 ld5002 in both perspectives', () => {
     const r = await analyzeOk(an, c, 'none');
     a7 = c;
     expect(r.body.claim).toEqual({ id: c.claimId, status: 'PENDING_REVIEW', recoverableCents: 16250, pendingReviewCents: 0, amountClaimedCents: 16250 });
-    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 1, pendingFindingsCount: 0, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0 });
+    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 1, pendingFindingsCount: 0, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0, fuelCheckStatus: 'no_inputs', fuelFindingsCount: 0 });
     const p = (await vw.get(`/claims/${c.claimId}/packet`)).body;
     validatePacket(p);
     expect(p.findings.map(projectFinding)).toEqual(LD5002_CARRIER);
@@ -188,7 +188,7 @@ describe('AN-A07/A08 ld5002 in both perspectives', () => {
     const c = await A.ld5002Claim(an, rv, 'SHIPPER', 'A8');
     const r = await analyzeOk(an, c, {});
     expect(r.body.claim).toEqual({ id: c.claimId, status: 'PENDING_REVIEW', recoverableCents: 0, pendingReviewCents: 0, amountClaimedCents: 0 });
-    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 0, pendingFindingsCount: 0, ignoredFindingsCount: 1, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0 });
+    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 0, pendingFindingsCount: 0, ignoredFindingsCount: 1, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0, fuelCheckStatus: 'no_inputs', fuelFindingsCount: 0 });
     const p = (await vw.get(`/claims/${c.claimId}/packet`)).body;
     validatePacket(p);
     expect(p.findings).toEqual([]);
@@ -321,6 +321,8 @@ describe('AN-U01..U04 audit', () => {
     expect(Object.keys(e.metadata).sort()).toEqual([...A.P7_ANALYZED_KEYS].sort());
     const p = (await vw.get(`/claims/${a1.claimId}/packet?revision=1`)).body;
     const docIdBySha = new Map(a1.docs.map((d) => [d.sha256, d.id]));
+    // REQ-20261011-fuel-outlook F13 (additive; amended after review): no fuel inputs -> status no_inputs, no table,
+    // no posting; priceImportId is always null in step 7.
     expect(e.metadata).toEqual({
       claimId: a1.claimId, claimNumber: a1.claimNumber, packetId: a1res.packet.id, revision: 1, contentHash: a1res.packet.contentHash,
       perspective: 'SHIPPER', fromStatus: 'AWAITING_ANALYSIS', toStatus: 'PENDING_REVIEW',
@@ -329,6 +331,7 @@ describe('AN-U01..U04 audit', () => {
       rulesVersion: 'rules-v1', bulk: false,
       // REQ-20261011-charge-intelligence C9 (additive): ld5001 has no keyword-`other` line, so nothing is learned
       classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v1', tenantLabelCount: 0, learnedFindingsCount: 0, reviewFlagsCount: 0, learnedLabelIds: [],
+      fuelCheckStatus: 'no_inputs', fscTableId: null, fscTableVersion: null, priceDate: null, fuelFindingsCount: 0, paramsSha256: null, priceImportId: null,
     });
     expect(e.metadata.contentHash).toBe(p.integrity.contentHash);
   });

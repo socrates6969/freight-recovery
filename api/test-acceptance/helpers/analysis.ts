@@ -24,7 +24,11 @@ export const P7_ANALYZED_KEYS = ['claimId', 'claimNumber', 'packetId', 'revision
   // REQ-20261011-charge-intelligence C9 (additive)
   'classifierVersion', 'seedVersion', 'tenantLabelCount', 'learnedFindingsCount', 'reviewFlagsCount',
   // fix round 1 (C9 amended)
-  'learnedLabelIds'];
+  'learnedLabelIds',
+  // REQ-20261011-fuel-outlook F13 (additive)
+  'fuelCheckStatus', 'fscTableId', 'fscTableVersion', 'priceImportId', 'priceDate', 'fuelFindingsCount',
+  // fix round 1 (F13 amended)
+  'paramsSha256'];
 export const P7_BULK_KEYS = ['limit', 'examined', 'analyzed', 'skipped', 'failed', 'remaining'];
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 

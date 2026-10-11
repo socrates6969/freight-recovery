@@ -138,7 +138,18 @@ describe('AN-D08 migrations', () => {
     // REQ-20261011-charge-intelligence (C10, additive pin update): step 6 adds `model ChargeLabel { ... }` and its
     // relation fields on Tenant/User. Only those are removed before hashing; everything else must equal d678827.
     const raw = readFileSync(resolve(ROOT, 'api', 'prisma', 'schema.prisma'), 'utf8');
-    const s = raw.replace(/^model ChargeLabel \{[\s\S]*?^\}[ \t]*$/m, '').split(/\r?\n/).filter((l) => !/\bChargeLabel\b/.test(l)).join('\n');
+    let s = raw.replace(/^model ChargeLabel \{[\s\S]*?^\}[ \t]*$/m, '').split(/\r?\n/).filter((l) => !/\bChargeLabel\b/.test(l)).join('\n');
+    // REQ-20261011-fuel-outlook F14 (additive pin update): step 7 adds the models mapped to fsc_tables,
+    // claim_fuel_inputs, price_imports and price_observations, plus their relation fields on other models. Exactly
+    // those blocks and the lines naming those models are removed; everything else must still equal d678827.
+    const step7 = new Set<string>();
+    s = s.replace(/^model (\w+) \{[\s\S]*?^\}[ \t]*$/gm, (block, name: string) => {
+      if (!/@@map\("(fsc_tables|claim_fuel_inputs|price_imports|price_observations)"\)/.test(block)) return block;
+      step7.add(name);
+      return '';
+    });
+    for (const t of ['fsc_tables', 'claim_fuel_inputs', 'price_imports', 'price_observations']) expect(raw.includes(`@@map("${t}")`), `schema maps ${t}`).toBe(true);
+    for (const name of step7) s = s.split(/\r?\n/).filter((l) => !new RegExp(`\\b${name}\\b`).test(l)).join('\n');
     // `prisma format` re-aligns columns when a field is added, so internal whitespace runs are collapsed too. The
     // pinned value below was computed with this normalization from `git show d678827:api/prisma/schema.prisma`.
     const n = s.split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, '').trim().replace(/\s+/g, ' ')).filter(Boolean).join('\n');

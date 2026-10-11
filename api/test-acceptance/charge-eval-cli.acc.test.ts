@@ -81,7 +81,11 @@ describe('CI-E05 workflow step', () => {
     expect(lines.filter((l) => l.includes('eval:charges'))).toHaveLength(1);
     const nameIdx = runIdx - 1;
     expect(lines[nameIdx]!.trim()).toMatch(/^- name: /);
-    const without = lines.filter((_, i) => i !== runIdx && i !== nameIdx).join('\n');
+    // REQ-20261011-fuel-outlook F8 (additive): the step-7 outlook gate step (name + run line) is also removed before
+    // hashing; outlook-eval-cli.acc.test.ts pins its exact text and position.
+    const oRun = lines.findIndex((l) => l.trim().startsWith('run: npm run eval:outlook -- '));
+    const oName = oRun > 0 && /^- name: Cost outlook backtest gate/.test(lines[oRun - 1]!.trim()) ? oRun - 1 : -1;
+    const without = lines.filter((_, i) => i !== runIdx && i !== nameIdx && i !== oRun && i !== oName).join('\n');
     expect(createHash('sha256').update(without).digest('hex'), 'workflow minus the new step equals 51ea826').toBe(WORKFLOW_51EA826);
   });
 });

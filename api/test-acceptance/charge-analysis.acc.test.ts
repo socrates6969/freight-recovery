@@ -61,10 +61,11 @@ beforeAll(async () => {
 afterAll(async () => { try { await I.setFlag(dev, 'intelligence.charge_suggestions', true, 'acceptance restore'); } finally { await closeApps(); reseed(); } });
 
 describe('T10 flag (C10)', () => {
-  it('CI-F01 /features returns exactly four flags including intelligence.charge_suggestions: true', async () => {
+  // REQ-20261011-fuel-outlook F14 (additive): six flags (cost_outlook and fuel_check added, ordered by key).
+  it('CI-F01 /features returns exactly six flags including intelligence.charge_suggestions: true', async () => {
     const r = await vw.get('/features');
     expect(r.status, r.text).toBe(200);
-    expect(Object.keys(r.body.flags).sort()).toEqual(['intelligence.charge_suggestions', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+    expect(Object.keys(r.body.flags).sort()).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
     expect(r.body.flags['intelligence.charge_suggestions']).toBe(true);
   });
 });
@@ -75,7 +76,7 @@ describe('T9 analysis with learning (C4)', () => {
     const k1 = await A.makeClaim(an, rv, k1Files(load), 'SHIPPER', load);
     const seq = await H.lastSeq(owner);
     const r = await analyzeOk(an, k1);
-    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 2, pendingFindingsCount: 2, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 1, reviewFlagsCount: 0 });
+    expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 2, pendingFindingsCount: 2, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 1, reviewFlagsCount: 0, fuelCheckStatus: 'no_inputs', fuelFindingsCount: 0 });
     expect(r.body.claim).toEqual({ id: k1.claimId, status: 'PENDING_REVIEW', recoverableCents: 0, pendingReviewCents: 23500, amountClaimedCents: 23500 });
     const p = (await vw.get(`/claims/${k1.claimId}/packet`)).body;
     validatePacket(p);
@@ -165,7 +166,7 @@ describe('T9 analysis with learning (C4)', () => {
       const load = H.uniqLoad('A16');
       const c = await A.makeClaim(an, rv, [A.invoiceFile(load, [['Linehaul', '1500.00'], [desc, amt]]), A.rateFile(load, { linehaul: '1500.00' })], 'SHIPPER', load);
       const r = await analyzeOk(an, c);
-      expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 0, pendingFindingsCount: 0, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0 });
+      expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 0, pendingFindingsCount: 0, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0, fuelCheckStatus: 'no_inputs', fuelFindingsCount: 0 });
       const p = (await vw.get(`/claims/${c.claimId}/packet`)).body;
       expect([p.findings, p.recoverableCents, p.pendingReviewCents]).toEqual([[], 0, 0]);
       expect(p.demandLetter).toContain(NO_CONFIRMED);
@@ -184,7 +185,7 @@ describe('T9 analysis with learning (C4)', () => {
     for (const [set, persp, exp, counts] of sets) {
       const c = set === 'ld5001' ? await A.ld5001Claim(an, rv, persp, 'A17') : await A.ld5002Claim(an, rv, persp, 'A17');
       const r = await analyzeOk(an, c);
-      expect(r.body.analysis, `${set} ${persp}`).toEqual({ rulesVersion: 'rules-v1', ...counts, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0 });
+      expect(r.body.analysis, `${set} ${persp}`).toEqual({ rulesVersion: 'rules-v1', ...counts, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0, fuelCheckStatus: 'no_inputs', fuelFindingsCount: 0 });
       const p = (await vw.get(`/claims/${c.claimId}/packet`)).body;
       expect(p.findings.map(projectFinding), `${set} ${persp}`).toEqual(exp);
     }
@@ -249,7 +250,7 @@ describe('T10 flag off (CI-F02)', () => {
       const k1 = await A.makeClaim(an, rv, k1Files(load), 'SHIPPER', load);
       const seq = await H.lastSeq(owner);
       const r = await analyzeOk(an, k1);
-      expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 1, pendingFindingsCount: 1, ignoredFindingsCount: 0, classifierVersion: null, learnedFindingsCount: 0, reviewFlagsCount: 0 });
+      expect(r.body.analysis).toEqual({ rulesVersion: 'rules-v1', findingsCount: 1, pendingFindingsCount: 1, ignoredFindingsCount: 0, classifierVersion: null, learnedFindingsCount: 0, reviewFlagsCount: 0, fuelCheckStatus: 'no_inputs', fuelFindingsCount: 0 });
       expect([r.body.claim.recoverableCents, r.body.claim.pendingReviewCents]).toEqual([0, 15000]);
       const p = (await vw.get(`/claims/${k1.claimId}/packet`)).body;
       expect(p.findings.map((f: any) => [f.ruleId, f.amountCents, f.needsHumanReview])).toEqual([['INV-ACCESSORIAL-UNAUTH', 15000, true]]);

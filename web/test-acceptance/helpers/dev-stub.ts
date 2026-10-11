@@ -6,9 +6,12 @@ export { json };
 export const NOW_ISO = '2026-10-09T12:00:00.000Z';
 const U = (n: number) => `00000000-0000-4000-8000-${String(700000 + n).padStart(12, '0')}`;
 // REQ-20261011-charge-intelligence C10: intelligence.charge_suggestions added (registry is ordered by key).
-export const FLAG_KEYS = ['intelligence.charge_suggestions', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist'] as const;
+// REQ-20261011-fuel-outlook F14 (additive): intelligence.cost_outlook and intelligence.fuel_check added.
+export const FLAG_KEYS = ['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist'] as const;
 export const FLAG_DESC: Record<string, string> = {
   'intelligence.charge_suggestions': 'Charge-line suggestions and team labels',
+  'intelligence.cost_outlook': 'Cost outlook from public price data',
+  'intelligence.fuel_check': 'Fuel tables and fuel-surcharge check',
   'intelligence.provenance': 'Provenance summary on the claim sheet',
   'intelligence.similar_claims': 'Similar past claims on the claim sheet',
   'intelligence.worklist': 'Prioritised worklist page',
