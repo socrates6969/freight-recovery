@@ -33,6 +33,11 @@
       "types": "./dist/analysis/index.d.ts",
       "source": "./src/analysis/index.ts",
       "default": "./dist/analysis/index.js"
+    },
+    "./charge-intel": {
+      "types": "./dist/charge-intel/index.d.ts",
+      "source": "./src/charge-intel/index.ts",
+      "default": "./dist/charge-intel/index.js"
     }
   },
   "scripts": {
