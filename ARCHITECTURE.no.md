@@ -91,6 +91,11 @@ gebyrlinjer ut fra merkede eksempler, et etikettminne for teamet, lærte funn so
 og en kalkulator for ventetid etter tariff) er beskrevet i
 [Nettplattform: gebyrintelligens (steg 6)](#nettplattform-gebyrintelligens-steg-6). Det finnes ingen
 trent modell og ingen LLM-kall: klassifisereren i steg 6 sammenligner et gebyrnavn med merkede eksempler.
+Steg 7 står i
+[Nettplattform: drivstoffkontroll, offentlige prisdata og kostnadsutsikt (steg 7)](#nettplattform-drivstoffkontroll-offentlige-prisdata-og-kostnadsutsikt-steg-7).
+Steg 8 (kontrollen av fakturaer for demurrage og detention for sjøcontainere mot 46 CFR Part 541 og 545.5, med
+kravtypen `OCEAN_DD`) står i
+[Nettplattform: kontroll av demurrage og detention for sjøcontainere (steg 8)](#nettplattform-kontroll-av-demurrage-og-detention-for-sjøcontainere-steg-8).
 Krav og pakker seedes fra Python-CLI-ens
 utdata på `tests/fixtures/` (syntetisk).
 
@@ -3126,4 +3131,611 @@ importens kildetype i brukergrensesnittet.
   kontrakten fra rettingsrunden (`paramsSha256`, `revisions_refused`).
 - Steg 5 og 6 venter fortsatt på sine egne tunge valideringskjøringer.
 - Gjennomgangens vurdering: venter (gjennomgåeren kjører etter denne dokumentasjonen).
+- Ikke verifisert: GitHub CI, container-images, compose-stacken, Playwright, enhver AWS-utrulling.
+
+---
+
+# Nettplattform: kontroll av demurrage og detention for sjøcontainere (steg 8)
+
+> Skrevet av scriber for kjøringen `REQ-20261011-ocean-dd` 2026-10-11 (grenen `feat/ocean-dd` fra `ce107d0`,
+> toppen av steg 7; byggecommits `7419c32` (M1), `527fc14` (M2), `332e5b7` (M3), `afadac3` (S1); rettingsrunde 1
+> `1ca8eb5`, rettingsrunde 2 `22e4a73`, rettingsrunde 3 `10f8941`). **Før produkt, aldri utrullet.** Fakturaene i tester og testdata er syntetiske; tariffmalene
+> inneholder publiserte, offentlige tariffsatser med kildehenvisning (åpent spørsmål OQ2 nedenfor).
+> Trusselradene T66-T74 og restrisikoene DD-1..DD-12 står i
+> [technical/web-platform-security.md, del 12](technical/web-platform-security.md#12-step-8-ocean-demurrage-and-detention-audit)
+> (engelsk). Beskrivelse for brukere:
+> [README.no.md, kontroll av demurrage og detention](README.no.md#kontroll-av-demurrage-og-detention-for-sjøcontainere-steg-8).
+> Mermaid-diagrammene er de samme som i den engelske originalen
+> ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-ocean-demurrage-and-detention-audit-step-8)).
+
+**Ikke juridisk rådgivning.** Kontrollen sammenligner fakturadataene en bruker legger inn, med teksten i
+46 CFR Part 541, 46 CFR 545.5 og en tariff brukeren knytter til. Funnene er utkast til menneskelig
+gjennomgang. Om en faktura faktisk ikke kan kreves betalt, eller om et gebyr er urimelig, er en juridisk
+vurdering: la en advokat gå gjennom funnene før noen bygger på dem eller sender noe. Det fremsettes ingen
+påstand om treffsikkerhet, etterlevelse eller inndrivingsgrad noe sted.
+
+## Hvorfor (steg 8)
+
+Rederier, terminaloperatører (MTO) og NVOCC-er fakturerer importører og eksportører i USA for demurrage
+(containeren står på terminalen) og detention (containeren er utenfor terminalen) når den gebyrfrie tiden er
+over. Siden **28. mai 2024** sier Federal Maritime Commissions regel 46 CFR Part 541 hva en D&D-faktura må
+inneholde og når den må utstedes. Et manglende element eller for sen utstedelse kan fjerne betalingsplikten
+til den som faktureres. Kontrollene er en sjekkliste pluss kalenderregning, så en deterministisk motor kan
+finne kandidater nøyaktig, og et menneske (helst sammen med en advokat) avgjør. Steg 8 legger til den
+motoren, tre tenanttabeller, kravtypen `OCEAN_DD`, som gjenbruker den eksisterende bevispakken og
+firøyegodkjenningen, og en side i nettappen.
+
+### Rettslig grunnlag (kontrollert mot eCFR, tittel 46 oppdatert per 2026-10-07)
+
+Planleggeren leste eCFR-teksten og versjonshistorikken og kopiene hos Cornell LII 2026-10-11.
+`DD_REGULATION_TEXT` (`packages/shared/src/ocean-dd/regulation.ts`, versjon `ecfr-2026-10-07`) siterer
+paragrafene nedenfor ordrett; en akseptansetest låser bytene med sha256.
+
+| Paragraf | Hva den sier (kort) | Brukt av |
+| --- | --- | --- |
+| 46 CFR 541.5 | Mangler noe av minimumsinformasjonen, faller betalingsplikten for gebyret bort | klausulen i `DD-541-6-CONTENT` når et element mangler (funn med bare unøyaktigheter viser til 541.6(b) eller (d)) |
+| 46 CFR 541.6(a)-(e) | 20 påkrevde elementer: B/L- og containernumre, lossehavn (import), grunnlaget for ansvaret; fakturadato og forfallsdato, gebyrfri tid i dager med start og slutt, tilgjengelighetsdato (import) eller tidligste returdato (eksport), datoene det er fakturert for; totalbeløp, tariffregelen eller kontrakten, satsene; kontaktinformasjon, en digital lenke til tvisteprosessen, frister for tvister; to erklæringer | problemlisten i `DD-541-6-CONTENT` |
+| 46 CFR 541.7(a) | Utstedes innen 30 kalenderdager fra datoen gebyret sist påløp, ellers plikter den fakturerte ikke å betale | `DD-541-7-LATE` |
+| 46 CFR 541.7(b) | NVOCC-varianten: innen 30 kalenderdager fra utstedelsesdatoen på fakturaen NVOCC-en selv mottok | `DD-541-7-LATE` (NVOCC) |
+| 46 CFR 541.8(a), (b) | Minst 30 dager fra utstedelse til å be om reduksjon, refusjon eller ettergivelse; den som fakturerer må forsøke å løse saken innen 30 dager | problemene A04/A05 under 541.6(d)(3); brevteksten |
+| 46 CFR 545.5(c)(2)(i), (ii) | Insentivprinsippet: lastens tilgjengelighet; detention når tomme containere ikke kan leveres tilbake, vil sannsynligvis bli ansett som urimelig | `DD-545-AVAILABILITY`, `DD-545-RETURN-REFUSED` |
+
+**46 CFR 541.4 kontrolleres med vilje ikke.** Forespørselen ba om en kontroll av hvem som kan faktureres
+(541.4, «properly issued invoices»). D.C. Circuit opphevet den paragrafen 2025-09-23 (World Shipping Council
+v. FMC, 152 F.4th 215), og FMC fjernet den med virkning fra 2025-12-29 (FR Doc. 2025-23920); historikken i eCFR
+viser «[Reserved]» fra den datoen. Ingen regel kontrollerer derfor hvem som ble fakturert. `billedPartyName`
+lagres og skrives bare i brevet (beslutning D1, åpent spørsmål OQ1).
+
+Part 541 gjelder ikke fakturering mellom rederier og terminaloperatører (541.2(b)); typene fakturerende part
+er rederi, terminaloperatør og NVOCC. For fakturaer datert før 2024-05-28 melder Part 541-kontrollene «ikke
+relevant», og bare regnekontrollene og 545.5-kontrollene kjører. NVOCC-forlengelsen av tvistefristen i
+541.7(c) er ikke modellert.
+
+## Modulstruktur (steg 8)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src/features"]
+        OP["ocean-dd/OceanDdPage"]
+        IT["InvoicesTab + Editor"]
+        AV["AuditView"]
+        TT["TariffsTab + Calendars"]
+        CI["CsvImportTab"]
+        CB["claims badge + nav"]
+    end
+    subgraph Shared["packages/shared/src"]
+        DT["ocean-dd/dates"]
+        TF["ocean-dd/tariff"]
+        AU["ocean-dd/audit"]
+        LT["ocean-dd/letter"]
+        CS["ocean-dd/csv"]
+        PR["presets, regulation, copy"]
+        DTO["ocean-dd-dto (Zod)"]
+        REG["rbac, actions, flags"]
+    end
+    subgraph API["api/src"]
+        RT["ocean-dd/routes"]
+        SV["ocean-dd/service"]
+        AR["ocean-dd/audit-run"]
+        LK["db/dd-locks"]
+        LS["db/dd-invoice-list"]
+        CL["claims/service (4-eyes)"]
+        AN["claims/analysis guard"]
+        HR["http/route bodyLimit"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261016000000_ocean_dd"]
+        TB["dd_tariffs, dd_calendars"]
+        IV["dd_invoices"]
+        CK["claims.kind + trigger"]
+    end
+
+    OP --> IT
+    OP --> TT
+    OP --> CI
+    IT --> AV
+    IT --> AU
+    CI --> CS
+    TT --> PR
+    CB --> REG
+    IT -. "HTTP" .-> RT
+    TT -. "HTTP" .-> RT
+    CI -. "HTTP" .-> RT
+    RT --> HR
+    RT --> REG
+    RT --> SV
+    RT --> AR
+    SV --> LK
+    SV --> LS
+    SV --> AU
+    SV --> DTO
+    AR --> AU
+    AR --> LT
+    AR --> PR
+    AU --> TF
+    TF --> DT
+    CS --> DTO
+    SV --> TB
+    SV --> IV
+    AR --> CK
+    CL --> IV
+    AN --> CK
+    MIG --> TB
+    MIG --> IV
+    MIG --> CK
+
+    style OP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AU fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style REG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style HR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CK fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Modul/funksjon | Formål | Viktige avhengigheter | Endret i denne kjøringen |
+| --- | --- | --- | --- |
+| `packages/shared/src/ocean-dd/constants.ts` | `DD_RULES_VERSION` `dd-rules-v1`, `DD_RULE_IDS` (7), `DD_PART541_EFFECTIVE` 2024-05-28, 30-dagerskonstantene, grenser (50 containere, 20 perioder, 10 trinn, 20 størrelser, 400 kalenderdatoer, 60 avviste datoer), CSV-grenser, `DD_TARIFFS_MAX`/`DD_CALENDARS_MAX` 200, `DD_INVOICES_MAX` 2000, `DD_INVOICE_PAGE_SIZE_MAX` 50, `DD_INVOICE_BODY_LIMIT` 262144, `DD_CSV_MAX_FILE_BYTES` 4000000 (rettingsrunde 2), `DD_SOURCE_FILES` | ingen | ny |
+| `ocean-dd/dates.ts` | `isDdDate`, `ddDayNumber`, `ddDateFromDayNumber`, `ddIsoWeekday`, `ddAddDays`, `ddDaysBetween`: heltallsdatoer (Hinnant), 2000-01-01..2099-12-31, ingen `Date`-parsing, ingen tidssoner | ingen | ny |
+| `ocean-dd/tariff.ts` | `computeFreeTimeEnd`, `computeTariffCharge` (gebyrfri tid, gebyrdatoer, trinn, nøyaktige stegtekster) | dates | ny |
+| `ocean-dd/audit.ts` | `auditDdInvoice`: de 7 reglene, fordelingen, kildehenvisninger (RFC 6901-pekere), klausuler, kontroller, sammendrag per container; alle tekster i én tabell | tariff, regulation, `text-sanitize` `plain` | ny |
+| `ocean-dd/letter.ts` | `buildDdDisputeLetter` (utkast, sendes aldri) | `plain` | ny |
+| `ocean-dd/csv.ts` | `parseDdCsv`: tokenisering i ett gjennomløp, 35 kolonner, gruppering, fil- og radfeil | `DdInvoiceData` | ny |
+| `ocean-dd/presets.ts`, `regulation.ts`, `copy.ts` | 4 dypfrosne tariffmaler med opphav; ordrett CFR-tekst; tekster i brukergrensesnittet (`DD_NOTE`, `DD_PACKET_DISCLAIMER`, `DD_PRESET_NOTE`, `DD_TEXT`, kontrolletiketter) | DTO-skjemaer | ny |
+| `ocean-dd-dto.ts` | Zod-skjemaer (strenge, normaliserende, idempotente): `DdInvoiceData/Body`, `DdTariffData`, `DdCalendarData`, visninger, lister, spørringer, `DdAuditResult`, `DdAuditResponse`, PUT-kropper | `dto.ts` `singleLine` | ny |
+| `dto.ts`, `rbac.ts`, `audit-actions.ts`, `feature-flags.ts`, `index.ts` | `CLAIM_KINDS`, `ClaimSummary.kind`; `dd_invoices:manage`, `dd_tariffs:manage`; 8 revisjonshandlinger; flagget `intelligence.ocean_dd`; eksport fra pakkeroten | ingen | endret |
+| `api/src/ocean-dd/routes.ts` | de 12 rutene under `/api/v1/dd`; flaggsjekk etter autentisering, ratebegrensning, tillatelse og skjema; ingen API-nøkkelscope; `bodyLimit` 262144 på POST/PUT av fakturaer | `defineRoute`, service, audit-run | ny |
+| `api/src/ocean-dd/service.ts` | tariffer, kalendere (liste, opprett, endre; tak 200), fakturaer (liste, hent med forhåndsvisning, opprett med tak 2000, endre, slett; bare DRAFT), referansekontroller, revisjonshendelser | tenanttransaksjon, `dd-locks`, `dd-invoice-list`, `auditDdInvoice` | ny |
+| `api/src/ocean-dd/audit-run.ts` | `buildDdPacket` (ren bortsett fra id-er og hashing), `runDdAudit` (én transaksjon: krav, pakkerevisjon 1, faktura AUDITED, revisjonshendelse) | `auditDdInvoice`, `buildDdDisputeLetter`, `hashPacket`, `nextClaimNumber` | ny |
+| `api/src/db/dd-locks.ts`, `db/dd-invoice-list.ts` | `lockDdInvoiceForUpdate`, `lockDdCatalog(tx, tenantId, 'tariffs' \| 'calendars' \| 'invoices')`; fakturalisten med JSON-sti-lesing (rettingsrunde 1, S1) | rå SQL i tenanttransaksjonen | ny |
+| `api/src/claims/service.ts`, `audit/dd-editors.ts`, `claims/analysis.ts`, `db/claim-load-key.ts` | `kind` i sammendrag; firøyeregelen `dd_invoice_editor` for alle aktører bak fakturaens hendelser `dd_invoice.created/updated` og `selfAuthored` i godkjenningskøen (S3, rettingsrunde 3); analysen avviser krav som ikke er FREIGHT; masseanalyse og oppslag på lastnummer bare FREIGHT | Prisma | endret |
+| `api/src/http/route.ts`, `http/errors.ts`, `http/db-guard.ts`, `audit/chain.ts`, `db/tenant.ts`, `app.ts`, `scripts/seed.ts` | `bodyLimit` per rute (kontrollert 1..262144); `dd_limit_reached`; databasevaktene mappes til 409 `invalid_state`; metadatanøklene fra C15; `TENANT_MODELS` + `TenantTx`; registrering av rutene; seed-tilbakestillingen sletter D&D-rader | ingen | endret |
+| `api/prisma/migrations/20261016000000_ocean_dd/`, `schema.prisma` | enumen `ClaimKind` og `claims.kind`, de tre tabellene, CHECK-er, triggere, RLS FORCE, policyer, tilganger, flaggrad | `tenants`, `users`, `claims` | ny |
+| `web/src/features/ocean-dd/*` | side med fanene Invoices, Tariffs, Calendars, Import CSV; fakturaredigering med forhåndsvisning; revisjonsvisning; malvelger | delt motor, tekster, DTO-er | ny |
+| `web/src/app-root.tsx`, `shell/AppShell.tsx`, `intelligence/use-features.ts`, `claims/ClaimsPage.tsx`, `claims/ClaimSheet.tsx` | ruten `/ocean`, menypunktet `Ocean D&D`, flagget `oceanDd`, merket `D&D` | ingen | endret |
+
+Ingen fil under `packages/shared/src/analysis/`, `charge-intel/`, `fuel/` eller `outlook/` ble endret.
+
+## Funksjonskall (steg 8)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST dd/invoices/:id/audit"] --> RA["runDdAudit (one tx)"]
+    RA --> LK["lockDdInvoiceForUpdate"]
+    RA --> LD["load tariff + calendar"]
+    LD --> BP["buildDdPacket"]
+    BP --> AD["auditDdInvoice"]
+    AD --> CT["computeTariffCharge"]
+    CT --> FE["computeFreeTimeEnd"]
+    FE --> DN["ddDayNumber etc."]
+    AD --> CH["checks + summaries"]
+    BP --> LTR["buildDdDisputeLetter"]
+    BP --> HP["hashPacket + sources"]
+    RA --> NC["nextClaimNumber"]
+    NC --> CW["claim + packet rows"]
+    CW --> IA["invoice AUDITED"]
+    IA --> AE["audit dd_invoice.audited"]
+    R2["GET dd/invoices/:id"] --> GI["getInvoice preview"]
+    GI --> AD
+    R3["POST dd/invoices"] --> CR["createInvoice"]
+    CR --> LC["lockDdCatalog invoices"]
+    R4["POST claims/:id/approve"] --> TR["transition: 4-eyes"]
+
+    style R1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LTR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style HP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R3 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TR fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalt av | Formål |
+| --- | --- | --- | --- |
+| `computeFreeTimeEnd(start, tariff, calendar)` | `ocean-dd/tariff.ts` | `computeTariffCharge`, innholdsproblem A02 | sluttdatoen `F` for gebyrfri tid |
+| `computeTariffCharge({ start, stop, sizeType, tariff, calendar })` | `ocean-dd/tariff.ts` | `auditDdInvoice` | gebyrdatoer med trinn og sats, sum i cent, stegtekster |
+| `auditDdInvoice({ invoice, tariff, calendar })` | `ocean-dd/audit.ts` | `getInvoice` (forhåndsvisning), `buildDdPacket`, fakturaredigeringen i nettappen | `DdAuditResult`: funn, summer, kontroller, sammendrag per container |
+| `buildDdDisputeLetter(invoice, result, today)` | `ocean-dd/letter.ts` | `buildDdPacket` | utkastet til brev |
+| `parseDdCsv(text)` | `ocean-dd/csv.ts` | bare `CsvImportTab` i nettappen | fakturaer pluss radfeil; ingen CSV-parser på serveren |
+| `buildDdPacket({ invoice, tariff, calendar, now, actorId })` | `api/src/ocean-dd/audit-run.ts` | `runDdAudit` | kilder med sha256, funnrader, tidslinje, brev, innholdshash, øyeblikksbilde |
+| `runDdAudit(tx, tenantId, id, actor, now)` | `api/src/ocean-dd/audit-run.ts` | `POST /dd/invoices/:id/audit` | revisjonstransaksjonen |
+| `createInvoice`, `updateInvoice`, `deleteInvoice`, `getInvoice`, `listInvoices` | `api/src/ocean-dd/service.ts` | rutene | CRUD for fakturaer (skriving bare for DRAFT) |
+| `transition(...)` | `api/src/claims/service.ts` | rutene for godkjenning og avvisning | regelen for revisjonsforfatter, deretter regelen for fakturaredaktør |
+
+## Dataflyt (kontroll av én faktura)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["Per container: C_i, last_i"] --> B["DD-TOTAL-MISMATCH, DD-PERIOD-ARITH"]
+    B --> C{"Tariff evaluable?"}
+    C -- yes --> D["T_i; DD-TARIFF-OVERCHARGE"]
+    C -- no --> E["RETURN uses invoice rates"]
+    D --> F["DD-545-RETURN-REFUSED"]
+    E --> F
+    F --> G["DD-545-AVAILABILITY"]
+    G --> H{"Part 541 applies?"}
+    H -- no --> K["Checks and summaries"]
+    H -- yes --> I["DD-541-7-LATE"]
+    I --> J["DD-541-6-CONTENT"]
+    J --> K
+
+    style A fill:#1e90ff,stroke:#1565c0,color:#fff
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style C fill:#1e90ff,stroke:#1565c0,color:#fff
+    style D fill:#1e90ff,stroke:#1565c0,color:#fff
+    style E fill:#1e90ff,stroke:#1565c0,color:#fff
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style G fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+    style I fill:#1e90ff,stroke:#1565c0,color:#fff
+    style J fill:#1e90ff,stroke:#1565c0,color:#fff
+    style K fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+«Part 541 applies» betyr at fakturadatoen mangler eller er 2024-05-28 eller senere. Rekkefølgen på boksene er
+rekkefølgen på funnene i resultatet og i pengefordelingen nedenfor. Tilgjengelighetsregelen kjører bare for
+demurrage på importfakturaer med en tariff som kan beregnes.
+
+## Datoer, gebyrfri tid og tariffgebyr
+
+Alle datoer er sivile `YYYY-MM-DD`-strenger som gjøres om til heltallige dagnumre (dager siden 1970-01-01);
+ukedager er ISO (1 = mandag). Penger er heltall i cent og skrives som `d.dd`. Motoren leser aldri klokken.
+
+En tariff (`DdTariffData`) angir `freeDays` N, `freeDayBasis` (`calendar` eller `working`), `startDayRule`
+(`included` eller `additional`), `chargeDayBasis` (`calendar` eller `working`), `workingWeekdays` og opptil 10
+trinn, hvert med et antall dager (det siste ubegrenset) og en sats per containertype (`20DV`, `40DV`, `40HC`,
+...). En kalender (`DdCalendarData`) lister `closedDates` (planlagt stengt, for eksempel helligdager) og
+`shutoutDates` (uplanlagt stengt). Det finnes ingen innebygd helligdagsliste; brukeren legger inn terminalens
+datoer.
+
+- **Dag som teller som gebyrfri.** Kalenderbasis: enhver dato som ikke er i `shutoutDates`. Arbeidsdagsbasis:
+  en arbeidsukedag som ikke er i noen av listene.
+- **Slutt på gebyrfri tid F** for klokkestart S. `included` (startdagen er gebyrfri dag 1 hvis den teller):
+  den N-te tellende dagen på eller etter S (N = 0: F = S - 1). `additional` (for eksempel Hapag-Lloyds «day of
+  interchange plus 4 working days»): den N-te tellende dagen etter S (N = 0: F = S). Søket stopper med en
+  `RangeError` etter 3 660 dager eller etter 2099-12-31; kontrollen melder da tariffkontrollen som
+  `invalid_dates`.
+- **Gebyrdager** er datoene etter F til og med klokkestopp E. Kalenderbasis: alle datoer som ikke er i
+  `shutoutDates` (stengte dager **faktureres**). Arbeidsdagsbasis: arbeidsukedager som ikke er i noen av
+  listene. Dager med «shutout» er altså aldri gebyrfrie og faktureres aldri; stengte dager er ikke gebyrfrie
+  ved gebyrfri tid i arbeidsdager og faktureres ved fakturering i kalenderdager (slik Hapag-Lloyds amerikanske
+  veiledning beskriver det, beslutning D5).
+- **Trinn** gjelder ordenstallet til gebyrdagen: den k-te gebyrdatoen hører til det første trinnet der
+  summen av dager når k. Summen T er summen av satsene. Hvert steg skrives ut i funnets utregning (gebyrfri tid,
+  stengte dager som er hoppet over, gebyrdager, én linje per trinn, sum).
+- **Klokkestart og -stopp** hentes fra containerens dokumentasjon (`clockStart`, `clockStop`) når den er lagt
+  inn, ellers fra fakturaens oppgitte start på gebyrfri tid og den siste fakturerte datoen.
+
+## Regler og fordeling av beløp
+
+| Rekkefølge | Regel-id | Finner | Konfidens | Status | Klausul |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `DD-TOTAL-MISMATCH` | totalbeløpet er høyere enn summen av gebyrlinjene | 0.9 | **bekreftet** (regning) | ingen |
+| 2 | `DD-PERIOD-ARITH` | en gebyrlinje er høyere enn dager x oppgitt sats | 0.9 | **bekreftet** | ingen |
+| 3 | `DD-TARIFF-OVERCHARGE` | gebyrene for en container er høyere enn det den tilknyttede tariffen gir | 0.9 | **bekreftet** (beslutning D2, OQ4) | tilknyttet tariff |
+| 4 | `DD-545-RETURN-REFUSED` | detention fakturert for datoer da retur av tom container ble avvist | 0.5 | gjennomgang | 46 CFR 545.5(c)(2)(ii) |
+| 5 | `DD-545-AVAILABILITY` | gebyrfri tid for importdemurrage regnet fra før lasten var tilgjengelig | 0.5 | gjennomgang | 46 CFR 545.5(c)(2)(i) |
+| 6 | `DD-541-7-LATE` | fakturaen ble utstedt mer enn 30 kalenderdager etter at gebyret sist påløp (NVOCC: etter fakturaen den mottok) | 0.7 | gjennomgang | 46 CFR 541.7(a) eller (b) |
+| 7 | `DD-541-6-CONTENT` | ett eller flere av elementene i 541.6 mangler eller stemmer ikke (25 mulige problemer, blant annet gebyrfri tid som avviker fra tariffen, gebyrer på eller før oppgitt slutt på gebyrfri tid, og tvistefrister som 541.8 ikke tillater) | 0.7 | gjennomgang | 46 CFR 541.5 når et element mangler; 46 CFR 541.6(b) eller 541.6(d) når det bare er unøyaktigheter (rettingsrunde 3, F3) |
+
+«Bekreftet» betyr at regnestykket er sikkert **gitt dataene som er lagt inn** (fakturalinjene og tenantens egen
+tilknyttede tariff); disse beløpene utgjør `recoverableCents`. Alle regelverksfunn (regel 4-7) går bare til
+gjennomgang (`needsHumanReview`), teller i `pendingReviewCents` og er formulert som «... may not be payable
+under 46 CFR 541.x - review»; funnet om avvist retur siterer 46 CFR 545.5(c)(2)(ii) ordrett («Absent
+extenuating circumstances, ... are likely to be found unreasonable.») etterfulgt av «- review» (rettingsrunde 3,
+F4). Et innholdsfunn viser til 541.5 («failure to include ... eliminates any obligation ... to pay») bare når
+minst ett påkrevd element **mangler**; når problemene bare er **unøyaktigheter** (gebyrfri tid eller slutten på
+den avviker fra tariffen, gebyrer på eller før oppgitt slutt på gebyrfri tid, tvistefrister utenfor 541.8), er
+tittelen «Required invoice information inaccurate (46 CFR 541.6)», og klausulen er 46 CFR 541.6(b) eller 541.6(d),
+hentet fra det første problemet, fordi 541.5 handler om utelatelse, ikke feil opplysninger (rettingsrunde 3, F3).
+Konfidensverdiene er faste merkelapper, ikke sannsynligheter. Alle krav, bekreftet eller ikke, går
+fortsatt gjennom firøyegodkjenning.
+
+**Ingen dobbelttelling.** Per container er grunnlaget `C_i` summen av `min(oppgitt, dager x sats)` over
+linjene. Reglene tar beløp i fast rekkefølge: TOTAL (bare det totalbeløpet overstiger), PERIOD (bare det hver
+linje overstiger), deretter fra `C_i`: TARIFF = `C_i - T_i`, RETURN og AVAILABILITY hver begrenset til det som
+er igjen, så tar LATE restgebyret for containerne som er fakturert for sent, og CONTENT tar det som er igjen
+etter det. Summen av funnbeløpene blir dermed aldri høyere enn de oppgitte gebyrene pluss totalavviket, og
+pakkens summer gir mening. «Sist påløpt» er den seneste fakturerte datoen for containeren på fakturaen;
+nøyaktig 30 dager er i tide (beslutning D4). Fristene i 541.8 kontrolleres som del av 541.6(d)(3)
+(beslutning D3).
+
+`checks` viser, for fakturaen og deretter per container (container for container), om hver kontroll fant
+noe, var i orden, ikke ble vurdert (med en grunn som `no_tariff`, `size_not_in_tariff`, `no_evidence`) eller
+ikke er relevant.
+
+## Regneeksempler (publiserte tariffer; låst i enhets- og akseptansetester)
+
+Regnet ut med et uavhengig Python-orakel før spesifikasjonen ble skrevet, og gjenskapt av produktet og av
+testerens uavhengige TypeScript-orakel. Fakturaene rundt dem er syntetiske.
+
+| Mal | Container og datoer | Gebyrfri tid slutter | Gebyrdager | Tariffgebyr |
+| --- | --- | --- | --- | --- |
+| Maersk US import detention 2026 | 40DV, ut av terminalen man. 2026-03-02, retur 2026-03-20 | 2026-03-05 | 15 dager: 4 x $210 + 4 x $260 + 7 x $290 | **$3,910.00** |
+| Maersk, Memorial Day 2026-05-25 stengt | 40DV, 2026-05-22 til 2026-06-02 | 2026-05-27 | 6 dager: 4 x $210 + 2 x $260 | **$1,360.00** |
+| Hapag-Lloyd US import detention, merchant haulage | 40HC, utleveringsdag tors. 2026-07-02, 2026-07-03 stengt, 2026-07-14 shutout, retur 2026-07-20 | 2026-07-09 | 10 dager: 3 x $200 + 3 x $250 + 4 x $300 | **$2,550.00** (uten shutout: 11 dager, **$2,850.00**) |
+| MSC US import demurrage | 40DV, tilgjengelig man. 2026-09-07 (Labor Day, stengt), ut 2026-09-22 | 2026-09-11 | 11 dager: 5 x $80 + 6 x $150 | **$1,300.00** (20DV: 5 x $65 + 6 x $120 = **$1,045.00**) |
+| MSC, klokken startet i stedet 2026-09-04 | 40DV, 2026-09-04 til 2026-09-22 | 2026-09-10 | 12 dager: 5 x $80 + 7 x $150 | **$1,450.00** (differansen på $150.00 er tilgjengelighetseksempelet) |
+| CMA CGM US import demurrage (sekundærkilde) | 40DV, 2026-02-02 til 2026-02-20 | 2026-02-05 | 15 dager: 5 x $295 + 5 x $355 + 5 x $395 | **$5,225.00** |
+
+Syntetiske fakturaeksempler i enhetstestene: en Maersk-container fakturert $440.00 mer enn tariffen gir et
+bekreftet `DD-TARIFF-OVERCHARGE`; en faktura datert 36 dager etter siste fakturerte dato gir `DD-541-7-LATE`
+for restbeløpet $3,910.00 (nøyaktig 30 dager gir ikke funn); en NVOCC-faktura 45 dager etter fakturaen den
+mottok, gir varianten i 541.7(b); en faktura som mangler 23 elementer, gir ett `DD-541-6-CONTENT`-funn som
+lister dem.
+
+## Tariffmaler og opphav
+
+`DD_TARIFF_PRESETS` (fryst, `packages/shared/src/ocean-dd/presets.ts`) er **utgangspunkt** som en bruker
+kopierer inn i en tenanttariff; de brukes aldri automatisk, og tenantens servicekontrakt eller en nyere
+tariff kan avvike (`DD_PRESET_NOTE`). Alle ble hentet 2026-10-11 (import til USA, tørrcontainere).
+Tariff-PDF-ene er ikke lagt inn i repoet (beslutning D10).
+
+| Mal-id | Vilkår | Kilde | Verifisering |
+| --- | --- | --- | --- |
+| `maersk-us-import-detention-2026` | 4 arbeidsdager (man.-lør.) gebyrfritt, startdagen medregnet, fakturert per kalenderdag: $210 (1.-4. gebyrdag), $260 (5.-8.), deretter $290; 20DV/40DV/40HC/45HC | Maersk «US import detention tariff effective 01 Jan 2026» (PDF-adresse hos maersk.com), gjeldende fra 2026-01-01 | `primary_search_extract`: teksten ble lest gjennom en søkemotors utdrag av PDF-en; direkte nedlasting ga «Page Not Found», så ingen sha256 |
+| `msc-us-import-demurrage` | 4 arbeidsdager gebyrfritt; 20DV $65 i 5 dager, deretter $120; 40DV/40HC/45HC $80 i 5 dager, deretter $150 | MSC «Detention, demurrage and per diem charges» (USA), del A.1, alle havner unntatt Baltimore | `primary` (PDF, sha256 `7ee60b30...bb4e3`; udatert dokument) |
+| `hapag-lloyd-us-import-detention-mh-2025` | utleveringsdagen pluss 4 arbeidsdager gebyrfritt; $200 x 3 dager, $250 x 3 dager, deretter $300 per kalenderdag | Hapag-Lloyd «USA - Detention, effective October 1, 2025», import merchant haulage, unntatt California; reglene for stengte dager fra «D&D Tariff Guide for the United States», mai 2026 | `primary` (PDF, sha256 `5aea8cf3...2bfdd`; veiledningen sha256 `76666957...4a7b`) |
+| `cma-cgm-us-import-demurrage-standard` | 4 arbeidsdager gebyrfritt; 40DV/40HC $295 (5 dager), $355 (5 dager), deretter $395 | et blogginnlegg i en bransjepublikasjon som siterer CMA CGM, gjeldende fra 2026-02-22; cma-cgm.com ga en side for robotbeskyttelse | **bare `secondary`: kontroller mot CMA CGMs tariff før bruk** |
+
+Hver mal lagrer forutsetningene sine (for eksempel om startdagen teller, at MSCs gebyrdager er kalenderdager,
+arbeidsdager mandag-fredag, hvordan «days 5-8» oversettes til gebyrdager). Brukergrensesnittet viser
+transportør, dokument, hentedato, verifiseringsnivå og forutsetninger ved siden av malen.
+
+## Datamodell og databasevakter
+
+Migreringen `20261016000000_ocean_dd` (generert DDL pluss en håndskrevet sikkerhetsdel; tidligere migreringer
+uendret):
+
+- **`claims.kind`** (enumen `ClaimKind`: `FREIGHT`, `OCEAN_DD`; NOT NULL, standard `FREIGHT`). Triggeren
+  `claims_kind_guard` (`fr_claim_kind_guard`) avviser enhver endring av `kind` for alle roller
+  (`claim_kind_immutable`).
+- **`dd_tariffs`**, **`dd_calendars`**, **`dd_invoices`**: `tenant_id`, `ENABLE` + `FORCE ROW LEVEL SECURITY`, én
+  policy `<tabell>_tenant_isolation` `FOR ALL` med `USING`/`WITH CHECK tenant_id = fr_current_tenant()`, `REVOKE
+  ALL FROM PUBLIC`, UPDATE-tilganger for `freight_app` begrenset til enkeltkolonner (aldri `id`, `tenant_id` eller
+  `created_by_id`), ingen TRUNCATE; DELETE bare på `dd_invoices`. Hele dataobjektet er `jsonb` med en
+  størrelses-CHECK (64 KiB for tariffer og kalendere, 256 KiB for fakturaer); tekstkolonner kopiert fra det har
+  lengde-CHECK-er; `total_due_cents >= 0`.
+- **Unike nøkler:** navn på tariffer og kalendere per tenant; fakturaer per (tenant, fakturerende part,
+  fakturanummer).
+- **Referanser** til tariff, kalender og krav er sammensatte fremmednøkler `(id, tenant_id)` med `ON DELETE
+  RESTRICT`, så en rad kan bare peke innenfor sin egen tenant.
+- **Revisjonskonsistens:** `status` er `DRAFT` (uten krav og øyeblikksbilde) eller `AUDITED` (krav,
+  `audited_at` og `audit_snapshot` er satt). Triggeren `dd_invoices_guard` (`fr_dd_invoice_guard`): innsetting
+  må være `DRAFT`; en `AUDITED`-rad kan verken endres eller slettes, for noen rolle (`dd_invoice_immutable`);
+  overgang til `AUDITED` krever et krav av typen `OCEAN_DD` i samme tenant.
+- **Flaggrad** `intelligence.ocean_dd` (på). De tre modellene står i `TENANT_MODELS` og `TenantTx`;
+  seed-tilbakestillingen sletter D&D-rader før kravene; seeden lager ingen.
+
+**Hvorfor OCEAN_DD-krav holdes utenfor veiene fra steg 5.** De har ingen importerte dokumenter og intet
+lastnummer, og pakken bygges fra D&D-øyeblikksbildet. Derfor gir `POST /claims/:id/analyze` 409
+`invalid_state` for et krav som ikke er FREIGHT, masseanalysen velger bare `kind = 'FREIGHT'`, og oppslaget på
+lastnummer ved import legger til `AND kind = 'FREIGHT'`. Alt annet (liste, kravpanel, godkjenninger,
+redigering, avvisning, klar til sending, eksport) virker som før; eksportene viser ennå ikke `kind`.
+
+## Kontrollkjøring, bevispakke og brev
+
+`POST /api/v1/dd/invoices/:id/audit` (tillatelsen `claims:analyze`, ratebøtten `analysis`) låser fakturaen,
+avviser en som allerede er kontrollert (409), henter tilknyttet tariff og kalender i samme tenanttransaksjon
+og bygger pakken. Hvis et beløp ikke får plass i et 32-bits heltall, feiler forespørselen med 422
+`analysis_input_invalid`, og ingenting skrives. Ellers, i **én transaksjon**: et nytt krav (`kind OCEAN_DD`,
+perspektiv SHIPPER, neste `CLM-nnnn`, transportør = fakturerende part, avsender = fakturert part, intet
+lastnummer, status `PENDING_REVIEW` med bekreftet sum og sum til gjennomgang), bevispakkerevisjon 1 med den som
+kjørte kontrollen som forfatter, fakturaen satt til `AUDITED` med øyeblikksbildet (`updated_by_id` blir stående
+uendret siden rettingsrunde 3, F1), og revisjonshendelsen `dd_invoice.audited`.
+
+- **Kilder (øyeblikksbilder, hver med sha256 og størrelse av kanonisk JSON):** `dd-invoice.json` (dokumenttype
+  INVOICE), `dd-tariff.json` og `dd-calendar.json` (OTHER, når de er tilknyttet) og
+  `ecfr-46-cfr-541-545.5.json` (OTHER: objektet `DD_REGULATION_TEXT`). Øyeblikksbildet
+  `{ invoice, tariff, calendar, rulesVersion }` lagres på fakturaen med egen sha256, så en senere endring av
+  tariffen eller kalenderen endrer aldri et kontrollert resultat.
+- **Kildehenvisninger** peker inn i øyeblikksbildene med RFC 6901-pekere, for eksempel
+  `dd-invoice.json#/containers/0/periods/1/amount`, med verdien som utdrag. **Klausuler** siterer regelverket,
+  for eksempel lokatoren `ecfr-46-cfr-541-545.5.json#46 CFR 541.5` med den ordrette CFR-teksten som utdrag,
+  eller den tilknyttede tariffen (`dd-tariff.json#/tiers`).
+- **Tidslinje:** faktura utstedt; gebyrer sist påløpt; for fakturerende parter som ikke er NVOCC,
+  30-dagersfristen for utstedelse (46 CFR 541.7).
+- **Ansvarsfraskrivelse** (`DD_PACKET_DISCLAIMER`): automatiske kontroller av dataene som er lagt inn; ikke
+  juridisk rådgivning; utkast til menneskelig gjennomgang; la en advokat gå gjennom dem før noen bygger på dem.
+- **Brev** (`buildDdDisputeLetter`): begynner med «DRAFT - FOR HUMAN REVIEW. NOT SENT. NOT LEGAL ADVICE.»,
+  er adressert til den fakturerende parten, lister hvert funn med beløp og «(needs review)» der det gjelder,
+  oppgir bekreftet beløp og beløp til gjennomgang, siterer 46 CFR 541.8(b) ordrett (løse saken «within thirty
+  (30) calendar days of receiving such a request or at a later date as agreed upon by both parties»;
+  rettingsrunde 3, F4) og minner avsenderen om fristen i
+  541.8(a) regnet fra fakturadatoen. Uten funn står det «(No items found. Do not send.)» og at det ikke kreves
+  noe beløp. Ingenting sendes noen gang på e-post; «send» merker fortsatt bare pakken som klar til sending.
+
+## Firøyeprinsippet for OCEAN_DD-krav
+
+Regelen fra steg 4 er uendret: forfatteren av en revisjon (for revisjon 1 den som kjørte kontrollen) kan ikke
+godkjenne eller avvise den. I tillegg avviser `transition()` godkjenning og avvisning med 403
+`four_eyes_required` (revisjonsgrunnlag `dd_invoice_editor`) for **alle brukere som opprettet eller endret
+fakturadataene**, fordi fakturadataene er bevisene i revisjon 1. Siden rettingsrunde 3 (gjennomgang F1/F2) hentes
+redaktørene fra tenantens revisjonskjede: `ddInvoiceEditorsByClaim` (`api/src/audit/dd-editors.ts`, én spørring
+inne i tenanttransaksjonen) gir de ulike aktørene bak hendelsene `dd_invoice.created` og `dd_invoice.updated` for
+kravets faktura. Rettingsrunde 1 brukte radens `created_by_id`/`updated_by_id`, som ikke fanget tidligere
+redaktører, og fordi kontrollkjøringen overskrev `updated_by_id` med den som kjørte kontrollen, heller ikke den
+siste redaktøren; kontrollkjøringen rører ikke lenger `updated_by_id`. Godkjenningskøen merker slike krav
+`selfAuthored` (ett kall per side). Regelen for revisjonsforfatter sjekkes først. Regelen er en kontroll i
+tjenesten under kravlåsen; det finnes ingen databasetrigger for den (restrisiko DD-6).
+
+## Ruter, roller, revisjonsspor, grenser og flagg
+
+| Rute | Tillatelse | Svar ved suksess |
+| --- | --- | --- |
+| `GET /api/v1/dd/tariffs?page&pageSize` | `claims:read` | 200 liste (navn, så id; pageSize 1..100) |
+| `POST /api/v1/dd/tariffs`, `PUT /api/v1/dd/tariffs/:id` | `dd_tariffs:manage` | 201 / 200 (`{ version, data }` ved PUT) |
+| `GET /api/v1/dd/calendars?page&pageSize` | `claims:read` | 200 liste |
+| `POST /api/v1/dd/calendars`, `PUT /api/v1/dd/calendars/:id` | `dd_tariffs:manage` | 201 / 200 |
+| `GET /api/v1/dd/invoices?page&pageSize&status` | `claims:read` | 200 liste (sist endret først; **pageSize 1..50**) |
+| `POST /api/v1/dd/invoices` | `dd_invoices:manage` | 201 detaljer med forhåndsvisning |
+| `GET /api/v1/dd/invoices/:id` | `claims:read` | 200 detaljer med forhåndsvisning |
+| `PUT /api/v1/dd/invoices/:id` | `dd_invoices:manage` | 200 (`{ version, invoice }`; bare DRAFT) |
+| `DELETE /api/v1/dd/invoices/:id` | `dd_invoices:manage` | 204 (bare DRAFT) |
+| `POST /api/v1/dd/invoices/:id/audit` | `claims:analyze` | 201 `{ invoiceId, claim, packet, audit }` |
+
+- **Roller.** `dd_invoices:manage`: OWNER, ADMIN, MANAGER, REVIEWER, ANALYST. `dd_tariffs:manage`: OWNER, ADMIN,
+  MANAGER, REVIEWER. Lesing `claims:read`; kontrollkjøringen `claims:analyze`. VIEWER kan bare lese;
+  PLATFORM_DEV og SUPER_ADMIN får 403. Ingen rute har et API-nøkkelscope, så API-nøkler får 403 (beslutning D7).
+- **Ratebegrensning.** Alle rutene bruker bøtten `intelligence` per bruker, kontrollkjøringen bøtten
+  `analysis`.
+- **Revisjonshandlinger (8, tenantkjeden):** `dd_tariff.created`, `dd_tariff.updated`, `dd_calendar.created`,
+  `dd_calendar.updated`, `dd_invoice.created`, `dd_invoice.updated`, `dd_invoice.deleted`,
+  `dd_invoice.audited`. Metadata inneholder bare id-er, versjoner, antall, sha256-verdier og summer
+  (`dataSha256` av de normaliserte dataene; `snapshotSha256`, `contentHash`, antall funn og cent ved
+  kontrollen); aldri navn, numre eller annen fakturatekst. (Spesifikasjonens prosa sa «sju»; tabellen lister
+  åtte, og koden følger tabellen.)
+- **Feil.** Ny: 409 `dd_limit_reached` (et tak per tenant er nådd). Gjenbrukt: 400 `validation_error`
+  (også `{ path: 'tariffId' | 'calendarId', code: 'not_found' }` for en referanse utenfor tenanten), 404
+  `not_found` (flagg av, ukjent id, ikke-UUID eller en annen tenants id, byte for byte like), 409 `conflict`
+  (navn eller fakturanummer i bruk), `stale_revision`, `invalid_state` (skriving til eller ny kontroll av en
+  AUDITED-faktura; meldingene fra databasevaktene mappes også hit), 413 `payload_too_large`, 422
+  `analysis_input_invalid`. Rekkefølge: origin/CSRF 403 -> 401 -> 429 -> 403 -> 400 -> 404 -> 400 referanse ->
+  409 -> 422.
+- **Grenser.** Per faktura 50 containere med 20 perioder hver, klokkespenn 730 dager, periodespenn 365 dager;
+  per tariff 10 trinn og 20 containertyper; per kalender 400 datoer per liste. Per tenant 200 tariffer, 200
+  kalendere og **2 000 fakturaer** (DRAFT og AUDITED; kontrollert under en advisory lock, rettingsrunde 1 S2).
+  Sider i fakturalisten har høyst **50** rader og leser bare listekolonner pluss to verdier via JSON-sti, aldri
+  hele dataene eller øyeblikksbildet (S1). Forespørselskropper: den globale grensen på 64 KiB gjelder overalt
+  unntatt **`POST` og `PUT /dd/invoices`, som tar imot opptil 262 144 byte** (256 KiB), så en faktura på
+  maksimal størrelse får plass; en `bodyLimit` over 262144 avvises ved registrering, og en arkitekturtest
+  tillater nøyaktig disse to rutene (S4). CSV: høyst 1 000 000 tegn, 2 000 datarader og 50 fakturaer per fil;
+  nettleseren avviser en fil over 4 000 000 byte før den leses (S5).
+- **Flagget** `intelligence.ocean_dd` («Ocean demurrage and detention invoice audit»), på som standard
+  (beslutning D8, OQ3), synlig for tenanter. Av: alle D&D-ruter gir 404 etter 401/429/403/400, og nettappen
+  skjuler siden; eksisterende OCEAN_DD-krav kan fortsatt leses, og pakkene deres kan fortsatt godkjennes,
+  avvises, redigeres og merkes klar til sending. En feil ved lesing av flagget regnes som av.
+
+## Nett
+
+- **Siden Ocean D&D** (`/ocean`, menypunktet `Ocean D&D`, vist når flagget er på og brukeren har
+  `claims:read`) med fanene **Invoices**, **Tariffs**, **Calendars** og **Import CSV**; kontroller bare for
+  brukere med tilhørende tillatelse.
+- **Fakturaredigering:** alle fakturafelt, underskjemaer for containere og perioder, valg av tariff og
+  kalender, og en **forhåndsvisning** som regnes ut i nettleseren med den samme `auditDdInvoice` så snart
+  skjemaet er gyldig. Lagring sender `version`. Fakturavisningen viser `DD_NOTE`, kontrollene med etiketter,
+  funnene (regel-id, tittel, beløp, «needs human review») og, for en DRAFT og en bruker med `claims:analyze`,
+  **Run audit** med merknaden om at den som kjører blir forfatter av revisjon 1; ved suksess lenkes det til det
+  nye kravet.
+- **Tariffs:** liste og redigering (trinn som linjer `days | SIZE=rate, ...`) med malvelgeren «Start from a
+  public tariff», `DD_PRESET_NOTE` og opphavet. **Calendars:** én dato per linje.
+- **Import CSV:** filen tolkes i nettleseren av `parseDdCsv` (API-et tar bare imot validert JSON, beslutning
+  D9); en forhåndsvisning lister fakturaer og radfeil; importen sender fakturaene én og én og viser utfallet for
+  hver.
+- Kravlisten og kravpanelet viser merket `D&D` for OCEAN_DD-krav. Feil er faste tekster i `role="alert"` etter
+  status; meldinger fra serveren vises aldri; all ikke-klarert tekst vises som React-tekst (`SafeText`).
+
+## Standardvalg (steg 8)
+
+| ID | Standard | Hvor det kan endres |
+| --- | --- | --- |
+| D1 | Ingen kontroll etter 46 CFR 541.4 (opphevet og fjernet); `billedPartyName` bare lagret | `audit.ts` (ny regel-id hvis det noen gang legges til) |
+| D2 | Ny tariffberegning, linjeregning og totalavvik er bekreftet (review false, 0.9); alle CFR- og 545.5-funn bare til gjennomgang | `audit.ts` |
+| D3 | Fristene i 541.8 kontrolleres under 541.6(d)(3) | `audit.ts` |
+| D4 | Sist påløpt = seneste fakturerte dato på fakturaen; nøyaktig 30 dager er i tide; NVOCC bruker bare 541.7(b) | `audit.ts` |
+| D5 | Shutout-dager aldri gebyrfrie og aldri fakturert; stengte dager ikke gebyrfrie ved arbeidsdagsbasis, fakturert ved kalenderbasis | `tariff.ts` |
+| D6 | Fordelingsrekkefølge TOTAL, PERIOD, TARIFF, RETURN, AVAILABILITY, LATE, CONTENT | `audit.ts` |
+| D7 | `dd_invoices:manage` inkludert ANALYST; `dd_tariffs:manage` REVIEWER og høyere; kontrollkjøring `claims:analyze`; ingen API-nøkkelscope | `rbac.ts`, rutene |
+| D8 | Flagget på som standard; av = 404, eksisterende OCEAN_DD-krav urørt | registeret og migreringsraden |
+| D9 | CSV tolkes bare i nettleseren | nett, rutene |
+| D10 | Malene er konstanter i koden med opphav; tariff-PDF-er legges ikke inn | `presets.ts` |
+| D11 | Tak på 200 tariffer og 200 kalendere per tenant, ingen sletting av dem; 2 000 fakturaer (rettingsrunde 1) | konstanter, service |
+
+Åpne spørsmål til eieren: **OQ1** en ikke-juridisk merknad om «samsvar for fakturert part» i stedet for 541.4
+(standard: ingen); **OQ2** et datert unntak i CLAUDE.md regel 4 for publiserte tariffsatser; **OQ3** om flagget
+skal være på som standard før en advokat har gått gjennom formuleringene; **OQ4** om ny tariffberegning skal
+forbli bekreftet eller bare gå til gjennomgang.
+
+## Utsatt (steg 8)
+
+Uttrekk av D&D-fakturaer fra PDF; import av hendelsesdatoer fra DCSA Track & Trace, Terminal49 eller Vizion;
+API-nøkkelscope for D&D-rutene; sletting av tariffer og kalendere; filter og kolonne for `kind` i kravlister og
+CSV-eksport; kontrollen av fakturert part etter 541.4; NVOCC-forlengelsen i 541.7(c); per diem-, chassis- og
+timegebyrer; andre valutaer enn USD; innebygde helligdagslister; all automatisk sending.
+
+## Grensesnitt for senere steg (etter steg 8)
+
+- `packet_findings.rule_id` kan nå også være en av `DD_RULE_IDS`, versjonert med `DD_RULES_VERSION`
+  `dd-rules-v1`; regelverksteksten med `DD_REGULATION_VERSION` `ecfr-2026-10-07`. En endring i regelverket krever
+  en ny versjon og en ny låst tekst, aldri endring på stedet.
+- Alle `ClaimSummary` har nå `kind`; nye steder som lager krav, må sette den. Kode som analyserer eller kobler
+  krav, må fortsatt filtrere på `kind = 'FREIGHT'`.
+- Import av sporingsdata vil fylle `evidence.clockStart`, `clockStop`, `cargoAvailableDate` og
+  `emptyReturnRefusedDates`; motoren bruker dem allerede.
+
+## Merknader (steg 8)
+
+- Hva som ble kjørt (lokalt, Windows, Node 22.23.3, **ikke GitHub CI**; modus for lite minne, så tunge
+  testsett ble ikke kjørt):
+  - Byggeren (M1-S1): `prisma validate`, `prisma generate`, `prisma migrate diff` fra skjemaet ved `ce107d0`
+    (ingen database; alle fremmednøkler `ON DELETE RESTRICT`), lint og typecheck av byggerens kode rene,
+    utvalgte enhetstester besto (shared ocean-dd og låsinger, api `ocean-dd-units`, `tenant-scope`,
+    `architecture`, `four-eyes-units`, nett `ocean-dd` og de berørte kravfixturene).
+  - Testeren, nivå L ved `afadac3` (før rettingsrunde 1): hele akseptanseprosjektet for shared **389/389**
+    (23 filer, med 3 000 tilfeldige tilfeller mot et uavhengig orakel), statiske api-tester **10/10**; eslint
+    rent; tsc 0 feil for shared, api og web. En første kjøring hadde 5 feil med én årsak (rekkefølgen på
+    kontrollene per container), rettet i M3 uten å endre noen test.
+  - Sikkerhetsgjennomgang av `ce107d0..afadac3` (statisk): ingen Critical eller High. S1 (Medium), S2-S4 (Low)
+    og S5 (Info) ble rettet i `1ca8eb5`; S6 (testhull) gikk til testeren; S7 (en kommentar i migreringen)
+    krever ingen handling.
+  - Byggeren ved `1ca8eb5` (rettingsrunde 1): lint og typecheck rene; enhetstester shared ocean-dd 32, api 55
+    (ocean-dd-units, architecture, four-eyes-units, claims-logic, app-http), nett ocean-dd 10, alle bestått.
+    Testerens kjøring på nivå L er eldre enn denne commiten.
+  - Planleggeren: del C endret for rettingsrunde 1 (likt i spec og test-spec), med nye akseptansetilfeller for
+    sidestørrelsen, taket på fakturaer, grensen for forespørselskropp, firøyeregelen for fakturaredaktører,
+    filstørrelsen for CSV og de to hullene fra S6 (en REVIEWER eller MANAGER som kjørte kontrollen, får 403;
+    referanser på tvers av tenanter med en annen tenants reelle id-er).
+  - Byggeren ved `22e4a73` (rettingsrunde 2): meldingen for `dd_limit_reached` og `DD_TEXT.limit` nevner nå
+    tariffer, kalendere eller fakturaer; ny `DD_TEXT.csvTooLarge` («The file is too large to import.») og den
+    eksporterte `DD_CSV_MAX_FILE_BYTES`; grensene bruker de eksporterte konstantene. Lint og typecheck rene;
+    enhetstester shared 32, api 36, nett 10 besto.
+  - Gjennomgåeren: FAIL (STOP) på F1 (kontrollkjøringen overskrev `updated_by_id`, så siste redaktør kunne
+    godkjenne); F2-F7 er merknader. Byggeren ved `10f8941` (rettingsrunde 3): firøyeprinsippet fra
+    revisjonskjeden (F1, F2), kontrollkjøringen beholder `updated_by_id`, tekster for funn med bare
+    unøyaktigheter med klausul 541.6(b)/(d) (F3), ordrett ordlyd fra 545.5(c)(2)(ii) og 541.8(b) (F4);
+    enhetstester shared ocean-dd 34, api 43 besto; lint og typecheck rene. Det nye integrasjonstilfellet (tre
+    redaktører, også en tidligere, hver avvist ved godkjenning og avvisning; en manager som ikke har endret
+    fakturaen, godkjenner) er skrevet, ikke kjørt. Ny gjennomgang av rettingen venter.
+- **Skrevet, men ikke kjørt (nivå H, venter på eierens klarsignal):** `api/test/integration/ocean-dd.int.test.ts`
+  (RLS, FORCE, policyer, tilganger, avvisning på tvers av tenanter for alle tre tabeller, triggerne, rutene,
+  roller, flagg av, kontrollkjøringen, firøyeprinsippet med S3-tilfellene, grensene for forespørselskropp fra
+  S4, liste- og taktilfellene fra S1/S2) og testerens filer på nivå H `dd-db`, `dd-api`, `dd-audit` og
+  `dd-ui`; paritetstestene; `npm run build`; `verify-ci-locally`. Isolasjonen på databasenivå og triggerne er
+  derfor så langt kontrollert med kodegjennomgang og enhetstester alene.
+- Gjennomgangens vurdering: FAIL (STOP) på F1 ved `22e4a73`; rettet i `10f8941`; ny gjennomgang venter.
 - Ikke verifisert: GitHub CI, container-images, compose-stacken, Playwright, enhver AWS-utrulling.

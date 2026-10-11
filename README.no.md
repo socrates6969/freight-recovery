@@ -177,7 +177,7 @@ Programvarefundamentet ovenfor er nødvendig, ikke tilstrekkelig. Fortsatt påkr
 > [ARCHITECTURE.no.md, «Nettplattform»](ARCHITECTURE.no.md#nettplattform-typescript-steg-1-2).
 
 En nettapplikasjon med flere tenants for arbeidsflyten rundt bevispakker, bygget med sikkerhet først.
-Byggesteg 1 til 7 er ferdige:
+Byggesteg 1 til 8 er ferdige:
 
 - **Steg 1:** innlogging med e-post og passord (argon2id), et kortlivet tilgangstoken pluss en roterende
   refresh-informasjonskapsel, TOTP-MFA for eier, administrator og plattformroller, utestenging med
@@ -222,6 +222,15 @@ Byggesteg 1 til 7 er ferdige:
   trailerlastindeksen bare for horisonter der en modell slo «ingen endring» i en walk-forward-backtest, med
   80 %-intervaller; backtestet på offentlige data, ingen garanti. Se
   [Drivstoffkontroll og kostnadsutsikt (steg 7)](#drivstoffkontroll-og-kostnadsutsikt-steg-7).
+- **Steg 8:** **kontroll av demurrage og detention for sjøcontainere**. En side Ocean D&D der en
+  organisasjon legger inn (eller importerer fra CSV) fakturaer for demurrage og detention for containere i
+  USA, knytter til en tariff (fire offentlige tariffer fra rederier tilbys som utgangspunkt) og en
+  terminalkalender, og registrerer datoer som dokumentasjon. Faste regler kontrollerer regnestykkene på
+  fakturaen, regner gebyret på nytt fra tariffen med nøyaktig gebyrfri tid i kalender- og arbeidsdager, og
+  markerer mulige forhold etter 46 CFR Part 541 (påkrevd innhold, utstedelse innen 30 dager) og 46 CFR 545.5
+  til gjennomgang. Når kontrollen kjøres, opprettes et D&D-krav med bevispakke og et utkast til tvistebrev til
+  gjennomgang etter firøyeprinsippet. **Ikke juridisk rådgivning.** Se
+  [Kontroll av demurrage og detention for sjøcontainere (steg 8)](#kontroll-av-demurrage-og-detention-for-sjøcontainere-steg-8).
 
 «Send» merker bare et krav som klart til sending og logger det i revisjonssporet. Ingen e-post sendes, og
 ingen penger flyttes. De seedede kravene og bevispakkene er syntetiske og er transkribert fra
@@ -229,7 +238,9 @@ Python-CLI-ens utdata på `tests/fixtures/`. Krav som opprettes ved import, har 
 noen kjører analysen (steg 5). Funn er regelresultater på uttrukne felt og er utkast som trenger
 menneskelig gjennomgang. Gebyrforslagene i steg 6 sammenligner navn med merkede eksempler; det finnes ingen
 trent modell. Funnene fra drivstoffkontrollen i steg 7 er nye beregninger fra tabeller og data som
-mennesker legger inn, og kostnadsutsikten er backtestet på offentlige data, ingen garanti. OCR, mottak av
+mennesker legger inn, og kostnadsutsikten er backtestet på offentlige data, ingen garanti. D&D-funnene i
+steg 8 sammenligner fakturadata som mennesker legger inn, med regelverksteksten og den tilknyttede tariffen;
+de er utkast til menneskelig gjennomgang og ikke juridisk rådgivning (la en advokat gå gjennom dem). OCR, mottak av
 videresendt e-post og ethvert LLM-kall er senere steg.
 
 **Python-tjenesten og pilotdashbordet `webapp/` er uendret og blir værende.** Nettplattformen har sin
@@ -489,6 +500,9 @@ sammenligning med nærmeste merkede gebyrnavn, uten trent modell og uten LLM-kal
 Outlook: en liten autoregressiv modell på offentlige prisindekser, tilpasset på nytt fra den lagrede
 historikken og vist bare der walk-forward-backtesten slo «ingen endring», med backtesttallene ved siden av
 hvert tall (se [Drivstoffkontroll og kostnadsutsikt (steg 7)](#drivstoffkontroll-og-kostnadsutsikt-steg-7)).
+Steg 8 la til siden Ocean D&D: faste regler over fakturadataene, regelverksteksten og en tilknyttet tariff,
+uten modell og uten LLM-kall (se
+[Kontroll av demurrage og detention for sjøcontainere (steg 8)](#kontroll-av-demurrage-og-detention-for-sjøcontainere-steg-8)).
 
 ### Hvem ser hva
 
@@ -1164,6 +1178,173 @@ CI-terskelen kjører på nytt. Hele listen står i
 [technical/web-platform-security.md, del 11.5](technical/web-platform-security.md#115-accepted-residuals-step-7)
 (engelsk).
 
+## Kontroll av demurrage og detention for sjøcontainere (steg 8)
+
+Kjøringen `REQ-20261011-ocean-dd` legger til en kontroll av fakturaer for demurrage og detention (D&D) for
+sjøcontainere i USA. Arkitektur:
+[ARCHITECTURE.no.md, steg 8](ARCHITECTURE.no.md#nettplattform-kontroll-av-demurrage-og-detention-for-sjøcontainere-steg-8).
+Trusselmodell og restrisiko:
+[technical/web-platform-security.md, del 12](technical/web-platform-security.md#12-step-8-ocean-demurrage-and-detention-audit)
+(engelsk).
+
+> **Ikke juridisk rådgivning.** Kontrollen sammenligner fakturadataene du legger inn, med teksten i
+> 46 CFR Part 541, 46 CFR 545.5 og tariffen du knytter til. Funnene er utkast til menneskelig gjennomgang,
+> ikke en juridisk vurdering. Om en faktura faktisk ikke skal betales, eller om et gebyr er urimelig, er et
+> juridisk spørsmål: la en advokat gå gjennom funnene før du bygger på dem eller sender noe.
+
+**Hva den kontrollerer.** Siden 28. mai 2024 lister Federal Maritime Commissions regel 46 CFR Part 541
+informasjonen en faktura for demurrage eller detention i USA må inneholde (541.6), sier at manglende
+informasjon fjerner betalingsplikten (541.5), krever fakturaen innen 30 kalenderdager fra datoen gebyret sist
+påløp (541.7; for en NVOCC 30 dager fra fakturaen den selv mottok) og fastsetter frister for tvister (541.8).
+46 CFR 545.5 sier blant annet at detention som kreves når en tom container ikke kan leveres tilbake,
+sannsynligvis er urimelig. Regelverksteksten i produktet er kontrollert mot eCFR (tittel 46 oppdatert per
+2026-10-07) og sitert ordrett. 46 CFR 541.4 (hvem som kan faktureres) kontrolleres **ikke**: D.C. Circuit
+opphevet den 2025-09-23, og FMC fjernet den med virkning fra 2025-12-29.
+
+| Regel | Hva den ser etter | Type funn |
+| --- | --- | --- |
+| `DD-TOTAL-MISMATCH` | totalbeløpet er høyere enn summen av gebyrlinjene | bekreftet regning |
+| `DD-PERIOD-ARITH` | en gebyrlinje er høyere enn dager x oppgitt sats | bekreftet regning |
+| `DD-TARIFF-OVERCHARGE` | en container er fakturert for mer enn tariffen du knyttet til gir | bekreftet regning (mot din tariff) |
+| `DD-545-RETURN-REFUSED` | detention fakturert for dager der du har registrert at retur av tom container ble avvist | til gjennomgang (46 CFR 545.5) |
+| `DD-545-AVAILABILITY` | gebyrfri tid for importdemurrage startet før datoen du har registrert at lasten var tilgjengelig | til gjennomgang (46 CFR 545.5) |
+| `DD-541-7-LATE` | fakturaen ble utstedt mer enn 30 kalenderdager etter at gebyret sist påløp | til gjennomgang («may not be payable under 46 CFR 541.7 - review») |
+| `DD-541-6-CONTENT` | påkrevd informasjon mangler eller stemmer ikke (for eksempel gebyrfri tid som avviker fra tariffen, eller en tvistefrist kortere enn 30 dager) | til gjennomgang: når noe mangler, «... 46 CFR 541.5 ... - review whether this applies»; når opplysninger bare er unøyaktige, «Required invoice information inaccurate (46 CFR 541.6)» med henvisning til 541.6(b) eller (d) |
+
+«Bekreftet» betyr at regnestykket er sikkert for dataene du har lagt inn; de beløpene utgjør den bekreftede
+summen. Alt som bygger på regelverket, er «til gjennomgang» og teller bare i summen til gjennomgang. Hvert
+beløp telles én gang: reglene tar beløp i rekkefølgen i tabellen, og en senere regel får bare det tidligere
+regler har latt ligge, så funnene blir aldri til sammen mer enn fakturaen. Hvert funn viser alle stegene i
+utregningen og viser til fakturafeltet, tariffen eller regelverksteksten det bygger på.
+
+**Gebyrfri tid og tariffer.** En tariff angir de gebyrfrie dagene, om de er kalender- eller arbeidsdager, om
+startdagen teller som dag 1 eller den gebyrfrie tiden starter dagen etter (for eksempel Hapag-Lloyds «day of
+interchange plus 4 working days»), om gebyrer løper per kalender- eller arbeidsdag, hvilke ukedager som er
+arbeidsdager, og trinnvise dagsatser per containerstørrelse. En kalender lister terminalens stengte dager
+(helligdager: ikke gebyrfrie ved arbeidsdagsbasis, men fakturert ved kalenderbasis) og shutout-dager
+(uplanlagt stengt: aldri gebyrfrie og aldri fakturert). Det finnes ingen innebygd helligdagsliste.
+
+Fire offentlige tariffer tilbys som **utgangspunkt** («Start from a public tariff»). De har satsene slik de var
+publisert 2026-10-11; servicekontrakten din eller en nyere tariff kan avvike, så kontroller før bruk:
+
+| Mal | Gebyrfri tid og satser (tørrcontainere) | Kilde og verifisering |
+| --- | --- | --- |
+| Maersk US import detention (2026) | 4 arbeidsdager (man.-lør.); $210 for gebyrdag 1-4, $260 for 5-8, deretter $290 | Maersks tariff gjeldende fra 01 Jan 2026; lest gjennom en søkemotors utdrag av PDF-en (direkte nedlasting feilet) |
+| MSC US import demurrage (alle havner unntatt Baltimore) | 4 arbeidsdager; 20DV $65 i 5 dager, deretter $120; 40DV/40HC/45HC $80 i 5 dager, deretter $150 | MSC-PDF, sha256 registrert |
+| Hapag-Lloyd US import detention, merchant haulage (unntatt California) | utleveringsdagen pluss 4 arbeidsdager; $200 x 3 dager, $250 x 3 dager, deretter $300 | Hapag-Lloyd-PDF gjeldende fra 1. okt. 2025, sha256 registrert |
+| CMA CGM US import demurrage, standard US ports (40 fot tørr) | 4 arbeidsdager; $295 x 5 dager, $355 x 5 dager, deretter $395 | **bare sekundærkilde** (en bransjepublikasjon som siterer CMA CGM); kontroller mot CMA CGMs tariff |
+
+Hver mal viser dokumentet, hentedatoen, verifiseringsnivået og forutsetningene som er gjort der tariffen ikke
+sier noe.
+
+**Regneeksempler** (låst i testene; fakturaene rundt dem er syntetiske): Maersk 40DV ut mandag 2026-03-02 og
+tilbake 2026-03-20: gebyrfri tid slutter 2026-03-05, 15 gebyrdager, **$3,910.00**; med terminalen stengt på
+Memorial Day (2026-05-22 til 2026-06-02): **$1,360.00**. Hapag-Lloyd 40HC utlevert torsdag 2026-07-02, stengt
+2026-07-03, shutout 2026-07-14, levert tilbake 2026-07-20: **$2,550.00** (**$2,850.00** uten shutout). MSC 40DV
+tilgjengelig mandag 2026-09-07 (Labor Day, stengt) og ut 2026-09-22: **$1,300.00** (20DV **$1,045.00**); regnet
+fra 2026-09-04 i stedet blir det **$1,450.00**, og differansen på $150.00 er det tilgjengelighetsregelen melder
+til gjennomgang. CMA CGM 40DV 2026-02-02 til 2026-02-20: **$5,225.00** (satser fra sekundærkilde).
+
+### Hvem kan gjøre hva
+
+| Rolle | Se D&D-fakturaer, tariffer og kalendere | Legge inn, endre, slette fakturautkast; importere CSV | Opprette og endre tariffer og kalendere | Kjøre kontrollen |
+| --- | --- | --- | --- | --- |
+| OWNER, ADMIN, MANAGER, REVIEWER | ja | ja | ja | ja |
+| ANALYST | ja | ja | nei | ja |
+| VIEWER | ja | nei | nei | nei |
+| PLATFORM_DEV, SUPER_ADMIN | nei | nei | nei | nei |
+
+Tillatelsene er `dd_invoices:manage`, `dd_tariffs:manage` (nye), `claims:analyze` for kontrollen og
+`claims:read` for lesing. API-nøkler kan ikke kalle noen D&D-rute (403).
+
+### Legge inn en faktura
+
+Åpne **Ocean D&D** (`/ocean`) og velg **New invoice**. Legg inn fakturahodet (nummer, fakturerende part og
+typen: rederi, terminaloperatør eller NVOCC; fakturert part; import eller eksport; faktura- og forfallsdato og,
+for en NVOCC, datoen på fakturaen den mottok; B/L-numre; lossehavn; ansvarsgrunnlag; totalbeløp; tariffregel;
+kontakt, lenke og frister for tvister; de to erklæringene), deretter hver container (nummer, type som `40DV`,
+demurrage eller detention, oppgitte gebyrfrie dager, start og slutt på gebyrfri tid, tilgjengelighetsdato
+eller tidligste returdato) med gebyrperiodene (fra, til, sats, beløp) og **dokumentasjonen** din: klokkestart
+og -stopp, datoen lasten var tilgjengelig, og datoene retur av tom container ble avvist. Knytt til en tariff
+og en kalender hvis du har dem. **Forhåndsvisningen** under skjemaet kjører de samme kontrollene i nettleseren
+mens du skriver. **Save** lagrer et utkast; utkast kan endres eller slettes.
+
+Grenser: 50 containere per faktura, 20 perioder per container, høyst 2 000 fakturaer per organisasjon
+(utkast og kontrollerte), 200 tariffer og 200 kalendere. Datoene må ligge mellom 2000-01-01 og 2099-12-31.
+
+### Importere fakturaer fra CSV
+
+**Import CSV** leser en UTF-8-fil i nettleseren (høyst 4 MB på disk, 1 000 000 tegn, 2 000 rader og 50
+fakturaer); ingenting lastes opp før du importerer. Rad 1 må være nøyaktig disse 35 kolonnene:
+
+```
+invoice_number, billing_party, billing_party_type, billed_party, direction, invoice_date, due_date,
+upstream_invoice_date, bl_numbers, port_of_discharge, liability_basis, total_due, rule_reference,
+dispute_contact, dispute_digital_means, dispute_request_days, dispute_resolution_days, certifies_fmc_rules,
+certifies_performance, container_number, size_type, charge_type, free_days, free_time_start, free_time_end,
+availability_date, earliest_return_date, period_from, period_to, rate, amount, clock_start, clock_stop,
+cargo_available_date, return_refused_dates
+```
+
+Rader med samme fakturerende part og fakturanummer blir én faktura; rader med samme containernummer og
+gebyrtype blir én container; hver rad med en periode legger til én gebyrperiode. `bl_numbers` og
+`return_refused_dates` er lister skilt med `;`; beløp kan ha `$` foran og komma som tusenskille; datoer er
+`YYYY-MM-DD`; ja/nei-kolonner godtar `yes`, `no`, `true`, `false`, `y`, `n`, `1`, `0`. Forhåndsvisningen viser
+alle fakturaer og alle radfeil; en faktura med feil blir utelatt («Rows with errors were not imported.»).
+Importen oppretter så de andre fakturaene som utkast, én og én, og viser resultatet for hver.
+
+### Kjøre kontrollen
+
+Åpne et utkast og velg **Run audit** (krever `claims:analyze`). «Creates a claim with revision 1 for review. You
+will be recorded as its author, so another approver must approve it.» Kontrollen:
+
+- oppretter et krav merket **D&D** i kravlisten, med bevispakkerevisjon 1 til gjennomgang;
+- lagrer et fryst øyeblikksbilde av fakturaen, tariffen og kalenderen med sha256-verdiene deres, så senere
+  endringer i tariffen eller kalenderen aldri endrer det; fakturaen kan ikke lenger endres eller slettes;
+- legger ved regelverksteksten den viser til, en tidslinje (fakturadato, siste gebyrdato, 30-dagersfristen for
+  utstedelse) og et **utkast til tvistebrev** som begynner med «DRAFT - FOR HUMAN REVIEW. NOT SENT. NOT LEGAL
+  ADVICE.», lister funnene og minner deg om 30-dagersfristen for krav i 46 CFR 541.8(a). Ingenting sendes på
+  e-post.
+
+Kravet går deretter gjennom vanlig godkjenning med firøyeprinsippet: den som kjørte kontrollen, og også den som
+på noe tidspunkt opprettet eller endret dataene i D&D-fakturaen (hentet fra revisjonssporet), kan ikke
+godkjenne eller avvise det. Godkjenning med funn til
+gjennomgang krever fortsatt at de bekreftes.
+
+### API
+
+| Rute | Tillatelse | Svar ved suksess |
+| --- | --- | --- |
+| `GET /api/v1/dd/tariffs`, `GET /api/v1/dd/calendars` (`?page&pageSize`, pageSize opptil 100) | `claims:read` | 200 liste |
+| `POST /api/v1/dd/tariffs`, `PUT /api/v1/dd/tariffs/:id` (`{ "version", "data" }`) | `dd_tariffs:manage` | 201 / 200 |
+| `POST /api/v1/dd/calendars`, `PUT /api/v1/dd/calendars/:id` | `dd_tariffs:manage` | 201 / 200 |
+| `GET /api/v1/dd/invoices?page&pageSize&status` (pageSize opptil 50) | `claims:read` | 200 liste |
+| `POST /api/v1/dd/invoices`, `PUT /api/v1/dd/invoices/:id` (`{ "version", "invoice" }`; kropp opptil 256 KiB) | `dd_invoices:manage` | 201 / 200, med forhåndsvisning |
+| `GET /api/v1/dd/invoices/:id` | `claims:read` | 200, med forhåndsvisning |
+| `DELETE /api/v1/dd/invoices/:id` | `dd_invoices:manage` | 204 (bare utkast) |
+| `POST /api/v1/dd/invoices/:id/audit` | `claims:analyze` | 201: det nye kravet, pakken og antallene |
+
+Alle rutene bruker ratebegrensningen `intelligence` per bruker, unntatt kontrollen, som bruker `analysis`. Ny
+feil: 409 `dd_limit_reached` når en organisasjon når et tak. Andre: 400 for en tariff eller kalender som ikke er
+din, 409 for duplikat navn eller fakturanummer, en utdatert versjon eller en kontrollert faktura, 413 for en
+for stor kropp, 422 når beløpene er for store til å lagres. `POST /api/v1/claims/:id/analyze` på et D&D-krav gir
+409: D&D-krav analyseres aldri av fraktreglene.
+
+### Slå det av
+
+Plattformansatte kan slå av **`intelligence.ocean_dd`** («Ocean demurrage and detention invoice audit») i fanen
+Flags på utviklerdashbordet (på som standard). Av: siden og rutene forsvinner (404); eksisterende D&D-krav blir
+værende og kan fortsatt godkjennes, avvises, redigeres og merkes klar til sending. Ingen nye miljøvariabler.
+
+### Ikke dekket (akseptert foreløpig)
+
+Ingen lesing av D&D-fakturaer fra PDF (legg inn eller importer som CSV); ingen import av sporingsdata (klokke-,
+tilgjengelighets- og returdatoer skrives inn); ingen kontroll av hvem som ble fakturert (541.4 er fjernet);
+NVOCC-forlengelsen i 541.7(c), per diem-, chassis- og timegebyrer og andre valutaer enn USD håndteres ikke;
+malene kan være utdaterte, og CMA CGM-malen er fra en sekundærkilde. Hele listen står i
+[technical/web-platform-security.md, del 12.5](technical/web-platform-security.md#125-accepted-residuals-step-8)
+(engelsk).
+
 ## Tester og kontroller
 
 ```bash
@@ -1255,4 +1436,27 @@ test for API-nøkler) ble kontrollert med lint, typecheck og 52 enhetstester i a
 kjørt** (venter på eierens klarsignal): `npm run build`, integrasjonstestene for de fire nye tabellene (RLS,
 tilganger, avvisning på tvers av tenanter, pristabeller som bare kan utvides), akseptansetestene for API,
 database, import og nett (nivå H) og paritetstestene.
+**Ikke kjørt:** GitHub CI, container-images, Playwright, enhver AWS-utrulling.
+
+Steg 8 (2026-10-11, kjøringen `REQ-20261011-ocean-dd`, Windows, Node 22.23.3, **lokale kjøringer, ikke GitHub
+CI**; modus for lite minne, så valideringen er **ikke fullført**): byggeren kjørte `prisma validate`, `prisma
+generate`, `prisma migrate diff` (ingen database), lint og typecheck (rene) og utvalgte enhetstester (shared
+ocean-dd, api `ocean-dd-units`, `tenant-scope`, `architecture`, `four-eyes-units`, nettappens ocean-dd-side og de
+berørte kravfixturene), ved `afadac3`. Testerens rene akseptansetester (nivå L, før rettingsrunde 1) besto:
+shared 389 av 389 (med 3 000 tilfeldige tilfeller mot et uavhengig orakel og alle regneeksemplene med
+tariffer), statiske api-tester 10 av 10 (første kjøring fant én produktfeil, rekkefølgen på kontrollene per
+container, rettet uten å endre noen test). Sikkerhetsgjennomgangen fant ingen Critical eller High;
+rettingsrunde 1 (`1ca8eb5`: en lettere fakturaliste med høyst 50 rader, et tak på 2 000 fakturaer,
+firøyeprinsippet også for den som opprettet eller sist endret D&D-fakturaen, en grense på 256 KiB for
+forespørselskroppen på bare de to skriverutene for fakturaer, en kontroll av filstørrelsen på 4 MB før
+nettleseren leser en CSV) ble kontrollert med lint, typecheck og enhetstester (shared 32, api 55, nett 10);
+rettingsrunde 2 (`22e4a73`: grensemeldingen nevner også fakturaer, en tekst for for stor fil, den eksporterte
+konstanten for filstørrelse ved CSV) med lint, typecheck og enhetstester (shared 32, api 36, nett 10).
+Gjennomgangen fant deretter at kontrollkjøringen overskrev siste redaktør (F1); rettingsrunde 3 (`10f8941`:
+firøyeprinsippet avviser alle som opprettet eller endret fakturadataene, hentet fra revisjonssporet;
+kontrollkjøringen endrer ikke lenger redaktørfeltet; egen tittel og henvisning til 541.6(b)/(d) for funn som bare
+gjelder unøyaktigheter; ordrett ordlyd fra 545.5(c)(2)(ii) og 541.8(b)) besto lint, typecheck og enhetstester
+(shared 34, api 43). **Skrevet, men ikke kjørt** (venter på eierens klarsignal): integrasjonstestene for de tre nye tabellene (RLS,
+tilganger, avvisning på tvers av tenanter, triggere), akseptansetestene for API, database, kontroll og nett
+(nivå H) og paritetstestene.
 **Ikke kjørt:** GitHub CI, container-images, Playwright, enhver AWS-utrulling.

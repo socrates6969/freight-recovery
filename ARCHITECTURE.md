@@ -85,7 +85,12 @@ claim into packet revision 1) is described in
 from labelled examples, a team label memory, review-only learned findings and a tariff detention
 calculator) is described in [Web platform: charge intelligence (step 6)](#web-platform-charge-intelligence-step-6).
 There is no trained model and no LLM call: the step 6 classifier compares a charge name with labelled
-examples. The seeded claims and packets come from
+examples. Step 7 is in
+[Web platform: fuel check, public price data and cost outlook (step 7)](#web-platform-fuel-check-public-price-data-and-cost-outlook-step-7).
+Step 8 (the ocean demurrage and detention invoice audit against 46 CFR Part 541 and 545.5, with the claim kind
+`OCEAN_DD`) is in
+[Web platform: ocean demurrage and detention audit (step 8)](#web-platform-ocean-demurrage-and-detention-audit-step-8).
+The seeded claims and packets come from
 the Python CLI output on `tests/fixtures/` (synthetic).
 
 ## Module Structure
@@ -3121,4 +3126,591 @@ Canadian (NRCan) prices; other interval methods; alerts; a version history table
   (`paramsSha256`, `revisions_refused`).
 - Steps 5 and 6 are still waiting for their own heavy validation runs.
 - Review verdict: pending (the reviewer runs after these docs).
+- Not verified: GitHub CI, container images, the compose stack, Playwright, any AWS deployment.
+
+---
+
+# Web platform: ocean demurrage and detention audit (step 8)
+
+> Written by scriber for run `REQ-20261011-ocean-dd` on 2026-10-11 (branch `feat/ocean-dd` from `ce107d0`, the
+> step 7 head; build commits `7419c32` (M1), `527fc14` (M2), `332e5b7` (M3), `afadac3` (S1); fix round 1
+> `1ca8eb5`, fix round 2 `22e4a73`, fix round 3 `10f8941`). **Pre-product, never deployed.** Invoices in tests and fixtures are synthetic; the tariff presets
+> hold published public tariff figures with attribution (open question OQ2 below). Threat rows T66-T74 and the
+> residuals DD-1..DD-12 are in
+> [technical/web-platform-security.md, section 12](technical/web-platform-security.md#12-step-8-ocean-demurrage-and-detention-audit).
+> User-facing description: [README, ocean demurrage and detention audit](README.md#ocean-demurrage-and-detention-audit-step-8).
+
+**Not legal advice.** The audit compares the invoice data a user enters with the text of 46 CFR Part 541,
+46 CFR 545.5 and a tariff the user attaches. Its findings are drafts for human review. Whether an invoice is in
+fact unenforceable, or a charge unreasonable, is a legal judgment: have counsel review findings before relying
+on them or sending anything. No claim of accuracy, compliance or recovery rate is made anywhere.
+
+## Why (step 8)
+
+Ocean carriers, marine terminal operators (MTOs) and NVOCCs bill US importers and exporters for demurrage
+(container held in the terminal) and detention (container held outside it) after free time ends. Since
+**28 May 2024** the Federal Maritime Commission's rule 46 CFR Part 541 says what a D&D invoice must contain and
+when it must be issued. A missing element, or late issuance, can remove the billed party's obligation to pay.
+The checks are a checklist plus calendar arithmetic, so a deterministic engine can find candidates exactly, and
+a human (ideally with counsel) decides. Step 8 adds that engine, three tenant tables, a claim kind
+`OCEAN_DD` that reuses the existing evidence packet and four-eyes approval, and a web page.
+
+### Legal basis (verified against the eCFR, title 46 up to date as of 2026-10-07)
+
+The planner read the eCFR versioner text and version history and the Cornell LII copies on 2026-10-11.
+`DD_REGULATION_TEXT` (`packages/shared/src/ocean-dd/regulation.ts`, version `ecfr-2026-10-07`) quotes the
+sections below verbatim; an acceptance test pins its bytes by sha256.
+
+| Section | What it says (short) | Used by |
+| --- | --- | --- |
+| 46 CFR 541.5 | Failure to include any required minimum information eliminates any obligation of the billed party to pay the charge | clause of `DD-541-6-CONTENT` when an element is missing (inaccuracy-only findings cite 541.6(b) or (d)) |
+| 46 CFR 541.6(a)-(e) | 20 required elements: B/L and container numbers, port of discharge (imports), basis of liability; invoice and due date, free time in days with start and end, availability date (imports) or earliest return date (exports), dates charged; total, the tariff rule or contract, the rates; contact, a digital link to the dispute process, dispute timeframes; two certifications | `DD-541-6-CONTENT` issue list |
+| 46 CFR 541.7(a) | Issue within 30 calendar days from the date the charge was last incurred, otherwise the billed party is not required to pay | `DD-541-7-LATE` |
+| 46 CFR 541.7(b) | NVOCC variant: within 30 calendar days from the issuance date of the invoice the NVOCC received | `DD-541-7-LATE` (NVOCC) |
+| 46 CFR 541.8(a), (b) | At least 30 days from invoice issuance to request mitigation, refund or waiver; the billing party must attempt to resolve within 30 days | issues A04/A05 under 541.6(d)(3); letter text |
+| 46 CFR 545.5(c)(2)(i), (ii) | Incentive principle: cargo availability; detention when empty containers cannot be returned is likely to be found unreasonable | `DD-545-AVAILABILITY`, `DD-545-RETURN-REFUSED` |
+
+**46 CFR 541.4 is deliberately not checked.** The request asked for a "who may be billed" check (541.4,
+"properly issued invoices"). The D.C. Circuit set that section aside on 2025-09-23 (World Shipping Council v.
+FMC, 152 F.4th 215), and the FMC removed it effective 2025-12-29 (FR Doc. 2025-23920); the eCFR history shows
+"[Reserved]" from that date. So no rule checks who was billed. `billedPartyName` is recorded and printed in the
+letter only (decision D1, open question OQ1).
+
+Part 541 does not govern billing between ocean carriers and MTOs (541.2(b)); the billing-party types are
+ocean carrier, MTO and NVOCC. For invoices dated before 2024-05-28 the Part 541 checks report "not applicable"
+and only the arithmetic and 545.5 checks run. The NVOCC dispute extension of 541.7(c) is not modelled.
+
+## Module Structure (step 8)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src/features"]
+        OP["ocean-dd/OceanDdPage"]
+        IT["InvoicesTab + Editor"]
+        AV["AuditView"]
+        TT["TariffsTab + Calendars"]
+        CI["CsvImportTab"]
+        CB["claims badge + nav"]
+    end
+    subgraph Shared["packages/shared/src"]
+        DT["ocean-dd/dates"]
+        TF["ocean-dd/tariff"]
+        AU["ocean-dd/audit"]
+        LT["ocean-dd/letter"]
+        CS["ocean-dd/csv"]
+        PR["presets, regulation, copy"]
+        DTO["ocean-dd-dto (Zod)"]
+        REG["rbac, actions, flags"]
+    end
+    subgraph API["api/src"]
+        RT["ocean-dd/routes"]
+        SV["ocean-dd/service"]
+        AR["ocean-dd/audit-run"]
+        LK["db/dd-locks"]
+        LS["db/dd-invoice-list"]
+        CL["claims/service (4-eyes)"]
+        AN["claims/analysis guard"]
+        HR["http/route bodyLimit"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261016000000_ocean_dd"]
+        TB["dd_tariffs, dd_calendars"]
+        IV["dd_invoices"]
+        CK["claims.kind + trigger"]
+    end
+
+    OP --> IT
+    OP --> TT
+    OP --> CI
+    IT --> AV
+    IT --> AU
+    CI --> CS
+    TT --> PR
+    CB --> REG
+    IT -. "HTTP" .-> RT
+    TT -. "HTTP" .-> RT
+    CI -. "HTTP" .-> RT
+    RT --> HR
+    RT --> REG
+    RT --> SV
+    RT --> AR
+    SV --> LK
+    SV --> LS
+    SV --> AU
+    SV --> DTO
+    AR --> AU
+    AR --> LT
+    AR --> PR
+    AU --> TF
+    TF --> DT
+    CS --> DTO
+    SV --> TB
+    SV --> IV
+    AR --> CK
+    CL --> IV
+    AN --> CK
+    MIG --> TB
+    MIG --> IV
+    MIG --> CK
+
+    style OP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AU fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style REG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style HR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CK fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Module/Function | Purpose | Key Dependencies | Changed in This Run |
+| --- | --- | --- | --- |
+| `packages/shared/src/ocean-dd/constants.ts` | `DD_RULES_VERSION` `dd-rules-v1`, `DD_RULE_IDS` (7), `DD_PART541_EFFECTIVE` 2024-05-28, the 30-day constants, caps (50 containers, 20 periods, 10 tiers, 20 sizes, 400 calendar dates, 60 refused dates), CSV caps, `DD_TARIFFS_MAX`/`DD_CALENDARS_MAX` 200, `DD_INVOICES_MAX` 2000, `DD_INVOICE_PAGE_SIZE_MAX` 50, `DD_INVOICE_BODY_LIMIT` 262144, `DD_CSV_MAX_FILE_BYTES` 4000000 (fix round 2), `DD_SOURCE_FILES` | none | new |
+| `ocean-dd/dates.ts` | `isDdDate`, `ddDayNumber`, `ddDateFromDayNumber`, `ddIsoWeekday`, `ddAddDays`, `ddDaysBetween`: integer civil dates (Hinnant), 2000-01-01..2099-12-31, no `Date` parsing, no time zones | none | new |
+| `ocean-dd/tariff.ts` | `computeFreeTimeEnd`, `computeTariffCharge` (free time, chargeable dates, tiers, exact step texts) | dates | new |
+| `ocean-dd/audit.ts` | `auditDdInvoice`: the 7 rules, allocation, citations (RFC 6901 pointers), clauses, checks, container summaries; all texts in one table | tariff, regulation, `text-sanitize` `plain` | new |
+| `ocean-dd/letter.ts` | `buildDdDisputeLetter` (draft, never sent) | `plain` | new |
+| `ocean-dd/csv.ts` | `parseDdCsv`: single-pass tokenizer, 35 columns, grouping, file and row errors | `DdInvoiceData` | new |
+| `ocean-dd/presets.ts`, `regulation.ts`, `copy.ts` | 4 deep-frozen tariff presets with provenance; verbatim CFR text; UI copy (`DD_NOTE`, `DD_PACKET_DISCLAIMER`, `DD_PRESET_NOTE`, `DD_TEXT`, check labels) | DTO schemas | new |
+| `ocean-dd-dto.ts` | Zod schemas (strict, normalizing, idempotent): `DdInvoiceData/Body`, `DdTariffData`, `DdCalendarData`, views, lists, queries, `DdAuditResult`, `DdAuditResponse`, PUT bodies | `dto.ts` `singleLine` | new |
+| `dto.ts`, `rbac.ts`, `audit-actions.ts`, `feature-flags.ts`, `index.ts` | `CLAIM_KINDS`, `ClaimSummary.kind`; `dd_invoices:manage`, `dd_tariffs:manage`; 8 audit actions; flag `intelligence.ocean_dd`; root exports | none | changed |
+| `api/src/ocean-dd/routes.ts` | the 12 routes under `/api/v1/dd`; flag gate after auth, rate limit, permission and schema; no API-key scope; `bodyLimit` 262144 on POST/PUT invoices | `defineRoute`, service, audit-run | new |
+| `api/src/ocean-dd/service.ts` | tariffs, calendars (list, create, update; cap 200), invoices (list, get with preview, create with cap 2000, update, delete; DRAFT only), reference checks, audit events | tenant tx, `dd-locks`, `dd-invoice-list`, `auditDdInvoice` | new |
+| `api/src/ocean-dd/audit-run.ts` | `buildDdPacket` (pure apart from ids and hashing), `runDdAudit` (one transaction: claim, packet rev 1, invoice AUDITED, audit event) | `auditDdInvoice`, `buildDdDisputeLetter`, `hashPacket`, `nextClaimNumber` | new |
+| `api/src/db/dd-locks.ts`, `db/dd-invoice-list.ts` | `lockDdInvoiceForUpdate`, `lockDdCatalog(tx, tenantId, 'tariffs' \| 'calendars' \| 'invoices')`; the invoice list query with JSON-path reads (fix round 1, S1) | raw SQL in the tenant tx | new |
+| `api/src/claims/service.ts`, `audit/dd-editors.ts`, `claims/analysis.ts`, `db/claim-load-key.ts` | `kind` in summaries; four-eyes `dd_invoice_editor` rule for every actor of the invoice's `dd_invoice.created/updated` events and `selfAuthored` in the approval queue (S3, fix round 3); analysis refuses non-FREIGHT claims; bulk and load-key lookups FREIGHT only | Prisma | changed |
+| `api/src/http/route.ts`, `http/errors.ts`, `http/db-guard.ts`, `audit/chain.ts`, `db/tenant.ts`, `app.ts`, `scripts/seed.ts` | per-route `bodyLimit` (asserted 1..262144); `dd_limit_reached`; DB guard mapping to 409 `invalid_state`; C15 metadata keys; `TENANT_MODELS` + `TenantTx`; route registration; seed reset deletes | none | changed |
+| `api/prisma/migrations/20261016000000_ocean_dd/`, `schema.prisma` | `ClaimKind` enum and `claims.kind`, the three tables, CHECKs, triggers, RLS FORCE, policies, grants, flag row | `tenants`, `users`, `claims` | new |
+| `web/src/features/ocean-dd/*` | page with tabs Invoices, Tariffs, Calendars, Import CSV; invoice editor with live preview; audit view; preset picker | shared engine, copy, DTOs | new |
+| `web/src/app-root.tsx`, `shell/AppShell.tsx`, `intelligence/use-features.ts`, `claims/ClaimsPage.tsx`, `claims/ClaimSheet.tsx` | route `/ocean`, nav `Ocean D&D`, `oceanDd` flag, `D&D` badge | none | changed |
+
+No file under `packages/shared/src/analysis/`, `charge-intel/`, `fuel/` or `outlook/` was changed.
+
+## Function Call Graph (step 8)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST dd/invoices/:id/audit"] --> RA["runDdAudit (one tx)"]
+    RA --> LK["lockDdInvoiceForUpdate"]
+    RA --> LD["load tariff + calendar"]
+    LD --> BP["buildDdPacket"]
+    BP --> AD["auditDdInvoice"]
+    AD --> CT["computeTariffCharge"]
+    CT --> FE["computeFreeTimeEnd"]
+    FE --> DN["ddDayNumber etc."]
+    AD --> CH["checks + summaries"]
+    BP --> LTR["buildDdDisputeLetter"]
+    BP --> HP["hashPacket + sources"]
+    RA --> NC["nextClaimNumber"]
+    NC --> CW["claim + packet rows"]
+    CW --> IA["invoice AUDITED"]
+    IA --> AE["audit dd_invoice.audited"]
+    R2["GET dd/invoices/:id"] --> GI["getInvoice preview"]
+    GI --> AD
+    R3["POST dd/invoices"] --> CR["createInvoice"]
+    CR --> LC["lockDdCatalog invoices"]
+    R4["POST claims/:id/approve"] --> TR["transition: 4-eyes"]
+
+    style R1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LTR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style HP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R3 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TR fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Function | Defined In | Called By | Purpose |
+| --- | --- | --- | --- |
+| `computeFreeTimeEnd(start, tariff, calendar)` | `ocean-dd/tariff.ts` | `computeTariffCharge`, content issue A02 | the free-time end date `F` |
+| `computeTariffCharge({ start, stop, sizeType, tariff, calendar })` | `ocean-dd/tariff.ts` | `auditDdInvoice` | chargeable dates with tier and rate, total in cents, step texts |
+| `auditDdInvoice({ invoice, tariff, calendar })` | `ocean-dd/audit.ts` | `getInvoice` (preview), `buildDdPacket`, web editor (live preview) | `DdAuditResult`: findings, totals, checks, container summaries |
+| `buildDdDisputeLetter(invoice, result, today)` | `ocean-dd/letter.ts` | `buildDdPacket` | the draft letter text |
+| `parseDdCsv(text)` | `ocean-dd/csv.ts` | web `CsvImportTab` only | invoices plus row errors; no server-side CSV parser |
+| `buildDdPacket({ invoice, tariff, calendar, now, actorId })` | `api/src/ocean-dd/audit-run.ts` | `runDdAudit` | sources with sha256, findings rows, timeline, letter, content hash, snapshot |
+| `runDdAudit(tx, tenantId, id, actor, now)` | `api/src/ocean-dd/audit-run.ts` | `POST /dd/invoices/:id/audit` | the audit transaction |
+| `createInvoice`, `updateInvoice`, `deleteInvoice`, `getInvoice`, `listInvoices` | `api/src/ocean-dd/service.ts` | routes | invoice CRUD (DRAFT only for writes) |
+| `transition(...)` | `api/src/claims/service.ts` | approve and reject routes | revision-author rule, then the D&D invoice-editor rule |
+
+## Data Flow (audit of one invoice)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["Per container: C_i, last_i"] --> B["DD-TOTAL-MISMATCH, DD-PERIOD-ARITH"]
+    B --> C{"Tariff evaluable?"}
+    C -- yes --> D["T_i; DD-TARIFF-OVERCHARGE"]
+    C -- no --> E["RETURN uses invoice rates"]
+    D --> F["DD-545-RETURN-REFUSED"]
+    E --> F
+    F --> G["DD-545-AVAILABILITY"]
+    G --> H{"Part 541 applies?"}
+    H -- no --> K["Checks and summaries"]
+    H -- yes --> I["DD-541-7-LATE"]
+    I --> J["DD-541-6-CONTENT"]
+    J --> K
+
+    style A fill:#1e90ff,stroke:#1565c0,color:#fff
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style C fill:#1e90ff,stroke:#1565c0,color:#fff
+    style D fill:#1e90ff,stroke:#1565c0,color:#fff
+    style E fill:#1e90ff,stroke:#1565c0,color:#fff
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style G fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+    style I fill:#1e90ff,stroke:#1565c0,color:#fff
+    style J fill:#1e90ff,stroke:#1565c0,color:#fff
+    style K fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+"Part 541 applies" means the invoice date is missing or on or after 2024-05-28. The order of the boxes is the
+order of findings in the result and of the money allocation below. The availability rule runs only for
+demurrage on import invoices with an evaluable tariff.
+
+## Dates, free time and tariff charge
+
+All dates are civil `YYYY-MM-DD` strings converted to integer day numbers (days since 1970-01-01); weekdays
+are ISO (1 = Monday). Money is integer cents and is printed as `d.dd`. The engine never reads the clock.
+
+A tariff (`DdTariffData`) states `freeDays` N, `freeDayBasis` (`calendar` or `working`), `startDayRule`
+(`included` or `additional`), `chargeDayBasis` (`calendar` or `working`), `workingWeekdays` and up to 10 tiers,
+each with a day count (the last unbounded) and a rate per container size type (`20DV`, `40DV`, `40HC`, ...). A
+calendar (`DdCalendarData`) lists `closedDates` (scheduled closures such as public holidays) and `shutoutDates`
+(unplanned closures). There is no built-in holiday list; the user enters the terminal's dates.
+
+- **Free-time counting day.** Calendar basis: any date not in `shutoutDates`. Working basis: a working weekday
+  that is in neither list.
+- **Free-time end F** for clock start S. `included` (the start day is free day 1 if it counts): the N-th
+  counting day on or after S (N = 0: F = S - 1). `additional` (for example Hapag-Lloyd's "day of interchange
+  plus 4 working days"): the N-th counting day after S (N = 0: F = S). The search stops with a `RangeError`
+  after 3,660 days or past 2099-12-31; the audit then reports the tariff check as `invalid_dates`.
+- **Chargeable days** are the dates after F up to the clock stop E. Calendar basis: every date not in
+  `shutoutDates` (closed dates **are** charged). Working basis: working weekdays in neither list. So shutout
+  dates are never free and never charged; closed dates are not free under working-day free time and are
+  charged under calendar charging (the Hapag-Lloyd US guide's semantics, decision D5).
+- **Tiers** apply to the ordinal of the chargeable day: the k-th chargeable date is in the first tier whose
+  cumulative day count reaches k. The total T is the sum of the rates. Every step is written out in the
+  finding's calculation (free time, closed or shutout dates skipped, chargeable days, one line per tier, total).
+- **Clock start and stop** come from the container's evidence (`clockStart`, `clockStop`) when entered, else
+  from the invoice's stated free-time start and the last charged date.
+
+## Rules and money allocation
+
+| Order | Rule id | Finds | Confidence | Status | Clause |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `DD-TOTAL-MISMATCH` | total due exceeds the sum of the charge lines | 0.9 | **confirmed** (arithmetic) | none |
+| 2 | `DD-PERIOD-ARITH` | a charge line exceeds days x its stated rate | 0.9 | **confirmed** | none |
+| 3 | `DD-TARIFF-OVERCHARGE` | a container's charges exceed the attached tariff's charge | 0.9 | **confirmed** (decision D2, OQ4) | attached tariff |
+| 4 | `DD-545-RETURN-REFUSED` | detention charged on dates when an empty return was refused | 0.5 | review | 46 CFR 545.5(c)(2)(ii) |
+| 5 | `DD-545-AVAILABILITY` | import demurrage free time counted from before the cargo was available | 0.5 | review | 46 CFR 545.5(c)(2)(i) |
+| 6 | `DD-541-7-LATE` | invoice issued more than 30 calendar days after the charge was last incurred (NVOCC: after the invoice it received) | 0.7 | review | 46 CFR 541.7(a) or (b) |
+| 7 | `DD-541-6-CONTENT` | one or more of the 541.6 elements missing or inconsistent (25 possible issues, including free time that differs from the tariff, charges on or before the stated free-time end, and dispute windows that 541.8 does not allow) | 0.7 | review | 46 CFR 541.5 when any element is missing; 46 CFR 541.6(b) or 541.6(d) when the only issues are inaccuracies (fix round 3, F3) |
+
+"Confirmed" means the arithmetic is certain **given the data entered** (invoice lines and the tenant's own
+attached tariff); these amounts form `recoverableCents`. Every regulatory finding (rules 4-7) is review-only
+(`needsHumanReview`), counts in `pendingReviewCents`, and is worded as "... may not be payable under 46 CFR
+541.x - review"; the return-refused finding quotes 46 CFR 545.5(c)(2)(ii) verbatim ("Absent extenuating
+circumstances, ... are likely to be found unreasonable.") followed by "- review" (fix round 3, F4). A content
+finding cites 541.5 ("failure to include ... eliminates any obligation ... to pay") only when at least one
+required element is **missing**; when the only issues are **inaccuracies** (free time or its end differing from
+the tariff, charges on or before the stated free-time end, dispute windows outside 541.8), the title is
+"Required invoice information inaccurate (46 CFR 541.6)" and the clause is 46 CFR 541.6(b) or 541.6(d), taken
+from the first issue, because 541.5 speaks of omission, not misstatement (fix round 3, F3). Confidence
+values are fixed labels, not probabilities. Every claim, confirmed or not, still goes through four-eyes
+approval.
+
+**No double counting.** Per container, the base `C_i` is the sum of `min(stated, days x rate)` over its lines.
+Rules take money in a fixed order: TOTAL (the excess of the total only), PERIOD (the excess of each line only),
+then from `C_i`: TARIFF = `C_i - T_i`, RETURN and AVAILABILITY each limited to what is left, then LATE takes the
+remaining charge of the late containers, and CONTENT takes what remains after that. So the finding amounts add
+up to at most the stated charges plus the total mismatch, and the packet totals stay meaningful. "Last incurred"
+is the latest charged date of the container on the invoice; exactly 30 days is on time (decision D4). The 541.8
+windows are checked as part of 541.6(d)(3) (decision D3).
+
+`checks` lists, for the invoice and then per container (container by container), whether each check found
+something, was OK, was not evaluated (with a reason such as `no_tariff`, `size_not_in_tariff`, `no_evidence`) or
+does not apply.
+
+## Worked examples (published tariffs; pinned in unit and acceptance tests)
+
+Computed with an independent Python oracle before the spec was written and reproduced by the product and by
+the tester's independent TypeScript oracle. The invoices around them are synthetic.
+
+| Preset | Container and dates | Free time ends | Chargeable | Tariff charge |
+| --- | --- | --- | --- | --- |
+| Maersk US import detention 2026 | 40DV, gate-out Mon 2026-03-02, return 2026-03-20 | 2026-03-05 | 15 days: 4 x $210 + 4 x $260 + 7 x $290 | **$3,910.00** |
+| Maersk, Memorial Day 2026-05-25 closed | 40DV, 2026-05-22 to 2026-06-02 | 2026-05-27 | 6 days: 4 x $210 + 2 x $260 | **$1,360.00** |
+| Hapag-Lloyd US import detention, merchant haulage | 40HC, day of interchange Thu 2026-07-02, 2026-07-03 closed, 2026-07-14 shutout, return 2026-07-20 | 2026-07-09 | 10 days: 3 x $200 + 3 x $250 + 4 x $300 | **$2,550.00** (without the shutout: 11 days, **$2,850.00**) |
+| MSC US import demurrage | 40DV, available Mon 2026-09-07 (Labor Day, closed), gate-out 2026-09-22 | 2026-09-11 | 11 days: 5 x $80 + 6 x $150 | **$1,300.00** (20DV: 5 x $65 + 6 x $120 = **$1,045.00**) |
+| MSC, clock started 2026-09-04 instead | 40DV, 2026-09-04 to 2026-09-22 | 2026-09-10 | 12 days: 5 x $80 + 7 x $150 | **$1,450.00** (the $150.00 difference is the availability example) |
+| CMA CGM US import demurrage (secondary source) | 40DV, 2026-02-02 to 2026-02-20 | 2026-02-05 | 15 days: 5 x $295 + 5 x $355 + 5 x $395 | **$5,225.00** |
+
+Synthetic invoice examples in the unit tests: a Maersk container charged $440.00 more than the tariff gives a
+confirmed `DD-TARIFF-OVERCHARGE`; an invoice dated 36 days after the last charged date gives `DD-541-7-LATE`
+for the remaining $3,910.00 (exactly 30 days gives no finding); an NVOCC invoice 45 days after the invoice it
+received gives the 541.7(b) variant; an invoice missing 23 elements gives one `DD-541-6-CONTENT` finding that
+lists them.
+
+## Tariff presets and provenance
+
+`DD_TARIFF_PRESETS` (frozen, `packages/shared/src/ocean-dd/presets.ts`) are **starting points** a user copies
+into a tenant tariff; they are never applied automatically and the tenant's service contract or a newer tariff
+may differ (`DD_PRESET_NOTE`). All were retrieved on 2026-10-11 (US import, dry containers). Tariff PDFs are
+not committed (decision D10).
+
+| Preset id | Terms | Source | Verification |
+| --- | --- | --- | --- |
+| `maersk-us-import-detention-2026` | 4 working days (Mon-Sat) free, start day included, charged per calendar day: $210 (1st-4th chargeable day), $260 (5th-8th), $290 after; 20DV/40DV/40HC/45HC | Maersk "US import detention tariff effective 01 Jan 2026" (maersk.com PDF URL), effective 2026-01-01 | `primary_search_extract`: the text was read through a search engine's extract of the PDF; the direct download returned "Page Not Found", so no sha256 |
+| `msc-us-import-demurrage` | 4 working days free; 20DV $65 for 5 days then $120; 40DV/40HC/45HC $80 for 5 days then $150 | MSC "Detention, demurrage and per diem charges" (US), section A.1, all ports except Baltimore | `primary` (PDF, sha256 `7ee60b30...bb4e3`; undated document) |
+| `hapag-lloyd-us-import-detention-mh-2025` | day of interchange plus 4 working days free; $200 x 3 days, $250 x 3 days, then $300 per calendar day | Hapag-Lloyd "USA - Detention, effective October 1, 2025", import merchant haulage, excluding California; closure semantics from the "D&D Tariff Guide for the United States", May 2026 | `primary` (PDF, sha256 `5aea8cf3...2bfdd`; guide sha256 `76666957...4a7b`) |
+| `cma-cgm-us-import-demurrage-standard` | 4 working days free; 40DV/40HC $295 (5 days), $355 (5 days), $395 after | a trade-publication blog citing CMA CGM, effective 2026-02-22; cma-cgm.com returned a bot-protection page | **`secondary` only: verify against the CMA CGM tariff before any use** |
+
+Each preset records its assumptions (for example whether the start day counts, that MSC chargeable days are
+calendar days, Monday-Friday working days, how "days 5-8" maps to chargeable days). The UI shows carrier,
+document, retrieval date, verification level and assumptions next to the preset.
+
+## Data model and database guards
+
+Migration `20261016000000_ocean_dd` (generated DDL plus a hand-written security part; earlier migrations
+unchanged):
+
+- **`claims.kind`** (enum `ClaimKind`: `FREIGHT`, `OCEAN_DD`; NOT NULL, default `FREIGHT`). Trigger
+  `claims_kind_guard` (`fr_claim_kind_guard`) refuses any change of `kind` for every role
+  (`claim_kind_immutable`).
+- **`dd_tariffs`**, **`dd_calendars`**, **`dd_invoices`**: `tenant_id`, `ENABLE` + `FORCE ROW LEVEL SECURITY`, one
+  policy `<table>_tenant_isolation` `FOR ALL` with `USING`/`WITH CHECK tenant_id = fr_current_tenant()`, `REVOKE
+  ALL FROM PUBLIC`, column-limited UPDATE grants to `freight_app` (never `id`, `tenant_id` or `created_by_id`),
+  no TRUNCATE; DELETE only on `dd_invoices`. The full data object is `jsonb` with a size CHECK (64 KiB for tariffs
+  and calendars, 256 KiB for invoices); text columns copied from it have length CHECKs; `total_due_cents >= 0`.
+- **Uniques:** tariff and calendar names per tenant; invoices per (tenant, billing party, invoice number).
+- **References** to tariff, calendar and claim are composite `(id, tenant_id)` foreign keys with `ON DELETE
+  RESTRICT`, so a row can only point inside its own tenant.
+- **Audit consistency:** `status` is `DRAFT` (no claim, no snapshot) or `AUDITED` (claim, `audited_at` and
+  `audit_snapshot` all set). Trigger `dd_invoices_guard` (`fr_dd_invoice_guard`): inserts must be `DRAFT`; an
+  `AUDITED` row can be neither updated nor deleted, for every role (`dd_invoice_immutable`); becoming `AUDITED`
+  requires a claim of kind `OCEAN_DD` in the same tenant.
+- **Flag row** `intelligence.ocean_dd` (enabled). The three models are in `TENANT_MODELS` and `TenantTx`; the
+  seed reset deletes D&D rows before claims; the seed creates none.
+
+**Why OCEAN_DD claims stay out of the step 5 paths.** They have no imported documents and no load number, and
+their packet is built from the D&D snapshot. So `POST /claims/:id/analyze` returns 409 `invalid_state` for a
+non-FREIGHT claim, bulk analysis selects only `kind = 'FREIGHT'`, and the import commit's load-number lookup
+adds `AND kind = 'FREIGHT'`. Everything else (list, sheet, approvals, edit, reject, send-ready, exports) works
+unchanged; exports do not show `kind` yet.
+
+## Audit run, evidence packet and letter
+
+`POST /api/v1/dd/invoices/:id/audit` (permission `claims:analyze`, `analysis` rate bucket) locks the invoice,
+refuses an already audited one (409), loads the attached tariff and calendar in the same tenant transaction
+and builds the packet. If any amount would not fit a 32-bit integer the request fails with 422
+`analysis_input_invalid` and nothing is written. Otherwise, in **one transaction**: a new claim
+(`kind OCEAN_DD`, perspective SHIPPER, next `CLM-nnnn`, carrier = billing party, shipper = billed party, no load
+number, status `PENDING_REVIEW` with the recoverable and pending totals), evidence packet revision 1 authored by
+the caller, the invoice set to `AUDITED` with the snapshot (its `updated_by_id` is left unchanged since fix
+round 3, F1), and the audit event `dd_invoice.audited`.
+
+- **Sources (snapshots, each with sha256 and size of its canonical JSON):** `dd-invoice.json` (doc type
+  INVOICE), `dd-tariff.json` and `dd-calendar.json` (OTHER, when attached) and `ecfr-46-cfr-541-545.5.json`
+  (OTHER: the `DD_REGULATION_TEXT` object). The snapshot `{ invoice, tariff, calendar, rulesVersion }` is stored on
+  the invoice with its own sha256, so a later change of the tariff or calendar never changes an audited result.
+- **Citations** point into the snapshots with RFC 6901 pointers, for example
+  `dd-invoice.json#/containers/0/periods/1/amount`, with the value as excerpt. **Clauses** quote the
+  regulation, for example locator `ecfr-46-cfr-541-545.5.json#46 CFR 541.5` with the verbatim CFR text as
+  excerpt, or the attached tariff (`dd-tariff.json#/tiers`).
+- **Timeline:** invoice issued; charges last incurred; for non-NVOCC billing parties the 30-day issuance limit
+  (46 CFR 541.7).
+- **Disclaimer** (`DD_PACKET_DISCLAIMER`): automated checks of the data entered; not legal advice; drafts for
+  human review; have counsel review them before relying on them.
+- **Letter** (`buildDdDisputeLetter`): starts with "DRAFT - FOR HUMAN REVIEW. NOT SENT. NOT LEGAL ADVICE.",
+  addresses the billing party, lists each finding with its amount and "(needs review)" where applicable, states
+  the confirmed and review amounts, quotes 46 CFR 541.8(b) verbatim (resolve "within thirty (30) calendar days of
+  receiving such a request or at a later date as agreed upon by both parties"; fix round 3, F4), and reminds the sender of the 541.8(a) request window
+  computed from the invoice date. With no findings it says "(No items found. Do not send.)" and that no amount
+  is requested. Nothing is ever emailed; "send" still only marks the packet send-ready.
+
+## Four-eyes for OCEAN_DD claims
+
+The step 4 rule is unchanged: the author of a revision (for revision 1, the person who ran the audit) cannot
+approve or reject it. In addition, `transition()` refuses approve and reject with 403 `four_eyes_required`
+(audit basis `dd_invoice_editor`) for **every user who created or edited the invoice data**, because the
+invoice data is the evidence of revision 1. Since fix round 3 (review F1/F2) the editors are read from the
+tenant audit chain: `ddInvoiceEditorsByClaim` (`api/src/audit/dd-editors.ts`, one query inside the tenant
+transaction) returns the distinct actors of the `dd_invoice.created` and `dd_invoice.updated` events of the
+claim's invoice. Fix round 1 had used the row's `created_by_id`/`updated_by_id`, which missed earlier editors
+and, because the audit run overwrote `updated_by_id` with the auditor, also the last editor; the audit run no
+longer touches `updated_by_id`. The approval queue marks such claims `selfAuthored` (one call per page). The
+revision-author rule is checked first. The rule is a service check under the claim lock; there is no database
+trigger for it (residual DD-6).
+
+## Routes, RBAC, audit, limits and flag
+
+| Route | Permission | Success |
+| --- | --- | --- |
+| `GET /api/v1/dd/tariffs?page&pageSize` | `claims:read` | 200 list (name, then id; pageSize 1..100) |
+| `POST /api/v1/dd/tariffs`, `PUT /api/v1/dd/tariffs/:id` | `dd_tariffs:manage` | 201 / 200 (`{ version, data }` on PUT) |
+| `GET /api/v1/dd/calendars?page&pageSize` | `claims:read` | 200 list |
+| `POST /api/v1/dd/calendars`, `PUT /api/v1/dd/calendars/:id` | `dd_tariffs:manage` | 201 / 200 |
+| `GET /api/v1/dd/invoices?page&pageSize&status` | `claims:read` | 200 list (updated desc; **pageSize 1..50**) |
+| `POST /api/v1/dd/invoices` | `dd_invoices:manage` | 201 detail with preview |
+| `GET /api/v1/dd/invoices/:id` | `claims:read` | 200 detail with preview |
+| `PUT /api/v1/dd/invoices/:id` | `dd_invoices:manage` | 200 (`{ version, invoice }`; DRAFT only) |
+| `DELETE /api/v1/dd/invoices/:id` | `dd_invoices:manage` | 204 (DRAFT only) |
+| `POST /api/v1/dd/invoices/:id/audit` | `claims:analyze` | 201 `{ invoiceId, claim, packet, audit }` |
+
+- **RBAC.** `dd_invoices:manage`: OWNER, ADMIN, MANAGER, REVIEWER, ANALYST. `dd_tariffs:manage`: OWNER, ADMIN,
+  MANAGER, REVIEWER. Reads `claims:read`; the audit run `claims:analyze`. VIEWER reads only; PLATFORM_DEV and
+  SUPER_ADMIN get 403. No route has an API-key scope, so API keys get 403 (decision D7).
+- **Rate limits.** All routes use the per-user `intelligence` bucket, the audit run the `analysis` bucket.
+- **Audit actions (8, tenant chain):** `dd_tariff.created`, `dd_tariff.updated`, `dd_calendar.created`,
+  `dd_calendar.updated`, `dd_invoice.created`, `dd_invoice.updated`, `dd_invoice.deleted`, `dd_invoice.audited`.
+  Metadata holds ids, versions, counts, sha256 values and totals only (`dataSha256` of the normalized data;
+  `snapshotSha256`, `contentHash`, finding counts and cents for the audit); never names, numbers or other
+  invoice text. (The spec prose said "seven"; its table lists eight and the code follows the table.)
+- **Errors.** New 409 `dd_limit_reached` (a per-tenant cap reached). Reused: 400 `validation_error` (including
+  `{ path: 'tariffId' | 'calendarId', code: 'not_found' }` for a reference outside the tenant), 404 `not_found`
+  (flag off, unknown, non-UUID or other-tenant id, byte-identical), 409 `conflict` (name or invoice number
+  taken), `stale_revision`, `invalid_state` (writing or re-auditing an AUDITED invoice; the DB guard messages map
+  here too), 413 `payload_too_large`, 422 `analysis_input_invalid`. Precedence: origin/CSRF 403 -> 401 -> 429 ->
+  403 -> 400 -> 404 -> 400 reference -> 409 -> 422.
+- **Limits.** Per invoice 50 containers, 20 periods each, clock span 730 days, period span 365 days; per tariff
+  10 tiers and 20 size types; per calendar 400 dates per list. Per tenant 200 tariffs, 200 calendars and **2,000
+  invoices** (DRAFT and AUDITED; checked under an advisory lock, fix round 1 S2). Invoice list pages hold at
+  most **50** rows and read only list columns plus two JSON-path values, never the full data or snapshot (S1).
+  Bodies: the global 64 KiB limit applies everywhere except **`POST` and `PUT /dd/invoices`, which accept up to
+  262,144 bytes** (256 KiB) so a maximal invoice fits; a route `bodyLimit` above 262144 is refused at
+  registration and an architecture test allow-lists exactly these two routes (S4). CSV: at most 1,000,000
+  characters, 2,000 data rows and 50 invoices per file; the browser refuses a file over 4,000,000 bytes before
+  reading it (S5).
+- **Flag** `intelligence.ocean_dd` ("Ocean demurrage and detention invoice audit"), on by default (decision D8,
+  OQ3), visible to tenants. Off: every D&D route returns 404 after 401/429/403/400 and the web hides the page;
+  existing OCEAN_DD claims stay readable and their packets can still be approved, rejected, edited and marked
+  send-ready. A flag read error counts as off.
+
+## Web
+
+- **Ocean D&D page** (`/ocean`, nav `Ocean D&D`, shown when the flag is on and the user has `claims:read`) with
+  tabs **Invoices**, **Tariffs**, **Calendars** and **Import CSV**; controls only for users with the matching
+  permission.
+- **Invoice editor:** every invoice field, container and period sub-forms, tariff and calendar selects, and a
+  **live preview** computed in the browser with the same `auditDdInvoice` once the form parses. Save sends the
+  `version`. The invoice view shows `DD_NOTE`, the checks with their labels, the findings (rule id, title,
+  amount, "needs human review") and, for a DRAFT and a user with `claims:analyze`, **Run audit** with the note
+  that the runner becomes the author of revision 1; success links to the new claim.
+- **Tariffs:** list and editor (tiers as lines `days | SIZE=rate, ...`) with the preset picker "Start from a
+  public tariff", `DD_PRESET_NOTE` and the provenance. **Calendars:** one date per line.
+- **Import CSV:** the file is parsed in the browser by `parseDdCsv` (the API only accepts validated JSON,
+  decision D9); a preview lists invoices and row errors; the import posts invoices one by one and lists each
+  outcome.
+- Claims list and claim sheet show a `D&D` badge for OCEAN_DD claims. Errors are fixed texts in
+  `role="alert"` by status; server messages are never shown; every untrusted string renders as React text
+  (`SafeText`).
+
+## Policy defaults (step 8)
+
+| ID | Default | Flip point |
+| --- | --- | --- |
+| D1 | No 46 CFR 541.4 check (set aside and removed); `billedPartyName` recorded only | `audit.ts` (new rule id if ever added) |
+| D2 | Tariff recomputation, line arithmetic and total mismatch confirmed (review false, 0.9); all CFR and 545.5 findings review-only | `audit.ts` |
+| D3 | 541.8 windows checked under 541.6(d)(3) | `audit.ts` |
+| D4 | Last incurred = latest charged date on the invoice; exactly 30 days is on time; NVOCC uses only 541.7(b) | `audit.ts` |
+| D5 | Shutout dates never free and never charged; closed dates not free under working basis, charged under calendar charging | `tariff.ts` |
+| D6 | Allocation order TOTAL, PERIOD, TARIFF, RETURN, AVAILABILITY, LATE, CONTENT | `audit.ts` |
+| D7 | `dd_invoices:manage` incl. ANALYST; `dd_tariffs:manage` REVIEWER and up; audit run `claims:analyze`; no API-key scope | `rbac.ts`, routes |
+| D8 | Flag on by default; off = 404, existing OCEAN_DD claims untouched | registry and migration row |
+| D9 | CSV parsed in the browser only | web, routes |
+| D10 | Presets are code constants with provenance; tariff PDFs not committed | `presets.ts` |
+| D11 | Caps 200 tariffs and 200 calendars per tenant, no delete of either; 2,000 invoices (fix round 1) | constants, service |
+
+Open questions for the owner: **OQ1** a non-legal "billed party consistency" note to replace 541.4 (default:
+none); **OQ2** a dated exception in CLAUDE.md rule 4 for published tariff rates; **OQ3** whether the flag should
+stay on by default before counsel has reviewed the wording; **OQ4** whether tariff recomputation should stay
+confirmed or become review-only.
+
+## Deferred (step 8)
+
+PDF extraction of D&D invoices; import of evidence dates from DCSA Track & Trace, Terminal49 or Vizion; API-key
+scopes for D&D routes; deleting tariffs or calendars; a `kind` filter and `kind` column in claims lists and CSV
+exports; the 541.4 billed-party check; the NVOCC dispute extension of 541.7(c); per diem, chassis and hourly
+charges; currencies other than USD; built-in holiday lists; any automatic sending.
+
+## Interfaces for later steps (after step 8)
+
+- `packet_findings.rule_id` can now also be one of `DD_RULE_IDS`, versioned by `DD_RULES_VERSION` `dd-rules-v1`;
+  the regulation text by `DD_REGULATION_VERSION` `ecfr-2026-10-07`. A regulation change needs a new version and
+  a new pinned text, never an edit in place.
+- Every `ClaimSummary` now carries `kind`; new claim producers must set it. Code that analyses or links claims
+  must keep filtering on `kind = 'FREIGHT'`.
+- Tracking-data import would fill `evidence.clockStart`, `clockStop`, `cargoAvailableDate` and
+  `emptyReturnRefusedDates`; the engine already uses them.
+
+## Notes (step 8)
+
+- What ran (local, Windows, Node 22.23.3, **not GitHub CI**; low-memory mode, so heavy suites were not run):
+  - Builder (M1-S1): `prisma validate`, `prisma generate`, `prisma migrate diff` from the `ce107d0` schema (no
+    database; every FK `ON DELETE RESTRICT`), lint and typecheck of builder code clean, targeted unit tests
+    passing (shared ocean-dd and pins, api `ocean-dd-units`, `tenant-scope`, `architecture`, `four-eyes-units`,
+    web `ocean-dd` and the touched claim fixtures).
+  - Tester, Tier L at `afadac3` (before fix round 1): the whole shared acceptance project **389/389** (23 files,
+    including 3,000 random cases against an independent oracle), api static **10/10**; eslint clean; tsc 0 errors
+    for shared, api and web. A first run had 5 failures from one cause (the order of per-container checks),
+    fixed in M3 without changing a test.
+  - Security review of `ce107d0..afadac3` (static): no Critical or High. S1 (Medium), S2-S4 (Low) and S5
+    (Info) were fixed in `1ca8eb5`; S6 (test gaps) went to the tester; S7 (a migration comment) needs no action.
+  - Builder at `1ca8eb5` (fix round 1): lint and typecheck clean; unit tests shared ocean-dd 32, api 55
+    (ocean-dd-units, architecture, four-eyes-units, claims-logic, app-http), web ocean-dd 10, all passing. The
+    tester's Tier L run predates this commit.
+  - Planner: Part C amended for fix round 1 (identical in spec and test-spec), with new acceptance cases for the
+    page size, the invoice cap, the body limit, the invoice-editor four-eyes rule, the CSV file size and the two
+    S6 gaps (a REVIEWER or MANAGER who ran the audit gets 403; cross-tenant references with another tenant's
+    real ids).
+  - Builder at `22e4a73` (fix round 2): the `dd_limit_reached` message and `DD_TEXT.limit` now name tariffs,
+    calendars or invoices; new `DD_TEXT.csvTooLarge` ("The file is too large to import.") and the exported
+    `DD_CSV_MAX_FILE_BYTES`; the limits use the exported constants. Lint and typecheck clean; unit tests shared
+    32, api 36, web 10 passed.
+  - Reviewer: FAIL (STOP) on F1 (the audit run overwrote `updated_by_id`, so the last editor could approve);
+    F2-F7 notes. Builder at `10f8941` (fix round 3): four-eyes from the audit chain (F1, F2), the audit run keeps
+    `updated_by_id`, inaccuracy-only content texts with a 541.6(b)/(d) clause (F3), verbatim 545.5(c)(2)(ii) and
+    541.8(b) wording (F4); unit tests shared ocean-dd 34, api 43 passed; lint and typecheck clean. The new
+    integration case (three editors, including an earlier one, each refused on approve and reject; a non-editor
+    manager approves) is written, not run. Re-review of the fix: pending.
+- **Written but not run (Tier H, pending the owner's go-ahead):** `api/test/integration/ocean-dd.int.test.ts`
+  (RLS, FORCE, policies, grants, cross-tenant refusal for all three tables, the triggers, routes, RBAC, flag off,
+  audit run, four-eyes including the S3 cases, the S4 body limits, the S1/S2 list and cap cases) and the tester's
+  Tier H files `dd-db`, `dd-api`, `dd-audit` and `dd-ui`; the parity suites; `npm run build`;
+  `verify-ci-locally`. Database-level isolation and the triggers are therefore checked by code review and unit
+  tests only so far.
+- Review verdict: FAIL (STOP) on F1 at `22e4a73`; fixed in `10f8941`; re-review pending.
 - Not verified: GitHub CI, container images, the compose stack, Playwright, any AWS deployment.

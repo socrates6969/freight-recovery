@@ -174,7 +174,7 @@ The software foundation above is necessary, not sufficient. Still required:
 > [technical/web-platform-security.md](technical/web-platform-security.md). Architecture:
 > [ARCHITECTURE.md, "Web platform"](ARCHITECTURE.md#web-platform-typescript-steps-1-2).
 
-A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 to 7
+A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 to 8
 are done:
 
 - **Step 1:** email + password login (argon2id), a short-lived access token plus a rotating refresh
@@ -214,13 +214,23 @@ are done:
   writes. An Outlook page shows diesel and truckload index forecasts only at horizons where a model beat
   "no change" in a walk-forward backtest, with 80% ranges; backtested on public data, not a guarantee. See
   [Fuel check and cost outlook (step 7)](#fuel-check-and-cost-outlook-step-7).
+- **Step 8:** **ocean demurrage and detention audit**. An Ocean D&D page where an organization enters (or
+  imports by CSV) US container demurrage and detention invoices, attaches a tariff (four public carrier
+  tariffs are offered as starting points) and a terminal calendar, and records evidence dates. Fixed rules
+  check the invoice arithmetic, recompute the charge from the tariff with exact calendar and working-day
+  free time, and flag possible issues under 46 CFR Part 541 (required content, 30-day issuance) and 46 CFR
+  545.5 for review. Running the audit creates a D&D claim with an evidence packet and a draft dispute letter
+  for four-eyes review. **Not legal advice.** See
+  [Ocean demurrage and detention audit (step 8)](#ocean-demurrage-and-detention-audit-step-8).
 
 "Send" only marks a demand send-ready and audits it. No email is sent and no money moves. The seeded claims and
 packets are synthetic and are transcribed from the Python CLI output on `tests/fixtures/`. Claims created
 by import have no amounts or packet until someone runs the analysis (step 5). Findings are rule outputs on
 extracted fields and are drafts that need human review. Step 6 charge suggestions compare names with
 labelled examples; there is no trained model. Step 7 fuel findings are recomputations from tables and
-inputs that people enter, and the cost outlook is backtested on public data, not a guarantee. OCR,
+inputs that people enter, and the cost outlook is backtested on public data, not a guarantee. Step 8 D&D
+findings compare the invoice data people enter with the regulation text and the attached tariff; they are
+drafts for human review and not legal advice (have counsel review them). OCR,
 email-forward ingestion and any LLM call are later steps.
 
 **The Python service and the `webapp/` pilot dashboard are unchanged and remain.** The web platform has
@@ -492,7 +502,9 @@ nearest-example comparison with labelled charge names, with no trained model and
 [Charge suggestions and team labels (step 6)](#charge-suggestions-and-team-labels-step-6)). Step 7 added an
 Outlook page: a small autoregressive model on public price indexes, refitted from the stored history and
 shown only where its walk-forward backtest beat "no change", with the backtest figures next to every number
-(see [Fuel check and cost outlook (step 7)](#fuel-check-and-cost-outlook-step-7)).
+(see [Fuel check and cost outlook (step 7)](#fuel-check-and-cost-outlook-step-7)). Step 8 added the Ocean
+D&D page: fixed rules over the invoice data, the regulation text and an attached tariff, with no model and no
+LLM call (see [Ocean demurrage and detention audit (step 8)](#ocean-demurrage-and-detention-audit-step-8)).
 
 ### Who can see what
 
@@ -1151,6 +1163,171 @@ from documents; packets analysed before inputs were entered are not re-checked; 
 were chosen on the same public history the CI gate replays. The full list is in
 [technical/web-platform-security.md, section 11.5](technical/web-platform-security.md#115-accepted-residuals-step-7).
 
+## Ocean demurrage and detention audit (step 8)
+
+Run `REQ-20261011-ocean-dd` adds a check of US ocean container demurrage and detention (D&D) invoices.
+Architecture:
+[ARCHITECTURE.md, step 8](ARCHITECTURE.md#web-platform-ocean-demurrage-and-detention-audit-step-8).
+Threat model and residual risks:
+[technical/web-platform-security.md, section 12](technical/web-platform-security.md#12-step-8-ocean-demurrage-and-detention-audit).
+
+> **Not legal advice.** The audit compares the invoice data you enter with the text of 46 CFR Part 541,
+> 46 CFR 545.5 and the tariff you attach. Its findings are drafts for human review, not a legal opinion.
+> Whether an invoice is in fact not payable, or a charge unreasonable, is a legal question: have counsel review
+> the findings before you rely on them or send anything.
+
+**What it checks.** Since 28 May 2024 the Federal Maritime Commission's rule 46 CFR Part 541 lists the
+information a US demurrage or detention invoice must contain (541.6), says that missing information removes
+the obligation to pay (541.5), requires the invoice within 30 calendar days of the date the charge was last
+incurred (541.7; for an NVOCC, 30 days from the invoice it received) and sets dispute windows (541.8). 46 CFR
+545.5 says, among other things, that detention charged when an empty container cannot be returned is likely
+to be unreasonable. The regulation text in the product was checked against the eCFR (title 46 up to date as of
+2026-10-07) and is quoted verbatim. 46 CFR 541.4 (who may be billed) is **not** checked: the D.C. Circuit set
+it aside on 2025-09-23 and the FMC removed it effective 2025-12-29.
+
+| Rule | What it looks for | Kind of finding |
+| --- | --- | --- |
+| `DD-TOTAL-MISMATCH` | the total due is more than the sum of the charge lines | confirmed arithmetic |
+| `DD-PERIOD-ARITH` | a charge line is more than days x its stated rate | confirmed arithmetic |
+| `DD-TARIFF-OVERCHARGE` | a container is charged more than the tariff you attached gives | confirmed arithmetic (against your tariff) |
+| `DD-545-RETURN-REFUSED` | detention charged on days when you recorded that the empty return was refused | for review (46 CFR 545.5) |
+| `DD-545-AVAILABILITY` | import demurrage free time started before the date you recorded the cargo as available | for review (46 CFR 545.5) |
+| `DD-541-7-LATE` | the invoice was issued more than 30 calendar days after the charge was last incurred | for review ("may not be payable under 46 CFR 541.7 - review") |
+| `DD-541-6-CONTENT` | required information is missing or inconsistent (for example free time that differs from the tariff, or a dispute window shorter than 30 days) | for review: when something is missing, "... 46 CFR 541.5 ... - review whether this applies"; when items are only inaccurate, "Required invoice information inaccurate (46 CFR 541.6)" citing 541.6(b) or (d) |
+
+"Confirmed" means the arithmetic is certain for the data you entered; those amounts are the confirmed total.
+Everything that depends on the regulation is "for review" and counts only in the review total. Each amount is
+counted once: the rules take money in the order of the table, and a later rule only gets what earlier rules
+left, so the findings never add up to more than the invoice. Each finding shows every step of its
+calculation and cites the invoice field, the tariff or the regulation text it relies on.
+
+**Free time and tariffs.** A tariff states the free days, whether they are calendar or working days, whether
+the start day counts as day 1 or free time starts the day after (for example Hapag-Lloyd's "day of
+interchange plus 4 working days"), whether charges run per calendar or working day, the working weekdays, and
+tiered daily rates per container size. A calendar lists the terminal's closed dates (holidays: not free days
+on a working-day basis, but charged on a calendar basis) and shutout dates (unplanned closures: never free and
+never charged). There is no built-in holiday list.
+
+Four public tariffs are offered as **starting points** ("Start from a public tariff"). They hold the figures as
+published on 2026-10-11; your service contract or a newer tariff may differ, so check before use:
+
+| Preset | Free time and rates (dry containers) | Source and verification |
+| --- | --- | --- |
+| Maersk US import detention (2026) | 4 working days (Mon-Sat); $210 for chargeable days 1-4, $260 for 5-8, then $290 | Maersk tariff effective 01 Jan 2026; read through a search engine's extract of the PDF (the direct download failed) |
+| MSC US import demurrage (all ports except Baltimore) | 4 working days; 20DV $65 for 5 days then $120; 40DV/40HC/45HC $80 for 5 days then $150 | MSC PDF, sha256 recorded |
+| Hapag-Lloyd US import detention, merchant haulage (excl. California) | day of interchange plus 4 working days; $200 x 3 days, $250 x 3 days, then $300 | Hapag-Lloyd PDF effective 1 Oct 2025, sha256 recorded |
+| CMA CGM US import demurrage, standard US ports (40 ft dry) | 4 working days; $295 x 5 days, $355 x 5 days, then $395 | **secondary source only** (a trade publication citing CMA CGM); verify against the CMA CGM tariff |
+
+Each preset shows its document, retrieval date, verification level and the assumptions made where the tariff
+is silent.
+
+**Worked examples** (pinned in the tests; the invoices around them are synthetic): Maersk 40DV out on Monday
+2026-03-02 and back 2026-03-20: free time ends 2026-03-05, 15 chargeable days, **$3,910.00**; with the terminal
+closed on Memorial Day (2026-05-22 to 2026-06-02): **$1,360.00**. Hapag-Lloyd 40HC interchanged Thursday
+2026-07-02, closed 2026-07-03, shutout 2026-07-14, returned 2026-07-20: **$2,550.00** (**$2,850.00** without the
+shutout). MSC 40DV available Monday 2026-09-07 (Labor Day, closed) and out 2026-09-22: **$1,300.00** (20DV
+**$1,045.00**); counted from 2026-09-04 instead it would be **$1,450.00**, and the $150.00 difference is what
+the availability rule reports for review. CMA CGM 40DV 2026-02-02 to 2026-02-20: **$5,225.00** (secondary-source
+rates).
+
+### Who can do what
+
+| Role | See D&D invoices, tariffs and calendars | Enter, edit, delete draft invoices; import CSV | Create and edit tariffs and calendars | Run the audit |
+| --- | --- | --- | --- | --- |
+| OWNER, ADMIN, MANAGER, REVIEWER | yes | yes | yes | yes |
+| ANALYST | yes | yes | no | yes |
+| VIEWER | yes | no | no | no |
+| PLATFORM_DEV, SUPER_ADMIN | no | no | no | no |
+
+The permissions are `dd_invoices:manage`, `dd_tariffs:manage` (new), `claims:analyze` for the audit and
+`claims:read` for reading. API keys cannot call any D&D route (403).
+
+### Enter an invoice
+
+Open **Ocean D&D** (`/ocean`) and select **New invoice**. Enter the invoice header (number, billing party and
+its type: ocean carrier, marine terminal operator or NVOCC; billed party; import or export; invoice, due and,
+for an NVOCC, upstream invoice dates; B/L numbers; port of discharge; liability basis; total; tariff rule;
+dispute contact, link and timeframes; the two certifications), then each container (number, size type such as
+`40DV`, demurrage or detention, the stated free days, free-time start and end, availability or earliest return
+date) with its charge periods (from, to, rate, amount) and your **evidence**: clock start and stop, the date the
+cargo was available, and the dates an empty return was refused. Attach a tariff and a calendar if you have
+them. The **preview** under the form runs the same checks in your browser as you type. **Save** stores a
+draft; drafts can be edited or deleted.
+
+Limits: 50 containers per invoice, 20 periods per container, at most 2,000 invoices per organization (drafts
+and audited), 200 tariffs and 200 calendars. Dates must be between 2000-01-01 and 2099-12-31.
+
+### Import invoices from CSV
+
+**Import CSV** reads a UTF-8 file in your browser (at most 4 MB on disk, 1,000,000 characters, 2,000 rows and
+50 invoices); nothing is uploaded until you import. Row 1 must be exactly these 35 columns:
+
+```
+invoice_number, billing_party, billing_party_type, billed_party, direction, invoice_date, due_date,
+upstream_invoice_date, bl_numbers, port_of_discharge, liability_basis, total_due, rule_reference,
+dispute_contact, dispute_digital_means, dispute_request_days, dispute_resolution_days, certifies_fmc_rules,
+certifies_performance, container_number, size_type, charge_type, free_days, free_time_start, free_time_end,
+availability_date, earliest_return_date, period_from, period_to, rate, amount, clock_start, clock_stop,
+cargo_available_date, return_refused_dates
+```
+
+Rows with the same billing party and invoice number form one invoice; rows with the same container number and
+charge type form one container; each row with a period adds one charge period. `bl_numbers` and
+`return_refused_dates` are `;`-separated lists; money may have a leading `$` and thousands commas; dates are
+`YYYY-MM-DD`; yes/no columns accept `yes`, `no`, `true`, `false`, `y`, `n`, `1`, `0`. The preview lists every
+invoice and every row error; an invoice with an error is left out ("Rows with errors were not imported."). The
+import then creates the other invoices as drafts, one by one, and shows each result.
+
+### Run the audit
+
+Open a draft and select **Run audit** (needs `claims:analyze`). "Creates a claim with revision 1 for review. You
+will be recorded as its author, so another approver must approve it." The audit:
+
+- creates a claim marked **D&D** in the claims list, with an evidence packet revision 1 for review;
+- stores a frozen snapshot of the invoice, the tariff and the calendar with their sha256 values, so later
+  edits of the tariff or calendar never change it; the invoice can no longer be edited or deleted;
+- attaches the regulation text it cites, a timeline (invoice date, last charge date, 30-day issuance limit)
+  and a **draft dispute letter** that starts with "DRAFT - FOR HUMAN REVIEW. NOT SENT. NOT LEGAL ADVICE.",
+  lists the findings and reminds you of the 30-day request window of 46 CFR 541.8(a). Nothing is emailed.
+
+The claim then goes through the normal approval with four-eyes: the person who ran the audit, and also the
+person who created or edited the D&D invoice data at any time (taken from the audit trail), cannot approve or
+reject it. Approving with review findings
+still requires acknowledging them.
+
+### API
+
+| Route | Permission | Success |
+| --- | --- | --- |
+| `GET /api/v1/dd/tariffs`, `GET /api/v1/dd/calendars` (`?page&pageSize`, pageSize up to 100) | `claims:read` | 200 list |
+| `POST /api/v1/dd/tariffs`, `PUT /api/v1/dd/tariffs/:id` (`{ "version", "data" }`) | `dd_tariffs:manage` | 201 / 200 |
+| `POST /api/v1/dd/calendars`, `PUT /api/v1/dd/calendars/:id` | `dd_tariffs:manage` | 201 / 200 |
+| `GET /api/v1/dd/invoices?page&pageSize&status` (pageSize up to 50) | `claims:read` | 200 list |
+| `POST /api/v1/dd/invoices`, `PUT /api/v1/dd/invoices/:id` (`{ "version", "invoice" }`; body up to 256 KiB) | `dd_invoices:manage` | 201 / 200, with the preview |
+| `GET /api/v1/dd/invoices/:id` | `claims:read` | 200, with the preview |
+| `DELETE /api/v1/dd/invoices/:id` | `dd_invoices:manage` | 204 (drafts only) |
+| `POST /api/v1/dd/invoices/:id/audit` | `claims:analyze` | 201: the new claim, packet and counts |
+
+All routes use the per-user `intelligence` rate limit except the audit, which uses the `analysis` limit. New
+error: 409 `dd_limit_reached` when an organization reaches a cap. Others: 400 for a tariff or calendar that is
+not yours, 409 for a duplicate name or invoice number, a stale version or an audited invoice, 413 for a body
+that is too large, 422 when amounts are too large to store. `POST /api/v1/claims/:id/analyze` on a D&D claim
+returns 409: D&D claims are never analysed by the freight rules.
+
+### Switching it off
+
+Platform staff can switch off **`intelligence.ocean_dd`** ("Ocean demurrage and detention invoice audit") on the
+Dev dashboard's Flags tab (on by default). Off: the page and its routes disappear (404); existing D&D claims
+stay and can still be approved, rejected, edited and marked send-ready. No new environment variables.
+
+### Not covered (accepted for now)
+
+No PDF reading of D&D invoices (enter or import as CSV); no tracking-data import (clock, availability and
+refused-return dates are typed in); no check of who was billed (541.4 was removed); the NVOCC dispute extension
+of 541.7(c), per diem, chassis and hourly charges, and currencies other than USD are not handled; presets may
+be out of date and the CMA CGM preset is from a secondary source. The full list is in
+[technical/web-platform-security.md, section 12.5](technical/web-platform-security.md#125-accepted-residuals-step-8).
+
 ## Tests and checks
 
 ```bash
@@ -1237,4 +1414,25 @@ price values, a parameter hash for fuel tables, an API-key test) was checked wit
 unit tests. **Written but not run** (waiting for the owner's go-ahead): `npm run build`, the integration
 tests for the four new tables (RLS, grants, cross-tenant refusal, append-only price tables), the API,
 database, importer and web acceptance tests (Tier H) and the parity suites.
+**Not run:** GitHub CI, container images, Playwright, any AWS deployment.
+
+Step 8 (2026-10-11, run `REQ-20261011-ocean-dd`, Windows, Node 22.23.3, **local runs, not GitHub CI**;
+low-memory mode, so the validation is **not complete**): the builder ran `prisma validate`, `prisma generate`,
+`prisma migrate diff` (no database), lint and typecheck (clean) and targeted unit tests (shared ocean-dd, api
+`ocean-dd-units`, `tenant-scope`, `architecture`, `four-eyes-units`, the web ocean-dd page and the touched claim
+fixtures), at `afadac3`. The tester's pure acceptance tests (Tier L, before fix round 1) passed: shared 389 of
+389 (including 3,000 random cases against an independent oracle and every worked tariff example), api static 10
+of 10 (the first run found one product defect, the order of the per-container checks, fixed without changing a
+test). The security review found no Critical or High issue; fix round 1 (`1ca8eb5`: a lighter invoice list
+with at most 50 rows, a cap of 2,000 invoices, four-eyes also for the D&D invoice's creator or last editor, a
+256 KiB body limit on the two invoice write routes only, a 4 MB file check before the browser reads a CSV) was
+checked with lint, typecheck and unit tests (shared 32, api 55, web 10); fix round 2 (`22e4a73`: the limit
+message also names invoices, a "file is too large" text, the exported CSV file-size constant) with lint,
+typecheck and unit tests (shared 32, api 36, web 10). The review then found that the audit run overwrote the
+last editor (F1); fix round 3 (`10f8941`: four-eyes refuses every user who created or edited the invoice data,
+read from the audit trail; the audit run no longer changes the editor field; a separate title and a 541.6(b)/(d)
+citation for findings that are only inaccuracies; verbatim 545.5(c)(2)(ii) and 541.8(b) wording) passed lint,
+typecheck and unit tests (shared 34, api 43). **Written but not run** (waiting for
+the owner's go-ahead): the integration tests for the three new tables (RLS, grants, cross-tenant refusal,
+triggers), the API, database, audit and web acceptance tests (Tier H) and the parity suites.
 **Not run:** GitHub CI, container images, Playwright, any AWS deployment.
