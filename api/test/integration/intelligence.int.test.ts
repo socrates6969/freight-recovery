@@ -312,7 +312,16 @@ describe.skipIf(!canRunDb)('Recovery Intelligence (PostgreSQL)', () => {
 
     it('features, worklist, similar, provenance for a tenant user; platform users 403; unauthenticated 401', async () => {
       expect((await c.get('/api/v1/features', viewer)).json()).toEqual({
-        flags: { 'intelligence.charge_suggestions': true, 'intelligence.provenance': true, 'intelligence.similar_claims': true, 'intelligence.worklist': true },
+        // Steps 7 and 8 add cost_outlook, fuel_check (REQ-20261011-fuel-outlook) and ocean_dd (REQ-20261011-ocean-dd).
+        flags: {
+          'intelligence.charge_suggestions': true,
+          'intelligence.cost_outlook': true,
+          'intelligence.fuel_check': true,
+          'intelligence.ocean_dd': true,
+          'intelligence.provenance': true,
+          'intelligence.similar_claims': true,
+          'intelligence.worklist': true,
+        },
       });
       const wl = await c.get('/api/v1/intelligence/worklist?pageSize=5', viewer);
       expect(wl.statusCode, wl.body).toBe(200);
@@ -362,7 +371,15 @@ describe.skipIf(!canRunDb)('Recovery Intelligence (PostgreSQL)', () => {
         expect(offSim.json()).toMatchObject({ error: { code: 'not_found' } });
         expect(unknown.statusCode).toBe(404);
         expect((await c.get('/api/v1/features', viewer)).json()).toEqual({
-          flags: { 'intelligence.charge_suggestions': true, 'intelligence.provenance': false, 'intelligence.similar_claims': false, 'intelligence.worklist': false },
+          flags: {
+            'intelligence.charge_suggestions': true,
+            'intelligence.cost_outlook': true,
+            'intelligence.fuel_check': true,
+            'intelligence.ocean_dd': true,
+            'intelligence.provenance': false,
+            'intelligence.similar_claims': false,
+            'intelligence.worklist': false,
+          },
         });
       } finally {
         await admin.query('BEGIN');

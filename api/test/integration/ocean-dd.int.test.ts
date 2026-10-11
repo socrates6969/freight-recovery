@@ -13,7 +13,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
 
-import { ApiKeyCreated, DD_TARIFF_PRESETS, DdAuditResponse, DdCalendarView, DdInvoiceDetail, DdInvoiceList, DdTariffList, DdTariffView, canonicalJson } from '@fr/shared';
+import { ApiKeyCreated, DD_INVOICE_PAGE_SIZE_MAX, DD_TARIFF_PRESETS, DdAuditResponse, DdCalendarView, DdInvoiceDetail, DdInvoiceList, DdTariffList, DdTariffView, canonicalJson } from '@fr/shared';
 import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -114,15 +114,18 @@ async function insertClaim(tenant: string, kind: 'FREIGHT' | 'OCEAN_DD'): Promis
   return id;
 }
 
-/** P0001 message of a statement run as the owner (admin) connection, or null. */
+/**
+ * P0001 message of a statement run as the owner (admin) connection in its own transaction (committed on
+ * success, rolled back on error), or null. Fix: SAVEPOINT needs a transaction block (first DB run).
+ */
 async function raise(sql: string, params: unknown[]): Promise<string | null> {
-  await admin.query('SAVEPOINT s');
+  await admin.query('BEGIN');
   try {
     await admin.query(sql, params);
-    await admin.query('RELEASE SAVEPOINT s');
+    await admin.query('COMMIT');
     return null;
   } catch (e) {
-    await admin.query('ROLLBACK TO SAVEPOINT s');
+    await admin.query('ROLLBACK');
     return (e as { code?: string; message?: string }).code === 'P0001' ? ((e as { message: string }).message ?? null) : `other: ${(e as Error).message}`;
   }
 }
@@ -321,7 +324,8 @@ describe.skipIf(!canRunDb)('ocean D&D audit (PostgreSQL)', () => {
       expect(DdInvoiceDetail.parse(upd.json())).toMatchObject({ version: 2 });
       const stale = await c.send('PUT', `/api/v1/dd/invoices/${d.id}`, tok.analyst, { version: 1, invoice: invoiceBody(`${marker}-1`) });
       expect([stale.statusCode, errorOf(stale).code]).toEqual([409, 'stale_revision']);
-      const list = DdInvoiceList.parse((await c.get('/api/v1/dd/invoices?status=DRAFT&pageSize=100', tok.viewer)).json());
+      // pageSize is capped at DD_INVOICE_PAGE_SIZE_MAX (50) since fix round 1 (S1).
+      const list = DdInvoiceList.parse((await c.get(`/api/v1/dd/invoices?status=DRAFT&pageSize=${DD_INVOICE_PAGE_SIZE_MAX}`, tok.viewer)).json());
       expect(list.items.find((x) => x.id === d.id)).toMatchObject({ containerCount: 1, totalDueCents: 435000, invoiceDate: '2026-04-25' });
       expect((await auditOf('dd_invoice.created', d.id)).map((m) => Object.keys(m).sort())).toEqual([['containerCount', 'dataSha256', 'invoiceId', 'version']]);
 
@@ -370,7 +374,7 @@ describe.skipIf(!canRunDb)('ocean D&D audit (PostgreSQL)', () => {
     });
 
     it('API keys are refused on D&D routes (403)', async () => {
-      const k = await c.send('POST', '/api/v1/api-keys', tok.owner, { name: `${marker} key`, scopes: ['claims:read'] });
+      const k = await c.send('POST', '/api/v1/api-keys', tok.owner, { name: `${marker} key`, scopes: ['claims.read'] });
       expect(k.statusCode, k.body).toBe(201);
       const key = ApiKeyCreated.parse(k.json());
       const r = await fastify.inject({ method: 'GET', url: '/api/v1/dd/invoices', headers: { authorization: `Bearer ${key.secret}` } });
@@ -390,7 +394,9 @@ describe.skipIf(!canRunDb)('ocean D&D audit (PostgreSQL)', () => {
       expect(row.rows[0]).toEqual({ updated_by_id: ownerRow.rows[0]?.id, status: 'AUDITED' });
       for (const t of [tok.reviewer, tok.admin, tok.owner]) {
         for (const action of ['approve', 'reject'] as const) {
-          const r = await c.send('POST', `/api/v1/claims/${out.claim.id}/packet/${action}`, t, { packetRevision: 1, reason: REASON, acknowledgePendingFindings: true });
+          // TransitionBody (reject) is strict and has no acknowledgePendingFindings; ApproveBody has it.
+          const payload = action === 'approve' ? { packetRevision: 1, reason: REASON, acknowledgePendingFindings: true } : { packetRevision: 1, reason: REASON };
+          const r = await c.send('POST', `/api/v1/claims/${out.claim.id}/packet/${action}`, t, payload);
           expect([action, r.statusCode, errorOf(r).code]).toEqual([action, 403, 'four_eyes_required']);
         }
       }
