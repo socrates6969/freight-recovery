@@ -25,3 +25,5 @@ export { PACKET_DISCLAIMER, renderPacketMarkdown } from './markdown.js';
 export { buildEvidence, buildEvidenceTraced, packetLoadNumber, type Evidence } from './evidence.js';
 export { ANALYSIS_NOTE, ANALYSIS_TEXT, ANALYZE_AUTHOR_NOTE } from './copy.js';
 export { LocalDateTime } from './local-datetime.js';
+// Step 6 (REQ-20261011-charge-intelligence, S2): tariff-style detention calculator (RD10; not wired in yet).
+export { computeTariffDetention, type TariffDetentionResult, type TariffDetentionTerms } from './tariff-detention.js';
