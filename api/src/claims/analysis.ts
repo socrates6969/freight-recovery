@@ -2,7 +2,8 @@
  * Step 5 claim analysis (REQ-20261010-step5-analysis): AWAITING_ANALYSIS -> PENDING_REVIEW.
  *
  * route -> lock claim row -> re-check state -> loadAnalysisInput (linked ACCEPTED documents with field
- * provenance) -> buildEvidence (rules engine + draft letter, `@fr/shared/analysis`) -> buildAnalysisPacket
+ * provenance) -> [step 6, flag on: loadClassifier (tenant labels + seed)] -> buildEvidenceLearned (rules
+ * engine, learned layer, draft letter; identical to step 5 without a classifier) -> buildAnalysisPacket
  * (rows, citations, governing clauses, timeline, content hash) -> inserts -> claim update -> audit, all in
  * the caller's ONE tenant transaction. Findings are rule outputs on extracted fields; they are drafts that
  * need human review (the packet starts PENDING_REVIEW and the four-eyes rules apply unchanged).
@@ -11,11 +12,12 @@ import { randomUUID } from 'node:crypto';
 
 import {
   AnalysisInputError,
+  CHARGE_CLASSIFIER_VERSION,
   DEFAULT_ANALYSIS_SETTINGS,
   LocalDateTime,
   PACKET_DISCLAIMER,
   RULES_VERSION,
-  buildEvidenceTraced,
+  SEED_VERSION,
   plain,
   type AnalyzeResponseDto,
   type BulkAnalyzeResponseDto,
@@ -23,6 +25,7 @@ import {
   type FindingTrace,
   type ImportDocType,
 } from '@fr/shared';
+import { buildEvidenceLearned, type ChargeClassifier } from '@fr/shared/charge-intel';
 
 import { appendAudit } from '../audit/audit.js';
 import { isUuid } from '../db/errors.js';
@@ -31,6 +34,7 @@ import { isAnalysisDbError } from '../http/db-guard.js';
 import { HttpError, errors } from '../http/errors.js';
 import { pointerToLocator, loadAnalysisInput, type AnalysisSource, type BundleProvenance, type FieldRef } from '../imports/bundle.js';
 import { parseInvoiceDate } from '../imports/commit-service.js';
+import { loadClassifier } from '../intelligence/charges.js';
 
 import { packetContentHash, type HashCitation, type HashPacket } from './content-hash.js';
 import type { Actor } from './service.js';
@@ -113,7 +117,16 @@ export interface AnalysisPacketBuild {
   timeline: AnalysisTimelineRow[];
   findings: AnalysisFindingRow[];
   hashPacket: HashPacket;
-  summary: { findingsCount: number; pendingFindingsCount: number; ignoredFindingsCount: number; recoverableCents: number; pendingReviewCents: number };
+  summary: {
+    findingsCount: number;
+    pendingFindingsCount: number;
+    ignoredFindingsCount: number;
+    recoverableCents: number;
+    pendingReviewCents: number;
+    /** Step 6: stored LRN findings and stored step-5 findings switched to review (C4.4). */
+    learnedFindingsCount: number;
+    reviewFlagsCount: number;
+  };
 }
 
 /**
@@ -141,6 +154,8 @@ const GOVERNING_CLAUSE: Readonly<Record<string, { key: string; label: string } |
   'DET-UNBILLED': { key: 'rate_confirmation.detention_free_hours', label: 'Detention free time' },
   'DET-UNDERBILLED': { key: 'rate_confirmation.detention_free_hours', label: 'Detention free time' },
   'DET-OVERBILLED': { key: 'rate_confirmation.detention_free_hours', label: 'Detention free time' },
+  // Step 6 (REQ-20261011-charge-intelligence): learned review-only finding.
+  'LRN-ACCESSORIAL-REVIEW': { key: 'rate_confirmation.authorized_accessorials', label: 'Authorized accessorials' },
 };
 
 const TIMELINE_ORDER: readonly TimelineKind[] = ['APPOINTMENT', 'ARRIVAL', 'DEPARTURE', 'INVOICE'];
@@ -150,11 +165,25 @@ const TIMELINE_ORDER: readonly TimelineKind[] = ['APPOINTMENT', 'ARRIVAL', 'DEPA
  * rows with citations and governing clauses, and the content hash. Throws AnalysisInputError (or a
  * RangeError from shared helpers) when the input is refused or the result is not storable.
  */
-export function buildAnalysisPacket(args: { input: AnalysisInput; claim: { perspective: Perspective }; now: Date; actorId: string }): AnalysisPacketBuild {
+export function buildAnalysisPacket(args: {
+  input: AnalysisInput;
+  claim: { perspective: Perspective };
+  now: Date;
+  actorId: string;
+  /** Step 6: the tenant's charge classifier (flag on); null/absent = exact step-5 output. */
+  classifier?: ChargeClassifier | null;
+}): AnalysisPacketBuild {
   const { input, claim, now, actorId } = args;
   const persp = claim.perspective === 'SHIPPER' ? 'shipper' : 'carrier';
   const docs: EvidenceDoc[] = input.sources.map((s) => ({ filename: s.displayName, doc_type: EVIDENCE_DOC_TYPE[s.docType], sha256: s.sha256 }));
-  const { evidence, traces } = buildEvidenceTraced(docs, input.bundle, persp, DEFAULT_ANALYSIS_SETTINGS, now);
+  const { evidence, traces, extraLines, learnedFindingsCount, reviewFlagsCount } = buildEvidenceLearned(
+    docs,
+    input.bundle,
+    persp,
+    DEFAULT_ANALYSIS_SETTINGS,
+    now,
+    args.classifier ?? null,
+  );
   const result = evidence.result;
 
   // Persistability (A8, RD3): own-perspective amounts and both totals must fit the int4 cents columns.
@@ -195,7 +224,7 @@ export function buildAnalysisPacket(args: { input: AnalysisInput; claim: { persp
     return cite(src, line.amount);
   };
 
-  const citationsFor = (t: FindingTrace): HashCitation[] => {
+  const citationsFor = (t: FindingTrace, extra: readonly number[] = []): HashCitation[] => {
     const list: (HashCitation | null)[] = t.lines.map(lineCitation);
     if (t.total) list.push(fieldCitation('invoice', 'invoice.total'));
     if (t.detention) {
@@ -204,6 +233,8 @@ export function buildAnalysisPacket(args: { input: AnalysisInput; claim: { persp
       list.push(fieldCitation('rate_confirmation', 'rate_confirmation.detention_rate_per_hour'));
       if (t.detention.capApplied) list.push(fieldCitation('rate_confirmation', 'rate_confirmation.detention_max_hours'));
     }
+    // Step 6 (C4.6): a flagged DET finding also cites each detention look-alike line.
+    list.push(...extra.map(lineCitation));
     const seen = new Set<string>();
     const out: HashCitation[] = [];
     for (const c of list) {
@@ -230,7 +261,7 @@ export function buildAnalysisPacket(args: { input: AnalysisInput; claim: { persp
       calculation: [...f.calculation],
       confidence: f.confidence,
       needsHumanReview: f.needs_human_review,
-      citations: citationsFor(t),
+      citations: citationsFor(t, extraLines[i] ?? []),
       clauseSourceId: clause && clauseDef ? clause.sourceId : null,
       clauseLabel: clause && clauseDef ? clauseDef.label : null,
       clauseExcerpt: clause ? clause.excerpt : null,
@@ -303,6 +334,8 @@ export function buildAnalysisPacket(args: { input: AnalysisInput; claim: { persp
       ignoredFindingsCount: result.ignored_findings.length,
       recoverableCents,
       pendingReviewCents,
+      learnedFindingsCount,
+      reviewFlagsCount,
     },
   };
 }
@@ -313,7 +346,12 @@ export function buildAnalysisPacket(args: { input: AnalysisInput; claim: { persp
  * document (re-checked under the claim row lock); 422 analysis_input_invalid when the engine refuses the
  * input or the result is not storable (nothing written).
  */
-export async function analyzeClaim(tx: TenantTx, claimId: string, actor: Actor, opts: { bulk: boolean; now?: Date }): Promise<AnalyzeResponseDto> {
+export async function analyzeClaim(
+  tx: TenantTx,
+  claimId: string,
+  actor: Actor,
+  opts: { bulk: boolean; now?: Date; /** Step 6: charge-suggestions flag (read once per request). */ learning?: boolean },
+): Promise<AnalyzeResponseDto> {
   if (!isUuid(claimId)) throw errors.notFound();
   if (!(await lockClaimForUpdate(tx, claimId))) throw errors.notFound();
   const claim = await tx.claim.findFirst({ where: { id: claimId }, select: { id: true, tenantId: true, status: true, perspective: true, claimNumber: true } });
@@ -322,10 +360,12 @@ export async function analyzeClaim(tx: TenantTx, claimId: string, actor: Actor, 
   if (await tx.evidencePacket.findFirst({ where: { claimId }, select: { id: true } })) throw errors.invalidState();
   const input = await loadAnalysisInput(tx, claimId);
   if (input.sources.length === 0) throw errors.invalidState();
+  const learning = opts.learning === true;
+  const { classifier, labelCount } = learning ? await loadClassifier(tx) : { classifier: null, labelCount: 0 };
 
   let built: AnalysisPacketBuild;
   try {
-    built = buildAnalysisPacket({ input, claim: { perspective: claim.perspective }, now: opts.now ?? new Date(), actorId: actor.userId });
+    built = buildAnalysisPacket({ input, claim: { perspective: claim.perspective }, now: opts.now ?? new Date(), actorId: actor.userId, classifier });
   } catch (e) {
     if (e instanceof AnalysisInputError || e instanceof RangeError) throw errors.analysisInputInvalid();
     throw e;
@@ -374,6 +414,11 @@ export async function analyzeClaim(tx: TenantTx, claimId: string, actor: Actor, 
       pendingReviewCents: summary.pendingReviewCents,
       rulesVersion: RULES_VERSION,
       bulk: opts.bulk,
+      classifierVersion: learning ? CHARGE_CLASSIFIER_VERSION : null,
+      seedVersion: learning ? SEED_VERSION : null,
+      tenantLabelCount: labelCount,
+      learnedFindingsCount: summary.learnedFindingsCount,
+      reviewFlagsCount: summary.reviewFlagsCount,
     },
     ip: actor.ip,
     requestId: actor.requestId,
@@ -386,6 +431,9 @@ export async function analyzeClaim(tx: TenantTx, claimId: string, actor: Actor, 
       findingsCount: summary.findingsCount,
       pendingFindingsCount: summary.pendingFindingsCount,
       ignoredFindingsCount: summary.ignoredFindingsCount,
+      classifierVersion: learning ? CHARGE_CLASSIFIER_VERSION : null,
+      learnedFindingsCount: summary.learnedFindingsCount,
+      reviewFlagsCount: summary.reviewFlagsCount,
     },
   };
 }
@@ -406,6 +454,7 @@ export async function analyzeAwaiting(
   actor: Actor,
   limit: number,
   chargeExtra: () => Promise<boolean> = async () => true,
+  learning = false,
 ): Promise<BulkAnalyzeResponseDto> {
   const take = Math.min(SCAN_FACTOR * limit, SCAN_CAP);
   const candidates = await db.tx((tx) =>
@@ -422,7 +471,7 @@ export async function analyzeAwaiting(
     if (out.examined > 0 && !(await chargeExtra())) break;
     out.examined += 1;
     try {
-      const r = await db.tx((tx) => analyzeClaim(tx, c.id, actor, { bulk: true }));
+      const r = await db.tx((tx) => analyzeClaim(tx, c.id, actor, { bulk: true, learning }));
       out.analyzed.push({
         claimId: c.id,
         claimNumber: c.claimNumber,

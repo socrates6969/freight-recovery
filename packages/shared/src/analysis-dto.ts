@@ -34,6 +34,10 @@ export const AnalyzeResponse = z.object({
     findingsCount: z.int().min(0),
     pendingFindingsCount: z.int().min(0),
     ignoredFindingsCount: z.int().min(0),
+    // Step 6 (REQ-20261011-charge-intelligence, C6): null when the charge-suggestions flag is off.
+    classifierVersion: z.literal('charge-knn-v1').nullable(),
+    learnedFindingsCount: z.int().min(0),
+    reviewFlagsCount: z.int().min(0),
   }),
 });
 export type AnalyzeResponseDto = z.infer<typeof AnalyzeResponse>;

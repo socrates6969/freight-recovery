@@ -114,7 +114,9 @@ export function registerClaimRoutes(app: FastifyInstance): void {
       // token of the same per-user bucket, so bulk never exceeds the single route's analysis budget.
       const limiter = app.analysisLimiter;
       const charge = limiter ? async () => (await limiter(req)).allowed : async () => true;
-      return analyzeAwaiting(requireTenant(req).db, actorOf(req), body.limit, charge);
+      // Step 6: the charge-suggestions flag is read once per request, before any transaction.
+      const learning = await app.flags.isEnabled('intelligence.charge_suggestions');
+      return analyzeAwaiting(requireTenant(req).db, actorOf(req), body.limit, charge, learning);
     },
   });
 
@@ -125,7 +127,8 @@ export function registerClaimRoutes(app: FastifyInstance): void {
     rateGroup: 'analysis',
     schema: { params: IdParams, body: AnalyzeBody },
     handler: async (req, reply, { params }) => {
-      const r = await requireTenant(req).db.tx((tx) => analyzeClaim(tx, params.id, actorOf(req), { bulk: false }));
+      const learning = await app.flags.isEnabled('intelligence.charge_suggestions');
+      const r = await requireTenant(req).db.tx((tx) => analyzeClaim(tx, params.id, actorOf(req), { bulk: false, learning }));
       return reply.code(201).send(r);
     },
   });

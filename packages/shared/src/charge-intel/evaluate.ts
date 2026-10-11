@@ -7,7 +7,7 @@
 import { classifyLine } from '../analysis/invoice-checks.js';
 import type { ChargeEvalReportDto } from '../charge-intel-dto.js';
 
-import { accepts, formatSimilarity, rankNearest, rawSimilarity, seedExamples } from './classifier.js';
+import { accepts, rankNearest, rawSimilarity, roundSimilarity, seedExamples } from './classifier.js';
 import { CHARGE_CLASSIFIER_VERSION, SEED_VERSION, SUGGESTION_THRESHOLD, type ChargeCategory } from './constants.js';
 import { CHARGE_EVAL_NOTE } from './copy.js';
 import { SEED_SOURCES, SEED_V1, type SeedExample, type SeedSourceId } from './seed-v1.js';
@@ -42,7 +42,7 @@ export function evaluateLeaveOneCarrierOut(seed: readonly SeedExample[] = SEED_V
     return {
       predicted: best.example.nearest.category,
       suggested: accepts(best.dot, q.norm2, best.example.norm2),
-      similarity: formatSimilarity(rawSimilarity(best.dot, q.norm2, best.example.norm2)),
+      similarity: roundSimilarity(rawSimilarity(best.dot, q.norm2, best.example.norm2)),
       nearestText: best.example.nearest.text,
       nearestSource: best.example.nearest.source,
     };

@@ -36,14 +36,19 @@ export interface ChargeExample {
   readonly norm2: number;
 }
 
-/** Similarity rounded to three decimals, as a number. */
-export function formatSimilarity(x: number): number {
+/** Similarity rounded to three decimals, as a number (the `similarity` of a suggestion). */
+export function roundSimilarity(x: number): number {
   return Math.round(x * SIMILARITY_SCALE) / SIMILARITY_SCALE;
 }
 
-/** Text form of `formatSimilarity` (three decimals, e.g. `0.300`). */
+/** C3 text form of a similarity: the rounded number with three decimals (e.g. 0.45 -> `0.450`). */
+export function formatSimilarity(x: number): string {
+  return roundSimilarity(x).toFixed(SIMILARITY_DECIMALS);
+}
+
+/** Alias of `formatSimilarity` (text form). */
 export function similarityText(x: number): string {
-  return formatSimilarity(x).toFixed(SIMILARITY_DECIMALS);
+  return formatSimilarity(x);
 }
 
 /** Raw similarity `dot / sqrt(|q|^2 |e|^2)` (0 when dot is 0). */
@@ -103,7 +108,7 @@ function suggestion(fq: ChargeFeatures, examples: readonly ChargeExample[]): Cha
   const best = rankNearest(fq, examples);
   if (best === null) return { category: null, similarity: 0, abstained: true, reason: 'no_match', nearest: null };
   const qn = featureNorm2(fq);
-  const similarity = formatSimilarity(rawSimilarity(best.dot, qn, best.example.norm2));
+  const similarity = roundSimilarity(rawSimilarity(best.dot, qn, best.example.norm2));
   const nearest = { ...best.example.nearest };
   if (accepts(best.dot, qn, best.example.norm2)) return { category: nearest.category, similarity, abstained: false, reason: null, nearest };
   return { category: null, similarity, abstained: true, reason: 'below_threshold', nearest };

@@ -18,6 +18,7 @@ export {
   formatSimilarity,
   rankNearest,
   rawSimilarity,
+  roundSimilarity,
   seedExamples,
   similarityText,
   type ChargeClassifier,
@@ -25,3 +26,12 @@ export {
   type TenantLabelInput,
 } from './classifier.js';
 export { evaluateLeaveOneCarrierOut, type ChargeEvalReportData } from './evaluate.js';
+export {
+  LEARNED_CONFIDENCE,
+  applyLearning,
+  buildEvidenceLearned,
+  type AnalysisFinding,
+  type LearnedEvidence,
+  type LearnedOutcome,
+  type LearnedRecoveryResult,
+} from './learned.js';

@@ -20,6 +20,7 @@ import {
   featureNorm2,
   formatSimilarity,
   rankNearest,
+  roundSimilarity,
   similarityText,
   type SeedExample,
 } from './index.js';
@@ -74,7 +75,9 @@ describe('ranking and threshold (exact)', () => {
   });
 
   it('formats similarity to three decimals', () => {
-    expect(formatSimilarity(0.30049)).toBe(0.3);
+    expect(roundSimilarity(0.30049)).toBe(0.3);
+    expect(formatSimilarity(0.45)).toBe('0.450');
+    expect(formatSimilarity(0.30049)).toBe('0.300');
     expect(similarityText(0.3)).toBe('0.300');
     expect(similarityText(2 / 3)).toBe('0.667');
   });
