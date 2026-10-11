@@ -15,7 +15,9 @@ intelligence, tenant API keys and the evaluation tool) is covered in
 of duties for claim approvals and document acceptance) is covered in
 [section 8](#8-four-eyes-separation-of-duties). Step 5 (claim analysis: the TS rules engine, the analyze
 and bulk-analyze routes, the lifecycle triggers and the `analysis` rate budget) is covered in
-[section 9](#9-step-5-claim-analysis). Every secret, its rotation and
+[section 9](#9-step-5-claim-analysis). Step 6 (charge intelligence: charge-line suggestions, the
+`charge_labels` tenant table, review-only learned findings and the seed-set evaluation gate) is covered in
+[section 10](#10-step-6-charge-intelligence). Every secret, its rotation and
 the buyer handover checklist are in [docs/secrets.md](../docs/secrets.md). The structure is in [ARCHITECTURE.md](../ARCHITECTURE.md#web-platform-typescript-steps-1-2). The
 infrastructure is in [infra/README.md](../infra/README.md).
 
@@ -102,6 +104,8 @@ Other residual risks and limits:
   (section 8). Its accepted residuals (FE-S1..S4, FE-N1) are listed in section 8.5; FE-N2 was closed by
   step 5 (section 9). An approver may still mark the revision they approved send-ready (policy D2).
 - Step 5 claim analysis has its own accepted residuals SA-1..SA-11 (section 9.5).
+- Step 6 charge intelligence has its own accepted residuals SC-1..SC-11 (section 10.5). Its database-level
+  tenant-isolation tests for `charge_labels` are written but have not run yet (section 10.6).
 - Chain heads are not anchored externally (T10).
 - `infra/` has passed `terraform fmt` and `validate` only. It has never been planned or applied, and it
   has no ECR repository or CI deploy path yet.
@@ -167,6 +171,11 @@ builder unit shared 165, api 370, web 78; rules parity 2,132 cases with zero dif
 Acceptance run 1 at `b12ce2a`: shared 81/81, api 754 passed, 4 failed (test design, fixed, not yet
 re-verified), 10 skipped; web acceptance not run. Fix round 1 (`5c047fb`) has no integration or acceptance
 run yet. Details in section 9.6.
+
+Step 6 (run `REQ-20261011-charge-intelligence`, 2026-10-11, **local runs on Node 22.23.3, not CI;
+validation not complete**): builder unit shared 195, api 393 and the web charges, analysis and step 4
+files (33) at `43d7d4c`; `npm run eval:charges` with the CI bounds exit 0; shared acceptance (Tier L)
+153/153 at `a1b1c2a`. Integration and Tier H acceptance are written, not run. Details in section 10.6.
 
 ## 6. Step 3: import and export
 
@@ -635,3 +644,149 @@ four mutants). Still open before this can be called verified: the api acceptance
 suite (AN-W01..W11), an acceptance case for the budget stop (AN-B09), the tester's parity counts, and
 integration and acceptance runs at `5c047fb`. Not run at all: Node 24 for acceptance, GitHub CI, container
 images, the compose stack, Playwright, any AWS deployment.
+
+## 10. Step 6: charge intelligence
+
+Run `REQ-20261011-charge-intelligence` (branch `feat/charge-intelligence`, build commits
+`959aa36`..`43d7d4c`, plus `a1b1c2a`, which only exports one more constant) adds a nearest-example charge-line
+classifier with an attributed seed of public tariff charge names, a tenant label memory (`charge_labels`),
+a review-only learned layer in analysis, a seed-set evaluation gate in CI, a pure tariff detention
+calculator (not wired) and a Charges tab on the claim sheet. The structure is in
+[ARCHITECTURE.md, charge intelligence](../ARCHITECTURE.md#web-platform-charge-intelligence-step-6). The
+user view is in [README, charge suggestions](../README.md#charge-suggestions-and-team-labels-step-6).
+
+**Honesty.** A suggestion is the category of the nearest labelled example when the similarity is at least
+0.30. It is not verified and not a probability. Learned findings have a fixed confidence of 0.5 and
+always need human review. The CI evaluation runs leave-one-carrier-out on the 175 seed names: it is a
+regression check on that seed set, not an accuracy measure on invoices (`CHARGE_EVAL_NOTE`). No trained
+model, no LLM call and no network call is involved. The shared and acceptance tests scan the copy for
+accuracy wording.
+
+**Data provenance.** The seed (`packages/shared/src/charge-intel/seed-v1.ts`) holds 175 charge names
+copied from six public carrier rules tariffs (XPO, Estes, Dohrn, Magnum, Gardewine, States Logistics), with
+the document, effective date, URL and retrieval date (2026-10-11) of each. It holds no rates, tariff text,
+customers, shipments, invoices, secrets or e-mail addresses (security review S8: a search found only the
+six tariff URLs). Using real public names is an **owner decision** of 2026-10-10/11, recorded in the run
+request. It is in tension with the wording of CLAUDE.md hard rule 4 ("synthetic data only"), which was not
+changed. A dated exception note is open question **OQ1** for the owner. The URLs still need the owner's
+confirmation (OQ2), and the tariffs' reuse terms have not been checked.
+
+### 10.1 New assets, permission and trust boundaries
+
+| Item | Detail |
+| --- | --- |
+| Permission | `charge_labels:manage`: OWNER, ADMIN, MANAGER, REVIEWER. Not ANALYST, VIEWER, PLATFORM_DEV or SUPER_ADMIN. The two GET routes need `claims:read` (all tenant roles; platform roles 403). **No API-key scope** grants any of the four routes, so any API-key request is 403. |
+| Routes | `GET /api/v1/claims/:id/charge-lines`, `GET /api/v1/charge-labels`, `PUT /api/v1/charge-labels`, `DELETE /api/v1/charge-labels/:id`. All use the per-user `intelligence` rate bucket; PUT and DELETE are mutating cookie routes with Origin and CSRF checks. |
+| New table | `charge_labels` (tenant-scoped): `ENABLE` + `FORCE ROW LEVEL SECURITY`, policy `charge_labels_tenant_isolation` `FOR ALL` `USING`/`WITH CHECK` `tenant_id = fr_current_tenant()`, `REVOKE ALL FROM PUBLIC`. `freight_app`: SELECT, INSERT, DELETE, and UPDATE only of `description`, `category`, `updated_by_id`, `updated_at`, `version` (not `tenant_id`, `normalized_text` or the `created_*` columns). CHECKs on category, normalized-text format and length (1..200), description length (1..200) and `version >= 1`. In `TENANT_MODELS` and `TenantTx`. |
+| New writes | label rows; audit `charge_label.set`, `charge_label.deleted`, `intelligence.viewed` (`kind: charge_lines`); extra `claim.analyzed` keys; LRN findings and review flags in packet revision 1. |
+| Untrusted input | Label descriptions (strict Zod: trimmed, 1..200 characters, no control or bidi characters, non-empty normalized text) and invoice line descriptions from accepted documents (ingest-validated, single line). |
+| Database | Migration `20261013000000_charge_intelligence`: the table, its security part and the flag row `intelligence.charge_suggestions` (enabled). Earlier migrations unchanged. |
+| Kill switch | Platform flag `intelligence.charge_suggestions` (default on). Off: exact step 5 analysis and 404 on the four routes. |
+| Configuration | No new environment variable. |
+
+### 10.2 Threats and mitigations (step 6)
+
+| # | Threat | Mitigation (where) | Verified by | Residual risk |
+| --- | --- | --- | --- | --- |
+| T53 | Label poisoning: a user with `charge_labels:manage` labels a wording so that later analyses add misleading review items, or so that detention money is not claimed | Labels can only influence lines the keyword rules call `other`; they never change a step 5 rule output. LRN findings always need human review, count only in the pending total and never appear in the draft letter. A detention look-alike never creates money: it only moves `DET-UNBILLED`/`DET-UNDERBILLED` to review. Approving a packet with pending findings still needs `acknowledgePendingFindings`, and four-eyes is unchanged. RBAC limits labelling to four roles, with no API keys. Every change is audited (`charge_label.set`/`deleted` with `labelId`, category and, since fix round 1 (S4), `normalizedTextSha256`). Since fix round 1 (S3), `claim.analyzed` records `learnedLabelIds` (up to 50 influencing label ids), so a label that moved money to review stays attributable after it is deleted. Labels can be deleted; the cap and the kill switch limit the blast radius. | `learned.test.ts`, `analysis-learned.test.ts`, `charge-labels-units.test.ts`; acceptance CI-L01..L13 (Tier L; 153/153 shared acceptance at `a1b1c2a`); CI-A13..A19, CI-U01..U05 (Tier H, not run) | SC-1 |
+| T54 | CPU exhaustion of the shared event loop through many long labels and invoices with many distinct `other` lines (security finding S1, Medium) | **Fixed in fix round 1:** a 200-character cap on the normalized query text; an inverted index instead of a full scan, proven equal to the scan by a randomized test (3,000 queries) and by the tester's oracle (2,000 queries); suggestions memoized per text (at most 1,000 per classifier); one classifier per request (bulk analysis builds it once per bulk request). Labels are capped at 2,000 per tenant. All routes use the `intelligence` rate bucket, analysis its `analysis` bucket. Measured at the caps (2,000 labels, 250 distinct 4,000-character lines, Node 22): **about 0.47 s** with the index against **about 5.5 s** with the full scan (the security review's pre-fix benchmark: 7.3 to 8.6 s on Node 24). | `classifier-index.test.ts` (index equals scan, cost test at the caps with a 20 s bound); acceptance CI-S24/S25 (Tier L, passed at `a1b1c2a`; CI-S25 measured 808 ms against its 20 s bound) | SC-2 |
+| T55 | The label cap is exceeded by concurrent PUTs (security finding S2, Low), which would undo the bound T54 relies on | **Fixed in fix round 1:** PUT and DELETE first take a transaction-scoped advisory lock on `charge-labels:<tenantId>` (`api/src/db/charge-label-locks.ts`), so count and insert of one tenant cannot interleave. Updates of an existing label are always allowed. | `charge-labels-units.test.ts` (lock taken); acceptance CI-A20 (Tier H, not run) | No database-side cap (a trigger was not added). |
+| T56 | Cross-tenant influence or disclosure through labels | RLS `FORCE` plus the tenant policy on `charge_labels`; every query in `db.tx`; the classifier is built per request from the tenant's own rows (the only shared cache is the static seed features); another tenant's label or claim id is a 404 byte-identical to an unknown id; audit metadata is allow-listed and never contains the description or normalized text. | `tenant-scope.test.ts` (unit); `charge-labels.int.test.ts` and acceptance CI-X01, CI-D01..D04 (**written, not run**) | Until the integration and Tier H runs happen, the database-level isolation of this table is checked by code review and unit tests only. |
+| T57 | Untrusted text: label descriptions and invoice line descriptions shown in the UI and stored in findings | Strict Zod on the label body (length, control and bidi characters refused, non-empty normalized text); the web renders all of it as React text (`SafeText`), shows fixed error texts and disables the label controls for descriptions the server would refuse (fix round 1, S7). The nearest example text in finding text goes through `plain(..., 200)`. The CSP is unchanged. | `web/test/charges.test.tsx` (hostile strings rendered as text, fixed errors, S7); acceptance CI-W01..W08 (Tier H, not run) | SC-7 (raw invoice description in LRN text, as SA-5) |
+
+### 10.3 How it works
+
+1. **Classifier.** Character 3-, 4- and 5-grams plus word tokens (weight 2), cosine similarity decided with
+   exact integer arithmetic, nearest single example, ties to the earlier example (team labels before the
+   seed), threshold 0.30 (`100 * dot^2 >= 9 * |q|^2 * |e|^2`). Details in ARCHITECTURE.
+2. **Learned layer.** Only unique, keyword-`other` lines with an amount above zero. `LRN-ACCESSORIAL-REVIEW`
+   needs a rate confirmation, a non-authorized line and an amount that differs from the contracted linehaul
+   and fuel amounts (the contracted-amount guard). A detention look-alike flags `DET-UNBILLED`/
+   `DET-UNDERBILLED` for review. With the flag off, or when nothing applies, the stored packet is exactly
+   the step 5 packet.
+3. **Labels.** Keyed per tenant by normalized text; PUT creates, changes or leaves unchanged; DELETE
+   removes. Writes are serialized per tenant (T55). The cap is checked in the service.
+4. **Errors.** 409 `label_limit_reached`; otherwise as before. Precedence for the four routes: origin/CSRF
+   403 -> 401 -> 429 -> 403 -> 400 -> 404 (flag off, unknown, non-UUID or other-tenant id) -> 409.
+5. **Flag.** Read once per request before the transaction. A read error counts as off for at most 1 s
+   (accepted deviation S6).
+
+### 10.4 Policy defaults (step 6; each can be flipped later)
+
+- **D1.** Threshold 0.30 exactly, chosen from the seed's leave-one-carrier-out distribution.
+- **D6.** `charge_labels:manage` for OWNER, ADMIN, MANAGER, REVIEWER; not ANALYST, because a label changes
+  later analyses for the whole tenant.
+- **D7.** 2,000 labels per tenant.
+- **D8.** The kill switch is on by default.
+- **D9.** Tariff rounding `down` when a tariff does not say "or fraction thereof".
+
+D1, D6 and D7 await the owner's confirmation (OQ3). The full list D1-D10 is in ARCHITECTURE.
+
+### 10.5 Accepted residuals (step 6)
+
+These are open. The security review of `51ea826..3a8125d` found no Critical or High issue. Its Medium
+finding S1 and the Low/Info findings S2, S3, S4 and S7 were fixed in `43d7d4c`; S5 and S6 were accepted.
+
+1. **SC-1 (Low; S3 residual): a labeller can move detention money to review.** Any user with
+   `charge_labels:manage` (REVIEWER and above) can label a wording as detention. Every later analysis of a
+   claim with a keyword-`other` line whose nearest example is that label then switches all `DET-UNBILLED`
+   and `DET-UNDERBILLED` findings to needs-human-review: their amounts leave the recoverable total and the
+   draft letter until a reviewer confirms them. The labeller may also be the approver. Labels never create
+   confirmed money and never bypass four-eyes, and since fix round 1 the influence is attributable
+   (`learnedLabelIds` in `claim.analyzed`, `normalizedTextSha256` in the label events).
+2. **SC-2 (Low; S1 residual): classification is still synchronous.** At the caps it costs about 0.47 s of
+   CPU per request on the shared event loop (Node 22 measurement), and the charge-lines view classifies
+   every line inside an open tenant transaction. A per-request time or line budget was suggested by the
+   review and not built.
+3. **SC-3 (Low; planner): generic linehaul wordings look like accessorials.** The seed has no generic
+   linehaul wording, so "Freight charges" is nearest to "HEAVY LIFT CHARGES" (similarity 0.445). Only the
+   contracted-amount guard and human review prevent a misleading LRN finding until the team labels the
+   wording.
+4. **SC-4 (Info; planner): seed coverage.** The seed is LTL tariff vocabulary: 159 accessorial, 12
+   detention, 3 fuel and 1 linehaul name. Truckload and invoice-specific wordings are not represented.
+5. **SC-5 (Info; planner): the evaluation is optimistic.** 14 normalized names appear at more than one
+   carrier, which helps leave-one-carrier-out. The distinct-name variant (accessorial recognised 141 rather
+   than 145 of 159) is reported too. Neither number says anything about invoices.
+6. **SC-6 (Info; planner): label scope.** Labels are tenant-wide (not per carrier or customer) and keyed by
+   exact normalized text; keyword rules still win over a label.
+7. **SC-7 (Info; planner): raw description in LRN text.** LRN finding explanations and calculations
+   contain the raw invoice line description, as step 5 findings do (SA-5). Any future HTML, Markdown or PDF
+   renderer of findings must sanitize them.
+8. **SC-8 (Info; S5, accepted): retry conflict gives 500.** A second unique-key violation on a label PUT
+   (only on delete-and-recreate races) becomes 500 `internal_error` with a generic message; a 409 would be
+   friendlier.
+9. **SC-9 (Info; S6, accepted): a flag read error means off.** The spec asked for a 500; the existing
+   `FlagService` returns off, cached for at most 1 s. Off is exact step 5 behaviour and 404 on the routes,
+   and authentication, permission and validation run before the flag check, so there is no bypass.
+10. **SC-10 (Info; S8): real public data.** The seed contains real carrier names and tariff URLs under the
+    owner decision above (OQ1, OQ2); the tariffs' reuse terms are unchecked.
+11. **SC-11 (Info): no database-level cap.** The 2,000-label cap is enforced by the service under the
+    advisory lock (T55), not by a trigger.
+
+Deferred features (not residual risks): extraction of tariff detention terms and their use in analysis,
+detention without power, weight-based free time, embeddings, learned effects on linehaul and fuel rules, a
+classifier telemetry component, label import and export.
+
+### 10.6 What was run
+
+Local runs on Windows, Node 22.23.3, **not GitHub CI**. Low-memory mode; the validation is **not complete**.
+
+| Step | Commit | Result |
+| --- | --- | --- |
+| lint, typecheck (shared, api, web), builder | `3a8125d`, `43d7d4c` | clean |
+| unit tests, builder (`--maxWorkers=1`) | `3a8125d` | shared 190, api 392, web all 11 files passed |
+| unit tests, builder | `43d7d4c` | shared 195 (incl. `classifier-index.test.ts`), api 393, web charges + analysis + step 4 (33) passed |
+| `npm run eval:charges` with the CI bounds | `3a8125d`, `43d7d4c` | exit 0, numbers unchanged; a deliberately failing bound gave exit 1 |
+| `prisma generate`; `prisma migrate diff` (no database) | `5baaeec` | DDL generated; the drift check against a shadow database was not run |
+| Tier L acceptance (pure shared), tester, fresh `dist` | `3a8125d` | 73/73; full shared acceptance 148/148 |
+| security review (read-only, one CPU benchmark on Node 24) | `3a8125d` | no Critical/High; S1 Medium; S2-S4 Low; S5-S8 Info |
+| fix round 1 (S1-S4, S7), builder | `43d7d4c` | lint, typecheck, unit tests as above; cost at the caps about 0.47 s (index) vs about 5.5 s (scan) |
+| Tier L with the fix-round-1 cases (CI-S24, S25, L13), tester | `43d7d4c` | 77/78; CI-S25 808 ms (bound 20 s); 1 defect D1 (root export of `LEARNED_LABEL_IDS_MAX` missing) |
+| fix round 2 (D1), builder; Tier L re-run, tester | `a1b1c2a` | shared unit 196; full shared acceptance 153/153 |
+
+**Written but not run** (waiting for the owner's go-ahead, OQ4): `api/test/integration/charge-labels.int.test.ts`
+(RLS and FORCE, policy, grants, cross-tenant refusal as `freight_app`, CHECKs, unique key, flag row, routes,
+RBAC, cap, audit key sets) and the additive pin updates in four integration files; Tier H acceptance (API,
+database, cross-tenant, RBAC, audit, flag, CLI, web), including the Tier H cases added after fix round 1;
+the parity suites; `verify-ci-locally`. Not run at all: GitHub CI, container images, the compose stack,
+Playwright, any AWS deployment.

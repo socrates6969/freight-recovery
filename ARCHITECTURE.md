@@ -81,7 +81,11 @@ dashboard, Recovery intelligence, tenant API keys and the evaluation tool) has i
 [Web platform: Dev dashboard, Recovery intelligence and API keys (step 4)](#web-platform-dev-dashboard-recovery-intelligence-and-api-keys-step-4).
 Step 5 (the TS port of the Python rules and evidence letter, and the analyze action that turns an imported
 claim into packet revision 1) is described in
-[Web platform: claim analysis (step 5)](#web-platform-claim-analysis-step-5). There is no learned model and no LLM call. The seeded claims and packets come from
+[Web platform: claim analysis (step 5)](#web-platform-claim-analysis-step-5). Step 6 (charge-line suggestions
+from labelled examples, a team label memory, review-only learned findings and a tariff detention
+calculator) is described in [Web platform: charge intelligence (step 6)](#web-platform-charge-intelligence-step-6).
+There is no trained model and no LLM call: the step 6 classifier compares a charge name with labelled
+examples. The seeded claims and packets come from
 the Python CLI output on `tests/fixtures/` (synthetic).
 
 ## Module Structure
@@ -269,6 +273,7 @@ on every request. The web app imports the same frozen data only to hide controls
 | `admins:manage`, `billing:manage`, `tenant:delete` | x | | | | | | | |
 | `apikeys:manage` (step 4: create, list and revoke tenant API keys) | x | x | | | | | | |
 | `claims:analyze` (step 5: analyze one claim, bulk analyze; no API-key scope) | x | x | x | x | x | | | |
+| `charge_labels:manage` (step 6: set and delete team charge labels; no API-key scope) | x | x | x | x | | | | |
 | `platform:health` (step 4: also pipeline health and telemetry) | | | | | | | x | x |
 | `platform:flags`, `platform:logs` | | | | | | | x | |
 | `platform:eval` (step 4: evaluation runs) | | | | | | | x | |
@@ -1213,7 +1218,7 @@ remain open.
    `needs_human_review`; `packet_sources.doc_type`; `approvals.created_at`). Step 5 now creates packet
    revision 1 (`AWAITING_ANALYSIS -> PENDING_REVIEW`), so analyzed imported claims enter the worklist,
    similarity and provenance without a step 4 change. `rule_id` is one of the eight stable, non-empty
-   `RULE_IDS` (`rules-v1`).
+   `RULE_IDS` (`rules-v1`), or since step 6 the review-only `LRN-ACCESSORIAL-REVIEW`.
 2. **Open.** A `rules` stage in `EVAL_STAGES` (and a migration widening the `stage` CHECK), reusing
    `computePassStats`, the recorder and the dashboard, with the Python `run_pipeline` as the oracle.
 3. **Open.** Telemetry `observeComponent('rules-v1', ...)`. No flag was added (analyze-on-commit is not
@@ -1836,7 +1841,9 @@ were not yet recorded.
 ## Interfaces for later steps (after step 5)
 
 - Keep `rule_id` within `RULE_IDS` and bump `RULES_VERSION` when a rule changes; step 4 intelligence and
-  the parity suite depend on both.
+  the parity suite depend on both. Step 6 keeps this for the rules and adds the learned id
+  `LRN-ACCESSORIAL-REVIEW` outside `RULE_IDS`, versioned by `CHARGE_CLASSIFIER_VERSION` and `SEED_VERSION`
+  (see [charge intelligence (step 6)](#web-platform-charge-intelligence-step-6)).
 - Open: the `rules` evaluation stage, telemetry `rules-v1`, analyze-on-commit, a Markdown download
   endpoint, stricter money parsing.
 - Any future HTML, Markdown or PDF renderer of stored findings must sanitize `explanation` and
@@ -1858,4 +1865,581 @@ were not yet recorded.
   1-8 in the run's `implementation.md` were accepted.
 - `.env.example` lists `RATE_LIMIT_ANALYSIS_MAX=30` uncommented, unlike the commented step 4 knobs; the
   value equals the default.
+- Not verified: GitHub CI, container images, the compose stack, Playwright, any AWS deployment.
+
+---
+
+# Web platform: charge intelligence (step 6)
+
+> Written by scriber for run `REQ-20261011-charge-intelligence` on 2026-10-11 (branch
+> `feat/charge-intelligence` from `feat/analysis` at `51ea826`, build commits `959aa36`..`43d7d4c`, plus
+> `a1b1c2a`, which only exports one more constant from the package root).
+> **Pre-product, never deployed.** The platform still holds synthetic data only; the one exception is the
+> seed set of public tariff charge names described below (an owner decision, open question OQ1). Threat
+> rows T53-T57 and the residuals SC-1..SC-11 are in
+> [technical/web-platform-security.md, section 10](technical/web-platform-security.md#10-step-6-charge-intelligence).
+> User-facing description: [README, charge suggestions](README.md#charge-suggestions-and-team-labels-step-6).
+
+## Why (step 6)
+
+The step 5 rules decide the category of an invoice charge line with the keyword tables of the Python
+reference (`classifyLine`: detention, linehaul, fuel, accessorial or `other`). `INV-ACCESSORIAL-UNAUTH`
+only checks lines that `classifyLine` calls `accessorial`, so a line it calls `other` is never compared with
+the rate confirmation's authorized accessorials.
+
+The planner measured this on 175 billable charge names taken verbatim from six public carrier rules
+tariffs (names only). The keyword rules recognised **19 of the 159 accessorial names** (34 of 175 names
+overall). Most real accessorial wordings would therefore pass the unauthorized-accessorial check unseen.
+A dependency-free character n-gram nearest-neighbour prototype, evaluated leave-one-carrier-out on the same
+names, recognised far more of them (numbers in [the evaluation gate](#evaluation-gate-seed-set-regression-check)).
+An embedding model (MiniLM through ONNX) was also tried in the run's prototype. It was not adopted, because
+it would add a large native dependency to the core package. The evidence (the labelled name file, the text
+extracts of the six tariffs and the prototype) is in the run directory and is not committed.
+
+Step 6 adds, without changing any step 5 rule output:
+
+1. a deterministic charge-line classifier `charge-knn-v1` in `@fr/shared` (pure TypeScript, no new
+   dependency): nearest labelled example by n-gram similarity, with an abstain threshold;
+2. the attributed seed set `tariff-seed-v1` (175 names from 6 public tariffs);
+3. a **team label memory**: reviewers confirm or correct a line's category; the label is stored in a new
+   tenant table and used by every later suggestion and analysis of that tenant. This is memory consulted at
+   classification time. Nothing is trained and there are no model weights;
+4. a **learned layer** in analysis that only adds review items: `LRN-ACCESSORIAL-REVIEW` findings, and
+   `DET-UNBILLED` / `DET-UNDERBILLED` switched to review when a line looks like detention under another name;
+5. a leave-one-carrier-out **evaluation gate** in CI (a seed-set regression check, not an accuracy measure
+   on invoices);
+6. a pure **tariff detention calculator** (`computeTariffDetention`) that is not wired to any route yet;
+7. a **Charges** tab on the claim sheet.
+
+Items 3, 4 and 7 sit behind the platform kill switch `intelligence.charge_suggestions` (default on). With it
+off, analysis is exactly step 5 and the four charge routes answer 404.
+
+**What it is not.** No LLM call, no network call, no training and no stored model. A suggestion is a
+similarity to a labelled example. It is not verified. It can only add items for human review and never
+confirms an amount. The evaluation numbers come from 175 public tariff names, not from customer invoices,
+and are not an accuracy measure.
+
+## Seed set v1 and data provenance
+
+`packages/shared/src/charge-intel/seed-v1.ts` holds `SEED_V1`: a frozen array of 175 `{ text, label, source }`
+entries, equal in order and text to the run's `data/seed-charge-names-6carriers.json`. Labels: accessorial
+159, detention 12, fuel 3, linehaul 1. The longest name has 82 characters. The names give 157 distinct
+normalized texts, and 14 normalized texts appear at 2 to 4 carriers. `SEED_SOURCES` gives the attribution
+for each source; every URL was retrieved on 2026-10-11.
+
+| Source key | Tariff | Effective | Names | URL |
+| --- | --- | --- | --- | --- |
+| `magnum_2026` | Magnum LTL 125 Rules and Special Services Tariff | 2026-04-01 | 27 | `https://magnumlog.com/wp-content/uploads/2026/04/2026-Rules-Tariff-125-04.01.26.pdf` |
+| `gardewine_2025` | Gardewine GWN Tariff 100 General Rules, Domestic Canada LTL | 2025-12-01 | 27 | `https://gardewine.com/wp-content/uploads/2026/06/GWN_RULES_TARIFF_100_DEC_2025_FINAL-V2.pdf` |
+| `dohrn_2025` | Dohrn Transfer Company accessorial recap, Rules Tariff DHRN 100 series | 2025-01-20 | 30 | `https://dohrn.com/wp-content/uploads/2025/01/Dohrn-Rules-Tariff-Effective-01.20.2025.pdf` |
+| `states_2023` | States Logistics Services LTL Accessorials and Miscellaneous Charges | 2023-11-30 | 19 | `https://stateslogistics.com/wp-content/uploads/2024/07/LTLAccessorialMiscServices.pdf` |
+| `xpo_2025` | XPO Logistics Freight Tariff CNWY 199-AJ.4, accessorial services | 2025-11-03 | 43 | `https://www.xpo.com/cdn/download_files/s1/p2831/CNWY_199-AJ.4_Eff_11.3.2025.pdf` |
+| `estes_2025` | Estes Express Lines Accessorial Charges (Rules Tariff EXLA 105) | 2025-11-17 | 29 | `https://www.estes-express.com/downloads/EXLAaccessorialCharges.pdf` |
+
+Only charge names are stored: no tariff text, no rates, and no customer, shipment or invoice data. The
+tariff texts are not committed.
+
+**Owner decision and open question OQ1.** CLAUDE.md hard rule 4 says "Synthetic data only". On 2026-10-10/11
+the owner, Marius Carlsson, decided in the request of this run that real public data may be used where
+it is needed ("real shipment data is okay. go look for real data. only use synthetic data ... when you
+have to."). The seed applies that decision narrowly: generic service names that carriers publish in their
+tariffs, with attribution, and no customer, shipment or invoice records in the repository. CLAUDE.md
+rule 4 and the project-conventions skill were **not** changed by the agents. A dated exception note there
+is open question OQ1 for the owner. Two related points are also open: the six URLs were found by web search
+and still need the owner's confirmation that they match the downloaded files (OQ2), and the tariffs' reuse
+terms have not been checked (security review S8).
+
+## Module Structure (step 6)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src/features"]
+        CSH["claims/ClaimSheet.tsx"]
+        CLP["ChargeLinesPanel.tsx"]
+        UF["use-features.ts"]
+    end
+    subgraph Shared["packages/shared/src"]
+        CON["charge-intel/constants"]
+        SEED["charge-intel/seed-v1"]
+        FEAT["charge-intel/features"]
+        CLS["charge-intel/classifier"]
+        LRN["charge-intel/learned"]
+        EVA["charge-intel/evaluate"]
+        DTO["charge-intel-dto + copy"]
+        TD["analysis/tariff-detention"]
+        S5["analysis/ (step 5, unchanged)"]
+        RBC["rbac + audit-actions + flags"]
+    end
+    subgraph API["api/src"]
+        CRT["charge-routes.ts"]
+        CHS["intelligence/charges.ts"]
+        LCK["db/charge-label-locks.ts"]
+        CA["claims/analysis.ts"]
+        CR["claims/routes.ts"]
+        ECLI["eval/charges.ts (CLI)"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261013000000_charge_intel"]
+        TBL["charge_labels (RLS FORCE)"]
+        FLG["feature_flags row"]
+    end
+
+    CSH --> CLP
+    CLP --> UF
+    CLP --> DTO
+    CLP -. "HTTP" .-> CRT
+    CRT --> CHS
+    CHS --> LCK
+    CHS --> CLS
+    CHS --> TBL
+    CR --> CA
+    CA --> CHS
+    CA --> LRN
+    LRN --> CLS
+    LRN --> S5
+    CLS --> FEAT
+    CLS --> SEED
+    CLS --> CON
+    EVA --> CLS
+    EVA --> S5
+    ECLI --> EVA
+    TD --> S5
+    CRT --> RBC
+    MIG --> TBL
+    MIG --> FLG
+
+    style CSH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style UF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CON fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SEED fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FEAT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LRN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EVA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RBC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CRT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LCK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ECLI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TBL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FLG fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Module/Function | Purpose | Key Dependencies | Changed in This Run |
+| --- | --- | --- | --- |
+| `packages/shared/src/charge-intel/constants.ts` | `CHARGE_CLASSIFIER_VERSION` `charge-knn-v1`, `SEED_VERSION` `tariff-seed-v1`, threshold 3/10, `CHARGE_CATEGORIES`, `CHARGE_LABELS_MAX` 2000, `CHARGE_QUERY_TEXT_MAX` 200, `LEARNED_RULE_IDS` (and since `a1b1c2a` `LEARNED_LABEL_IDS_MAX` 50) | none | new |
+| `charge-intel/seed-v1.ts` | `SEED_V1` (175 frozen entries), `SEED_SOURCES` (attribution), provenance header | constants | new |
+| `charge-intel/features.ts` | `featureText` (200-character cap), `chargeFeatures`, `featureNorm2`, `featureDot` | `analysis/py-text` `normText` | new |
+| `charge-intel/classifier.ts` | `buildChargeClassifier` (inverted index, memo), `buildChargeClassifierByScan` and `rankNearest` (reference scan), `accepts`, `beats`, `formatSimilarity`, `seedExamples` | features, seed, DTO types | new (index added in fix round 1) |
+| `charge-intel/learned.ts` | `buildEvidenceLearned`, `applyLearning`: the learned layer on top of the step 5 result; returns `learnedFindingsCount`, `reviewFlagsCount`, `labelIds` | step 5 `applyRulesTraced`, `classifyLine`, `dedupe`, letter, Markdown | new |
+| `charge-intel/evaluate.ts` | `evaluateLeaveOneCarrierOut` -> `ChargeEvalReport` | classifier, step 5 `classifyLine` | new |
+| `charge-intel-dto.ts`, `charge-intel/copy.ts` | Zod schemas of the routes and the eval report; UI copy `CHARGE_NOTE`, `CHARGE_EVAL_NOTE`, `CHARGE_TEXT`, `CATEGORY_LABELS` | zod | new |
+| `analysis/tariff-detention.ts` | `computeTariffDetention` (pure; not wired) | step 5 `py-decimal`, `local-datetime` | new |
+| `rbac.ts`, `audit-actions.ts`, `feature-flags.ts`, `analysis-dto.ts`, `index.ts`, `package.json` | `charge_labels:manage`; `charge_label.set`, `charge_label.deleted`; flag `intelligence.charge_suggestions`; three new `analysis` response fields; root exports; subpath `./charge-intel` | none | changed |
+| `api/src/intelligence/charges.ts` | `loadClassifier`, `chargeLines`, `setLabel`, `deleteLabel`, `listLabels` | Prisma tenant tx, `loadAnalysisInput`, `appendAudit` | new |
+| `api/src/intelligence/charge-routes.ts` | the four routes (rate group `intelligence`, no API-key scope, flag checked after the pipeline checks) | `charges.ts`, `auditViewed` | new |
+| `api/src/db/charge-label-locks.ts` | `lockChargeLabels`: transaction advisory lock `charge-labels:<tenantId>` | `advisoryXactLock` | new (fix round 1) |
+| `api/src/claims/analysis.ts`, `claims/routes.ts` | classifier argument, learned layer, LRN governing clause, response and audit fields; flag read once per request; bulk builds the classifier once per request | `@fr/shared/charge-intel`, `charges.ts` | changed |
+| `api/src/db/tenant.ts`, `http/errors.ts`, `audit/chain.ts`, `app.ts`, `scripts/seed.ts` | `ChargeLabel` in `TENANT_MODELS`; 409 `label_limit_reached`; metadata allow-list; route registration; `--reset` deletes `charge_labels` | none | changed |
+| `api/src/eval/charges.ts` | CLI `npm run eval:charges` (no database, no network, nothing recorded) | `evaluateLeaveOneCarrierOut` | new |
+| `api/prisma/migrations/20261013000000_charge_intelligence/` | table, CHECKs, RLS FORCE, policy, grants, flag row | `tenants`, `users`, `feature_flags` | new |
+| `web/src/features/intelligence/ChargeLinesPanel.tsx`, `use-features.ts`, `claims/ClaimSheet.tsx`, `api/client.ts` | Charges tab, `charges` flag, `put()` helper | `useCan('charge_labels:manage')`, shared copy | new / changed |
+| `.github/workflows/web-ci.yml` | one step: the charge evaluation with fixed bounds | `npm run eval:charges` | changed |
+
+The package root `@fr/shared` exports the constants, the copy, the DTO schemas and `computeTariffDetention`
+only. The seed, the classifier, the evaluation and the learned layer are under the subpath
+`@fr/shared/charge-intel`, so the web bundle does not carry the seed set. The step 5 engine files under
+`packages/shared/src/analysis/` were not modified (only `index.ts` gained the new export).
+
+## Classifier `charge-knn-v1` (exact rules)
+
+| Step | Rule |
+| --- | --- |
+| Normalize | `normText(s)`: lower-case, every run of characters outside `[a-z0-9]` becomes one space, trimmed (the step 5 function) |
+| Query cap | `featureText(s)` = the first 200 characters of `normText(s)`, trailing space removed. Labels (at most 200) and seed names (at most 82) are never cut; a long invoice description is |
+| Features | for k = 3, 4, 5, every length-k substring of `" " + n + " "` counts 1 per occurrence; every word `w` adds key `"w:" + w` with weight 2 per occurrence; an empty text has no features |
+| Similarity | `dot(q, e) / sqrt(N(q) * N(e))`, where `N` is the sum of squared counts. Shown with three decimals (one IEEE division, display only) |
+| Examples | the tenant's labels sorted by normalized text (then id), followed by the seed in file order without the seed entries whose normalized text equals a tenant label's |
+| Nearest | among examples sharing a feature (`dot > 0`), `e` beats `e'` iff `dot(q,e)^2 * N(e') > dot(q,e')^2 * N(e)`. On equality the earlier example wins: a team label before the seed, and within the seed the file order |
+| Accept | `100 * dot^2 >= 9 * N(q) * N(e)`, that is similarity >= 0.30 exactly |
+| Result | `empty` (no features), `no_match` (no shared feature), the nearest example's category, or `below_threshold` (abstain; the nearest example is still shown) |
+
+Every decision uses exact integers: plain doubles while both products are at most 2^53, BigInt above. No
+floating-point rounding can change a ranking or the threshold test, and the output is the same on Node 22
+and Node 24. k = 1, so each suggestion cites exactly one labelled example (seed entries with their
+`sourceLabel`, team labels as "Your team's label").
+
+**Why 0.30.** It was chosen from the leave-one-carrier-out similarity distribution on the seed: at 0.30,
+160 of the 161 suggestions are correct and the 14 weakest matches abstain. The closest seed similarities
+to the threshold are 0.3031, 0.3061 and 0.3094. This is a choice on the seed set, not a property of
+invoices. It is an owner default (OQ3); the flip point is `constants.ts`, together with new evaluation
+bounds.
+
+**Cost (fix round 1, security finding S1).** The first build scanned every example for every line, without
+a query cap. With 2,000 labels of 200 characters, classifying 250 lines took about 7 to 9 s of synchronous
+CPU (security review benchmark, Node 24). The fix has four parts: the 200-character query cap; an inverted index from feature to
+(example position, count), with candidates evaluated in example order by the same exact comparison;
+suggestions memoized per feature text (at most 1,000 per classifier); and one classifier per request
+(bulk analysis builds it once per bulk request). Measured on Node 22 with 2,000 labels and 250 distinct
+4,000-character lines: about **0.47 s** with the index against about **5.5 s** with the full scan. The unit
+test bound at the caps is 20 s. The full scan is kept as `rankNearest` / `buildChargeClassifierByScan`. A
+randomized unit test (3,000 queries over random labels, seed duplicates and ties) shows that the index and
+the scan give identical results. The tester's independent oracle agrees with the product on 2,000
+generated queries.
+
+## Team label memory
+
+Table `charge_labels` (migration `20261013000000_charge_intelligence`):
+
+| Column | Notes |
+| --- | --- |
+| `id` uuid PK, `tenant_id` uuid FK `tenants` | unique `(tenant_id, normalized_text)` and `(id, tenant_id)` |
+| `normalized_text` text | CHECK `^[a-z0-9]+( [a-z0-9]+)*$`, 1..200 characters; not updatable |
+| `description` text | the trimmed input, CHECK 1..200 characters |
+| `category` text | CHECK one of `detention`, `linehaul`, `fuel`, `accessorial`, `other` |
+| `created_by_id`, `created_at`, `updated_by_id`, `updated_at`, `version` | FKs to `users`; CHECK `version >= 1` |
+
+- **Isolation.** `ENABLE` + `FORCE ROW LEVEL SECURITY`, policy `charge_labels_tenant_isolation` `FOR ALL`
+  with `USING` and `WITH CHECK` `tenant_id = fr_current_tenant()`. `REVOKE ALL ... FROM PUBLIC`.
+  `freight_app` has SELECT, INSERT and DELETE, and UPDATE only on `description`, `category`,
+  `updated_by_id`, `updated_at` and `version`. `ChargeLabel` is in `TENANT_MODELS` and `TenantTx`, and every
+  query runs in the tenant transaction. The cross-tenant tests are written but not yet run (see the notes).
+- **Semantics.** One label per normalized text per tenant. PUT with a new text inserts it (`version 1`,
+  outcome `created`). PUT with another category replaces category and description (`version + 1`,
+  `changed`). PUT with the same category writes nothing (`unchanged`). The latest label wins. DELETE
+  removes it, and later suggestions no longer use it. Packets already created never change.
+- **Cap.** At most 2,000 labels per tenant (`CHARGE_LABELS_MAX`). An insert past the cap gets 409
+  `label_limit_reached`; updates are always allowed. Fix round 1 (S2): PUT and DELETE first take a
+  transaction advisory lock on `charge-labels:<tenantId>`, so concurrent PUTs cannot overshoot the cap.
+  The cap is enforced by the service, not by a database trigger.
+- **Effect.** Labels change suggestions, LRN findings and review flags of later analyses and of the
+  charge-line view. They never change a step 5 rule output: keyword results win, and a label on a line that
+  `classifyLine` already classifies has no effect in analysis.
+- **Audit.** `charge_label.set` (`labelId`, `category`, `outcome`, `normalizedTextSha256`, plus
+  `previousCategory` when changed) and `charge_label.deleted` (`labelId`, `category`,
+  `normalizedTextSha256`). `normalizedTextSha256` is the hex SHA-256 of the normalized text (fix round 1,
+  S4): it links audit rows to a wording without storing the text. Outcome `unchanged`, refusals and the
+  label list write no event. `GET .../charge-lines` writes `intelligence.viewed` (`kind: charge_lines`).
+  `npm run db:seed -- --reset` deletes the seeded tenants' labels.
+
+| Route | Permission | Success |
+| --- | --- | --- |
+| `GET /api/v1/claims/:id/charge-lines` | `claims:read` | 200: every invoice line of the claim's accepted documents (duplicates included), with the rule category, the suggestion and the team label |
+| `GET /api/v1/charge-labels?page&pageSize` | `claims:read` | 200: labels by normalized text, `pageSize` 1..100 (default 25) |
+| `PUT /api/v1/charge-labels` | `charge_labels:manage` | 200: `{ label, outcome }` |
+| `DELETE /api/v1/charge-labels/:id` | `charge_labels:manage` | 204 |
+
+All four routes use the per-user `intelligence` rate bucket and have no API-key scope (API keys get 403).
+Precedence: origin/CSRF 403 -> 401 -> 429 -> 403 -> 400 -> 404 (flag off, unknown, non-UUID or other-tenant
+id; byte-identical) -> 409.
+
+## Function Call Graph (step 6)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST claims/:id/analyze"] --> FL["flag read (once)"]
+    R2["POST analyze-awaiting"] --> FL
+    R2 --> LC2["loadClassifier (once)"]
+    FL --> AC["analyzeClaim (one tx)"]
+    LC2 --> AC
+    AC --> LI["loadAnalysisInput"]
+    AC --> LC1["loadClassifier (single)"]
+    AC --> BP["buildAnalysisPacket"]
+    BP --> BEL["buildEvidenceLearned"]
+    BEL --> AR["applyRulesTraced (step 5)"]
+    BEL --> AL["applyLearning"]
+    AL --> CL["classifier.classify"]
+    BEL --> DL["letter + Markdown"]
+    AC --> AUD["audit claim.analyzed"]
+    R3["GET charge-lines"] --> CLN["chargeLines"]
+    CLN --> LC3["loadClassifier"]
+    R4["PUT charge-labels"] --> SL["setLabel"]
+    SL --> LK["lockChargeLabels"]
+    SL --> AUD2["audit charge_label.set"]
+
+    style FL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LC1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LC2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LC3 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BEL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R3 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R4 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD2 fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Function | Defined In | Called By | Purpose |
+| --- | --- | --- | --- |
+| `loadClassifier(tx)` | `api/src/intelligence/charges.ts` | `analyzeClaim` (single), `analyzeAwaiting` (once per bulk request), `chargeLines` | reads the tenant's labels and builds the classifier; returns `labelCount` |
+| `buildEvidenceLearned(docs, bundle, perspective, settings, now, classifier \| null)` | `charge-intel/learned.ts` | `buildAnalysisPacket` | step 5 `buildEvidence` plus the learned layer; with `null` its `evidence` equals `buildEvidence(...)` exactly |
+| `applyLearning(...)` | `charge-intel/learned.ts` | `buildEvidenceLearned` | LRN findings, DET review flags, totals, `labelIds` |
+| `buildChargeClassifier(labels)` | `charge-intel/classifier.ts` | `loadClassifier`, tests | example list, inverted index, `classify(description)` |
+| `evaluateLeaveOneCarrierOut()` | `charge-intel/evaluate.ts` | `api/src/eval/charges.ts`, tests | the seed-set report of the CI gate |
+| `setLabel`, `deleteLabel`, `listLabels`, `chargeLines` | `api/src/intelligence/charges.ts` | `charge-routes.ts` | label memory and the charge-line view |
+| `computeTariffDetention(start, departure, terms)` | `analysis/tariff-detention.ts` | tests only | tariff-style detention (not wired) |
+
+## Learned layer in analysis
+
+The routes read the flag once per request, before the transaction. With the flag on, single analysis
+loads the classifier inside its transaction. Bulk analysis builds it once per bulk request, from the labels
+as stored when the request starts, and uses it for every candidate.
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["Step 5 rules (unchanged)"] --> B{"Flag on?"}
+    B -- no --> Z["Step 5 packet, exactly"]
+    B -- yes --> C["Each unique line, amount > 0"]
+    C --> D{"classifyLine = other?"}
+    D -- no --> N["Keyword result wins"]
+    D -- yes --> E{"Nearest category?"}
+    E -- accessorial --> F{"Rate con, unauthorized, not contract amount?"}
+    F -- yes --> G["LRN-ACCESSORIAL-REVIEW (review)"]
+    F -- no --> N
+    E -- detention --> H["DET-UNBILLED/UNDERBILLED to review"]
+    E -- "other or abstain" --> N
+    G --> T["Totals, letter, hash"]
+    H --> T
+    N --> T
+
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style D fill:#1e90ff,stroke:#1565c0,color:#fff
+    style E fill:#1e90ff,stroke:#1565c0,color:#fff
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style G fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+1. **Only `other` lines.** The step 5 rules run unchanged. Only unique invoice lines (step 5
+   de-duplication) that `classifyLine` calls `other` and that have an amount above zero are classified.
+2. **`LRN-ACCESSORIAL-REVIEW`** when the suggestion is `accessorial`, the bundle has a rate confirmation,
+   the line is not authorized there (the same containment test as `INV-ACCESSORIAL-UNAUTH`), and the amount
+   differs from both the contracted `linehaul_rate` and the `fuel_surcharge`. The last condition is the
+   **contracted-amount guard**: the seed has no generic linehaul wording, so "Freight charges" is nearest to
+   "HEAVY LIFT CHARGES" (0.445), and the guard keeps the main freight line from being flagged as an
+   accessorial. The finding has direction `overcharge`, a fixed `confidence 0.5` (not a probability) and
+   `needs_human_review = true`. Title "Possible unauthorized accessorial (suggestion)". The explanation and
+   calculation name the nearest example, its origin ("public tariff example, <tariff>" or "your team's
+   label"), the similarity, the 0.30 rule, the authorized list and the charge, and end with "Suggestion only
+   - verify before disputing." It cites the line's amount field, and its governing clause is "Authorized
+   accessorials".
+3. **Detention look-alike** when the suggestion is `detention`. It never creates money. Instead, every
+   `DET-UNBILLED` and `DET-UNDERBILLED` finding gets `needs_human_review = true`, one extra calculation step
+   per look-alike ("Possible detention billed under another name: ... Confirm before claiming.") and the
+   look-alike's line citation. Rule id, title, explanation, amount, direction and confidence stay the same.
+   The reason: when detention may already be billed under another name, claiming it as unbilled needs a
+   person to check first.
+4. **Totals.** `recoverableCents` is the sum of own-perspective findings without review, and
+   `pendingReviewCents` is the sum of those with review. LRN findings and flagged DET findings are
+   therefore pending, and the draft letter (confirmed findings only) never lists them. For the carrier
+   perspective, an LRN finding is in the other direction: it is counted in `ignoredFindingsCount` and not
+   stored.
+5. **Parity unchanged.** With the flag off, or when no LRN finding and no look-alike that flags a stored
+   finding arise, the stored packet (findings, totals, letter, content hash, sources, timeline) is exactly
+   what step 5 stores for the same input and time. The step 5 Python parity guarantee for `classifyLine`,
+   `computeDetention`, `applyRules`, the letter, the Markdown and `buildEvidence` is unchanged.
+6. **Attribution (fix round 1, S3).** `learnedLabelIds`: the distinct team-label ids (at most 50, in line
+   order) that were the nearest example of an LRN finding or of a detention look-alike. They are recorded in
+   `claim.analyzed`, so a label that moved money to review stays attributable after it is deleted.
+
+`AnalyzeResponse.analysis` gains `classifierVersion` (`charge-knn-v1`, or null when the flag is off),
+`learnedFindingsCount` and `reviewFlagsCount`. `claim.analyzed` gains `classifierVersion`, `seedVersion`,
+`tenantLabelCount`, `learnedFindingsCount`, `reviewFlagsCount` and `learnedLabelIds`. The bulk response shape
+is unchanged.
+
+**Kill switch.** Platform flag `intelligence.charge_suggestions` (registry entry plus a migration row,
+enabled, default on, visible to tenants). Off: analysis is exactly step 5 (`classifierVersion null`), the
+four routes answer 404 after the 401/429/403/400 checks, and the web hides the tab. A flag read error
+counts as off and is cached for at most 1 s (accepted deviation S6: off is the safe direction).
+
+## Evaluation gate (seed-set regression check)
+
+`evaluateLeaveOneCarrierOut()` classifies each of the 175 seed names using only the names of the other five
+carriers as examples, with the rules above and no team labels. Results (deterministic, same on every run):
+
+| Measure | Result |
+| --- | --- |
+| Nearest example has the right category (top-1) | 173 of 175; accessorial 158 of 159 |
+| At the 0.30 threshold | 161 suggested: 160 right, 1 wrong; 14 abstained. Accessorial recognised: 145 of 159 |
+| Distinct-name variant (also excluding identical names from other carriers) | top-1 173; 157 suggested: 156 right, 1 wrong; 18 abstained; accessorial recognised 141 |
+| Keyword baseline (`classifyLine`) | 34 of 175; accessorial 19 of 159 |
+| Accessorial names the pipeline would check (`classifyLine` accessorial, or `other` plus a suggested accessorial) | 145 of 159 |
+| Errors listed in the report | 2 |
+
+```bash
+npm run build
+npm run eval:charges                 # human summary; the second line is CHARGE_EVAL_NOTE
+npm run eval:charges -- --json       # one JSON line (ChargeEvalReport)
+npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1
+```
+
+Exit 0 means every given bound is met, 1 means a bound is not met (named on stderr), and 2 is a usage error.
+No database, no network, nothing recorded. CI (`web-ci.yml`) runs the last line after the extraction
+evaluation, in the step "Charge classifier evaluation (seed-set regression check, not an accuracy
+measure)". The bounds equal today's numbers, so any change to the classifier, threshold or seed that lowers
+them fails CI.
+
+**What the numbers mean.** `CHARGE_EVAL_NOTE`: "Leave-one-carrier-out check on 175 public tariff charge
+names from 6 carriers. It is a regression check on this seed set, not an accuracy measure on invoices." The
+numbers are optimistic even for tariff names: 14 normalized names repeat across carriers (the
+distinct-name variant shows the effect). The seed is LTL tariff vocabulary with 1 linehaul and 3 fuel
+names. Invoice wordings were not measured, because no real invoices are in the repository.
+
+## Tariff detention calculator (pure; not wired yet)
+
+The step 5 `computeDetention` (the Python model: hours times an hourly rate, rounded down to the increment,
+capped by a maximum) is unchanged. Real tariffs bill detention differently: per increment, "or fraction
+thereof" (rounding up), with minimum and maximum charges. `computeTariffDetention(clockStart, departure,
+terms)` in `@fr/shared/analysis` computes that, with exact decimals and integer seconds:
+
+```
+over = (departure - clockStart) - 60 * freeMinutes                    (seconds)
+n    = floor(over / (60 * incrementMinutes))   rounding 'down'
+       ceil (over / (60 * incrementMinutes))   rounding 'up'
+over <= 0 or n = 0  ->  amount 0.00 (the minimum is never applied to a zero amount)
+base   = Q(n * ratePerIncrement)
+amount = min(max(base, minimumCharge), maximumCharge)     each bound only when given; Q = half-even cents
+```
+
+Inputs: `freeMinutes` 0..1440, `incrementMinutes` 1..240, `rounding` `down` | `up`, money as
+`^[0-9]+(\.[0-9]{1,6})?$`, minimum not above maximum, naive `YYYY-MM-DDTHH:MM:SS` datetimes; anything else
+throws `AnalysisInputError`. The result has `increments`, `billableMinutes`, `amount`, `minimumApplied`,
+`maximumApplied` and readable `steps`. A departure before the clock start counts as within free time
+(amount 0; builder deviation 9, the spec does not say).
+
+| Tariff (term mapping) | Clock | Result |
+| --- | --- | --- |
+| XPO CNWY 199-AJ.4 Item 211, with power: free 60 min (>= 10,000 lb), 15-min increments rounded up ("or fraction thereof"), $72.25 each, minimum $95.50 | 08:00 -> 09:20 | 20 min over, 2 increments, **$144.50** |
+| same | 08:00 -> 09:05 | 1 increment = $72.25, raised to the minimum **$95.50** |
+| same | 08:00 -> 09:00 | within free time, **$0.00** |
+| same with free 30 min (1,000-4,999 lb) | 08:00 -> 11:47:30 | 197.5 min over, 14 increments, **$1,011.50** |
+| States Logistics LTL (2023): first 30 min free, $26.25 per 15 min, minimum $105, maximum $630; rounding not stated, so `down` | 08:00 -> 08:50 | 1 increment = $26.25, raised to the minimum **$105.00** |
+| same | 08:00 -> 12:10 | 220 min over, 14 increments, **$367.50** (rounding up would give 15 and $393.75) |
+| same | 08:00 -> 16:00 | 450 min over, 30 increments = $787.50, capped at **$630.00** |
+| Estes Item 501 (stops >= 20,000 lb): $40.00 per 15 min; the sheet gives no free time or rounding, so this is an illustration with a contract free time of 60 min and `down` | 08:00 -> 10:10 | 70 min over, 4 increments, **$160.00** (`up`: $200.00) |
+
+With rounding `down` and no minimum or maximum, the function equals the step 5 engine with
+`rate_per_hour = ratePerIncrement * 60 / incrementMinutes` (for States: $105.00 per hour, 220 min over,
+210 billable minutes, $367.50). The tester checked this equivalence on 320 generated cases.
+
+**Not used by analysis yet.** No route, extraction field or analysis path calls it in step 6. Extracting
+free time, increment, rounding, minimum and maximum from rate confirmations needs new field keys, a
+migration of the key allow-list and an extraction-parity divergence. That is deferred, so analysis still
+computes detention with the step 5 model. Also deferred: detention without power (per-day tiers such as XPO
+Item 212 at $217 per day, Estes Item 515 at $110 for the first 24 h, $150 for the next 24 h and $225 per day
+from day 3, States at $125 per 24 h after 72 h), choosing free time by shipment weight, and meal-period
+exclusions.
+
+## Web: Charges tab
+
+`ClaimSheet.tsx` shows a **Charges** tab after the existing tabs when `GET /features` reports the flag on
+(fail closed). `ChargeLinesPanel.tsx` loads `GET /claims/:id/charge-lines`; a 404 hides the tab. It shows
+`CHARGE_NOTE` ("Suggestions compare each charge name with labelled examples: public carrier tariff charge
+names and your team's labels. They are not verified. A suggestion only adds items for human review; it
+never confirms an amount."), and per line the description and amount, a chip `Rules: <category>`, a chip
+`Suggested: <category> (<similarity>)` or `No suggestion`, `Nearest example: '<text>' (<source>)` and
+`Team label: <category>` when one exists. Users with `charge_labels:manage` also get **Confirm
+<category>** (when the suggestion is not abstained and differs from the team label) and a **Category**
+select with **Save label**. Each sends one PUT; success shows "Label saved. It applies to future
+analyses." and reloads the lines. Errors show fixed texts (403, 409, 429, other), never server text. Fix
+round 1 (S7): the controls are disabled for a description the server would refuse (`isLabelable` uses the
+server's `SetChargeLabelBody` rule: over 200 characters, control or bidi characters, or an empty normalized
+text). All untrusted strings render as React text (`SafeText`). Learned findings appear in the existing
+Evidence tab like any other finding, marked as needing human review.
+
+## Python parity: registered divergences (RD7-RD10)
+
+RD1-RD6 of step 5 are unchanged.
+
+| ID | Divergence (TS vs Python) | Rationale |
+| --- | --- | --- |
+| RD7 | With the flag on, stored packets may contain `LRN-ACCESSORIAL-REVIEW` findings, which Python never produces. Their amounts are in `pendingReviewCents`. | Lines the keyword rules cannot place would otherwise never be checked against the authorized accessorials. Review only. |
+| RD8 | With the flag on, a stored `DET-UNBILLED` or `DET-UNDERBILLED` may have `needs_human_review = true`, extra calculation steps and extra citations. This moves its amount from recoverable to pending and out of the letter. | A line that looks like detention under another name means "unbilled" may be wrong; a person decides. |
+| RD9 | `ignoredFindingsCount` (response and audit) may include other-direction LRN findings. | Same perspective split as step 5. |
+| RD10 | `computeTariffDetention` has no Python counterpart. | New tariff model. The step 5 functions keep their parity guarantee. |
+
+## Policy defaults (step 6)
+
+| ID | Default | Flip point |
+| --- | --- | --- |
+| D1 | Threshold 0.30 exactly (3/10) | `constants.ts`, plus new evaluation bounds |
+| D2 | Nearest single example; team labels before the seed; ties go to the earlier example | `classifier.ts` |
+| D3 | The learned layer only sees keyword-`other` lines; keyword results win | `learned.ts` |
+| D4 | LRN needs a rate confirmation, amount > 0, not authorized, amount not equal to the contracted linehaul or fuel; confidence 0.5; always review | `learned.ts` |
+| D5 | Detention look-alikes only switch DET-UNBILLED/UNDERBILLED to review; they never create money | `learned.ts` |
+| D6 | `charge_labels:manage` = OWNER, ADMIN, MANAGER, REVIEWER (not ANALYST: labels change future analyses tenant-wide); reads need `claims:read`; no API-key scope | `rbac.ts` |
+| D7 | 2,000 labels per tenant (service check, writes serialized per tenant) | `CHARGE_LABELS_MAX` |
+| D8 | Flag `intelligence.charge_suggestions` on by default; off = exact step 5 | flag registry and migration row |
+| D9 | Tariff rounding `down` when the tariff does not say "or fraction thereof" | caller of `computeTariffDetention` |
+| D10 | The seed is a TS constant under the `@fr/shared/charge-intel` subpath; tariff texts are not committed | `seed-v1.ts` |
+
+D1, D6 and D7 are open for the owner to confirm (OQ3).
+
+## Deferred (step 6)
+
+Extraction of tariff detention terms from rate confirmations and their use in analysis; detention without
+power (per-day tiers); free time by shipment weight; meal-period exclusions; embeddings; learned effects on
+the linehaul and fuel rules; a telemetry component for the classifier; label import and export; a
+per-request time budget for classification (suggested by the security review; not built, see SC-2).
+
+## Interfaces for later steps (after step 6)
+
+- **Tariff terms are next.** `computeTariffDetention` and its `TariffDetentionTerms` are ready for a step
+  that extracts free time, increment, rounding, minimum and maximum from the rate confirmation. That step
+  needs new extraction field keys, a key allow-list migration and a registered extraction-parity divergence.
+  When the terms are absent, analysis must keep the step 5 `computeDetention`, so parity holds.
+- `packet_findings.rule_id` can now also be `LRN-ACCESSORIAL-REVIEW` (`LEARNED_RULE_IDS`). The step 5 rules
+  keep `RULE_IDS` and `RULES_VERSION` `rules-v1`; learned behaviour is versioned by
+  `CHARGE_CLASSIFIER_VERSION` and `SEED_VERSION`, both recorded in `claim.analyzed`. Step 4's `similar-v1`
+  treats rule ids as plain strings, so an LRN finding takes part in its rule-id overlap.
+- A new seed version must update `SEED_VERSION`, the attribution and the CI bounds together, and keep the
+  provenance rule (names only, with attribution, after the owner's OQ1 decision).
+- LRN finding text contains the raw invoice line description, like step 5 findings (SA-5): any future HTML,
+  Markdown or PDF renderer of findings must sanitize it.
+
+## Notes (step 6)
+
+- What ran (local, Windows, Node 22.23.3, **not GitHub CI**; low-memory mode, so heavy suites were not run):
+  - Builder at `3a8125d`: lint and typecheck clean (shared, api, web); unit tests shared 190 (16 files),
+    api 392 (28 files), web all 11 files; `prisma generate`; `prisma migrate diff` (no database);
+    `eval:charges` with the CI bounds exit 0, and a deliberately failing bound (`--min-top1 174`) exit 1.
+  - Builder at `43d7d4c` (fix round 1): lint and typecheck clean; unit tests shared 195 (17 files), api 393
+    (28 files), and the web charges, analysis and step 4 files (33 tests); `eval:charges` exit 0 with
+    unchanged numbers.
+  - Tester, Tier L (pure shared acceptance) at `3a8125d` with a fresh `dist`: 6 files, 73 of 73 passed;
+    the full shared acceptance suite 148 of 148; eslint and tsc on the test files clean. The first run (before
+    M2 and S2 were built) had 31 failures: 30 not yet implemented and 1 contract deviation (`formatSimilarity`
+    returned a number), fixed in `57a3ca4`.
+  - Tester after fix round 1: Tier L with the new cases (query cap, cost bound, `labelIds`) gave 77 of 78 at
+    `43d7d4c`; CI-S25 measured 808 ms against its 20 s bound. The one failure (D1: the package root did not
+    export `LEARNED_LABEL_IDS_MAX`) was fixed in `a1b1c2a` (fix round 2; builder shared unit tests 196). At
+    `a1b1c2a` the full shared acceptance suite passed 153 of 153.
+  - Security review of `51ea826..3a8125d`: no Critical or High. S1 (Medium, classifier CPU) and S2, S3, S4,
+    S7 (Low/Info) were fixed in `43d7d4c`; S5 and S6 were accepted; S8 records the data provenance.
+- **Not run yet:** Tier H acceptance (API, database, cross-tenant, RBAC, audit, flag, CLI, web) and the
+  integration tests (`api/test/integration/charge-labels.int.test.ts` and the updated pins in four existing
+  files) are written but wait for the owner's go-ahead (OQ4). So are the parity suites, the migrate drift
+  check against a shadow database, `verify-ci-locally` and GitHub CI. The tenant isolation of
+  `charge_labels` is therefore checked by code review and unit tests only, not by a database run. The Tier H
+  cases added after fix round 1 (`learnedLabelIds`, the hash, the cap race, the bulk build) are written and
+  wait for the same run.
+- Order for the heavy run on Node 22: `npm run build`, then `/verify-ci-locally --node 22 --only acceptance`
+  (`CI=true`), then `npm run test:acceptance -w web`.
+- Step 6 builds on step 5, whose own validation rerun (R3) is still open on `feat/analysis`.
+- Review verdict: pending (the reviewer runs after these docs).
 - Not verified: GitHub CI, container images, the compose stack, Playwright, any AWS deployment.

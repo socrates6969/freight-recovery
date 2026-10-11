@@ -174,7 +174,7 @@ The software foundation above is necessary, not sufficient. Still required:
 > [technical/web-platform-security.md](technical/web-platform-security.md). Architecture:
 > [ARCHITECTURE.md, "Web platform"](ARCHITECTURE.md#web-platform-typescript-steps-1-2).
 
-A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 to 5
+A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 to 6
 are done:
 
 - **Step 1:** email + password login (argon2id), a short-lived access token plus a rotating refresh
@@ -201,12 +201,19 @@ are done:
   divergences). An **Analyze** action turns an imported claim that is awaiting analysis into evidence
   packet revision 1 for human review; a bulk action analyzes up to 10 at a time. See
   [Claim analysis (step 5)](#claim-analysis-step-5).
+- **Step 6:** **charge suggestions and team labels**. A Charges tab suggests a category for each invoice
+  charge line by comparing it with labelled examples (175 charge names from six public carrier tariffs,
+  plus your team's labels); reviewers confirm or correct it, and later analyses use the labels. The
+  analysis can add review-only findings for possible unauthorized accessorials, and moves detention
+  findings to review when a line looks like detention under another name. Suggestions are not verified
+  and never confirm an amount. See [Charge suggestions and team labels (step 6)](#charge-suggestions-and-team-labels-step-6).
 
 "Send" only marks a demand send-ready and audits it. No email is sent and no money moves. The seeded claims and
 packets are synthetic and are transcribed from the Python CLI output on `tests/fixtures/`. Claims created
 by import have no amounts or packet until someone runs the analysis (step 5). Findings are rule outputs on
-extracted fields and are drafts that need human review. OCR, email-forward ingestion and any learned model
-or LLM call are later steps.
+extracted fields and are drafts that need human review. Step 6 charge suggestions compare names with
+labelled examples; there is no trained model. OCR, email-forward ingestion and any LLM call are later
+steps.
 
 **The Python service and the `webapp/` pilot dashboard are unchanged and remain.** The web platform has
 its own compose file (`compose.web.yml`), CI workflow (`.github/workflows/web-ci.yml`) and Terraform
@@ -472,6 +479,9 @@ every number says what it is based on. There is **no learned model, no neural ne
 LLM or other "AI" call, and no accuracy or speed-up figure** anywhere. The brief's "Hebbian router",
 "neural mesh" and "solved-problems cache (~250x)" are **not implemented**; what ships instead is listed in
 [ARCHITECTURE.md, "Brief terms vs what is built"](ARCHITECTURE.md#brief-terms-vs-what-is-built).
+This rule covers the step 4 screens. Step 6 later added charge-line suggestions on the claim sheet: a
+nearest-example comparison with labelled charge names, with no trained model and no LLM call (see
+[Charge suggestions and team labels (step 6)](#charge-suggestions-and-team-labels-step-6)).
 
 ### Who can see what
 
@@ -801,6 +811,144 @@ document linked to a claim after its analysis is not cited by revision 1. Docume
 automatically at upload feed the analysis like reviewed ones. The full list of residual risks is in
 [technical/web-platform-security.md, section 9.5](technical/web-platform-security.md#95-accepted-residuals-step-5).
 
+## Charge suggestions and team labels (step 6)
+
+Run `REQ-20261011-charge-intelligence` adds suggestions for the category of invoice charge lines, a label
+memory for your team, and review-only findings in the analysis. Architecture:
+[ARCHITECTURE.md, charge intelligence](ARCHITECTURE.md#web-platform-charge-intelligence-step-6). Threat
+model and residual risks:
+[technical/web-platform-security.md, section 10](technical/web-platform-security.md#10-step-6-charge-intelligence).
+
+**Why.** The fixed rules recognise a charge line by keywords. On 175 charge names from six public carrier
+tariffs, they recognised 19 of the 159 accessorial names. A line the rules do not recognise is never
+checked against the rate confirmation's authorized accessorials.
+
+**What a suggestion is, and what it is not.** The classifier compares a charge name with labelled examples
+(character and word overlap, nearest example) and suggests that example's category when the similarity
+is at least 0.30. Below that it shows "No suggestion". The examples are 175 charge names from six public
+carrier tariffs (names only, with attribution) and your team's labels. There is no trained model, no LLM
+call and no network call. A suggestion is not verified. It can only add an item for human review and
+never confirms an amount. The evaluation in CI is a regression check on the public tariff names, not an
+accuracy measure on invoices.
+
+**Data provenance.** The 175 names are copied from public rules tariffs of XPO, Estes, Dohrn, Magnum,
+Gardewine and States Logistics; the sources and URLs are in `packages/shared/src/charge-intel/seed-v1.ts`.
+No rates, customers, shipments or invoices are stored. Using these real public names is an owner decision
+of 2026-10-10/11. The rule "synthetic data only" in `CLAUDE.md` has not been changed; adding a dated
+exception there is an open question for the owner (OQ1).
+
+### Who can do what
+
+| Role | See the Charges tab and labels | Confirm or correct a category (team label) |
+| --- | --- | --- |
+| OWNER, ADMIN, MANAGER, REVIEWER | yes | yes |
+| ANALYST, VIEWER | yes | no |
+| PLATFORM_DEV, SUPER_ADMIN | no | no |
+
+The permission is `charge_labels:manage`. Reading needs `claims:read`. API keys cannot call the charge
+routes (403). ANALYST cannot label because a label changes later analyses for the whole organization.
+
+### The Charges tab
+
+Open a claim and select **Charges**. The tab lists every invoice charge line of the claim's accepted
+documents, in any claim status. It starts with: "Suggestions compare each charge name with labelled
+examples: public carrier tariff charge names and your team's labels. They are not verified. A suggestion
+only adds items for human review; it never confirms an amount." Per line you see:
+
+- the description and the amount;
+- `Rules: <category>`: what the fixed rules call the line;
+- `Suggested: <category> (0.xxx)` with the similarity, or `No suggestion`;
+- `Nearest example: '<name>' (<source>)`: the public tariff or "Your team's label";
+- `Team label: <category>` when your team has labelled this wording.
+
+With `charge_labels:manage` you also get **Confirm <category>** (when there is a suggestion that differs
+from the team label) and a **Category** list with **Save label**. On success: "Label saved. It applies to
+future analyses." Errors show a fixed text: "You do not have permission to label charges." (403), "This
+organization has reached the maximum number of charge labels." (409), "Too many requests. Try again
+later." (429), otherwise "Could not save the label. Try again." The controls are disabled for a
+description the server would refuse (over 200 characters, control or bidirectional characters, or nothing
+left after normalization).
+
+**How a label works.** A label is stored per organization for the normalized wording (lower case,
+punctuation removed): one label per wording, the latest one wins. It is used immediately by the Charges
+tab and by every later analysis, for that exact wording and, through similarity, for similar wordings.
+Packets already created do not change. A label never changes what the fixed rules decide: it only matters
+for lines the rules call `other`. An organization can hold at most 2,000 labels. Each change is recorded in
+the audit trail (`charge_label.set`, `charge_label.deleted`) with the label id, the category and a SHA-256
+of the wording, never the wording itself.
+
+### What changes in the analysis
+
+Only for invoice lines that the fixed rules call `other`:
+
+- **Possible unauthorized accessorial.** If the nearest example is an accessorial, the claim has a rate
+  confirmation, the line is not listed there as authorized, and its amount is not the contracted linehaul
+  or fuel amount, the analysis adds the finding `LRN-ACCESSORIAL-REVIEW` ("Possible unauthorized
+  accessorial (suggestion)"). It always needs human review, has a fixed confidence of 0.5 (not a
+  probability), counts only in the pending-review total, and never appears in the draft letter. Its text
+  names the nearest example and ends with "Suggestion only - verify before disputing."
+- **Detention under another name.** If the nearest example is detention, the analysis creates no new
+  amount. Instead, the detention findings "unbilled" and "under-billed" (`DET-UNBILLED`, `DET-UNDERBILLED`)
+  are switched to needs-human-review, with a step "Possible detention billed under another name: ...
+  Confirm before claiming." Their amount moves from the recoverable total to the pending-review total and
+  out of the draft letter until a reviewer confirms.
+
+Everything else is exactly as in step 5. The analysis response adds `classifierVersion`,
+`learnedFindingsCount` and `reviewFlagsCount`; `claim.analyzed` also records which team labels influenced
+the result (`learnedLabelIds`).
+
+### API
+
+| Route | Permission | Success |
+| --- | --- | --- |
+| `GET /api/v1/claims/:id/charge-lines` | `claims:read` | 200: lines with rule category, suggestion and team label |
+| `GET /api/v1/charge-labels?page=1&pageSize=25` | `claims:read` | 200: the organization's labels (`pageSize` 1..100) |
+| `PUT /api/v1/charge-labels` | `charge_labels:manage` | 200: `{ "label": ..., "outcome": "created" \| "changed" \| "unchanged" }`; body `{ "description": "...", "category": "accessorial" }` |
+| `DELETE /api/v1/charge-labels/:id` | `charge_labels:manage` | 204 |
+
+All four use the per-user `intelligence` rate limit (`RATE_LIMIT_INTELLIGENCE_MAX`, default 120). The PUT
+and DELETE go through the same Origin and CSRF checks as every other mutating route. 409
+`label_limit_reached` when the organization already has 2,000 labels (changing an existing label is always
+allowed).
+
+### Switching it off
+
+Platform staff can switch off the flag **`intelligence.charge_suggestions`** ("Charge-line suggestions and
+team labels", on by default) on the Dev dashboard's Flags tab. Off: the analysis is exactly step 5, the
+four routes answer 404 and the Charges tab disappears. Labels stay stored and are used again when the flag
+is switched back on.
+
+### Evaluation (seed-set regression check)
+
+```bash
+npm run build
+npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1
+```
+
+It classifies each of the 175 public tariff names using only the other five carriers' names (no
+database, no network, nothing recorded). Today: nearest example right for 173 of 175; at the 0.30
+threshold 161 suggested (160 right, 1 wrong) and 14 without a suggestion; accessorial names recognised 145
+of 159, against 19 of 159 for the keyword rules. CI runs exactly this command; the bounds equal today's
+numbers, so a change that lowers them fails the build. `--json` prints the full report. These numbers are
+about tariff names, not invoices: they are a regression check on this seed set, not an accuracy measure.
+
+### Detention by tariff terms (not used yet)
+
+`computeTariffDetention` in `@fr/shared` computes detention the way carrier tariffs state it: free time,
+billing increments rounded up ("or fraction thereof") or down, a rate per increment, and a minimum and
+maximum charge. Example (XPO tariff terms: 60 minutes free, $72.25 per 15 minutes or fraction, minimum
+$95.50): 08:00 to 09:20 is 2 increments, $144.50. **The analysis does not use it yet**: reading these terms
+from rate confirmations is a later step, so detention is still computed with the step 5 rules.
+
+### Not covered (accepted for now)
+
+Generic linehaul wordings such as "Freight charges" are close to accessorial names in the seed until your
+team labels them; only the contracted-amount check and human review stop a wrong finding. Labels are per
+organization, not per carrier or customer. The seed has few linehaul (1) and fuel (3) names. A reviewer
+who can label can, by labelling a line as detention, move detention findings of later analyses to review
+(it is audited and attributable, and it never creates money). The full list is in
+[technical/web-platform-security.md, section 10.5](technical/web-platform-security.md#105-accepted-residuals-step-6).
+
 ## Tests and checks
 
 ```bash
@@ -815,6 +963,7 @@ npm run test:integration     # api, against a migrated + seeded test DB (TEST_DA
                              # parity suites (step 3 extraction, step 5 rules); see the env block in .github/workflows/web-ci.yml
 npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
 npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1   # step 4: after npm run build
+npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1   # step 6: after npm run build
 npm run audit && npm audit signatures
 terraform -chdir=infra fmt -check -recursive && terraform -chdir=infra init -backend=false && terraform -chdir=infra validate
 ```
@@ -860,3 +1009,14 @@ the test files but not yet re-verified because the rerun was stopped by low syst
 acceptance suite has not run yet. The fix-round commit `5c047fb` (bulk budget) was checked only with lint,
 typecheck and targeted unit tests. **Not run:** acceptance and integration at `5c047fb`, GitHub CI,
 container images, Playwright, any AWS deployment.
+
+Step 6 (2026-10-11, run `REQ-20261011-charge-intelligence`, Windows, Node 22.23.3, **local runs, not GitHub
+CI**; low-memory mode, so the validation is **not complete**): the builder ran lint, typecheck and unit
+tests (at `3a8125d`: shared 190, api 392, all web files; after fix round 1 at `43d7d4c`: shared 195, api
+393, the web charges, analysis and step 4 files with 33 tests) and `npm run eval:charges` with the CI
+bounds (exit 0). The tester's pure shared acceptance tests (Tier L) passed 73 of 73 at `3a8125d`; after fix
+round 1 they found one missing root export, fixed in `a1b1c2a`, where the full shared acceptance suite
+passed 153 of 153. **Written but not run** (waiting for the owner's go-ahead): the integration tests for
+the new table (RLS, grants, cross-tenant refusal), the API, database, CLI and web acceptance tests (Tier H)
+and the parity suites.
+**Not run:** GitHub CI, container images, Playwright, any AWS deployment.

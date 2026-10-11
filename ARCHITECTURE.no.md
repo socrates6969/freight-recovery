@@ -86,7 +86,12 @@ også et eget avsnitt:
 [Nettplattform: utviklerdashbord, Recovery intelligence og API-nøkler (steg 4)](#nettplattform-utviklerdashbord-recovery-intelligence-og-api-nøkler-steg-4).
 Steg 5 (TS-porten av Python-reglene og kravbrevet, og analysehandlingen som gjør et importert krav om til
 pakkerevisjon 1) er beskrevet i
-[Nettplattform: kravanalyse (steg 5)](#nettplattform-kravanalyse-steg-5). Det finnes ingen lært modell og ingen LLM-kall. Krav og pakker seedes fra Python-CLI-ens
+[Nettplattform: kravanalyse (steg 5)](#nettplattform-kravanalyse-steg-5). Steg 6 (forslag til kategori for
+gebyrlinjer ut fra merkede eksempler, et etikettminne for teamet, lærte funn som bare går til gjennomgang,
+og en kalkulator for ventetid etter tariff) er beskrevet i
+[Nettplattform: gebyrintelligens (steg 6)](#nettplattform-gebyrintelligens-steg-6). Det finnes ingen
+trent modell og ingen LLM-kall: klassifisereren i steg 6 sammenligner et gebyrnavn med merkede eksempler.
+Krav og pakker seedes fra Python-CLI-ens
 utdata på `tests/fixtures/` (syntetisk).
 
 ## Modulstruktur
@@ -275,6 +280,7 @@ hver forespørsel. Nettappen importerer de samme frosne dataene bare for å skju
 | `admins:manage`, `billing:manage`, `tenant:delete` | x | | | | | | | |
 | `apikeys:manage` (steg 4: opprette, liste og tilbakekalle tenantenes API-nøkler) | x | x | | | | | | |
 | `claims:analyze` (steg 5: analysere ett krav, masseanalyse; ingen API-nøkkel-scope) | x | x | x | x | x | | | |
+| `charge_labels:manage` (steg 6: sette og slette teamets gebyretiketter; ingen API-nøkkel-scope) | x | x | x | x | | | | |
 | `platform:health` (steg 4: også pipelinehelse og telemetri) | | | | | | | x | x |
 | `platform:flags`, `platform:logs` | | | | | | | x | |
 | `platform:eval` (steg 4: evalueringskjøringer) | | | | | | | x | |
@@ -1165,7 +1171,8 @@ står åpne.
    `needs_human_review`; `packet_sources.doc_type`; `approvals.created_at`). Steg 5 lager nå pakkerevisjon
    1 (`AWAITING_ANALYSIS -> PENDING_REVIEW`), så analyserte importerte krav kommer med i arbeidsliste,
    likhet og proveniens uten endringer i steg 4. `rule_id` er en av de åtte stabile, ikke-tomme
-   `RULE_IDS` (`rules-v1`).
+   `RULE_IDS` (`rules-v1`), eller fra steg 6 det lærte `LRN-ACCESSORIAL-REVIEW`, som bare går til
+   gjennomgang.
 2. **Åpent.** Et `rules`-steg i `EVAL_STAGES` (og en migrering som utvider `stage`-CHECK-en), som
    gjenbruker `computePassStats`, registreringen og dashbordet, med Python-funksjonen `run_pipeline` som
    orakel.
@@ -1802,7 +1809,9 @@ korpus er ennå ikke registrert.
 ## Grensesnitt for senere steg (etter steg 5)
 
 - Hold `rule_id` innenfor `RULE_IDS` og øk `RULES_VERSION` når en regel endres; intelligence fra steg 4 og
-  paritetstestene er avhengige av begge.
+  paritetstestene er avhengige av begge. Steg 6 holder fast ved dette for reglene og legger til den lærte ID-en
+  `LRN-ACCESSORIAL-REVIEW` utenfor `RULE_IDS`, versjonert med `CHARGE_CLASSIFIER_VERSION` og `SEED_VERSION`
+  (se [gebyrintelligens (steg 6)](#nettplattform-gebyrintelligens-steg-6)).
 - Åpent: `rules`-steget i evalueringen, telemetri `rules-v1`, analyse ved opprettelse av krav, et
   endepunkt for nedlasting av Markdown, strengere tolking av beløp.
 - En fremtidig HTML-, Markdown- eller PDF-visning av lagrede funn må rense `explanation` og `calculation`:
@@ -1825,4 +1834,599 @@ korpus er ennå ikke registrert.
   Avvikene 1-8 i kjøringens `implementation.md` ble godtatt.
 - `.env.example` har `RATE_LIMIT_ANALYSIS_MAX=30` uten kommentartegn, i motsetning til innstillingene fra
   steg 4; verdien er lik standardverdien.
+- Ikke verifisert: GitHub CI, container-images, compose-stacken, Playwright, enhver AWS-utrulling.
+
+---
+
+# Nettplattform: gebyrintelligens (steg 6)
+
+> Skrevet av scriber for kjøringen `REQ-20261011-charge-intelligence` 2026-10-11 (grenen
+> `feat/charge-intelligence` fra `feat/analysis` ved `51ea826`, byggecommits `959aa36`..`43d7d4c`, pluss
+> `a1b1c2a` som bare gjør en konstant tilgjengelig fra pakkeroten). **Før produkt, aldri utrullet.**
+> Plattformen har fortsatt bare syntetiske data; det eneste unntaket er frøsettet med offentlige
+> gebyrnavn fra tariffer som er beskrevet nedenfor (en eierbeslutning, åpent spørsmål OQ1). Trusselradene
+> T53-T57 og restrisikoene SC-1..SC-11 står i
+> [technical/web-platform-security.md, del 10](technical/web-platform-security.md#10-step-6-charge-intelligence)
+> (engelsk). Beskrivelse for brukere: [README.no.md, gebyrforslag](README.no.md#gebyrforslag-og-teametiketter-steg-6).
+> Mermaid-diagrammene er de samme som i den engelske originalen
+> ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-charge-intelligence-step-6)).
+
+## Hvorfor (steg 6)
+
+Reglene fra steg 5 bestemmer kategorien til en gebyrlinje på fakturaen med nøkkelordtabellene fra
+Python-referansen (`classifyLine`: detention, linehaul, fuel, accessorial eller `other`).
+`INV-ACCESSORIAL-UNAUTH` kontrollerer bare linjer som `classifyLine` kaller `accessorial`, så en linje den
+kaller `other`, blir aldri sammenlignet med tilleggstjenestene som er godkjent i fraktavtalen (rate
+confirmation).
+
+Planleggeren målte dette på 175 fakturerbare gebyrnavn hentet ordrett fra seks offentlige regeltariffer
+fra transportører (bare navn). Nøkkelordreglene gjenkjente **19 av de 159 navnene på tilleggstjenester**
+(34 av 175 navn totalt). De fleste reelle formuleringer av tilleggstjenester ville altså passere kontrollen
+av ikke-godkjente tilleggstjenester uten å bli sett. En prototype uten avhengigheter, med nærmeste nabo på
+tegn-n-gram og evaluert med én transportør holdt utenfor om gangen på de samme navnene, gjenkjente langt
+flere (tall i [evalueringsterskelen](#evalueringsterskel-regresjonskontroll-på-frøsettet)). En
+embeddingmodell (MiniLM via ONNX) ble også prøvd i kjøringens prototype. Den ble ikke tatt i bruk, fordi den
+ville gitt kjernepakken en stor native avhengighet. Grunnlaget (filen med merkede navn, tekstuttrekkene fra
+de seks tariffene og prototypen) ligger i kjøringsmappen og er ikke committet.
+
+Steg 6 legger til, uten å endre noe regelresultat fra steg 5:
+
+1. en deterministisk klassifiserer for gebyrlinjer, `charge-knn-v1`, i `@fr/shared` (ren TypeScript, ingen
+   ny avhengighet): nærmeste merkede eksempel etter n-gram-likhet, med en terskel for å avstå;
+2. frøsettet `tariff-seed-v1` med kildehenvisninger (175 navn fra 6 offentlige tariffer);
+3. et **etikettminne for teamet**: gjennomgåere bekrefter eller retter kategorien til en linje; etiketten
+   lagres i en ny tenant-tabell og brukes av alle senere forslag og analyser for den tenanten. Dette er et
+   minne som slås opp når en linje klassifiseres. Ingenting trenes, og det finnes ingen modellvekter;
+4. et **lært lag** i analysen som bare legger til punkter for gjennomgang: funnet
+   `LRN-ACCESSORIAL-REVIEW`, og `DET-UNBILLED` / `DET-UNDERBILLED` satt til gjennomgang når en linje ligner
+   ventetid (detention) under et annet navn;
+5. en **evalueringsterskel** i CI med én transportør holdt utenfor om gangen (en regresjonskontroll på
+   frøsettet, ikke et mål på nøyaktighet på fakturaer);
+6. en ren **kalkulator for ventetid etter tariff** (`computeTariffDetention`), som ennå ikke er koblet til
+   noen rute;
+7. en fane **Charges** i kravpanelet.
+
+Punkt 3, 4 og 7 ligger bak plattformens nødbryter `intelligence.charge_suggestions` (standard på). Når den
+er av, er analysen nøyaktig som i steg 5, og de fire gebyrrutene svarer 404.
+
+**Hva det ikke er.** Ingen LLM-kall, ingen nettverkskall, ingen trening og ingen lagret modell. Et forslag
+er en likhet med et merket eksempel. Det er ikke verifisert. Det kan bare legge til punkter for menneskelig
+gjennomgang og bekrefter aldri et beløp. Evalueringstallene kommer fra 175 offentlige tariffnavn, ikke fra
+kundefakturaer, og er ikke et mål på nøyaktighet.
+
+## Frøsett v1 og dataenes opphav
+
+`packages/shared/src/charge-intel/seed-v1.ts` inneholder `SEED_V1`: en fryst liste med 175
+`{ text, label, source }`-oppføringer, lik i rekkefølge og tekst med kjøringens
+`data/seed-charge-names-6carriers.json`. Etiketter: accessorial 159, detention 12, fuel 3, linehaul 1. Det
+lengste navnet har 82 tegn. Navnene gir 157 ulike normaliserte tekster, og 14 normaliserte tekster finnes
+hos 2 til 4 transportører. `SEED_SOURCES` gir kildehenvisningen for hver kilde; alle URL-er ble hentet
+2026-10-11.
+
+| Kildenøkkel | Tariff | Gyldig fra | Navn | URL |
+| --- | --- | --- | --- | --- |
+| `magnum_2026` | Magnum LTL 125 Rules and Special Services Tariff | 2026-04-01 | 27 | `https://magnumlog.com/wp-content/uploads/2026/04/2026-Rules-Tariff-125-04.01.26.pdf` |
+| `gardewine_2025` | Gardewine GWN Tariff 100 General Rules, Domestic Canada LTL | 2025-12-01 | 27 | `https://gardewine.com/wp-content/uploads/2026/06/GWN_RULES_TARIFF_100_DEC_2025_FINAL-V2.pdf` |
+| `dohrn_2025` | Dohrn Transfer Company accessorial recap, Rules Tariff DHRN 100 series | 2025-01-20 | 30 | `https://dohrn.com/wp-content/uploads/2025/01/Dohrn-Rules-Tariff-Effective-01.20.2025.pdf` |
+| `states_2023` | States Logistics Services LTL Accessorials and Miscellaneous Charges | 2023-11-30 | 19 | `https://stateslogistics.com/wp-content/uploads/2024/07/LTLAccessorialMiscServices.pdf` |
+| `xpo_2025` | XPO Logistics Freight Tariff CNWY 199-AJ.4, accessorial services | 2025-11-03 | 43 | `https://www.xpo.com/cdn/download_files/s1/p2831/CNWY_199-AJ.4_Eff_11.3.2025.pdf` |
+| `estes_2025` | Estes Express Lines Accessorial Charges (Rules Tariff EXLA 105) | 2025-11-17 | 29 | `https://www.estes-express.com/downloads/EXLAaccessorialCharges.pdf` |
+
+Bare gebyrnavn lagres: ingen tarifftekst, ingen satser og ingen kunde-, forsendelses- eller fakturadata.
+Tarifftekstene er ikke committet.
+
+**Eierbeslutning og åpent spørsmål OQ1.** Hardregel 4 i CLAUDE.md sier «Synthetic data only». 2026-10-10/11
+bestemte eieren, Marius Carlsson, i forespørselen til denne kjøringen at reelle offentlige data kan brukes
+der det trengs («real shipment data is okay. go look for real data. only use synthetic data ... when you
+have to.»). Frøsettet bruker beslutningen snevert: generiske tjenestenavn som transportører publiserer i
+tariffene sine, med kildehenvisning, og ingen kunde-, forsendelses- eller fakturaposter i repoet. Regel 4 i
+CLAUDE.md og skillen project-conventions ble **ikke** endret av agentene. En datert unntaksmerknad der er
+åpent spørsmål OQ1 til eieren. To punkter henger sammen med dette og er også åpne: de seks URL-ene ble funnet
+med nettsøk, og eieren må bekrefte at de svarer til filene som ble lastet ned (OQ2), og vilkårene for
+gjenbruk av tariffene er ikke kontrollert (sikkerhetsgjennomgangen S8).
+
+## Modulstruktur (steg 6)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src/features"]
+        CSH["claims/ClaimSheet.tsx"]
+        CLP["ChargeLinesPanel.tsx"]
+        UF["use-features.ts"]
+    end
+    subgraph Shared["packages/shared/src"]
+        CON["charge-intel/constants"]
+        SEED["charge-intel/seed-v1"]
+        FEAT["charge-intel/features"]
+        CLS["charge-intel/classifier"]
+        LRN["charge-intel/learned"]
+        EVA["charge-intel/evaluate"]
+        DTO["charge-intel-dto + copy"]
+        TD["analysis/tariff-detention"]
+        S5["analysis/ (step 5, unchanged)"]
+        RBC["rbac + audit-actions + flags"]
+    end
+    subgraph API["api/src"]
+        CRT["charge-routes.ts"]
+        CHS["intelligence/charges.ts"]
+        LCK["db/charge-label-locks.ts"]
+        CA["claims/analysis.ts"]
+        CR["claims/routes.ts"]
+        ECLI["eval/charges.ts (CLI)"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261013000000_charge_intel"]
+        TBL["charge_labels (RLS FORCE)"]
+        FLG["feature_flags row"]
+    end
+
+    CSH --> CLP
+    CLP --> UF
+    CLP --> DTO
+    CLP -. "HTTP" .-> CRT
+    CRT --> CHS
+    CHS --> LCK
+    CHS --> CLS
+    CHS --> TBL
+    CR --> CA
+    CA --> CHS
+    CA --> LRN
+    LRN --> CLS
+    LRN --> S5
+    CLS --> FEAT
+    CLS --> SEED
+    CLS --> CON
+    EVA --> CLS
+    EVA --> S5
+    ECLI --> EVA
+    TD --> S5
+    CRT --> RBC
+    MIG --> TBL
+    MIG --> FLG
+
+    style CSH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style UF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CON fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SEED fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FEAT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LRN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EVA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RBC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CRT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LCK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ECLI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TBL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FLG fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Modul/funksjon | Formål | Viktige avhengigheter | Endret i denne kjøringen |
+| --- | --- | --- | --- |
+| `packages/shared/src/charge-intel/constants.ts` | `CHARGE_CLASSIFIER_VERSION` `charge-knn-v1`, `SEED_VERSION` `tariff-seed-v1`, terskel 3/10, `CHARGE_CATEGORIES`, `CHARGE_LABELS_MAX` 2000, `CHARGE_QUERY_TEXT_MAX` 200, `LEARNED_RULE_IDS` (og fra `a1b1c2a` `LEARNED_LABEL_IDS_MAX` 50) | ingen | ny |
+| `charge-intel/seed-v1.ts` | `SEED_V1` (175 frosne oppføringer), `SEED_SOURCES` (kildehenvisning), opphavsmerknad | constants | ny |
+| `charge-intel/features.ts` | `featureText` (tak på 200 tegn), `chargeFeatures`, `featureNorm2`, `featureDot` | `normText` fra `analysis/py-text` | ny |
+| `charge-intel/classifier.ts` | `buildChargeClassifier` (invertert indeks, memo), `buildChargeClassifierByScan` og `rankNearest` (referansegjennomgang), `accepts`, `beats`, `formatSimilarity`, `seedExamples` | features, seed, DTO-typer | ny (indeksen kom i rettingsrunde 1) |
+| `charge-intel/learned.ts` | `buildEvidenceLearned`, `applyLearning`: det lærte laget oppå resultatet fra steg 5; returnerer `learnedFindingsCount`, `reviewFlagsCount`, `labelIds` | `applyRulesTraced`, `classifyLine`, `dedupe`, brev og Markdown fra steg 5 | ny |
+| `charge-intel/evaluate.ts` | `evaluateLeaveOneCarrierOut` -> `ChargeEvalReport` | klassifisereren, `classifyLine` fra steg 5 | ny |
+| `charge-intel-dto.ts`, `charge-intel/copy.ts` | Zod-skjemaer for rutene og evalueringsrapporten; tekstene `CHARGE_NOTE`, `CHARGE_EVAL_NOTE`, `CHARGE_TEXT`, `CATEGORY_LABELS` | zod | ny |
+| `analysis/tariff-detention.ts` | `computeTariffDetention` (ren; ikke koblet til) | `py-decimal`, `local-datetime` fra steg 5 | ny |
+| `rbac.ts`, `audit-actions.ts`, `feature-flags.ts`, `analysis-dto.ts`, `index.ts`, `package.json` | `charge_labels:manage`; `charge_label.set`, `charge_label.deleted`; flagget `intelligence.charge_suggestions`; tre nye felt i `analysis`-svaret; eksporter fra roten; underbanen `./charge-intel` | ingen | endret |
+| `api/src/intelligence/charges.ts` | `loadClassifier`, `chargeLines`, `setLabel`, `deleteLabel`, `listLabels` | Prisma-tenant-transaksjon, `loadAnalysisInput`, `appendAudit` | ny |
+| `api/src/intelligence/charge-routes.ts` | de fire rutene (rategruppe `intelligence`, ingen API-nøkkel-scope, flagget sjekkes etter kontrollene i pipelinen) | `charges.ts`, `auditViewed` | ny |
+| `api/src/db/charge-label-locks.ts` | `lockChargeLabels`: rådgivende transaksjonslås `charge-labels:<tenantId>` | `advisoryXactLock` | ny (rettingsrunde 1) |
+| `api/src/claims/analysis.ts`, `claims/routes.ts` | klassifisererargument, lært lag, styrende klausul for LRN, felt i svar og revisjonsspor; flagget leses én gang per forespørsel; masseanalysen bygger klassifisereren én gang per forespørsel | `@fr/shared/charge-intel`, `charges.ts` | endret |
+| `api/src/db/tenant.ts`, `http/errors.ts`, `audit/chain.ts`, `app.ts`, `scripts/seed.ts` | `ChargeLabel` i `TENANT_MODELS`; 409 `label_limit_reached`; tillatte metadatanøkler; registrering av rutene; `--reset` sletter `charge_labels` | ingen | endret |
+| `api/src/eval/charges.ts` | CLI `npm run eval:charges` (ingen database, ikke noe nettverk, ingenting registreres) | `evaluateLeaveOneCarrierOut` | ny |
+| `api/prisma/migrations/20261013000000_charge_intelligence/` | tabell, CHECK-er, RLS FORCE, policy, tilganger, flaggrad | `tenants`, `users`, `feature_flags` | ny |
+| `web/src/features/intelligence/ChargeLinesPanel.tsx`, `use-features.ts`, `claims/ClaimSheet.tsx`, `api/client.ts` | fanen Charges, flagget `charges`, hjelperen `put()` | `useCan('charge_labels:manage')`, delte tekster | ny / endret |
+| `.github/workflows/web-ci.yml` | ett steg: gebyrevalueringen med faste grenser | `npm run eval:charges` | endret |
+
+Pakkeroten `@fr/shared` eksporterer bare konstantene, tekstene, DTO-skjemaene og `computeTariffDetention`.
+Frøsettet, klassifisereren, evalueringen og det lærte laget ligger under underbanen `@fr/shared/charge-intel`,
+så nettappens pakke tar ikke med frøsettet. Motorfilene fra steg 5 under `packages/shared/src/analysis/`
+ble ikke endret (bare `index.ts` fikk den nye eksporten).
+
+## Klassifisereren `charge-knn-v1` (eksakte regler)
+
+| Trinn | Regel |
+| --- | --- |
+| Normaliser | `normText(s)`: små bokstaver, hver sekvens av tegn utenfor `[a-z0-9]` blir ett mellomrom, trimmet (funksjonen fra steg 5) |
+| Tak på spørringen | `featureText(s)` = de første 200 tegnene av `normText(s)`, med avsluttende mellomrom fjernet. Etiketter (høyst 200) og frønavn (høyst 82) kuttes aldri; en lang fakturabeskrivelse kuttes |
+| Kjennetegn | for k = 3, 4, 5 teller hver delstreng med lengde k av `" " + n + " "` 1 per forekomst; hvert ord `w` gir nøkkelen `"w:" + w` med vekt 2 per forekomst; en tom tekst har ingen kjennetegn |
+| Likhet | `dot(q, e) / sqrt(N(q) * N(e))`, der `N` er summen av kvadrerte tellinger. Vises med tre desimaler (én IEEE-divisjon, bare for visning) |
+| Eksempler | tenantens etiketter sortert etter normalisert tekst (deretter id), fulgt av frøsettet i filrekkefølge uten frøoppføringene der den normaliserte teksten er lik en tenant-etikett sin |
+| Nærmeste | blant eksempler som deler et kjennetegn (`dot > 0`), slår `e` ut `e'` hvis og bare hvis `dot(q,e)^2 * N(e') > dot(q,e')^2 * N(e)`. Ved likhet vinner det tidligste eksemplet: en teametikett før frøsettet, og innenfor frøsettet filrekkefølgen |
+| Godta | `100 * dot^2 >= 9 * N(q) * N(e)`, altså likhet >= 0,30 eksakt |
+| Resultat | `empty` (ingen kjennetegn), `no_match` (ingen felles kjennetegn), kategorien til det nærmeste eksemplet, eller `below_threshold` (avstår; det nærmeste eksemplet vises likevel) |
+
+Hver beslutning bruker eksakte heltall: vanlige doubles så lenge begge produktene er høyst 2^53, BigInt over
+det. Ingen avrunding i flyttall kan endre en rangering eller terskeltesten, og resultatet er det samme på
+Node 22 og Node 24. k = 1, så hvert forslag viser til nøyaktig ett merket eksempel (frøoppføringer med sin
+`sourceLabel`, teametiketter som «Your team's label»).
+
+**Hvorfor 0,30.** Terskelen ble valgt ut fra fordelingen av likheter når én transportør holdes utenfor om
+gangen på frøsettet: ved 0,30 er 160 av de 161 forslagene riktige, og de 14 svakeste treffene avstår. De
+likhetene i frøsettet som ligger nærmest terskelen, er 0,3031, 0,3061 og 0,3094. Dette er et valg på
+frøsettet, ikke en egenskap ved fakturaer. Det er et standardvalg eieren kan endre (OQ3); stedet å endre er
+`constants.ts`, sammen med nye evalueringsgrenser.
+
+**Kostnad (rettingsrunde 1, sikkerhetsfunn S1).** Det første bygget gikk gjennom alle eksempler for hver
+linje, uten tak på spørringen. Med 2 000 etiketter på 200 tegn tok klassifiseringen av 250 linjer omtrent 7
+til 9 s synkron CPU (målt i sikkerhetsgjennomgangen, Node 24). Rettingen har fire deler: taket på 200 tegn;
+en invertert indeks fra kjennetegn til (eksempelposisjon, antall), der kandidatene vurderes i
+eksempelrekkefølge med den samme eksakte sammenligningen; forslag huskes per kjennetegnstekst (høyst 1 000
+per klassifiserer); og én klassifiserer per forespørsel (masseanalysen bygger den én gang per
+masseforespørsel). Målt på Node 22 med 2 000 etiketter og 250 ulike linjer på 4 000 tegn: omtrent
+**0,47 s** med indeksen mot omtrent **5,5 s** med full gjennomgang. Grensen i enhetstesten ved takene er
+20 s. Den fulle gjennomgangen er beholdt som `rankNearest` / `buildChargeClassifierByScan`. En randomisert
+enhetstest (3 000 spørringer over tilfeldige etiketter, duplikater i frøsettet og likheter) viser at
+indeksen og gjennomgangen gir identiske resultater. Testerens uavhengige orakel er enig med produktet på
+2 000 genererte spørringer.
+
+## Etikettminnet for teamet
+
+Tabellen `charge_labels` (migreringen `20261013000000_charge_intelligence`):
+
+| Kolonne | Merknader |
+| --- | --- |
+| `id` uuid PK, `tenant_id` uuid FK `tenants` | unik `(tenant_id, normalized_text)` og `(id, tenant_id)` |
+| `normalized_text` text | CHECK `^[a-z0-9]+( [a-z0-9]+)*$`, 1..200 tegn; kan ikke oppdateres |
+| `description` text | den trimmede inndataen, CHECK 1..200 tegn |
+| `category` text | CHECK én av `detention`, `linehaul`, `fuel`, `accessorial`, `other` |
+| `created_by_id`, `created_at`, `updated_by_id`, `updated_at`, `version` | FK-er til `users`; CHECK `version >= 1` |
+
+- **Isolasjon.** `ENABLE` + `FORCE ROW LEVEL SECURITY`, policyen `charge_labels_tenant_isolation`
+  `FOR ALL` med `USING` og `WITH CHECK` `tenant_id = fr_current_tenant()`. `REVOKE ALL ... FROM PUBLIC`.
+  `freight_app` har SELECT, INSERT og DELETE, og UPDATE bare på `description`, `category`, `updated_by_id`,
+  `updated_at` og `version`. `ChargeLabel` står i `TENANT_MODELS` og `TenantTx`, og hver spørring kjører i
+  tenant-transaksjonen. Testene på tvers av tenanter er skrevet, men ikke kjørt ennå (se merknadene).
+- **Betydning.** Én etikett per normalisert tekst per tenant. PUT med en ny tekst setter den inn
+  (`version 1`, utfall `created`). PUT med en annen kategori erstatter kategori og beskrivelse
+  (`version + 1`, `changed`). PUT med samme kategori skriver ingenting (`unchanged`). Den siste etiketten
+  gjelder. DELETE fjerner den, og senere forslag bruker den ikke lenger. Pakker som allerede er laget,
+  endres aldri.
+- **Tak.** Høyst 2 000 etiketter per tenant (`CHARGE_LABELS_MAX`). En innsetting over taket får 409
+  `label_limit_reached`; oppdateringer er alltid tillatt. Rettingsrunde 1 (S2): PUT og DELETE tar først en
+  rådgivende transaksjonslås på `charge-labels:<tenantId>`, så samtidige PUT-er kan ikke gå over taket.
+  Taket håndheves av tjenesten, ikke av en databasetrigger.
+- **Virkning.** Etiketter endrer forslag, LRN-funn og gjennomgangsflagg i senere analyser og i visningen av
+  gebyrlinjer. De endrer aldri et regelresultat fra steg 5: nøkkelordresultatet vinner, og en etikett på en
+  linje som `classifyLine` allerede klassifiserer, har ingen virkning i analysen.
+- **Revisjonsspor.** `charge_label.set` (`labelId`, `category`, `outcome`, `normalizedTextSha256`, pluss
+  `previousCategory` ved endring) og `charge_label.deleted` (`labelId`, `category`,
+  `normalizedTextSha256`). `normalizedTextSha256` er hex-SHA-256 av den normaliserte teksten (rettingsrunde
+  1, S4): den knytter rader i revisjonssporet til en formulering uten å lagre teksten. Utfallet
+  `unchanged`, avvisninger og etikettlisten skriver ingen hendelse. `GET .../charge-lines` skriver
+  `intelligence.viewed` (`kind: charge_lines`). `npm run db:seed -- --reset` sletter etikettene til de
+  seedede tenantene.
+
+| Rute | Tillatelse | Svar ved suksess |
+| --- | --- | --- |
+| `GET /api/v1/claims/:id/charge-lines` | `claims:read` | 200: hver fakturalinje i kravets godtatte dokumenter (duplikater med), med regelkategori, forslag og teametikett |
+| `GET /api/v1/charge-labels?page&pageSize` | `claims:read` | 200: etiketter etter normalisert tekst, `pageSize` 1..100 (standard 25) |
+| `PUT /api/v1/charge-labels` | `charge_labels:manage` | 200: `{ label, outcome }` |
+| `DELETE /api/v1/charge-labels/:id` | `charge_labels:manage` | 204 |
+
+Alle fire rutene bruker ratebøtten `intelligence` per bruker og har ingen API-nøkkel-scope (API-nøkler får
+403). Rekkefølge: origin/CSRF 403 -> 401 -> 429 -> 403 -> 400 -> 404 (flagg av, ukjent id, id som ikke er
+UUID, eller id fra en annen tenant; byte for byte like) -> 409.
+
+## Funksjonskall (steg 6)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST claims/:id/analyze"] --> FL["flag read (once)"]
+    R2["POST analyze-awaiting"] --> FL
+    R2 --> LC2["loadClassifier (once)"]
+    FL --> AC["analyzeClaim (one tx)"]
+    LC2 --> AC
+    AC --> LI["loadAnalysisInput"]
+    AC --> LC1["loadClassifier (single)"]
+    AC --> BP["buildAnalysisPacket"]
+    BP --> BEL["buildEvidenceLearned"]
+    BEL --> AR["applyRulesTraced (step 5)"]
+    BEL --> AL["applyLearning"]
+    AL --> CL["classifier.classify"]
+    BEL --> DL["letter + Markdown"]
+    AC --> AUD["audit claim.analyzed"]
+    R3["GET charge-lines"] --> CLN["chargeLines"]
+    CLN --> LC3["loadClassifier"]
+    R4["PUT charge-labels"] --> SL["setLabel"]
+    SL --> LK["lockChargeLabels"]
+    SL --> AUD2["audit charge_label.set"]
+
+    style FL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LC1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LC2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LC3 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BEL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R3 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R4 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD2 fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalles av | Formål |
+| --- | --- | --- | --- |
+| `loadClassifier(tx)` | `api/src/intelligence/charges.ts` | `analyzeClaim` (enkeltvis), `analyzeAwaiting` (én gang per masseforespørsel), `chargeLines` | leser tenantens etiketter og bygger klassifisereren; returnerer `labelCount` |
+| `buildEvidenceLearned(docs, bundle, perspective, settings, now, classifier \| null)` | `charge-intel/learned.ts` | `buildAnalysisPacket` | `buildEvidence` fra steg 5 pluss det lærte laget; med `null` er `evidence` nøyaktig lik `buildEvidence(...)` |
+| `applyLearning(...)` | `charge-intel/learned.ts` | `buildEvidenceLearned` | LRN-funn, gjennomgangsflagg på DET, summer, `labelIds` |
+| `buildChargeClassifier(labels)` | `charge-intel/classifier.ts` | `loadClassifier`, tester | eksempelliste, invertert indeks, `classify(description)` |
+| `evaluateLeaveOneCarrierOut()` | `charge-intel/evaluate.ts` | `api/src/eval/charges.ts`, tester | rapporten på frøsettet for CI-terskelen |
+| `setLabel`, `deleteLabel`, `listLabels`, `chargeLines` | `api/src/intelligence/charges.ts` | `charge-routes.ts` | etikettminnet og visningen av gebyrlinjer |
+| `computeTariffDetention(start, departure, terms)` | `analysis/tariff-detention.ts` | bare tester | ventetid etter tariff (ikke koblet til) |
+
+## Det lærte laget i analysen
+
+Rutene leser flagget én gang per forespørsel, før transaksjonen. Når flagget er på, laster enkeltanalysen
+klassifisereren inne i sin transaksjon. Masseanalysen bygger den én gang per masseforespørsel, fra
+etikettene slik de er lagret når forespørselen starter, og bruker den for hver kandidat.
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["Step 5 rules (unchanged)"] --> B{"Flag on?"}
+    B -- no --> Z["Step 5 packet, exactly"]
+    B -- yes --> C["Each unique line, amount > 0"]
+    C --> D{"classifyLine = other?"}
+    D -- no --> N["Keyword result wins"]
+    D -- yes --> E{"Nearest category?"}
+    E -- accessorial --> F{"Rate con, unauthorized, not contract amount?"}
+    F -- yes --> G["LRN-ACCESSORIAL-REVIEW (review)"]
+    F -- no --> N
+    E -- detention --> H["DET-UNBILLED/UNDERBILLED to review"]
+    E -- "other or abstain" --> N
+    G --> T["Totals, letter, hash"]
+    H --> T
+    N --> T
+
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style D fill:#1e90ff,stroke:#1565c0,color:#fff
+    style E fill:#1e90ff,stroke:#1565c0,color:#fff
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style G fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+1. **Bare `other`-linjer.** Reglene fra steg 5 kjører uendret. Bare unike fakturalinjer (dedupliseringen
+   fra steg 5) som `classifyLine` kaller `other`, og som har et beløp over null, blir klassifisert.
+2. **`LRN-ACCESSORIAL-REVIEW`** når forslaget er `accessorial`, bunten har en fraktavtale, linjen ikke er
+   godkjent der (samme inneholder-test som `INV-ACCESSORIAL-UNAUTH`), og beløpet er ulikt både avtalt
+   `linehaul_rate` og `fuel_surcharge`. Den siste betingelsen er **vakten mot avtalte beløp**: frøsettet har
+   ingen generisk formulering for linehaul, så «Freight charges» ligger nærmest «HEAVY LIFT CHARGES»
+   (0,445), og vakten hindrer at hovedfraktlinjen flagges som en tilleggstjeneste. Funnet har retningen
+   `overcharge`, en fast `confidence 0.5` (ikke en sannsynlighet) og `needs_human_review = true`. Tittel
+   «Possible unauthorized accessorial (suggestion)». Forklaringen og utregningen nevner det nærmeste
+   eksemplet, opphavet («public tariff example, <tariff>» eller «your team's label»), likheten, regelen om
+   0,30, listen over godkjente tilleggstjenester og gebyret, og slutter med «Suggestion only - verify before
+   disputing.» Funnet siterer beløpsfeltet på linjen, og den styrende klausulen er «Authorized
+   accessorials».
+3. **Ligner ventetid** når forslaget er `detention`. Dette lager aldri penger. I stedet får hvert
+   `DET-UNBILLED`- og `DET-UNDERBILLED`-funn `needs_human_review = true`, ett ekstra utregningstrinn per
+   lignende linje («Possible detention billed under another name: ... Confirm before claiming.») og
+   linjesitatet til den lignende linjen. Regel-ID, tittel, forklaring, beløp, retning og konfidens er
+   uendret. Begrunnelsen: når ventetid kanskje allerede er fakturert under et annet navn, må en person sjekke
+   før den kreves som ufakturert.
+4. **Summer.** `recoverableCents` er summen av funn for eget perspektiv uten gjennomgang, og
+   `pendingReviewCents` summen av dem med gjennomgang. LRN-funn og flaggede DET-funn venter derfor på
+   gjennomgang, og utkastet til brev (bare bekreftede funn) tar dem aldri med. For transportørens perspektiv
+   går et LRN-funn i motsatt retning: det telles i `ignoredFindingsCount` og lagres ikke.
+5. **Paritet uendret.** Når flagget er av, eller når det ikke oppstår noe LRN-funn og ingen lignende linje
+   som flagger et lagret funn, er den lagrede pakken (funn, summer, brev, innholdshash, kilder, tidslinje)
+   nøyaktig det steg 5 lagrer for samme inndata og tidspunkt. Paritetsgarantien mot Python fra steg 5 for
+   `classifyLine`, `computeDetention`, `applyRules`, brevet, Markdown og `buildEvidence` er uendret.
+6. **Sporbarhet (rettingsrunde 1, S3).** `learnedLabelIds`: de ulike id-ene til teametiketter (høyst 50, i
+   linjerekkefølge) som var nærmeste eksempel for et LRN-funn eller en linje som ligner ventetid. De
+   registreres i `claim.analyzed`, så en etikett som flyttet penger til gjennomgang, kan fortsatt spores
+   etter at den er slettet.
+
+`AnalyzeResponse.analysis` får `classifierVersion` (`charge-knn-v1`, eller null når flagget er av),
+`learnedFindingsCount` og `reviewFlagsCount`. `claim.analyzed` får `classifierVersion`, `seedVersion`,
+`tenantLabelCount`, `learnedFindingsCount`, `reviewFlagsCount` og `learnedLabelIds`. Formen på svaret fra
+masseanalysen er uendret.
+
+**Nødbryter.** Plattformflagget `intelligence.charge_suggestions` (oppføring i registeret pluss en
+migreringsrad, på, standard på, synlig for tenanter). Av: analysen er nøyaktig som i steg 5
+(`classifierVersion null`), de fire rutene svarer 404 etter kontrollene 401/429/403/400, og nettappen
+skjuler fanen. En feil ved lesing av flagget regnes som av og huskes i høyst 1 s (akseptert avvik S6: av er
+den sikre retningen).
+
+## Evalueringsterskel (regresjonskontroll på frøsettet)
+
+`evaluateLeaveOneCarrierOut()` klassifiserer hvert av de 175 frønavnene med bare navnene fra de fem andre
+transportørene som eksempler, med reglene over og uten teametiketter. Resultater (deterministiske, like ved
+hver kjøring):
+
+| Mål | Resultat |
+| --- | --- |
+| Nærmeste eksempel har riktig kategori (topp-1) | 173 av 175; accessorial 158 av 159 |
+| Ved terskelen 0,30 | 161 foreslått: 160 riktige, 1 feil; 14 avstått. Accessorial gjenkjent: 145 av 159 |
+| Variant med ulike navn (utelater også like navn fra andre transportører) | topp-1 173; 157 foreslått: 156 riktige, 1 feil; 18 avstått; accessorial gjenkjent 141 |
+| Nøkkelordreglene (`classifyLine`) | 34 av 175; accessorial 19 av 159 |
+| Navn på tilleggstjenester som pipelinen ville kontrollere (`classifyLine` accessorial, eller `other` pluss et foreslått accessorial) | 145 av 159 |
+| Feil oppført i rapporten | 2 |
+
+```bash
+npm run build
+npm run eval:charges                 # human summary; the second line is CHARGE_EVAL_NOTE
+npm run eval:charges -- --json       # one JSON line (ChargeEvalReport)
+npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1
+```
+
+Avslutningskode 0 betyr at alle oppgitte grenser er nådd, 1 at en grense ikke er nådd (navngitt på stderr),
+og 2 er en bruksfeil. Ingen database, ikke noe nettverk, ingenting registreres. CI (`web-ci.yml`) kjører den
+siste linjen etter evalueringen av uttrekk, i steget «Charge classifier evaluation (seed-set regression
+check, not an accuracy measure)». Grensene er lik dagens tall, så enhver endring i klassifisereren,
+terskelen eller frøsettet som senker dem, får CI til å feile.
+
+**Hva tallene betyr.** `CHARGE_EVAL_NOTE`: «Leave-one-carrier-out check on 175 public tariff charge names
+from 6 carriers. It is a regression check on this seed set, not an accuracy measure on invoices.» Tallene
+er optimistiske selv for tariffnavn: 14 normaliserte navn går igjen hos flere transportører (varianten med
+ulike navn viser virkningen). Frøsettet er LTL-tariffordforråd med 1 navn for linehaul og 3 for fuel.
+Formuleringer på fakturaer er ikke målt, fordi det ikke finnes reelle fakturaer i repoet.
+
+## Kalkulator for ventetid etter tariff (ren; ikke koblet til ennå)
+
+`computeDetention` fra steg 5 (Python-modellen: timer ganger en timesats, rundet ned til trinnet, med et
+maksimum) er uendret. Reelle tariffer fakturerer ventetid annerledes: per trinn, «or fraction thereof»
+(avrunding opp), med minste- og høyestebeløp. `computeTariffDetention(clockStart, departure, terms)` i
+`@fr/shared/analysis` regner ut dette med eksakte desimaltall og heltall av sekunder:
+
+```
+over = (departure - clockStart) - 60 * freeMinutes                    (seconds)
+n    = floor(over / (60 * incrementMinutes))   rounding 'down'
+       ceil (over / (60 * incrementMinutes))   rounding 'up'
+over <= 0 or n = 0  ->  amount 0.00 (the minimum is never applied to a zero amount)
+base   = Q(n * ratePerIncrement)
+amount = min(max(base, minimumCharge), maximumCharge)     each bound only when given; Q = half-even cents
+```
+
+Inndata: `freeMinutes` 0..1440, `incrementMinutes` 1..240, `rounding` `down` | `up`, beløp som
+`^[0-9]+(\.[0-9]{1,6})?$`, minstebeløp ikke over høyestebeløp, naive `YYYY-MM-DDTHH:MM:SS`-tidspunkter;
+alt annet kaster `AnalysisInputError`. Resultatet har `increments`, `billableMinutes`, `amount`,
+`minimumApplied`, `maximumApplied` og lesbare `steps`. En avgang før klokken starter regnes som innenfor
+fritiden (beløp 0; byggerens avvik 9, spesifikasjonen sier ikke noe om det).
+
+| Tariff (oversettelse av vilkår) | Klokke | Resultat |
+| --- | --- | --- |
+| XPO CNWY 199-AJ.4 Item 211, med trekkvogn: fritid 60 min (>= 10 000 lb), trinn på 15 min rundet opp («or fraction thereof»), $72,25 per trinn, minstebeløp $95,50 | 08:00 -> 09:20 | 20 min over, 2 trinn, **$144,50** |
+| samme | 08:00 -> 09:05 | 1 trinn = $72,25, hevet til minstebeløpet **$95,50** |
+| samme | 08:00 -> 09:00 | innenfor fritiden, **$0,00** |
+| samme med fritid 30 min (1 000-4 999 lb) | 08:00 -> 11:47:30 | 197,5 min over, 14 trinn, **$1 011,50** |
+| States Logistics LTL (2023): første 30 min gratis, $26,25 per 15 min, minstebeløp $105, høyestebeløp $630; avrunding ikke oppgitt, derfor `down` | 08:00 -> 08:50 | 1 trinn = $26,25, hevet til minstebeløpet **$105,00** |
+| samme | 08:00 -> 12:10 | 220 min over, 14 trinn, **$367,50** (avrunding opp ville gitt 15 og $393,75) |
+| samme | 08:00 -> 16:00 | 450 min over, 30 trinn = $787,50, begrenset til **$630,00** |
+| Estes Item 501 (stopp >= 20 000 lb): $40,00 per 15 min; arket oppgir verken fritid eller avrunding, så dette er en illustrasjon med en avtalt fritid på 60 min og `down` | 08:00 -> 10:10 | 70 min over, 4 trinn, **$160,00** (`up`: $200,00) |
+
+Med avrunding `down` og uten minste- eller høyestebeløp er funksjonen lik motoren fra steg 5 med
+`rate_per_hour = ratePerIncrement * 60 / incrementMinutes` (for States: $105,00 per time, 220 min over,
+210 fakturerbare minutter, $367,50). Testeren kontrollerte denne likheten på 320 genererte saker.
+
+**Brukes ikke av analysen ennå.** Ingen rute, ikke noe uttrekksfelt og ingen analysevei kaller den i steg 6.
+Å hente fritid, trinn, avrunding, minste- og høyestebeløp ut av fraktavtaler krever nye feltnøkler, en
+migrering av listen over tillatte nøkler og et registrert avvik i uttrekksparitet. Det er utsatt, så
+analysen regner fortsatt ut ventetid med modellen fra steg 5. Også utsatt: ventetid uten trekkvogn
+(dagsatser i trinn, for eksempel XPO Item 212 med $217 per dag, Estes Item 515 med $110 for de første 24 t,
+$150 for de neste 24 t og $225 per dag fra dag 3, States med $125 per 24 t etter 72 t), valg av fritid
+etter forsendelsens vekt, og fratrekk for måltidspauser.
+
+## Nett: fanen Charges
+
+`ClaimSheet.tsx` viser fanen **Charges** etter de eksisterende fanene når `GET /features` melder at flagget
+er på (feiler lukket). `ChargeLinesPanel.tsx` laster `GET /claims/:id/charge-lines`; 404 skjuler fanen. Den
+viser `CHARGE_NOTE` («Suggestions compare each charge name with labelled examples: public carrier tariff
+charge names and your team's labels. They are not verified. A suggestion only adds items for human review;
+it never confirms an amount.»), og per linje beskrivelse og beløp, en brikke `Rules: <kategori>`, en brikke
+`Suggested: <kategori> (<likhet>)` eller `No suggestion`, `Nearest example: '<tekst>' (<kilde>)` og
+`Team label: <kategori>` når en slik finnes. Brukere med `charge_labels:manage` får i tillegg **Confirm
+<kategori>** (når forslaget ikke er avstått og er ulikt teametiketten) og en nedtrekksliste **Category**
+med **Save label**. Hver handling sender én PUT; ved suksess vises «Label saved. It applies to future
+analyses.», og linjene lastes på nytt. Feil viser faste tekster (403, 409, 429, annet), aldri tekst fra
+serveren. Rettingsrunde 1 (S7): kontrollene er deaktivert for en beskrivelse serveren ville avvist
+(`isLabelable` bruker serverens regel i `SetChargeLabelBody`: over 200 tegn, kontroll- eller bidi-tegn, eller
+tom normalisert tekst). Alle ikke-klarerte strenger vises som React-tekst (`SafeText`). Lærte funn vises i
+den eksisterende fanen Evidence som alle andre funn, merket som at de trenger menneskelig gjennomgang
+(tekstene i appen er på engelsk).
+
+## Python-paritet: registrerte avvik (RD7-RD10)
+
+RD1-RD6 fra steg 5 er uendret.
+
+| ID | Avvik (TS mot Python) | Begrunnelse |
+| --- | --- | --- |
+| RD7 | Når flagget er på, kan lagrede pakker inneholde `LRN-ACCESSORIAL-REVIEW`-funn, som Python aldri lager. Beløpene deres ligger i `pendingReviewCents`. | Linjer nøkkelordreglene ikke kan plassere, ville ellers aldri bli kontrollert mot godkjente tilleggstjenester. Bare til gjennomgang. |
+| RD8 | Når flagget er på, kan et lagret `DET-UNBILLED` eller `DET-UNDERBILLED` ha `needs_human_review = true`, ekstra utregningstrinn og ekstra sitater. Det flytter beløpet fra innkrevbart til ventende og ut av brevet. | En linje som ligner ventetid under et annet navn, betyr at «ufakturert» kan være feil; en person avgjør. |
+| RD9 | `ignoredFindingsCount` (svar og revisjonsspor) kan ta med LRN-funn i motsatt retning. | Samme deling etter perspektiv som i steg 5. |
+| RD10 | `computeTariffDetention` har ingen motpart i Python. | Ny tariffmodell. Funksjonene fra steg 5 beholder paritetsgarantien. |
+
+## Standardvalg (steg 6)
+
+| ID | Standard | Stedet å endre |
+| --- | --- | --- |
+| D1 | Terskel 0,30 eksakt (3/10) | `constants.ts`, pluss nye evalueringsgrenser |
+| D2 | Ett nærmeste eksempel; teametiketter før frøsettet; ved likhet vinner det tidligste eksemplet | `classifier.ts` |
+| D3 | Det lærte laget ser bare linjer som nøkkelordreglene kaller `other`; nøkkelordresultatet vinner | `learned.ts` |
+| D4 | LRN krever fraktavtale, beløp > 0, ikke godkjent, beløp ulikt avtalt linehaul og fuel; konfidens 0,5; alltid gjennomgang | `learned.ts` |
+| D5 | Linjer som ligner ventetid, setter bare DET-UNBILLED/UNDERBILLED til gjennomgang; de lager aldri penger | `learned.ts` |
+| D6 | `charge_labels:manage` = OWNER, ADMIN, MANAGER, REVIEWER (ikke ANALYST: etiketter endrer fremtidige analyser for hele tenanten); lesing krever `claims:read`; ingen API-nøkkel-scope | `rbac.ts` |
+| D7 | 2 000 etiketter per tenant (kontroll i tjenesten, skrivinger serialisert per tenant) | `CHARGE_LABELS_MAX` |
+| D8 | Flagget `intelligence.charge_suggestions` er på som standard; av = nøyaktig steg 5 | flaggregisteret og migreringsraden |
+| D9 | Avrunding `down` når tariffen ikke sier «or fraction thereof» | den som kaller `computeTariffDetention` |
+| D10 | Frøsettet er en TS-konstant under underbanen `@fr/shared/charge-intel`; tarifftekstene er ikke committet | `seed-v1.ts` |
+
+D1, D6 og D7 venter på eierens bekreftelse (OQ3).
+
+## Utsatt (steg 6)
+
+Uttrekk av ventetidsvilkår fra fraktavtaler og bruk av dem i analysen; ventetid uten trekkvogn (dagsatser i
+trinn); fritid etter forsendelsens vekt; fratrekk for måltidspauser; embeddinger; lærte virkninger på
+reglene for linehaul og fuel; en telemetrikomponent for klassifisereren; import og eksport av etiketter; et
+tidsbudsjett per forespørsel for klassifisering (foreslått av sikkerhetsgjennomgangen; ikke bygget, se SC-2).
+
+## Grensesnitt for senere steg (etter steg 6)
+
+- **Tariffvilkår kommer neste.** `computeTariffDetention` og `TariffDetentionTerms` er klare for et steg som
+  henter fritid, trinn, avrunding, minste- og høyestebeløp ut av fraktavtalen. Det steget trenger nye
+  feltnøkler for uttrekk, en migrering av listen over tillatte nøkler og et registrert avvik i
+  uttrekksparitet. Når vilkårene mangler, må analysen beholde `computeDetention` fra steg 5, så pariteten
+  holder.
+- `packet_findings.rule_id` kan nå også være `LRN-ACCESSORIAL-REVIEW` (`LEARNED_RULE_IDS`). Reglene fra steg
+  5 beholder `RULE_IDS` og `RULES_VERSION` `rules-v1`; lært oppførsel versjoneres med
+  `CHARGE_CLASSIFIER_VERSION` og `SEED_VERSION`, som begge registreres i `claim.analyzed`. `similar-v1` fra
+  steg 4 behandler regel-ID-er som vanlige strenger, så et LRN-funn teller med i overlappen av regel-ID-er.
+- En ny versjon av frøsettet må oppdatere `SEED_VERSION`, kildehenvisningene og CI-grensene samtidig, og
+  følge regelen om opphav (bare navn, med kildehenvisning, etter eierens beslutning om OQ1).
+- Teksten i LRN-funn inneholder den rå beskrivelsen av fakturalinjen, som funnene fra steg 5 (SA-5): en
+  fremtidig HTML-, Markdown- eller PDF-visning av funn må rense den.
+
+## Merknader (steg 6)
+
+- Hva som ble kjørt (lokalt, Windows, Node 22.23.3, **ikke GitHub CI**; modus for lite minne, så tunge
+  testsett ble ikke kjørt):
+  - Byggeren ved `3a8125d`: lint og typecheck rene (shared, api, web); enhetstester shared 190 (16 filer),
+    api 392 (28 filer), web alle 11 filer; `prisma generate`; `prisma migrate diff` (uten database);
+    `eval:charges` med CI-grensene ga avslutningskode 0, og en grense som med vilje skulle feile
+    (`--min-top1 174`), ga 1.
+  - Byggeren ved `43d7d4c` (rettingsrunde 1): lint og typecheck rene; enhetstester shared 195 (17 filer),
+    api 393 (28 filer), og nettappens filer for gebyrer, analyse og steg 4 (33 tester); `eval:charges` ga 0
+    med uendrede tall.
+  - Testeren, nivå L (rene akseptansetester i shared) ved `3a8125d` med fersk `dist`: 6 filer, 73 av 73
+    bestått; hele akseptansesettet for shared 148 av 148; eslint og tsc på testfilene rene. Den første
+    kjøringen (før M2 og S2 var bygget) hadde 31 feil: 30 ikke implementert ennå og 1 kontraktsavvik
+    (`formatSimilarity` returnerte et tall), rettet i `57a3ca4`.
+  - Testeren etter rettingsrunde 1: nivå L med de nye sakene (tak på spørringen, kostnadsgrense, `labelIds`)
+    ga 77 av 78 ved `43d7d4c`; CI-S25 målte 808 ms mot grensen på 20 s. Den ene feilen (D1: pakkeroten
+    eksporterte ikke `LEARNED_LABEL_IDS_MAX`) ble rettet i `a1b1c2a` (rettingsrunde 2; byggerens
+    enhetstester for shared 196). Ved `a1b1c2a` besto hele akseptansesettet for shared 153 av 153.
+  - Sikkerhetsgjennomgang av `51ea826..3a8125d`: ingen Critical eller High. S1 (Medium, CPU i
+    klassifisereren) og S2, S3, S4, S7 (Low/Info) ble rettet i `43d7d4c`; S5 og S6 ble akseptert; S8
+    registrerer dataenes opphav.
+- **Ikke kjørt ennå:** akseptansetester på nivå H (API, database, på tvers av tenanter, RBAC,
+  revisjonsspor, flagg, CLI, nett) og integrasjonstestene (`api/test/integration/charge-labels.int.test.ts`
+  og de oppdaterte låsingene i fire eksisterende filer) er skrevet, men venter på eierens klarsignal (OQ4).
+  Det samme gjelder paritetstestene, kontrollen av migreringsavvik mot en skyggedatabase,
+  `verify-ci-locally` og GitHub CI. Tenant-isolasjonen for `charge_labels` er derfor bare kontrollert med
+  kodegjennomgang og enhetstester, ikke med en kjøring mot databasen. Sakene på nivå H som kom etter
+  rettingsrunde 1 (`learnedLabelIds`, hashen, kappløpet om taket, byggingen i masseanalysen), er skrevet og
+  venter på den samme kjøringen.
+- Rekkefølge for den tunge kjøringen på Node 22: `npm run build`, så `/verify-ci-locally --node 22 --only
+  acceptance` (`CI=true`), så `npm run test:acceptance -w web`.
+- Steg 6 bygger på steg 5, der den bekreftende kjøringen (R3) fortsatt er åpen på `feat/analysis`.
+- Gjennomgangens vurdering: venter (gjennomgåeren kjører etter denne dokumentasjonen).
 - Ikke verifisert: GitHub CI, container-images, compose-stacken, Playwright, enhver AWS-utrulling.

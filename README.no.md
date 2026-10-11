@@ -177,7 +177,7 @@ Programvarefundamentet ovenfor er nødvendig, ikke tilstrekkelig. Fortsatt påkr
 > [ARCHITECTURE.no.md, «Nettplattform»](ARCHITECTURE.no.md#nettplattform-typescript-steg-1-2).
 
 En nettapplikasjon med flere tenants for arbeidsflyten rundt bevispakker, bygget med sikkerhet først.
-Byggesteg 1 til 5 er ferdige:
+Byggesteg 1 til 6 er ferdige:
 
 - **Steg 1:** innlogging med e-post og passord (argon2id), et kortlivet tilgangstoken pluss en roterende
   refresh-informasjonskapsel, TOTP-MFA for eier, administrator og plattformroller, utestenging med
@@ -207,13 +207,20 @@ Byggesteg 1 til 5 er ferdige:
   En **analyse**-handling gjør et importert krav som venter på analyse, om til bevispakkerevisjon 1 for
   menneskelig gjennomgang; en massehandling analyserer opptil 10 om gangen. Se
   [Kravanalyse (steg 5)](#kravanalyse-steg-5).
+- **Steg 6:** **gebyrforslag og teametiketter**. Fanen Charges foreslår en kategori for hver gebyrlinje på
+  fakturaen ved å sammenligne den med merkede eksempler (175 gebyrnavn fra seks offentlige tariffer fra
+  transportører, pluss teamets egne etiketter); gjennomgåere bekrefter eller retter den, og senere analyser
+  bruker etikettene. Analysen kan legge til funn om mulige ikke-godkjente tilleggstjenester som bare går til
+  gjennomgang, og setter ventetidsfunn til gjennomgang når en linje ligner ventetid under et annet navn.
+  Forslag er ikke verifisert og bekrefter aldri et beløp. Se
+  [Gebyrforslag og teametiketter (steg 6)](#gebyrforslag-og-teametiketter-steg-6).
 
 «Send» merker bare et krav som klart til sending og logger det i revisjonssporet. Ingen e-post sendes, og
 ingen penger flyttes. De seedede kravene og bevispakkene er syntetiske og er transkribert fra
 Python-CLI-ens utdata på `tests/fixtures/`. Krav som opprettes ved import, har ingen beløp eller pakke før
 noen kjører analysen (steg 5). Funn er regelresultater på uttrukne felt og er utkast som trenger
-menneskelig gjennomgang. OCR, mottak av videresendt e-post og enhver lært modell eller LLM-kall er senere
-steg.
+menneskelig gjennomgang. Gebyrforslagene i steg 6 sammenligner navn med merkede eksempler; det finnes ingen
+trent modell. OCR, mottak av videresendt e-post og ethvert LLM-kall er senere steg.
 
 **Python-tjenesten og pilotdashbordet `webapp/` er uendret og blir værende.** Nettplattformen har sin
 egen compose-fil (`compose.web.yml`), sin egen CI-arbeidsflyt (`.github/workflows/web-ci.yml`) og sin
@@ -466,6 +473,9 @@ cache, ingen LLM eller annet «AI»-kall, og ingen tall for treffsikkerhet eller
 sted. Briefens «Hebbian router», «neural mesh» og «solved-problems cache (~250x)» er **ikke
 implementert**; hva som leveres i stedet, står i
 [ARCHITECTURE.no.md, «Begreper i briefen mot det som er bygget»](ARCHITECTURE.no.md#begreper-i-briefen-mot-det-som-er-bygget).
+Denne regelen gjelder skjermene fra steg 4. Steg 6 la senere til gebyrforslag i kravpanelet: en
+sammenligning med nærmeste merkede gebyrnavn, uten trent modell og uten LLM-kall (se
+[Gebyrforslag og teametiketter (steg 6)](#gebyrforslag-og-teametiketter-steg-6)).
 
 ### Hvem ser hva
 
@@ -804,6 +814,149 @@ restrisikoer står i
 [technical/web-platform-security.md, del 9.5](technical/web-platform-security.md#95-accepted-residuals-step-5)
 (engelsk).
 
+## Gebyrforslag og teametiketter (steg 6)
+
+Kjøringen `REQ-20261011-charge-intelligence` legger til forslag til kategori for gebyrlinjer på fakturaer,
+et etikettminne for teamet og funn i analysen som bare går til gjennomgang. Arkitektur:
+[ARCHITECTURE.no.md, gebyrintelligens](ARCHITECTURE.no.md#nettplattform-gebyrintelligens-steg-6).
+Trusselmodell og restrisikoer:
+[technical/web-platform-security.md, del 10](technical/web-platform-security.md#10-step-6-charge-intelligence)
+(engelsk).
+
+**Hvorfor.** De faste reglene gjenkjenner en gebyrlinje på nøkkelord. På 175 gebyrnavn fra seks offentlige
+tariffer fra transportører gjenkjente de 19 av de 159 navnene på tilleggstjenester (accessorials). En linje
+reglene ikke gjenkjenner, blir aldri kontrollert mot tilleggstjenestene som er godkjent i fraktavtalen
+(rate confirmation).
+
+**Hva et forslag er, og hva det ikke er.** Klassifisereren sammenligner et gebyrnavn med merkede
+eksempler (overlapp i tegn og ord, nærmeste eksempel) og foreslår eksemplets kategori når likheten er
+minst 0,30. Under det viser den «No suggestion». Eksemplene er 175 gebyrnavn fra seks offentlige tariffer
+fra transportører (bare navn, med kildehenvisning) og teamets egne etiketter. Det finnes ingen trent
+modell, ingen LLM-kall og ingen nettverkskall. Et forslag er ikke verifisert. Det kan bare legge til et
+punkt for menneskelig gjennomgang og bekrefter aldri et beløp. Evalueringen i CI er en regresjonskontroll
+på de offentlige tariffnavnene, ikke et mål på nøyaktighet på fakturaer.
+
+**Dataenes opphav.** De 175 navnene er kopiert fra offentlige regeltariffer fra XPO, Estes, Dohrn, Magnum,
+Gardewine og States Logistics; kildene og URL-ene står i `packages/shared/src/charge-intel/seed-v1.ts`.
+Ingen satser, kunder, forsendelser eller fakturaer lagres. Å bruke disse reelle offentlige navnene er en
+eierbeslutning fra 2026-10-10/11. Regelen «kun syntetiske data» i `CLAUDE.md` er ikke endret; en datert
+unntaksmerknad der er et åpent spørsmål til eieren (OQ1).
+
+### Hvem kan gjøre hva
+
+| Rolle | Se fanen Charges og etiketter | Bekrefte eller rette en kategori (teametikett) |
+| --- | --- | --- |
+| OWNER, ADMIN, MANAGER, REVIEWER | ja | ja |
+| ANALYST, VIEWER | ja | nei |
+| PLATFORM_DEV, SUPER_ADMIN | nei | nei |
+
+Tillatelsen heter `charge_labels:manage`. Lesing krever `claims:read`. API-nøkler kan ikke kalle
+gebyrrutene (403). ANALYST kan ikke merke, fordi en etikett endrer senere analyser for hele organisasjonen.
+
+### Fanen Charges
+
+Åpne et krav og velg **Charges**. Fanen viser hver gebyrlinje på fakturaene i kravets godtatte dokumenter,
+uansett status på kravet. Den starter med: «Suggestions compare each charge name with labelled examples:
+public carrier tariff charge names and your team's labels. They are not verified. A suggestion only adds
+items for human review; it never confirms an amount.» Per linje ser du:
+
+- beskrivelsen og beløpet;
+- `Rules: <kategori>`: det de faste reglene kaller linjen;
+- `Suggested: <kategori> (0.xxx)` med likheten, eller `No suggestion`;
+- `Nearest example: '<navn>' (<kilde>)`: den offentlige tariffen eller «Your team's label»;
+- `Team label: <kategori>` når teamet har merket denne formuleringen.
+
+Med `charge_labels:manage` får du også **Confirm <kategori>** (når det finnes et forslag som er ulikt
+teametiketten) og en liste **Category** med **Save label**. Ved suksess: «Label saved. It applies to future
+analyses.» Feil gir en fast tekst: «You do not have permission to label charges.» (403), «This organization
+has reached the maximum number of charge labels.» (409), «Too many requests. Try again later.» (429), ellers
+«Could not save the label. Try again.» Kontrollene er deaktivert for en beskrivelse serveren ville avvist
+(over 200 tegn, kontrolltegn eller tegn for skriveretning, eller ingenting igjen etter normalisering).
+Tekstene i appen er på engelsk.
+
+**Slik virker en etikett.** En etikett lagres per organisasjon for den normaliserte formuleringen (små
+bokstaver, tegnsetting fjernet): én etikett per formulering, og den siste gjelder. Den brukes straks av
+fanen Charges og av alle senere analyser, for akkurat den formuleringen og, gjennom likhet, for lignende
+formuleringer. Pakker som allerede er laget, endres ikke. En etikett endrer aldri det de faste reglene
+bestemmer: den betyr bare noe for linjer reglene kaller `other`. En organisasjon kan ha høyst 2 000
+etiketter. Hver endring registreres i revisjonssporet (`charge_label.set`, `charge_label.deleted`) med
+etikettens id, kategorien og en SHA-256 av formuleringen, aldri selve formuleringen.
+
+### Hva som endres i analysen
+
+Bare for fakturalinjer som de faste reglene kaller `other`:
+
+- **Mulig ikke-godkjent tilleggstjeneste.** Hvis det nærmeste eksemplet er en tilleggstjeneste, kravet har
+  en fraktavtale, linjen ikke står der som godkjent, og beløpet ikke er det avtalte beløpet for linehaul
+  eller fuel, legger analysen til funnet `LRN-ACCESSORIAL-REVIEW` («Possible unauthorized accessorial
+  (suggestion)»). Det trenger alltid menneskelig gjennomgang, har en fast konfidens på 0,5 (ikke en
+  sannsynlighet), teller bare i summen som venter på gjennomgang, og kommer aldri med i utkastet til brev.
+  Teksten nevner det nærmeste eksemplet og slutter med «Suggestion only - verify before disputing.»
+- **Ventetid under et annet navn.** Hvis det nærmeste eksemplet er ventetid (detention), lager analysen
+  ikke noe nytt beløp. I stedet settes ventetidsfunnene «ufakturert» og «underfakturert» (`DET-UNBILLED`,
+  `DET-UNDERBILLED`) til å trenge menneskelig gjennomgang, med trinnet «Possible detention billed under
+  another name: ... Confirm before claiming.» Beløpet flyttes fra innkrevbar sum til sum som venter på
+  gjennomgang, og ut av utkastet til brev, til en gjennomgåer bekrefter.
+
+Alt annet er nøyaktig som i steg 5. Svaret fra analysen får `classifierVersion`, `learnedFindingsCount` og
+`reviewFlagsCount`; `claim.analyzed` registrerer også hvilke teametiketter som påvirket resultatet
+(`learnedLabelIds`).
+
+### API
+
+| Rute | Tillatelse | Svar ved suksess |
+| --- | --- | --- |
+| `GET /api/v1/claims/:id/charge-lines` | `claims:read` | 200: linjer med regelkategori, forslag og teametikett |
+| `GET /api/v1/charge-labels?page=1&pageSize=25` | `claims:read` | 200: organisasjonens etiketter (`pageSize` 1..100) |
+| `PUT /api/v1/charge-labels` | `charge_labels:manage` | 200: `{ "label": ..., "outcome": "created" \| "changed" \| "unchanged" }`; kropp `{ "description": "...", "category": "accessorial" }` |
+| `DELETE /api/v1/charge-labels/:id` | `charge_labels:manage` | 204 |
+
+Alle fire bruker ratebegrensningen `intelligence` per bruker (`RATE_LIMIT_INTELLIGENCE_MAX`, standard 120).
+PUT og DELETE går gjennom de samme Origin- og CSRF-kontrollene som alle andre ruter som endrer noe. 409
+`label_limit_reached` når organisasjonen allerede har 2 000 etiketter (å endre en eksisterende etikett er
+alltid tillatt).
+
+### Slå det av
+
+Plattformansatte kan slå av flagget **`intelligence.charge_suggestions`** («Charge-line suggestions and team
+labels», på som standard) i fanen Flags på utviklerdashbordet. Av: analysen er nøyaktig som i steg 5, de
+fire rutene svarer 404, og fanen Charges forsvinner. Etikettene blir liggende lagret og brukes igjen når
+flagget slås på.
+
+### Evaluering (regresjonskontroll på frøsettet)
+
+```bash
+npm run build
+npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1
+```
+
+Den klassifiserer hvert av de 175 offentlige tariffnavnene med bare navnene fra de fem andre
+transportørene (ingen database, ikke noe nettverk, ingenting registreres). I dag: nærmeste eksempel riktig
+for 173 av 175; ved terskelen 0,30 er 161 foreslått (160 riktige, 1 feil) og 14 uten forslag; navn på
+tilleggstjenester gjenkjent 145 av 159, mot 19 av 159 for nøkkelordreglene. CI kjører akkurat denne
+kommandoen; grensene er lik dagens tall, så en endring som senker dem, får bygget til å feile. `--json`
+skriver hele rapporten. Disse tallene gjelder tariffnavn, ikke fakturaer: de er en regresjonskontroll på
+dette frøsettet, ikke et mål på nøyaktighet.
+
+### Ventetid etter tariffvilkår (ikke i bruk ennå)
+
+`computeTariffDetention` i `@fr/shared` regner ut ventetid slik tariffene til transportørene beskriver den:
+fritid, fakturering i trinn rundet opp («or fraction thereof») eller ned, en sats per trinn, og et minste-
+og høyestebeløp. Eksempel (vilkårene i XPO-tariffen: 60 minutter fritid, $72,25 per påbegynte 15 minutter,
+minstebeløp $95,50): 08:00 til 09:20 er 2 trinn, $144,50. **Analysen bruker den ikke ennå**: å lese disse
+vilkårene fra fraktavtaler er et senere steg, så ventetid regnes fortsatt ut med reglene fra steg 5.
+
+### Ikke dekket (akseptert foreløpig)
+
+Generiske formuleringer for linehaul, som «Freight charges», ligger nær navn på tilleggstjenester i
+frøsettet til teamet merker dem; bare kontrollen mot avtalte beløp og menneskelig gjennomgang stopper et
+feil funn. Etiketter gjelder per organisasjon, ikke per transportør eller kunde. Frøsettet har få navn for
+linehaul (1) og fuel (3). En gjennomgåer som kan merke, kan ved å merke en linje som ventetid flytte
+ventetidsfunn i senere analyser til gjennomgang (det registreres i revisjonssporet, kan spores, og lager
+aldri penger). Den fullstendige listen står i
+[technical/web-platform-security.md, del 10.5](technical/web-platform-security.md#105-accepted-residuals-step-6)
+(engelsk).
+
 ## Tester og kontroller
 
 ```bash
@@ -818,6 +971,7 @@ npm run test:integration     # api, against a migrated + seeded test DB (TEST_DA
                              # parity suites (step 3 extraction, step 5 rules); see the env block in .github/workflows/web-ci.yml
 npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
 npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1   # step 4: after npm run build
+npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1   # step 6: after npm run build
 npm run audit && npm audit signatures
 terraform -chdir=infra fmt -check -recursive && terraform -chdir=infra init -backend=false && terraform -chdir=infra validate
 ```
@@ -867,3 +1021,14 @@ lite ledig minne. Akseptansetestene for nettappen er ikke kjørt ennå. Rettings
 (budsjettet for masseanalyse) ble bare kontrollert med lint, typecheck og utvalgte enhetstester. **Ikke
 kjørt:** akseptanse og integrasjon ved `5c047fb`, GitHub CI, container-images, Playwright, enhver
 AWS-utrulling.
+
+Steg 6 (2026-10-11, kjøringen `REQ-20261011-charge-intelligence`, Windows, Node 22.23.3, **lokale
+kjøringer, ikke GitHub CI**; modus for lite minne, så valideringen er **ikke fullført**): byggeren kjørte
+lint, typecheck og enhetstester (ved `3a8125d`: shared 190, api 392, alle nettappens filer; etter
+rettingsrunde 1 ved `43d7d4c`: shared 195, api 393, nettappens filer for gebyrer, analyse og steg 4 med 33
+tester) og `npm run eval:charges` med CI-grensene (avslutningskode 0). Testerens rene akseptansetester i
+shared (nivå L) besto 73 av 73 ved `3a8125d`; etter rettingsrunde 1 fant de én manglende eksport fra
+pakkeroten, rettet i `a1b1c2a`, der hele akseptansesettet for shared besto 153 av 153. **Skrevet, men ikke
+kjørt** (venter på eierens klarsignal): integrasjonstestene for den nye tabellen (RLS, tilganger, avvisning
+på tvers av tenanter), akseptansetestene for API, database, CLI og nett (nivå H) og paritetstestene.
+**Ikke kjørt:** GitHub CI, container-images, Playwright, enhver AWS-utrulling.
