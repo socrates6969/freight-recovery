@@ -34,7 +34,7 @@ import { isAnalysisDbError } from '../http/db-guard.js';
 import { HttpError, errors } from '../http/errors.js';
 import { pointerToLocator, loadAnalysisInput, type AnalysisSource, type BundleProvenance, type FieldRef } from '../imports/bundle.js';
 import { parseInvoiceDate } from '../imports/commit-service.js';
-import { loadClassifier } from '../intelligence/charges.js';
+import { loadClassifier, type LoadedClassifier } from '../intelligence/charges.js';
 
 import { packetContentHash, type HashCitation, type HashPacket } from './content-hash.js';
 import type { Actor } from './service.js';
@@ -126,6 +126,8 @@ export interface AnalysisPacketBuild {
     /** Step 6: stored LRN findings and stored step-5 findings switched to review (C4.4). */
     learnedFindingsCount: number;
     reviewFlagsCount: number;
+    /** Fix round 1 (S3): tenant label ids that were the nearest example of a learned effect (<= 50). */
+    learnedLabelIds: string[];
   };
 }
 
@@ -176,7 +178,7 @@ export function buildAnalysisPacket(args: {
   const { input, claim, now, actorId } = args;
   const persp = claim.perspective === 'SHIPPER' ? 'shipper' : 'carrier';
   const docs: EvidenceDoc[] = input.sources.map((s) => ({ filename: s.displayName, doc_type: EVIDENCE_DOC_TYPE[s.docType], sha256: s.sha256 }));
-  const { evidence, traces, extraLines, learnedFindingsCount, reviewFlagsCount } = buildEvidenceLearned(
+  const { evidence, traces, extraLines, learnedFindingsCount, reviewFlagsCount, labelIds } = buildEvidenceLearned(
     docs,
     input.bundle,
     persp,
@@ -336,6 +338,7 @@ export function buildAnalysisPacket(args: {
       pendingReviewCents,
       learnedFindingsCount,
       reviewFlagsCount,
+      learnedLabelIds: labelIds,
     },
   };
 }
@@ -350,7 +353,14 @@ export async function analyzeClaim(
   tx: TenantTx,
   claimId: string,
   actor: Actor,
-  opts: { bulk: boolean; now?: Date; /** Step 6: charge-suggestions flag (read once per request). */ learning?: boolean },
+  opts: {
+    bulk: boolean;
+    now?: Date;
+    /** Step 6: charge-suggestions flag (read once per request). */
+    learning?: boolean;
+    /** Fix round 1 (S1): a classifier already built for this request (bulk); else loaded here. */
+    preloaded?: LoadedClassifier;
+  },
 ): Promise<AnalyzeResponseDto> {
   if (!isUuid(claimId)) throw errors.notFound();
   if (!(await lockClaimForUpdate(tx, claimId))) throw errors.notFound();
@@ -361,7 +371,7 @@ export async function analyzeClaim(
   const input = await loadAnalysisInput(tx, claimId);
   if (input.sources.length === 0) throw errors.invalidState();
   const learning = opts.learning === true;
-  const { classifier, labelCount } = learning ? await loadClassifier(tx) : { classifier: null, labelCount: 0 };
+  const { classifier, labelCount } = learning ? (opts.preloaded ?? (await loadClassifier(tx))) : { classifier: null, labelCount: 0 };
 
   let built: AnalysisPacketBuild;
   try {
@@ -419,6 +429,7 @@ export async function analyzeClaim(
       tenantLabelCount: labelCount,
       learnedFindingsCount: summary.learnedFindingsCount,
       reviewFlagsCount: summary.reviewFlagsCount,
+      learnedLabelIds: summary.learnedLabelIds,
     },
     ip: actor.ip,
     requestId: actor.requestId,
@@ -465,13 +476,15 @@ export async function analyzeAwaiting(
       select: { id: true, claimNumber: true },
     }),
   );
+  // Fix round 1 (S1): the tenant's labels are read and the classifier is built ONCE per bulk request.
+  const preloaded = learning && candidates.length > 0 ? await db.tx((tx) => loadClassifier(tx)) : undefined;
   const out: BulkAnalyzeResponseDto = { limit, examined: 0, analyzed: [], skipped: [], failed: [], remaining: 0 };
   for (const c of candidates) {
     if (out.analyzed.length >= limit) break;
     if (out.examined > 0 && !(await chargeExtra())) break;
     out.examined += 1;
     try {
-      const r = await db.tx((tx) => analyzeClaim(tx, c.id, actor, { bulk: true, learning }));
+      const r = await db.tx((tx) => analyzeClaim(tx, c.id, actor, { bulk: true, learning, ...(preloaded ? { preloaded } : {}) }));
       out.analyzed.push({
         claimId: c.id,
         claimNumber: c.claimNumber,

@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ApiError } from '../src/api/client';
 import { AppRoot } from '../src/app-root';
-import { chargeErrorText } from '../src/features/intelligence/ChargeLinesPanel';
+import { chargeErrorText, isLabelable } from '../src/features/intelligence/ChargeLinesPanel';
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const HOSTILE = '<script>alert(1)</script><img src=x onerror=alert(1)>';
@@ -148,6 +148,21 @@ describe('claim sheet Charges tab', () => {
     expect(await screen.findByText(CHARGE_TEXT.limit)).toBeInTheDocument();
     expect(screen.queryByText('SERVER TEXT')).toBeNull();
     expect(JSON.parse(calls.find((c) => c.method === 'PUT')?.body ?? '{}')).toEqual({ description: 'Linehaul', category: 'fuel' });
+  });
+
+  it('fix round 1 (S7): label actions are disabled for lines the server would refuse', async () => {
+    const long = { ...lines, lines: [{ ...lines.lines[1], index: 0, description: 'x'.repeat(201), label: null }] };
+    const { fetchImpl, calls } = setup('REVIEWER', { chargeLines: () => json(200, long) });
+    const u = userEvent.setup();
+    render(<AppRoot fetchImpl={fetchImpl} initialEntries={[`/claims/${claim.id}`]} />);
+    await u.click(await screen.findByRole('tab', { name: 'Charges' }));
+    const list = await screen.findByRole('list', { name: CHARGE_TEXT.heading });
+    expect(within(list).getByRole('button', { name: CHARGE_TEXT.save })).toBeDisabled();
+    expect(within(list).getByRole('combobox', { name: CHARGE_TEXT.category })).toBeDisabled();
+    expect(isLabelable('x'.repeat(201))).toBe(false);
+    expect(isLabelable('a‮b')).toBe(false);
+    expect(isLabelable('Lumper fee')).toBe(true);
+    expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
   });
 
   it('maps statuses to the fixed alert texts', () => {

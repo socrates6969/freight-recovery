@@ -11,6 +11,12 @@ vi.mock('../src/audit/audit.js', () => ({
     return { id: 'a', seq: 1, hash: 'h' };
   }),
 }));
+const locks: string[] = [];
+vi.mock('../src/db/charge-label-locks.js', () => ({
+  lockChargeLabels: vi.fn(async (_tx: unknown, tenantId: string) => {
+    locks.push(tenantId);
+  }),
+}));
 vi.mock('../src/imports/bundle.js', () => ({
   loadAnalysisInput: vi.fn(async () => ({
     bundle: {
@@ -84,7 +90,11 @@ const row = (over: Partial<Row> = {}): Row => ({ id: '55555555-5555-4555-8555-55
 
 beforeEach(() => {
   audits.length = 0;
+  locks.length = 0;
 });
+
+/** sha256 of a normalized text (S4). */
+const sha = async (t: string) => (await import('node:crypto')).createHash('sha256').update(t).digest('hex');
 
 describe('setLabel', () => {
   it('creates a label keyed by normText with an audit event (no text in metadata)', async () => {
@@ -93,7 +103,11 @@ describe('setLabel', () => {
     expect(r.outcome).toBe('created');
     expect(r.label).toMatchObject({ normalizedText: 'lumper fee', description: 'Lumper-Fee!', category: 'accessorial', version: 1, createdAt: D.toISOString() });
     expect(calls.some((c) => c.includes('"createdById":"' + U + '"') && c.includes('"updatedById":"' + U + '"'))).toBe(true);
-    expect(audits).toEqual([{ action: 'charge_label.set', targetId: r.label.id, metadata: { labelId: r.label.id, category: 'accessorial', outcome: 'created' } }]);
+    expect(audits).toEqual([
+      { action: 'charge_label.set', targetId: r.label.id, metadata: { labelId: r.label.id, category: 'accessorial', outcome: 'created', normalizedTextSha256: await sha('lumper fee') } },
+    ]);
+    // S2: the per-tenant advisory lock is taken in the write transaction.
+    expect(locks).toEqual([T]);
   });
 
   it('same category: unchanged, no write and no audit; other category: changed with previousCategory', async () => {
@@ -102,7 +116,7 @@ describe('setLabel', () => {
     expect(audits).toEqual([]);
     const ch = await setLabel(db as never, actor, { description: 'Lumper fee', category: 'detention' });
     expect(ch).toMatchObject({ outcome: 'changed', label: { category: 'detention', version: 2 } });
-    expect(audits[0]?.metadata).toEqual({ labelId: ch.label.id, category: 'detention', previousCategory: 'accessorial', outcome: 'changed' });
+    expect(audits[0]?.metadata).toEqual({ labelId: ch.label.id, category: 'detention', previousCategory: 'accessorial', outcome: 'changed', normalizedTextSha256: await sha('lumper fee') });
   });
 
   it('refuses a new label at the cap (409) but still allows updates', async () => {
@@ -128,7 +142,7 @@ describe('deleteLabel, listLabels, chargeLines', () => {
     await expect(deleteLabel(db as never, actor, '66666666-6666-4666-8666-666666666666')).rejects.toMatchObject({ statusCode: 404 });
     await deleteLabel(db as never, actor, row().id);
     expect(calls).toContain('delete');
-    expect(audits).toEqual([{ action: 'charge_label.deleted', targetId: row().id, metadata: { labelId: row().id, category: 'accessorial' } }]);
+    expect(audits).toEqual([{ action: 'charge_label.deleted', targetId: row().id, metadata: { labelId: row().id, category: 'accessorial', normalizedTextSha256: await sha('lumper fee') } }]);
   });
 
   it('listLabels pages with skip/take', async () => {

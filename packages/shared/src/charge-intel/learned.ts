@@ -26,6 +26,8 @@ import type { LearnedRuleId } from './constants.js';
 
 /** Confidence of a learned finding (fixed; always needs human review). */
 export const LEARNED_CONFIDENCE = 0.5;
+/** At most this many influencing label ids are reported (audit sanitizer keeps 50 array items). */
+export const LEARNED_LABEL_IDS_MAX = 50;
 /** Cap of a nearest-example text quoted in findings. */
 const EXAMPLE_TEXT_LIMIT = 200;
 const REVIEW_FLAG_RULES: ReadonlySet<string> = new Set(['DET-UNBILLED', 'DET-UNDERBILLED']);
@@ -49,6 +51,11 @@ export interface LearnedOutcome {
   extraLines: number[][];
   learnedFindingsCount: number;
   reviewFlagsCount: number;
+  /**
+   * Fix round 1 (S3): ids of tenant labels that were the nearest example of an LRN finding or a detention
+   * look-alike in this analysis (distinct, line order, at most LEARNED_LABEL_IDS_MAX).
+   */
+  labelIds: string[];
 }
 
 function originText(n: NearestExample): string {
@@ -64,7 +71,7 @@ const optDec = (v: string | null | undefined): Dec | null => (v === null || v ==
 
 /** The step-5 result unchanged (no learned effect). */
 function unchanged(traced: TracedResult): LearnedOutcome {
-  return { result: traced.result, traces: traced.traces, extraLines: traced.traces.map(() => []), learnedFindingsCount: 0, reviewFlagsCount: 0 };
+  return { result: traced.result, traces: traced.traces, extraLines: traced.traces.map(() => []), learnedFindingsCount: 0, reviewFlagsCount: 0, labelIds: [] };
 }
 
 /**
@@ -90,6 +97,10 @@ export function applyLearning(
 
   const lrn: { finding: AnalysisFinding; trace: FindingTrace }[] = [];
   const lookAlikes: { line: CheckedLine; nearest: NearestExample; similarity: number }[] = [];
+  const labelIds: string[] = [];
+  const noteLabel = (id: string | null): void => {
+    if (id !== null && !labelIds.includes(id) && labelIds.length < LEARNED_LABEL_IDS_MAX) labelIds.push(id);
+  };
   for (const ln of dedupe(lines).unique) {
     if (classifyLine(ln.description) !== 'other' || !gt(ln.amount, zero)) continue;
     const s = classify(ln.description);
@@ -103,6 +114,7 @@ export function applyLearning(
       const isAuthorized = d !== '' && authorized.some((a) => d.includes(a) || a.includes(d));
       const isContracted = (linehaul !== null && compare(ln.amount, linehaul) === 0) || (fuel !== null && compare(ln.amount, fuel) === 0);
       if (!isAuthorized && !isContracted) {
+        noteLabel(s.nearest.labelId);
         lrn.push({
           finding: {
             rule_id: 'LRN-ACCESSORIAL-REVIEW',
@@ -123,6 +135,7 @@ export function applyLearning(
         });
       }
     } else if (s.category === 'detention') {
+      noteLabel(s.nearest.labelId);
       lookAlikes.push({ line: ln, nearest: s.nearest, similarity: s.similarity });
     }
   }
@@ -156,6 +169,7 @@ export function applyLearning(
     extraLines: [...ownRule.map((x) => (x.flagged ? [...lookAlikeLines] : [])), ...mineLrn.map(() => [])],
     learnedFindingsCount: mineLrn.length,
     reviewFlagsCount: ownRule.filter((x) => x.flagged).length,
+    labelIds,
   };
 }
 
@@ -199,5 +213,6 @@ export function buildEvidenceLearned(
     extraLines: learned.extraLines,
     learnedFindingsCount: learned.learnedFindingsCount,
     reviewFlagsCount: learned.reviewFlagsCount,
+    labelIds: learned.labelIds,
   };
 }

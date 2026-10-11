@@ -26,8 +26,11 @@ import {
 } from '@fr/shared';
 import { buildChargeClassifier, normText, type ChargeClassifier } from '@fr/shared/charge-intel';
 
+import { createHash } from 'node:crypto';
+
 import { appendAudit } from '../audit/audit.js';
 import type { Actor } from '../claims/service.js';
+import { lockChargeLabels } from '../db/charge-label-locks.js';
 import { isUuid } from '../db/errors.js';
 import type { TenantDb, TenantTx } from '../db/tenant.js';
 import { HttpError, errors } from '../http/errors.js';
@@ -63,8 +66,21 @@ function toDto(r: LabelRow): ChargeLabelDto {
   };
 }
 
-/** The tenant's labels and the classifier built from them (inside the caller's tenant transaction). */
-export async function loadClassifier(tx: TenantTx): Promise<{ classifier: ChargeClassifier; labelCount: number }> {
+export interface LoadedClassifier {
+  classifier: ChargeClassifier;
+  labelCount: number;
+}
+
+/** sha256 (hex) of a normalized text: lets the audit chain identify a label key without storing it (S4). */
+export function normalizedTextSha256(normalizedText: string): string {
+  return createHash('sha256').update(normalizedText, 'utf8').digest('hex');
+}
+
+/**
+ * The tenant's labels and the classifier built from them (inside the caller's tenant transaction). Build
+ * it once per request and reuse it for every line / claim of that request (fix round 1, S1).
+ */
+export async function loadClassifier(tx: TenantTx): Promise<LoadedClassifier> {
   const rows = await tx.chargeLabel.findMany({
     select: { id: true, description: true, category: true },
     orderBy: [{ normalizedText: 'asc' }, { id: 'asc' }],
@@ -99,7 +115,10 @@ const isUniqueViolation = (e: unknown): boolean => typeof e === 'object' && e !=
 
 async function setLabelOnce(db: TenantDb, actor: Actor, body: SetChargeLabelInput): Promise<SetChargeLabelResponseDto> {
   const nt = normText(body.description);
+  const ntHash = normalizedTextSha256(nt);
   return db.tx(async (tx) => {
+    // Fix round 1 (S2): serialize label writers of this tenant so count + insert cannot overshoot the cap.
+    await lockChargeLabels(tx, db.tenantId);
     const existing = await tx.chargeLabel.findFirst({ where: { normalizedText: nt }, select: LABEL_SELECT });
     const audit = (labelId: string, metadata: Record<string, unknown>) =>
       appendAudit(tx, {
@@ -119,7 +138,7 @@ async function setLabelOnce(db: TenantDb, actor: Actor, body: SetChargeLabelInpu
         data: { tenantId: db.tenantId, normalizedText: nt, description: body.description, category: body.category, createdById: actor.userId, updatedById: actor.userId, version: 1 },
         select: LABEL_SELECT,
       });
-      await audit(created.id, { labelId: created.id, category: body.category, outcome: 'created' });
+      await audit(created.id, { labelId: created.id, category: body.category, outcome: 'created', normalizedTextSha256: ntHash });
       return { label: toDto(created), outcome: 'created' };
     }
     if (existing.category === body.category) return { label: toDto(existing), outcome: 'unchanged' };
@@ -129,7 +148,7 @@ async function setLabelOnce(db: TenantDb, actor: Actor, body: SetChargeLabelInpu
       data: { description: body.description, category: body.category, updatedById: actor.userId, version: { increment: 1 } },
       select: LABEL_SELECT,
     });
-    await audit(updated.id, { labelId: updated.id, category: body.category, previousCategory, outcome: 'changed' });
+    await audit(updated.id, { labelId: updated.id, category: body.category, previousCategory, outcome: 'changed', normalizedTextSha256: ntHash });
     return { label: toDto(updated), outcome: 'changed' };
   });
 }
@@ -156,7 +175,8 @@ export async function setLabel(db: TenantDb, actor: Actor, body: SetChargeLabelI
 export async function deleteLabel(db: TenantDb, actor: Actor, id: string): Promise<void> {
   if (!isUuid(id)) throw errors.notFound();
   await db.tx(async (tx) => {
-    const row = await tx.chargeLabel.findFirst({ where: { id }, select: { id: true, category: true } });
+    await lockChargeLabels(tx, db.tenantId);
+    const row = await tx.chargeLabel.findFirst({ where: { id }, select: { id: true, category: true, normalizedText: true } });
     if (!row) throw errors.notFound();
     await tx.chargeLabel.delete({ where: { id: row.id } });
     await appendAudit(tx, {
@@ -166,7 +186,7 @@ export async function deleteLabel(db: TenantDb, actor: Actor, id: string): Promi
       actorRole: actor.role,
       targetType: 'charge_label',
       targetId: row.id,
-      metadata: { labelId: row.id, category: dbCategory(row.category) },
+      metadata: { labelId: row.id, category: dbCategory(row.category), normalizedTextSha256: normalizedTextSha256(row.normalizedText) },
       ip: actor.ip,
       requestId: actor.requestId,
     });

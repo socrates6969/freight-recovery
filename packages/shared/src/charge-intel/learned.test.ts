@@ -55,6 +55,8 @@ describe('buildEvidenceLearned', () => {
     expect(l.evidence.demand_letter).toBe(t.evidence.demand_letter);
     expect(l.evidence.result.recoverable_total).toBe(t.evidence.result.recoverable_total);
     expect(l.learnedFindingsCount).toBe(1);
+    // Fix round 1 (S3): the tenant label that drove the finding is reported once.
+    expect(l.labelIds).toEqual(['l1']);
     expect(l.traces.at(-1)).toEqual({ lines: [1], total: false, detention: null });
     expect(l.evidence.markdown).toContain('LRN-ACCESSORIAL-REVIEW');
   });

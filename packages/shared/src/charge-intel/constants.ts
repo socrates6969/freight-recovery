@@ -19,6 +19,12 @@ export const SUGGESTION_THRESHOLD_DEN = 10;
 export const CHARGE_CATEGORIES = Object.freeze(['detention', 'linehaul', 'fuel', 'accessorial', 'other'] as const);
 export type ChargeCategory = (typeof CHARGE_CATEGORIES)[number];
 
+/**
+ * Features use at most this many characters of the normalized text (fix round 1, S1): a longer invoice
+ * description is classified by its first 200 normalized characters. Labels are <= 200 already.
+ */
+export const CHARGE_QUERY_TEXT_MAX = 200;
+
 /** Labels per tenant (service check; bounds the CPU of one classification). */
 export const CHARGE_LABELS_MAX = 2000;
 

@@ -10,6 +10,7 @@ import {
   CHARGE_NOTE,
   CHARGE_TEXT,
   ChargeLinesResponse,
+  SetChargeLabelBody,
   SetChargeLabelResponse,
   type ChargeCategory,
   type ChargeLineViewDto,
@@ -34,6 +35,11 @@ export function chargeErrorText(e: unknown): string {
   return CHARGE_TEXT.failed;
 }
 
+/** Fix round 1 (S7): the server would refuse a label for this description (length, unsafe characters). */
+export function isLabelable(description: string): boolean {
+  return SetChargeLabelBody.safeParse({ description, category: 'other' }).success;
+}
+
 interface SaveVars {
   index: number;
   description: string;
@@ -44,6 +50,7 @@ function ChargeLineRow({ line, canManage, pending, onSave }: { line: ChargeLineV
   const s = line.suggestion;
   const [choice, setChoice] = useState<ChargeCategory>(line.label?.category ?? s.category ?? line.ruleCategory);
   const showConfirm = !s.abstained && s.category !== null && line.label?.category !== s.category;
+  const disabled = pending || !isLabelable(line.description);
   return (
     <li className="border-b py-2">
       <div className="flex flex-wrap items-baseline gap-2">
@@ -69,18 +76,18 @@ function ChargeLineRow({ line, canManage, pending, onSave }: { line: ChargeLineV
       {canManage ? (
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {showConfirm && s.category !== null ? (
-            <button type="button" className="btn" disabled={pending} onClick={() => onSave({ index: line.index, description: line.description, category: s.category ?? choice })}>
+            <button type="button" className="btn" disabled={disabled} onClick={() => onSave({ index: line.index, description: line.description, category: s.category ?? choice })}>
               {CHARGE_TEXT.confirm(CATEGORY_LABELS[s.category])}
             </button>
           ) : null}
-          <select className="input" aria-label={CHARGE_TEXT.category} value={choice} disabled={pending} onChange={(e) => setChoice(e.target.value as ChargeCategory)}>
+          <select className="input" aria-label={CHARGE_TEXT.category} value={choice} disabled={disabled} onChange={(e) => setChoice(e.target.value as ChargeCategory)}>
             {CHARGE_CATEGORIES.map((c) => (
               <option key={c} value={c}>
                 {CATEGORY_LABELS[c]}
               </option>
             ))}
           </select>
-          <button type="button" className="btn" disabled={pending} onClick={() => onSave({ index: line.index, description: line.description, category: choice })}>
+          <button type="button" className="btn" disabled={disabled} onClick={() => onSave({ index: line.index, description: line.description, category: choice })}>
             {CHARGE_TEXT.save}
           </button>
         </div>

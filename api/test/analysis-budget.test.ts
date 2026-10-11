@@ -18,8 +18,14 @@ const { analyzeAwaiting } = await import('../src/claims/analysis.js');
 const TENANT = '00000000-0000-4000-8000-000000000090';
 const actor = { userId: '00000000-0000-4000-8000-000000000001', role: 'ANALYST' as const, ip: '127.0.0.1', requestId: 'r' };
 
-function fakeDb(n: number) {
+function fakeDb(n: number, labelReads: { n: number } = { n: 0 }) {
   const tx = {
+    chargeLabel: {
+      findMany: vi.fn(async () => {
+        labelReads.n += 1;
+        return [];
+      }),
+    },
     claim: {
       findMany: vi.fn(async () => Array.from({ length: n }, (_, i) => ({ id: `not-a-uuid-${i}`, claimNumber: `CLM-${i}` }))),
       count: vi.fn(async () => 7),
@@ -49,5 +55,17 @@ describe('analyzeAwaiting budget (S5-1)', () => {
     const many = vi.fn(async () => true);
     expect((await analyzeAwaiting(fakeDb(4) as never, actor, 5, many)).examined).toBe(4);
     expect(many).toHaveBeenCalledTimes(3);
+  });
+
+  it('fix round 1 (S1c): with the flag on, the tenant labels are read once per bulk request, not per claim', async () => {
+    const reads = { n: 0 };
+    expect((await analyzeAwaiting(fakeDb(5, reads) as never, actor, 5, async () => true, true)).examined).toBe(5);
+    expect(reads.n).toBe(1);
+    const off = { n: 0 };
+    await analyzeAwaiting(fakeDb(5, off) as never, actor, 5, async () => true, false);
+    expect(off.n).toBe(0);
+    const none = { n: 0 };
+    await analyzeAwaiting(fakeDb(0, none) as never, actor, 5, async () => true, true);
+    expect(none.n).toBe(0);
   });
 });

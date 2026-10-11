@@ -5,16 +5,28 @@
  */
 import { normText } from '../analysis/py-text.js';
 
+import { CHARGE_QUERY_TEXT_MAX } from './constants.js';
+
 const NGRAM_SIZES = [3, 4, 5] as const;
 const WORD_PREFIX = 'w:';
 const WORD_WEIGHT = 2;
 
 export type ChargeFeatures = ReadonlyMap<string, number>;
 
-/** Feature map of a charge description; empty when its normalized text is empty. */
+/**
+ * The text features are built from (fix round 1, S1): `normText(text)` cut to its first
+ * CHARGE_QUERY_TEXT_MAX characters, trailing space removed. Bounds the CPU of one classification; labels
+ * (<= 200) and seed names (<= 82) are never cut.
+ */
+export function featureText(text: string): string {
+  const n = normText(text);
+  return n.length <= CHARGE_QUERY_TEXT_MAX ? n : n.slice(0, CHARGE_QUERY_TEXT_MAX).replace(/ +$/u, '');
+}
+
+/** Feature map of a charge description; empty when its (capped) normalized text is empty. */
 export function chargeFeatures(text: string): Map<string, number> {
   const m = new Map<string, number>();
-  const s = normText(text);
+  const s = featureText(text);
   if (s === '') return m;
   const p = ` ${s} `;
   for (const k of NGRAM_SIZES) {

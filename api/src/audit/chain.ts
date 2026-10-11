@@ -198,6 +198,9 @@ const METADATA_KEYS = new Set([
   'tenantLabelCount',
   'learnedFindingsCount',
   'reviewFlagsCount',
+  // Step 6 fix round 1: influencing label ids (S3, <= 50) and the sha256 of a label's normalized text (S4).
+  'learnedLabelIds',
+  'normalizedTextSha256',
 ]);
 const MAX_STRING = 2000;
 

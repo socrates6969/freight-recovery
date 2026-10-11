@@ -7,7 +7,7 @@
  *   for OWNER/ADMIN/MANAGER/REVIEWER; platform 403; API keys 403), validation 400, byte-identical 404 for
  *   unknown/other-tenant ids, flag OFF -> 404, the per-user cap (409), audit metadata key sets.
  */
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { Writable } from 'node:stream';
 
 import { ChargeLabelsList, ChargeLinesResponse, SetChargeLabelResponse } from '@fr/shared';
@@ -185,9 +185,10 @@ describe.skipIf(!canRunDb)('charge labels (PostgreSQL)', () => {
       const sorted = [...list.items].sort((x, y) => (x.normalizedText < y.normalizedText ? -1 : x.normalizedText > y.normalizedText ? 1 : x.id < y.id ? -1 : 1));
       expect(list.items).toEqual(sorted);
 
+      const ntHash = createHash('sha256').update(a.label.normalizedText).digest('hex');
       expect(await auditOf('charge_label.set', a.label.id)).toEqual([
-        { labelId: a.label.id, category: 'accessorial', outcome: 'created' },
-        { labelId: a.label.id, category: 'detention', previousCategory: 'accessorial', outcome: 'changed' },
+        { labelId: a.label.id, category: 'accessorial', outcome: 'created', normalizedTextSha256: ntHash },
+        { labelId: a.label.id, category: 'detention', previousCategory: 'accessorial', outcome: 'changed', normalizedTextSha256: ntHash },
       ]);
 
       // Other tenant: byte-identical 404 to an unknown id.
@@ -200,7 +201,7 @@ describe.skipIf(!canRunDb)('charge labels (PostgreSQL)', () => {
       const gone = await del(`/api/v1/charge-labels/${a.label.id}`, reviewer);
       expect(gone.statusCode).toBe(204);
       expect(gone.body).toBe('');
-      expect(await auditOf('charge_label.deleted', a.label.id)).toEqual([{ labelId: a.label.id, category: 'detention' }]);
+      expect(await auditOf('charge_label.deleted', a.label.id)).toEqual([{ labelId: a.label.id, category: 'detention', normalizedTextSha256: ntHash }]);
       expect((await del(`/api/v1/charge-labels/${a.label.id}`, reviewer)).statusCode).toBe(404);
     });
 

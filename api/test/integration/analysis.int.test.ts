@@ -35,6 +35,7 @@ const CLAIM_ANALYZED_KEYS = [
   'fromStatus',
   'ignoredFindingsCount',
   'learnedFindingsCount',
+  'learnedLabelIds',
   'packetId',
   'pendingFindingsCount',
   'pendingReviewCents',
