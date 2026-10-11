@@ -12,7 +12,8 @@
     "test:acceptance": "vitest run --project acceptance --passWithNoTests",
     "test:integration": "vitest run --project integration",
     "ensure-bucket": "tsx --conditions=source scripts/ensure-bucket.ts",
-    "eval": "node dist/src/eval/cli.js"
+    "eval": "node dist/src/eval/cli.js",
+    "eval:charges": "node dist/src/eval/charges.js"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1147.0",

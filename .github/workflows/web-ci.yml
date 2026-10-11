@@ -139,6 +139,8 @@ jobs:
       # nothing recorded). Fails the job unless every case passes all 3 runs. Not an accuracy measure.
       - name: Evaluation (synthetic fixtures)
         run: npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1 --json
+      - name: Charge classifier evaluation (seed-set regression check, not an accuracy measure)
+        run: npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1
       # The integration (extraction parity) and acceptance (packet parity) suites run the existing
       # Python code. Same setup as ci.yml: pinned setup-python, hash-locked runtime deps, PYTHONPATH=src.
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
