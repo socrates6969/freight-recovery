@@ -15,9 +15,10 @@ import { FlagChangeBody, LogsQuery, PipelineHealth, PipelineQuery, Telemetry } f
 import { can } from './rbac.js';
 
 describe('feature flag registry (Q4)', () => {
-  it('contains exactly the three intelligence flags, ordered by key, default on, tenant-visible', () => {
-    expect(FEATURE_FLAG_KEYS).toEqual(['intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+  it('contains exactly the four intelligence flags, ordered by key, default on, tenant-visible', () => {
+    expect(FEATURE_FLAG_KEYS).toEqual(['intelligence.charge_suggestions', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
     expect(FEATURE_FLAGS.map((f) => f.description)).toEqual([
+      'Charge-line suggestions and team labels',
       'Provenance summary on the claim sheet',
       'Similar past claims on the claim sheet',
       'Prioritised worklist page',

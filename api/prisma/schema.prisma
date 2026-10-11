@@ -193,6 +193,7 @@ model Tenant {
   reviewDecisions ImportReviewDecision[]
   claimDocuments  ClaimDocument[]
   apiKeys         ApiKey[]
+  chargeLabels    ChargeLabel[]
 
   @@map("tenants")
 }
@@ -209,23 +210,25 @@ model User {
   createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  membership     Membership?
-  refreshTokens  RefreshToken[]
-  mfaSecret      MfaSecret?
-  recoveryCodes  MfaRecoveryCode[]
-  passwordResets PasswordReset[]
-  invitesSent    Invite[]               @relation("InvitedBy")
-  assignedClaims Claim[]                @relation("ClaimAssignee")
-  packetsCreated EvidencePacket[]       @relation("PacketCreatedBy")
-  approvals      Approval[]             @relation("ApprovalActor")
-  importBatches  ImportBatch[]          @relation("ImportBatchCreatedBy")
-  importUploads  ImportDocument[]       @relation("ImportDocumentUploadedBy")
-  fieldsResolved ExtractedField[]       @relation("ExtractedFieldResolvedBy")
-  reviewActions  ImportReviewDecision[] @relation("ReviewDecisionActor")
-  documentLinks  ClaimDocument[]        @relation("ClaimDocumentLinkedBy")
-  flagChanges    FeatureFlag[]          @relation("FeatureFlagUpdatedBy")
-  apiKeysCreated ApiKey[]               @relation("ApiKeyCreatedBy")
-  apiKeysRevoked ApiKey[]               @relation("ApiKeyRevokedBy")
+  membership          Membership?
+  refreshTokens       RefreshToken[]
+  mfaSecret           MfaSecret?
+  recoveryCodes       MfaRecoveryCode[]
+  passwordResets      PasswordReset[]
+  invitesSent         Invite[]               @relation("InvitedBy")
+  assignedClaims      Claim[]                @relation("ClaimAssignee")
+  packetsCreated      EvidencePacket[]       @relation("PacketCreatedBy")
+  approvals           Approval[]             @relation("ApprovalActor")
+  importBatches       ImportBatch[]          @relation("ImportBatchCreatedBy")
+  importUploads       ImportDocument[]       @relation("ImportDocumentUploadedBy")
+  fieldsResolved      ExtractedField[]       @relation("ExtractedFieldResolvedBy")
+  reviewActions       ImportReviewDecision[] @relation("ReviewDecisionActor")
+  documentLinks       ClaimDocument[]        @relation("ClaimDocumentLinkedBy")
+  flagChanges         FeatureFlag[]          @relation("FeatureFlagUpdatedBy")
+  apiKeysCreated      ApiKey[]               @relation("ApiKeyCreatedBy")
+  apiKeysRevoked      ApiKey[]               @relation("ApiKeyRevokedBy")
+  chargeLabelsCreated ChargeLabel[]          @relation("ChargeLabelCreatedBy")
+  chargeLabelsUpdated ChargeLabel[]          @relation("ChargeLabelUpdatedBy")
 
   @@map("users")
 }
@@ -774,4 +777,30 @@ model ApiKey {
   @@unique([id, tenantId])
   @@index([tenantId, createdAt(sort: Desc)])
   @@map("api_keys")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 6 (REQ-20261011-charge-intelligence): tenant charge-line labels (reviewer memory consulted by the
+// charge classifier). Tenant-scoped: RLS FORCE, policy, column grants and CHECKs in the migration.
+// ---------------------------------------------------------------------------------------------
+
+model ChargeLabel {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  normalizedText String   @map("normalized_text")
+  description    String
+  category       String
+  createdById    String   @map("created_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedById    String   @map("updated_by_id") @db.Uuid
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version        Int      @default(1)
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id])
+  createdBy User   @relation("ChargeLabelCreatedBy", fields: [createdById], references: [id])
+  updatedBy User   @relation("ChargeLabelUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([tenantId, normalizedText])
+  @@unique([id, tenantId])
+  @@map("charge_labels")
 }

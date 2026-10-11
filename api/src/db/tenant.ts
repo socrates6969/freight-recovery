@@ -32,6 +32,8 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'ClaimDocument',
   // Step 4: tenant API keys.
   'ApiKey',
+  // Step 6 (REQ-20261011-charge-intelligence): tenant charge-line labels.
+  'ChargeLabel',
 ]);
 
 const TENANT_READ_OPS: ReadonlySet<string> = new Set(['findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow']);
@@ -151,6 +153,7 @@ export type TenantTx = Pick<
   | 'importReviewDecision'
   | 'claimDocument'
   | 'apiKey'
+  | 'chargeLabel'
 >;
 
 const RAW = Symbol('fr.rawTx');

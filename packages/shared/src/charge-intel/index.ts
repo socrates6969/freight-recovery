@@ -7,6 +7,8 @@
 export * from './constants.js';
 export * from './copy.js';
 export * from '../charge-intel-dto.js';
+/** The step-5 `normText` (label keys are `normText(description)`). */
+export { normText } from '../analysis/py-text.js';
 export { SEED_SOURCES, SEED_V1, type SeedExample, type SeedSource, type SeedSourceId } from './seed-v1.js';
 export { chargeFeatures, featureDot, featureNorm2, type ChargeFeatures } from './features.js';
 export {

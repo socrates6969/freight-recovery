@@ -34,6 +34,8 @@ export const ERROR_MESSAGES = {
   four_eyes_required: 'A different person must make this decision.',
   // Step 5 (REQ-20261010-step5-analysis)
   analysis_input_invalid: 'The extracted values of this claim cannot be analysed automatically.',
+  // Step 6 (REQ-20261011-charge-intelligence)
+  label_limit_reached: 'This organization has reached the maximum number of charge labels.',
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;
@@ -106,6 +108,7 @@ export const errors = {
   exportTooLarge: () => new HttpError(422, 'export_too_large'),
   fourEyes: (audit: FourEyesAudit) => new FourEyesRefusal(audit),
   analysisInputInvalid: () => new HttpError(422, 'analysis_input_invalid'),
+  labelLimitReached: () => new HttpError(409, 'label_limit_reached'),
   parserBusy: () => new HttpError(503, 'parser_busy', { retryAfterSeconds: 5 }),
   accountLocked: (retryAfterSeconds: number) => new HttpError(429, 'account_locked', { retryAfterSeconds }),
 };

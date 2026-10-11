@@ -312,7 +312,7 @@ describe.skipIf(!canRunDb)('Recovery Intelligence (PostgreSQL)', () => {
 
     it('features, worklist, similar, provenance for a tenant user; platform users 403; unauthenticated 401', async () => {
       expect((await c.get('/api/v1/features', viewer)).json()).toEqual({
-        flags: { 'intelligence.provenance': true, 'intelligence.similar_claims': true, 'intelligence.worklist': true },
+        flags: { 'intelligence.charge_suggestions': true, 'intelligence.provenance': true, 'intelligence.similar_claims': true, 'intelligence.worklist': true },
       });
       const wl = await c.get('/api/v1/intelligence/worklist?pageSize=5', viewer);
       expect(wl.statusCode, wl.body).toBe(200);
@@ -362,7 +362,7 @@ describe.skipIf(!canRunDb)('Recovery Intelligence (PostgreSQL)', () => {
         expect(offSim.json()).toMatchObject({ error: { code: 'not_found' } });
         expect(unknown.statusCode).toBe(404);
         expect((await c.get('/api/v1/features', viewer)).json()).toEqual({
-          flags: { 'intelligence.provenance': false, 'intelligence.similar_claims': false, 'intelligence.worklist': false },
+          flags: { 'intelligence.charge_suggestions': true, 'intelligence.provenance': false, 'intelligence.similar_claims': false, 'intelligence.worklist': false },
         });
       } finally {
         await admin.query('BEGIN');

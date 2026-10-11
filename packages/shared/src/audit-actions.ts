@@ -59,6 +59,9 @@ export const AUDIT_ACTIONS = [
   // Step 5 (REQ-20261010-step5-analysis): claim analysis (single, and one summary per bulk request).
   'claim.analyzed',
   'claim.bulk_analyzed',
+  // Step 6 (REQ-20261011-charge-intelligence): tenant charge-label changes.
+  'charge_label.set',
+  'charge_label.deleted',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

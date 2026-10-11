@@ -35,7 +35,8 @@ export interface IntelligenceDeps {
   toHttpError: (e: unknown) => HttpError;
 }
 
-async function auditViewed(req: FastifyRequest, metadata: Record<string, unknown>, target: { type: string; id: string | null }): Promise<void> {
+/** Append `intelligence.viewed` to the tenant chain in its own tenant transaction (also used by step 6). */
+export async function auditViewed(req: FastifyRequest, metadata: Record<string, unknown>, target: { type: string; id: string | null }): Promise<void> {
   const ctx = requireTenant(req);
   await ctx.db.tx((tx) =>
     appendAudit(tx, {

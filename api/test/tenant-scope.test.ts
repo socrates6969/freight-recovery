@@ -58,6 +58,14 @@ describe('tenant scope (fail-closed Prisma extension logic)', () => {
     }
   });
 
+  it('classifies the step-6 charge labels as tenant-scoped', () => {
+    expect(TENANT_MODELS.has('ChargeLabel')).toBe(true);
+    expect(scopeArgs('ChargeLabel', 'findFirst', { where: { normalizedText: 'lumper' } }, T)).toEqual({ where: { normalizedText: 'lumper', tenantId: T } });
+    expect(scopeArgs('ChargeLabel', 'delete', { where: { id: 'x' } }, T)).toEqual({ where: { id: 'x', tenantId: T } });
+    expect(() => scopeArgs('ChargeLabel', 'create', { data: { tenantId: OTHER } }, T)).toThrow(TenantScopeError);
+    expect(() => scopeArgs('ChargeLabel', 'update', { where: { id: 'x' }, data: { tenantId: OTHER } }, T)).toThrow(TenantScopeError);
+  });
+
   it('allows Tenant only as a read of the own tenant', () => {
     expect(scopeArgs('Tenant', 'findUnique', { where: { id: T } }, T)).toEqual({ where: { id: T } });
     expect(scopeArgs('Tenant', 'findFirst', {}, T)).toEqual({ where: { id: T } });

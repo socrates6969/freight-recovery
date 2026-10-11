@@ -187,6 +187,17 @@ const METADATA_KEYS = new Set([
   'analyzed',
   'failed',
   'remaining',
+  // Step 6 (REQ-20261011-charge-intelligence): label ids, categories and outcomes, classifier/seed versions
+  // and learned-layer counts. Never charge descriptions or normalized texts.
+  'labelId',
+  'category',
+  'previousCategory',
+  'outcome',
+  'classifierVersion',
+  'seedVersion',
+  'tenantLabelCount',
+  'learnedFindingsCount',
+  'reviewFlagsCount',
 ]);
 const MAX_STRING = 2000;
 

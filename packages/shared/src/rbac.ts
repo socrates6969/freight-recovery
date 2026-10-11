@@ -51,6 +51,8 @@ export const PERMISSIONS = [
   'apikeys:manage',
   // Step 5 (REQ-20261010-step5-analysis): run the rules on AWAITING_ANALYSIS claims (single and bulk).
   'claims:analyze',
+  // Step 6 (REQ-20261011-charge-intelligence): confirm/correct charge-line categories (tenant labels).
+  'charge_labels:manage',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -78,6 +80,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'export:outcomes',
     'apikeys:manage',
     'claims:analyze',
+    'charge_labels:manage',
   ] as const),
   ADMIN: Object.freeze([
     'claims:read',
@@ -97,6 +100,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'export:outcomes',
     'apikeys:manage',
     'claims:analyze',
+    'charge_labels:manage',
   ] as const),
   MANAGER: Object.freeze([
     'claims:read',
@@ -110,6 +114,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'export:packets',
     'export:outcomes',
     'claims:analyze',
+    'charge_labels:manage',
   ] as const),
   REVIEWER: Object.freeze([
     'claims:read',
@@ -121,6 +126,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'export:packets',
     'export:outcomes',
     'claims:analyze',
+    'charge_labels:manage',
   ] as const),
   // Step 5 policy D1: ANALYST may run the analysis (creates a draft only; cannot approve).
   ANALYST: Object.freeze(['claims:read', 'import:run', 'export:claims', 'claims:analyze'] as const),

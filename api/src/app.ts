@@ -42,6 +42,7 @@ import { isAnalysisDbError, isFourEyesDbError } from './http/db-guard.js';
 import { ERROR_MESSAGES, FourEyesRefusal, HttpError, errors } from './http/errors.js';
 import { enforceRouteAccess, requireTenant, zodDetails } from './http/route.js';
 import { registerSecurityHeaders, registerSecurityPipeline, type Limiter } from './http/security.js';
+import { registerChargeRoutes } from './intelligence/charge-routes.js';
 import { registerIntelligenceRoutes } from './intelligence/routes.js';
 import { createLogger } from './logging.js';
 import { MetricsRegistry, UNMATCHED_ROUTE, ZERO_PARSER_COUNTERS } from './observability/metrics.js';
@@ -395,6 +396,8 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     now,
     toHttpError,
   });
+  // Step 6 (REQ-20261011-charge-intelligence): charge lines and tenant charge labels (flag-gated).
+  registerChargeRoutes(app, { flags });
 
   app.addHook('onClose', async () => {
     await base.$disconnect();
