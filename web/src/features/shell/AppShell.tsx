@@ -1,6 +1,6 @@
-import { ApprovalsPage as ApprovalsPageSchema } from '@fr/shared';
+import { ApprovalsPage as ApprovalsPageSchema, FUEL_TABLES_TEXT, OUTLOOK_TEXT } from '@fr/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ClipboardCheck, Command as CommandIcon, FileText, KeyRound, ListChecks, ListOrdered, LogOut, Upload, UserRound } from 'lucide-react';
+import { Activity, ClipboardCheck, Command as CommandIcon, FileText, Fuel, KeyRound, ListChecks, ListOrdered, LogOut, TrendingUp, Upload, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
@@ -153,6 +153,18 @@ export function AppShell() {
                 <NavLink to="/intelligence" className={navClass}>
                   <ListOrdered size={16} aria-hidden="true" />
                   Intelligence
+                </NavLink>
+              ) : null}
+              {features.outlook ? (
+                <NavLink to="/outlook" className={navClass}>
+                  <TrendingUp size={16} aria-hidden="true" />
+                  {OUTLOOK_TEXT.nav}
+                </NavLink>
+              ) : null}
+              {features.fuel ? (
+                <NavLink to="/settings/fuel-tables" className={navClass}>
+                  <Fuel size={16} aria-hidden="true" />
+                  {FUEL_TABLES_TEXT.nav}
                 </NavLink>
               ) : null}
               {canManageKeys ? (

@@ -165,6 +165,11 @@ export class ApiClient {
     return this.request('POST', path, { body, ...(schema ? { schema } : {}), auth } as RequestOptions<S>);
   }
 
+  /** DELETE with the same CSRF and auth handling as `post` (step 7 fuel inputs and tables; 204 expected). */
+  delete(path: string): Promise<void> {
+    return this.request('DELETE', path, {}) as Promise<void>;
+  }
+
   /** PUT with the same CSRF and auth handling as `post` (step 6 charge labels). */
   put<S extends z.ZodType | undefined = undefined>(path: string, body: unknown, schema?: S): Promise<Result<S>> {
     return this.request('PUT', path, { body, ...(schema ? { schema } : {}) } as RequestOptions<S>);

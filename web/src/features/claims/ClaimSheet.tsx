@@ -10,13 +10,14 @@ import { ExportMenu } from '../../components/ui/ExportMenu';
 import { SafeText } from '../../components/ui/SafeText';
 import { useFocusTrap } from '../../components/ui/use-focus-trap';
 import { formatDateTime, formatDay, formatUsdCents, STATUS_LABEL } from '../../lib/format';
+import { FuelPanel } from '../fuel/FuelPanel';
 import { ChargeLinesPanel } from '../intelligence/ChargeLinesPanel';
 import { ProvenancePanel, SimilarPanel } from '../intelligence/ClaimIntelligenceTabs';
 import { useFeatures } from '../intelligence/use-features';
 
 import { AnalyzeClaimSection, analyzeErrorText } from './AnalyzeClaimSection';
 
-const ALL_TABS = ['Summary', 'Evidence', 'History', 'Documents', 'Similar', 'Provenance', 'Charges'] as const;
+const ALL_TABS = ['Summary', 'Evidence', 'History', 'Documents', 'Similar', 'Provenance', 'Charges', 'Fuel'] as const;
 export const NO_PACKET_TEXT = 'No evidence packet yet. Analysis has not run for this claim.';
 const DOC_TYPE_LABEL: Record<string, string> = { INVOICE: 'Invoice', RATE_CONFIRMATION: 'Rate confirmation', BILL_OF_LADING: 'Bill of lading', OTHER: 'Other' };
 type Tab = (typeof ALL_TABS)[number];
@@ -199,11 +200,15 @@ export function ClaimSheet() {
     setHidden((h) => (h.includes('Charges') ? h : [...h, 'Charges']));
     setTab('Summary');
   }, []);
+  const hideFuel = useCallback(() => {
+    setHidden((h) => (h.includes('Fuel') ? h : [...h, 'Fuel']));
+    setTab('Summary');
+  }, []);
   // Similar/Provenance/Charges appear only when their flag is on (fail closed) and the feature call did not 404.
   const TABS = ALL_TABS.filter(
     (t) =>
       !hidden.includes(t) &&
-      (t === 'Similar' ? features.similar : t === 'Provenance' ? features.provenance : t === 'Charges' ? features.charges : true),
+      (t === 'Similar' ? features.similar : t === 'Provenance' ? features.provenance : t === 'Charges' ? features.charges : t === 'Fuel' ? features.fuel : true),
   );
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -422,6 +427,7 @@ export function ClaimSheet() {
                 {tab === 'Similar' && TABS.includes('Similar') ? <SimilarPanel claimId={id} onUnavailable={hideSimilar} /> : null}
                 {tab === 'Provenance' && TABS.includes('Provenance') ? <ProvenancePanel claimId={id} onUnavailable={hideProvenance} /> : null}
                 {tab === 'Charges' && TABS.includes('Charges') ? <ChargeLinesPanel claimId={id} onUnavailable={hideCharges} /> : null}
+                {tab === 'Fuel' && TABS.includes('Fuel') ? <FuelPanel claimId={id} claimStatus={c?.status ?? null} onUnavailable={hideFuel} /> : null}
                 {tab === 'Documents' ? (
                   documents.isError ? (
                     <p role="alert">The documents could not be loaded.</p>

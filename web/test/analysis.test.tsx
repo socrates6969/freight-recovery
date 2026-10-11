@@ -73,7 +73,7 @@ const packet = {
 const analyzeResponse = {
   claim: { id: CLAIM_ID, status: 'PENDING_REVIEW', recoverableCents: 32500, pendingReviewCents: 15000, amountClaimedCents: 47500 },
   packet: { id: U(10), revision: 1, status: 'PENDING_REVIEW', contentHash: 'b'.repeat(64) },
-  analysis: { rulesVersion: 'rules-v1', findingsCount: 3, pendingFindingsCount: 1, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0 },
+  analysis: { rulesVersion: 'rules-v1', findingsCount: 3, pendingFindingsCount: 1, ignoredFindingsCount: 0, classifierVersion: 'charge-knn-v1', learnedFindingsCount: 0, reviewFlagsCount: 0, fuelCheckStatus: 'off', fuelFindingsCount: 0 },
 };
 
 interface Call {
