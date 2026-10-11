@@ -141,6 +141,8 @@ jobs:
         run: npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1 --json
       - name: Charge classifier evaluation (seed-set regression check, not an accuracy measure)
         run: npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1
+      - name: Cost outlook backtest gate (walk-forward on bundled public data; not a guarantee)
+        run: npm run eval:outlook -- --min-coverage 0.70 --max-coverage 0.90 --require-model diesel_us:1,diesel_us:4,ppi_tl:1
       # The integration (extraction parity) and acceptance (packet parity) suites run the existing
       # Python code. Same setup as ci.yml: pinned setup-python, hash-locked runtime deps, PYTHONPATH=src.
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6

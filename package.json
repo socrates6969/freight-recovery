@@ -25,6 +25,8 @@
     "build": "npm run build -w packages/shared && npm run build -w api && npm run build -w web",
     "eval": "npm run eval -w api --",
     "eval:charges": "npm run eval:charges -w api --",
+    "eval:outlook": "npm run eval:outlook -w api --",
+    "prices:import": "npm run prices:import -w api --",
     "audit": "npm audit --omit=dev --audit-level=high",
     "verify:no-install-scripts": "node tools/verify-no-install-scripts.mjs"
   },

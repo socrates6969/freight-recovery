@@ -37,6 +37,8 @@ COPY --from=prune /app/packages/shared/dist ./packages/shared/dist
 COPY --from=prune /app/api/package.json ./api/package.json
 COPY --from=prune /app/api/dist ./api/dist
 COPY --from=prune /app/api/prisma ./api/prisma
+# Step 7: bundled public price history for `prices:import -- --bundled` (manifest + sha256 checked).
+COPY --from=prune /app/api/data ./api/data
 RUN addgroup -S -g 10001 app && adduser -S -D -H -u 10001 -G app app
 USER 10001:10001
 WORKDIR /app/api
