@@ -30,6 +30,8 @@ const CLAIM_ANALYZED_KEYS = [
   // Step 6 (REQ-20261011-charge-intelligence): classifier/seed versions, label count and learned counts.
   'classifierVersion',
   'contentHash',
+  // Hardening (REQ-20261012-hardening, C4.4): the full number of source documents.
+  'documentCount',
   'documentIds',
   'findingsCount',
   'fromStatus',
@@ -277,7 +279,16 @@ describe.skipIf(!canRun)('claim analysis (PostgreSQL + S3 + sandbox)', () => {
     }
     // Duplicate negative credit lines -> INV-DUPLICATE of -5.00 (own direction, negative): not storable.
     const neg = await post(tok.analyst, `/api/v1/claims/${claim.id}/analyze`);
-    expect([neg.statusCode, errorOf(neg)]).toEqual([422, { code: 'analysis_input_invalid', message: 'The extracted values of this claim cannot be analysed automatically.', requestId: expect.any(String) as string }]);
+    // Hardening (C4.1): the body also carries the reason code (a negative own-direction amount).
+    expect([neg.statusCode, errorOf(neg)]).toEqual([
+      422,
+      {
+        code: 'analysis_input_invalid',
+        message: 'The extracted values of this claim cannot be analysed automatically.',
+        requestId: expect.any(String) as string,
+        details: [{ path: 'analysis', code: 'amount_out_of_range' }],
+      },
+    ]);
     expect(await claimRow(claim.id)).toMatchObject({ status: 'AWAITING_ANALYSIS', packets: 0, events: 0 });
 
     // A claim with no linked ACCEPTED document.
@@ -398,7 +409,7 @@ describe.skipIf(!canRun)('claim analysis (PostgreSQL + S3 + sandbox)', () => {
     expect(body.limit).toBe(25);
     expect(body.examined).toBe(body.analyzed.length + body.skipped.length + body.failed.length);
     expect(body.analyzed.find((a) => a.claimId === good.id)).toMatchObject({ claimNumber: good.claimNumber, findingsCount: 3, recoverableCents: 32500 });
-    expect(body.failed).toContainEqual({ claimId: bad.id, claimNumber: bad.claimNumber, code: 'analysis_input_invalid' });
+    expect(body.failed).toContainEqual({ claimId: bad.id, claimNumber: bad.claimNumber, code: 'analysis_input_invalid', reasonCode: 'amount_out_of_range' });
     const remaining = (await admin.query<{ n: number }>(`SELECT count(*)::int AS n FROM claims WHERE tenant_id = $1 AND status = 'AWAITING_ANALYSIS'`, [acmeId])).rows[0]?.n;
     expect(body.remaining).toBe(remaining);
     const ev = (await admin.query<{ metadata: Record<string, unknown>; target_type: string; target_id: string }>(
@@ -406,7 +417,16 @@ describe.skipIf(!canRun)('claim analysis (PostgreSQL + S3 + sandbox)', () => {
       [acmeId],
     )).rows[0];
     expect(ev).toMatchObject({ target_type: 'tenant', target_id: acmeId });
-    expect(ev?.metadata).toEqual({ limit: 25, examined: body.examined, analyzed: body.analyzed.length, skipped: body.skipped.length, failed: body.failed.length, remaining: body.remaining });
+    // Hardening (C5.3): the summary also says why the run stopped.
+    expect(ev?.metadata).toEqual({
+      limit: 25,
+      examined: body.examined,
+      analyzed: body.analyzed.length,
+      skipped: body.skipped.length,
+      failed: body.failed.length,
+      remaining: body.remaining,
+      stoppedBy: (body as unknown as { stoppedBy: string }).stoppedBy,
+    });
     const meta = (await admin.query<{ metadata: Record<string, unknown> }>(`SELECT metadata FROM audit_events WHERE action = 'claim.analyzed' AND target_id = $1`, [good.id])).rows[0];
     expect(meta?.metadata['bulk']).toBe(true);
     // A second run never re-analyzes a claim.

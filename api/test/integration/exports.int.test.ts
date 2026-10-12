@@ -247,7 +247,7 @@ describe.skipIf(!appUrl || !adminUrl)('exports R54-R56 (PostgreSQL)', () => {
       `INSERT INTO claims (id, tenant_id, claim_number, load_number, carrier_name, shipper_name, perspective, status, amount_claimed_cents,
          recoverable_cents, pending_review_cents, updated_at)
        SELECT ('00000000-0000-4000-8000-' || lpad(to_hex(g), 12, '0'))::uuid, $1, 'CLM-ABORT-' || g, 'LD-ABORT-' || g,
-              'Carrier ' || g, 'Shipper ' || g, 'SHIPPER', 'AWAITING_ANALYSIS', 100, 0, 0, now()
+              'Carrier ' || g, 'Shipper ' || g, 'SHIPPER', 'AWAITING_ANALYSIS', 0, 0, 0, now()
        FROM generate_series(1, $2::int) AS g`,
       [acmeId, total],
     );
