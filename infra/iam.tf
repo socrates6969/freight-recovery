@@ -37,8 +37,8 @@ data "aws_iam_policy_document" "api_execution" {
   }
 
   statement {
-    sid       = "ReadApiSecrets"
-    actions   = ["secretsmanager:GetSecretValue"]
+    sid     = "ReadApiSecrets"
+    actions = ["secretsmanager:GetSecretValue"]
     resources = concat(
       [for k in ["jwt-secret", "csrf-secret", "refresh-pepper", "mfa-enc-key", "database-url", "redis-url", "api-key-pepper"] : aws_secretsmanager_secret.app[k].arn],
       [aws_secretsmanager_secret.origin_verify.arn],
