@@ -79,6 +79,12 @@ function grants(sql: string): Record<string, { table: string[]; update: string[]
 }
 /** Fix round 4: index-only migration after the step-8 table migration. */
 const INDEX_DIR = '20261017000000_audit_target_index';
+/** REQ-20261012-hardening C0.2 (additive): exactly one trigger/CHECK-only folder after the index migration
+ *  (its content is pinned in hardening-static.acc.test.ts). */
+const HARDENING_DIR = '20261018000000_hardening';
+/** REQ-20261012-hardening fix round 2 (C-FR2.2 DB guard; additive): exactly one further function-only folder (content pinned
+ *  in hardening-static.acc.test.ts FR2-S01). */
+const HARDENING_FR2_DIR = '20261019000000_hardening_fr2';
 /** sha256 of the step-8 migration files: ocean_dd as reviewed at 10f8941 (unchanged in 47a80bb), the index migration at 47a80bb. */
 const STEP8_PINS: Record<string, string> = {
   '20261016000000_ocean_dd/migration.sql': 'e872fed671c0e58c56aa808b26e29cb2833fdbf3af96622e3e4c382ca45016f1',
@@ -97,10 +103,12 @@ describe('DD-DB05 migrations (C11)', () => {
     for (const [f, h] of Object.entries(FROZEN_CE107D0)) expect(sha(readFileSync(join(MIG, f))), f).toBe(h);
     for (const dir of new Set(Object.keys(FROZEN_CE107D0).map((f) => f.split('/')[0] ?? ''))) expect(readdirSync(join(MIG, dir)), dir).toEqual(['migration.sql']);
   });
-  it('exactly one new folder *_ocean_dd after every earlier one, then (fix round 4) exactly one index-only folder 20261017000000_audit_target_index', () => {
+  it('exactly one new folder *_ocean_dd after every earlier one, then (fix round 4) exactly one index-only folder 20261017000000_audit_target_index, then (hardening) 20261018000000_hardening', () => {
     const dirs = readdirSync(MIG).filter((d) => statSync(join(MIG, d)).isDirectory()).sort();
     const dd = ddDir();
-    expect(dirs).toEqual([...new Set(Object.keys(FROZEN_CE107D0).map((f) => f.split('/')[0] ?? ''))].sort().concat([dd, INDEX_DIR]));
+    expect(dirs).toEqual([...new Set(Object.keys(FROZEN_CE107D0).map((f) => f.split('/')[0] ?? ''))].sort().concat([dd, INDEX_DIR, HARDENING_DIR, HARDENING_FR2_DIR]));
+    expect(readdirSync(join(MIG, HARDENING_DIR))).toEqual(['migration.sql']);
+    expect(readdirSync(join(MIG, HARDENING_FR2_DIR))).toEqual(['migration.sql']);
     expect(dd > '20261014000000_fuel_outlook').toBe(true);
     expect(readdirSync(join(MIG, dd))).toEqual(['migration.sql']);
     expect(readdirSync(join(MIG, INDEX_DIR))).toEqual(['migration.sql']);

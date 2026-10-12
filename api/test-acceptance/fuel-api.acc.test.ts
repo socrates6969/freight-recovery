@@ -309,7 +309,7 @@ describe('T10 fuel inputs, fuel-check view and analysis (F5, F6, F10, F13)', () 
     const active = await withAdmin(async (c) => (await c.query("select id, sha256 from price_imports where series_key = 'diesel_us' order by imported_at desc, id desc limit 1")).rows[0] as { id: string; sha256: string });
     expect(active.sha256).toBe(SHA_DIESEL);
     expect(ev[0]?.metadata.priceImportId, 'F13: active diesel import id').toBe(active.id);
-    expect(I.keysOf(ev[0]?.metadata)).toEqual([...A.P7_ANALYZED_KEYS].sort());
+    expect(I.keysOf(A.baseMeta(ev[0]?.metadata))).toEqual([...A.P7_ANALYZED_KEYS].sort());
     noNamesIn(ev);
   });
   it('CI-A14 parity-unchanged: a twin claim without inputs equals the flag-off result (no_inputs vs off)', async () => {

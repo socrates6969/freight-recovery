@@ -11,6 +11,9 @@ import { loadAppRoot, renderApp, setupDom, signedIn } from './helpers/render.js'
 import { createStub, mkClaim, type RoleName } from './helpers/stub.js';
 
 const CLAIM_TEXT = 'You edited this revision. Another approver must approve it.';
+// REQ-20261012-hardening C7.1 (contract change): a self-authored queue row shows the basis text; the stub's default
+// basis is revision_author. CLAIM_TEXT (unchanged constant) stays the late-refusal alert text (FE-U04).
+const BASIS_TEXT = 'You created a revision of this claim (by editing, analyzing or running the D&D audit). Another approver must approve it.';
 const DOC_TEXT = 'You uploaded or edited this document. Another reviewer must accept it.';
 const FE_BODY = { error: { code: 'four_eyes_required', message: 'A different person must make this decision.', requestId: 'r' } };
 const WAIT = { timeout: 5000 };
@@ -44,12 +47,13 @@ describe('FE-U01..U03 approvals page', () => {
     expect(btn(ra, 'Approve')).toBeNull();
     expect(btn(ra, 'Reject')).toBeNull();
     expect(btn(ra, 'Edit')).toBeTruthy();
-    expect(ra.textContent).toContain(CLAIM_TEXT);
+    expect(ra.textContent).toContain(BASIS_TEXT);
     expect(btn(rb, 'Approve')).toBeTruthy();
     expect(btn(rb, 'Reject')).toBeTruthy();
     expect(btn(rb, 'Edit')).toBeTruthy();
-    expect(rb.textContent).not.toContain(CLAIM_TEXT);
-    expect(screen.getAllByText(CLAIM_TEXT)).toHaveLength(1);
+    expect(rb.textContent).not.toContain(BASIS_TEXT);
+    expect(screen.getAllByText(BASIS_TEXT)).toHaveLength(1);
+    expect(document.body.textContent).not.toContain(CLAIM_TEXT);
   });
   it('FE-U02 OWNER: APPROVED self-authored row keeps Send; no copy', async () => {
     const c = mkClaim(3, { status: 'APPROVED', latestPacket: { revision: 1, status: 'APPROVED' } });
@@ -58,6 +62,7 @@ describe('FE-U01..U03 approvals page', () => {
     expect(btn(r, 'Send')).toBeTruthy();
     expect(r.textContent).not.toContain(CLAIM_TEXT);
     expect(document.body.textContent).not.toContain(CLAIM_TEXT);
+    expect(document.body.textContent).not.toContain(BASIS_TEXT);
   });
   it('FE-U03 VIEWER: no Approve/Reject and no copy even when selfAuthored', async () => {
     const c = mkClaim(1);
@@ -66,6 +71,7 @@ describe('FE-U01..U03 approvals page', () => {
     expect(btn(r, 'Approve')).toBeNull();
     expect(btn(r, 'Reject')).toBeNull();
     expect(document.body.textContent).not.toContain(CLAIM_TEXT);
+    expect(document.body.textContent).not.toContain(BASIS_TEXT);
   });
 });
 
@@ -197,5 +203,6 @@ describe('FE-U10 selfAuthored is required by the client schemas', () => {
     const r = await stub.fetch('/api/v1/approvals', { headers: { authorization: 'Bearer x' } });
     const body = await r.json();
     expect(body.items[0].selfAuthored).toBe(true);
+    expect(body.items[0].selfAuthoredBasis).toBe('revision_author');
   });
 });

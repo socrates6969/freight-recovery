@@ -29,13 +29,13 @@ const SERIES = [
   {
     key: 'diesel_us', label: 'U.S. average diesel price', unit: 'USD per gallon', frequency: 'weekly', status: 'ok',
     citation: 'U.S. Energy Information Administration, US Diesel Sales Price [GASDESW], retrieved from FRED, Federal Reserve Bank of St. Louis',
-    provenance: { sourceUrl: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=GASDESW', retrievedAt: '2026-10-11', sha256: 'aca8fefdbb54bdf16a2ab2c225d8b1f59c033e04d6fb96d8c232c3cc45417bdf', rowCount: 1699, firstDate: '1994-03-21', lastDate: '2026-10-05' },
+    provenance: { sourceUrl: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=GASDESW', retrievedAt: '2026-10-11', sha256: 'aca8fefdbb54bdf16a2ab2c225d8b1f59c033e04d6fb96d8c232c3cc45417bdf', rowCount: 1699, firstDate: '1994-03-21', lastDate: '2026-10-05', sourceKind: 'bundled' }, // sourceKind: REQ-20261012-hardening C8.2 (additive; the seed imports the bundled files)
     latest: { date: '2026-10-05', value: '6.199' }, backtestYears: { from: 2011, to: 2026 }, horizons: DIESEL_H,
   },
   {
     key: 'ppi_tl', label: 'Producer price index, long-distance truckload', unit: 'index (Jun 1992 = 100)', frequency: 'monthly', status: 'ok',
     citation: 'U.S. Bureau of Labor Statistics, Producer Price Index by Industry: General Freight Trucking, Long-Distance Truckload [PCU4841214841212], retrieved from FRED, Federal Reserve Bank of St. Louis',
-    provenance: { sourceUrl: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCU4841214841212', retrievedAt: '2026-10-11', sha256: '83894390a4fd80d6033f9d18299e97b27e670427bbb5e6aa090cdca0d4a44bea', rowCount: 411, firstDate: '1992-06-01', lastDate: '2026-08-01' },
+    provenance: { sourceUrl: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCU4841214841212', retrievedAt: '2026-10-11', sha256: '83894390a4fd80d6033f9d18299e97b27e670427bbb5e6aa090cdca0d4a44bea', rowCount: 411, firstDate: '1992-06-01', lastDate: '2026-08-01', sourceKind: 'bundled' }, // sourceKind: hardening C8.2 (additive)
     latest: { date: '2026-08-01', value: '215.105' }, backtestYears: { from: 2009, to: 2026 }, horizons: PPI_H,
   },
 ];

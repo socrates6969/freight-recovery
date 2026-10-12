@@ -230,7 +230,9 @@ describe('FE-C15/C16 selfAuthored on the approvals queue', () => {
     const summary = (await m.get(`/claims/${x}`)).body;
     const item = qm.find((i) => i.id === x);
     const listItem = (await m.get(`/claims?q=CLM-0011&pageSize=100`)).body.items.find((i: any) => i.id === x);
-    expect(Object.keys(item).sort()).toEqual([...new Set([...Object.keys(listItem), 'packetRevision', 'pendingFindingsCount', 'waitingSince', 'selfAuthored'])].sort());
+    // REQ-20261012-hardening C1 (additive): ApprovalItem gains the required selfAuthoredBasis.
+    expect(Object.keys(item).sort()).toEqual([...new Set([...Object.keys(listItem), 'packetRevision', 'pendingFindingsCount', 'waitingSince', 'selfAuthored', 'selfAuthoredBasis'])].sort());
+    expect(item.selfAuthoredBasis, 'M edited revision 2').toBe('revision_author');
     void summary;
     expect((await F.approve(rv, x, 2)).status).toBe(200);
     const after = (await queue(m)).body.items.find((i: any) => i.id === x);
@@ -241,7 +243,9 @@ describe('FE-C15/C16 selfAuthored on the approvals queue', () => {
   it('FE-C16: payloads for M and R are identical except selfAuthored; no other user identity added', async () => {
     const a = (await queue(m)).body;
     const b = (await queue(rv)).body;
-    const drop = (p: any) => JSON.parse(JSON.stringify(p, (k, v) => (k === 'selfAuthored' ? undefined : v)));
+    // REQ-20261012-hardening C1 (additive): selfAuthoredBasis is the per-requester companion of selfAuthored.
+    const drop = (p: any) => JSON.parse(JSON.stringify(p, (k, v) => (k === 'selfAuthored' || k === 'selfAuthoredBasis' ? undefined : v)));
+    for (const p of [a, b]) for (const i of p.items) expect(i.selfAuthoredBasis === null, `${i.claimNumber}: basis null iff not self-authored`).toBe(i.selfAuthored === false);
     expect(drop(a)).toEqual(drop(b));
     expect(a.items.some((i: any, k: number) => i.selfAuthored !== b.items[k].selfAuthored), 'flags differ somewhere').toBe(true);
     // every identifier in the queue already appears in the claim list (claim ids, assignees): nothing new is exposed
@@ -254,7 +258,7 @@ describe('FE-C15/C16 selfAuthored on the approvals queue', () => {
         if (!list.includes(u.id)) expect(t.includes(u.id), `user id ${u.email}`).toBe(false);
         expect(t.includes(u.email), `email ${u.email}`).toBe(false);
       }
-      for (const k of deepKeys(p)) if (k !== 'selfAuthored') expect(/createdBy|author|editor|actor/i.test(k), `key ${k}`).toBe(false); // the contract flag itself is allowed
+      for (const k of deepKeys(p)) if (k !== 'selfAuthored' && k !== 'selfAuthoredBasis') expect(/createdBy|author|editor|actor/i.test(k), `key ${k}`).toBe(false); // the contract flag itself is allowed
     }
   });
 });

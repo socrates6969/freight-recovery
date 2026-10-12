@@ -71,7 +71,9 @@ describe('T7 charge lines (C5, C6)', () => {
     const r = await lines(SS.VIEWER, k1.claimId);
     expect(r.status, r.text).toBe(200);
     expect(R.ChargeLinesResponse.parse(r.body)).toEqual(r.body);
-    expect(Object.keys(r.body).sort()).toEqual(['claimId', 'classifierVersion', 'lines', 'seedVersion', 'threshold']);
+    // REQ-20261012-hardening C3 (additive): required `influence`, null for a claim without a claim.analyzed event (HD-C01).
+    expect(Object.keys(r.body).sort()).toEqual(['claimId', 'classifierVersion', 'influence', 'lines', 'seedVersion', 'threshold']);
+    expect(r.body.influence).toBeNull();
     expect([r.body.claimId, r.body.classifierVersion, r.body.seedVersion, r.body.threshold]).toEqual([k1.claimId, 'charge-knn-v1', 'tariff-seed-v1', 0.3]);
     const o = await oracleFor();
     expect(r.body.lines.map((l: any) => [l.index, l.description, l.amount, l.ruleCategory, l.label])).toEqual([

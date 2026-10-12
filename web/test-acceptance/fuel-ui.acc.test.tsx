@@ -46,7 +46,7 @@ function outlook(withFsc: boolean) {
       {
         key: 'diesel_us', label: 'U.S. average diesel price', unit: 'USD per gallon', frequency: 'weekly', status: 'ok',
         citation: 'U.S. Energy Information Administration, US Diesel Sales Price [GASDESW], retrieved from FRED, Federal Reserve Bank of St. Louis',
-        provenance: { importId: '00000000-0000-4000-8000-00000000f0aa', sourceUrl: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=GASDESW', retrievedAt: '2026-10-11', sha256: result.priceImport.sha256, rowCount: 1699, firstDate: '1994-03-21', lastDate: '2026-10-05' },
+        provenance: { importId: '00000000-0000-4000-8000-00000000f0aa', sourceUrl: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=GASDESW', retrievedAt: '2026-10-11', sha256: result.priceImport.sha256, rowCount: 1699, firstDate: '1994-03-21', lastDate: '2026-10-05', sourceKind: 'bundled' }, // sourceKind: hardening C8.2 (additive; strict client parse)
         latest: { date: '2026-10-05', value: '6.199' }, backtestYears: { from: 2011, to: 2026 },
         horizons: [
           hz(1, 'week', '2026-10-12', 'ar2', 'model_beats_naive', ['6.124', '5.903', '6.392'], 0.779, f('0.83', '0.79', '0.87')),
@@ -58,7 +58,7 @@ function outlook(withFsc: boolean) {
       {
         key: 'ppi_tl', label: 'Producer price index, long-distance truckload', unit: 'index (Jun 1992 = 100)', frequency: 'monthly', status: 'ok',
         citation: 'U.S. Bureau of Labor Statistics, Producer Price Index by Industry: General Freight Trucking, Long-Distance Truckload [PCU4841214841212], retrieved from FRED, Federal Reserve Bank of St. Louis',
-        provenance: { importId: '00000000-0000-4000-8000-00000000f0bb', sourceUrl: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCU4841214841212', retrievedAt: '2026-10-11', sha256: '83894390a4fd80d6033f9d18299e97b27e670427bbb5e6aa090cdca0d4a44bea', rowCount: 411, firstDate: '1992-06-01', lastDate: '2026-08-01' },
+        provenance: { importId: '00000000-0000-4000-8000-00000000f0bb', sourceUrl: 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCU4841214841212', retrievedAt: '2026-10-11', sha256: '83894390a4fd80d6033f9d18299e97b27e670427bbb5e6aa090cdca0d4a44bea', rowCount: 411, firstDate: '1992-06-01', lastDate: '2026-08-01', sourceKind: 'bundled' }, // sourceKind: hardening C8.2 (additive; strict client parse)
         latest: { date: '2026-08-01', value: '215.105' }, backtestYears: { from: 2009, to: 2026 },
         horizons: [hz(1, 'month', '2026-09-01', 'ar2', 'model_beats_naive', ['218.0', '210.9', '225.9'], 0.74)],
       },
@@ -213,4 +213,42 @@ describe.skipIf(SKIP)('T16 web (F15 screens)', () => {
     expect(document.querySelector('img[src="x"]')).toBeNull();
     r.view.unmount();
   });
+});
+
+// REQ-20261012-hardening T7 HD-W08 / HD-W10 (Part C C6, C7.6, C7.8).
+describe.skipIf(SKIP)('HD-W08 / HD-W10 fuel tables limit text and price source kind', () => {
+  const LIMIT = 'This organization has reached the maximum of 50 fuel tables. Archived tables count toward this limit.';
+  const KIND = { fetch: 'Downloaded from FRED by the import command.', bundled: 'From the files bundled with the product, checked against their pinned sha256.', file: 'Imported from a file supplied by the operator; the product did not download it.' } as const;
+  it('HD-W08 create answers 409 fuel_table_limit_reached -> FUEL_TABLE_LIMIT_TEXT; server text never shown', async () => {
+    const { stub } = mkStub('OWNER');
+    stub.on('POST', /\/fuel-tables$/, () => err(409, 'fuel_table_limit_reached'));
+    const r = await renderApp(stub, ['/settings/fuel-tables']);
+    await screen.findByText('Std DOE table', {}, WAIT);
+    await r.user.click(screen.getByRole('button', { name: 'Add fuel table' }));
+    await r.user.type(await screen.findByLabelText('Name', {}, WAIT), 'Limit probe table');
+    await r.user.type(screen.getByLabelText('Base price'), '1.20');
+    await r.user.type(screen.getByLabelText('Step size'), '0.06');
+    await r.user.type(screen.getByLabelText('Rate per step'), '0.01');
+    await r.user.click(screen.getByRole('button', { name: 'Save fuel table' }));
+    await waitFor(() => expect(screen.queryAllByRole('alert').some((a) => (a.textContent ?? '').includes(LIMIT))).toBe(true), WAIT);
+    expect(document.body.textContent).not.toContain(SERVER_TEXT);
+    r.view.unmount();
+  });
+  for (const kind of ['bundled', 'file', 'fetch'] as const) {
+    it(`HD-W10 sourceKind ${kind}: the matching paragraph under each provenance line; provenance line unchanged`, async () => {
+      const { stub } = mkStub('VIEWER');
+      stub.on('GET', /\/outlook(\?.*)?$/, () => {
+        const o = outlook(false);
+        return json(200, { ...o, series: o.series.map((s) => ({ ...s, provenance: { ...s.provenance, sourceKind: kind } })) });
+      });
+      const r = await renderApp(stub, ['/outlook']);
+      await screen.findByText('Backtested on public data 2011-2026; not a guarantee.', {}, WAIT);
+      const paras = screen.getAllByText(KIND[kind]);
+      expect(paras).toHaveLength(2);
+      for (const p of paras) expect(p.tagName.toLowerCase()).toBe('p');
+      for (const other of Object.keys(KIND) as (keyof typeof KIND)[]) if (other !== kind) expect(document.body.textContent).not.toContain(KIND[other]);
+      expect(screen.getAllByText('file sha256 aca8fefdbb54', { exact: false }).length, 'provenance line unchanged').toBeGreaterThan(0);
+      r.view.unmount();
+    });
+  }
 });

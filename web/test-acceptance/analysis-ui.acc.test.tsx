@@ -167,7 +167,7 @@ describe.skipIf(SKIP_BULK)('[S] AN-W06..W10 bulk analyze on the claims page', ()
     const body = { limit: 10, examined: 4, analyzed: [
       { claimId: '00000000-0000-4000-8000-0000000c0001', claimNumber: 'CLM-0001', packetId: '00000000-0000-4000-8000-0000000d0001', findingsCount: 1, recoverableCents: 100, pendingReviewCents: 0 },
       { claimId: '00000000-0000-4000-8000-0000000c0002', claimNumber: 'CLM-0002', packetId: '00000000-0000-4000-8000-0000000d0002', findingsCount: 0, recoverableCents: 0, pendingReviewCents: 0 },
-    ], skipped: [{ claimId: '00000000-0000-4000-8000-0000000c0003', claimNumber: 'CLM-0098', code: 'invalid_state' }], failed: [{ claimId: '00000000-0000-4000-8000-0000000c0004', claimNumber: 'CLM-0099', code: 'analysis_input_invalid' }], remaining: 3 };
+    ], skipped: [{ claimId: '00000000-0000-4000-8000-0000000c0003', claimNumber: 'CLM-0098', code: 'invalid_state' }], failed: [{ claimId: '00000000-0000-4000-8000-0000000c0004', claimNumber: 'CLM-0099', code: 'analysis_input_invalid', reasonCode: 'input_values' }], remaining: 3, stoppedBy: 'candidates' }; // reasonCode/stoppedBy: hardening C5.2 (additive; strict client parse)
     const { stub, user } = await page('OWNER', true, () => json(200, body));
     const lists0 = stub.count('GET', /\/api\/v1\/claims$/);
     await user.click(screen.getByRole('button', { name: T.bulkButton }));
@@ -196,7 +196,7 @@ describe.skipIf(SKIP_BULK)('[S] AN-W06..W10 bulk analyze on the claims page', ()
   });
   it('[S] AN-W08: a hostile failed claim number renders as literal text', async () => {
     const evil = '<img src=x onerror=alert(1)>';
-    const { user } = await page('MANAGER', true, () => json(200, { limit: 10, examined: 1, analyzed: [], skipped: [], failed: [{ claimId: '00000000-0000-4000-8000-0000000c0009', claimNumber: evil, code: 'analysis_input_invalid' }], remaining: 1 }));
+    const { user } = await page('MANAGER', true, () => json(200, { limit: 10, examined: 1, analyzed: [], skipped: [], failed: [{ claimId: '00000000-0000-4000-8000-0000000c0009', claimNumber: evil, code: 'analysis_input_invalid', reasonCode: 'amount_out_of_range' }], remaining: 1, stoppedBy: 'candidates' })); // hardening C5.2 (additive)
     await user.click(screen.getByRole('button', { name: T.bulkButton }));
     const dlg = await screen.findByRole('dialog', { name: T.bulkTitle }, WAIT);
     await user.click(within(dlg).getByRole('button', { name: T.bulkConfirm }));

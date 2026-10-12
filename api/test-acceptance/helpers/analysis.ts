@@ -28,8 +28,26 @@ export const P7_ANALYZED_KEYS = ['claimId', 'claimNumber', 'packetId', 'revision
   // REQ-20261011-fuel-outlook F13 (additive)
   'fuelCheckStatus', 'fscTableId', 'fscTableVersion', 'priceImportId', 'priceDate', 'fuelFindingsCount',
   // fix round 1 (F13 amended)
-  'paramsSha256'];
-export const P7_BULK_KEYS = ['limit', 'examined', 'analyzed', 'skipped', 'failed', 'remaining'];
+  'paramsSha256',
+  // REQ-20261012-hardening C4.4 (additive): full number of source documents (documentIds stays capped at 50)
+  'documentCount'];
+/** REQ-20261012-hardening fix round 2 C-FR2.2: `claim.analyzed.metadata.learnedLabelIdsTruncated` is true when more than
+ *  50 learned labels influenced the analysis, and ABSENT OR FALSE otherwise. Every caller of this helper analyses a claim
+ *  with at most 50 influencing labels, so the flag must not be true; a `false` value is dropped so the existing exact
+ *  key/metadata pins stay exact for both allowed shapes. */
+export const TRUNC_KEY = 'learnedLabelIdsTruncated';
+export function baseMeta(m: any): any {
+  expect(m?.[TRUNC_KEY] === undefined || m?.[TRUNC_KEY] === false, `${TRUNC_KEY} must be absent or false here (got ${JSON.stringify(m?.[TRUNC_KEY])})`).toBe(true);
+  if (m === null || typeof m !== 'object' || !(TRUNC_KEY in m)) return m;
+  const { [TRUNC_KEY]: _drop, ...rest } = m;
+  return rest;
+}
+// REQ-20261012-hardening C5.3 (additive): the bulk summary event gains stoppedBy.
+export const P7_BULK_KEYS = ['limit', 'examined', 'analyzed', 'skipped', 'failed', 'remaining', 'stoppedBy'];
+/** REQ-20261012-hardening C4.1: the three failure reasons of a 422 analysis_input_invalid. */
+export const REASON_CODES = ['input_values', 'amount_out_of_range', 'fuel_check'] as const;
+/** REQ-20261012-hardening C5.2: stop reasons of a 200 bulk response (`error` only ever appears in the audit event). */
+export const STOPPED_BY = ['limit', 'budget', 'candidates'] as const;
 export const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** P3: exact error body. Validation errors may add `details`; every other code has exactly code/message/requestId. */
@@ -38,7 +56,14 @@ export function expectExact(res: Res, status: number, code: keyof typeof MSG, la
   expect(Object.keys(res.body ?? {}), `${label} top-level keys`).toEqual(['error']);
   const keys = Object.keys(res.body.error).sort();
   if (code === 'validation_error') expect(keys.filter((k) => k !== 'details'), label).toEqual(['code', 'message', 'requestId']);
-  else expect(keys, `${label} error keys`).toEqual(['code', 'message', 'requestId']);
+  else if (code === 'analysis_input_invalid') {
+    // REQ-20261012-hardening C4.1 (additive): the 422 now carries exactly one details entry {path:'analysis', code:<reason>}.
+    expect(keys, `${label} error keys`).toEqual(['code', 'details', 'message', 'requestId']);
+    expect(res.body.error.details, `${label} details`).toHaveLength(1);
+    expect(Object.keys(res.body.error.details[0]).sort(), label).toEqual(['code', 'path']);
+    expect(res.body.error.details[0].path, label).toBe('analysis');
+    expect(REASON_CODES as readonly string[], `${label} reason`).toContain(res.body.error.details[0].code);
+  } else expect(keys, `${label} error keys`).toEqual(['code', 'message', 'requestId']);
   expect(res.body.error.code, label).toBe(code);
   expect(res.body.error.message, label).toBe(MSG[code]);
   expect(typeof res.body.error.requestId).toBe('string');
@@ -140,7 +165,11 @@ export async function snapshot(viewer: Session, id: string): Promise<string> {
   const p = await viewer.get(`/claims/${id}/packet`);
   const row = await dbClaim(id);
   const rows = await packetRows(id);
-  return JSON.stringify({ c: c.body, ps: p.status, pr: p.body?.revision ?? null, pst: p.body?.status ?? null, pa: p.body?.approvals ?? null, row: { ...row, updated_at: String(row?.updated_at) }, rows });
+  // REQ-20261012-hardening C4.3: ClaimDetail.analysisFailure changes by design after a 422 (asserted exactly in
+  // hardening-failed.acc.test.ts); every other claim field, the DB row and the packet rows must stay identical.
+  const { analysisFailure: _af, ...claimRest } = (c.body ?? {}) as Record<string, unknown>;
+  void _af;
+  return JSON.stringify({ c: claimRest, ps: p.status, pr: p.body?.revision ?? null, pst: p.body?.status ?? null, pa: p.body?.approvals ?? null, row: { ...row, updated_at: String(row?.updated_at) }, rows });
 }
 export async function eventsSince(admin: Session, seq: number, action?: string) {
   return H.auditSince(admin, seq, action);

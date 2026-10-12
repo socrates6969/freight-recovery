@@ -23,7 +23,10 @@ async function bulkChecked(s: Session, body: unknown, label: string) {
   const r = await A.bulk(s, body);
   expect(r.status, `${label}: ${r.text}`).toBe(200);
   const b = r.body;
-  expect(Object.keys(b).sort(), label).toEqual(['analyzed', 'examined', 'failed', 'limit', 'remaining', 'skipped']);
+  // REQ-20261012-hardening C5.2 (additive): required stoppedBy. Rate limiting is off in this file's main app, so
+  // `budget` cannot occur: `limit` iff analyzed has `limit` entries, else `candidates`.
+  expect(Object.keys(b).sort(), label).toEqual(['analyzed', 'examined', 'failed', 'limit', 'remaining', 'skipped', 'stoppedBy']);
+  expect(b.stoppedBy, `${label}: stoppedBy`).toBe(b.analyzed.length === b.limit ? 'limit' : 'candidates');
   expect(b.examined, `${label}: examined = analyzed + skipped + failed`).toBe(b.analyzed.length + b.skipped.length + b.failed.length);
   expect(b.analyzed.length).toBeLessThanOrEqual(b.limit);
   expect(b.examined).toBeLessThanOrEqual(Math.min(4 * b.limit, 100));
@@ -40,7 +43,8 @@ async function bulkChecked(s: Session, body: unknown, label: string) {
     expect(p.createdBy?.id, 'bulk requester is the author').toBe(s.user.id);
   }
   for (const x of b.skipped) { expect(Object.keys(x).sort()).toEqual(['claimId', 'claimNumber', 'code']); expect(x.code).toBe('invalid_state'); }
-  for (const x of b.failed) { expect(Object.keys(x).sort()).toEqual(['claimId', 'claimNumber', 'code']); expect(x.code).toBe('analysis_input_invalid'); }
+  // REQ-20261012-hardening C5.2 (additive): each failed item carries the C4.1 reasonCode.
+  for (const x of b.failed) { expect(Object.keys(x).sort()).toEqual(['claimId', 'claimNumber', 'code', 'reasonCode']); expect(x.code).toBe('analysis_input_invalid'); expect(A.REASON_CODES as readonly string[]).toContain(x.reasonCode); }
   expect(b.remaining, `${label}: remaining = AWAITING_ANALYSIS count after the run`).toBe(await awaitingCount(owner));
   const ev = await A.eventsSince(owner, seq0);
   const sum = ev.filter((e) => e.action === 'claim.bulk_analyzed');
@@ -48,12 +52,20 @@ async function bulkChecked(s: Session, body: unknown, label: string) {
   expect(sum[0].actor).toEqual({ id: s.user.id, role: s.user.role });
   expect(sum[0].targetType).toBe('tenant');
   expect(sum[0].targetId).toBe(s.user.tenant.id);
-  expect(sum[0].metadata).toEqual({ limit: b.limit, examined: b.examined, analyzed: b.analyzed.length, skipped: b.skipped.length, failed: b.failed.length, remaining: b.remaining });
+  expect(sum[0].metadata).toEqual({ limit: b.limit, examined: b.examined, analyzed: b.analyzed.length, skipped: b.skipped.length, failed: b.failed.length, remaining: b.remaining, stoppedBy: b.stoppedBy }); // stoppedBy: hardening C5.3 (additive)
+  // REQ-20261012-hardening C4.2: one claim.analysis_failed (bulk: true) per failed item, actor = requester.
+  const fe = ev.filter((e) => e.action === 'claim.analysis_failed');
+  expect(fe.map((e) => e.targetId).sort(), `${label}: one claim.analysis_failed per failed claim`).toEqual(b.failed.map((x: any) => x.claimId).sort());
+  for (const e of fe) {
+    expect(e.actor).toEqual({ id: s.user.id, role: s.user.role });
+    expect(e.metadata.bulk).toBe(true);
+    expect(e.metadata.reasonCode).toBe(b.failed.find((x: any) => x.claimId === e.targetId).reasonCode);
+  }
   const per = ev.filter((e) => e.action === 'claim.analyzed' && e.actor?.id === s.user.id && b.analyzed.some((a: any) => a.claimId === e.targetId));
   expect(per.map((e) => e.targetId).sort(), `${label}: one claim.analyzed per analyzed claim`).toEqual(b.analyzed.map((a: any) => a.claimId).sort());
   for (const e of per) {
     expect(e.metadata.bulk).toBe(true);
-    expect(Object.keys(e.metadata).sort()).toEqual([...A.P7_ANALYZED_KEYS].sort());
+    expect(Object.keys(A.baseMeta(e.metadata)).sort()).toEqual([...A.P7_ANALYZED_KEYS].sort());
   }
   expect(sum[0].seq, 'summary after the per-claim events').toBeGreaterThan(Math.max(0, ...per.map((e) => e.seq)));
   return b;
@@ -140,7 +152,7 @@ describe.skipIf(A.SKIP_BULK)('[S] bulk analyze', () => {
     expect(b.examined).toBe(1);
     expect(b.remaining).toBe(0);
     const again = await bulkChecked(m, {}, 'B02 again');
-    expect(again).toEqual({ limit: 10, examined: 0, analyzed: [], skipped: [], failed: [], remaining: 0 });
+    expect(again).toEqual({ limit: 10, examined: 0, analyzed: [], skipped: [], failed: [], remaining: 0, stoppedBy: 'candidates' }); // stoppedBy: hardening C5.2 (additive)
   });
   let bad: A.Made;
   it('[S] AN-B03: a failing oldest claim goes to failed and does not consume the limit', async () => {
@@ -148,7 +160,7 @@ describe.skipIf(A.SKIP_BULK)('[S] bulk analyze', () => {
     const g1 = await A.smallClaim(an, rv, 'B3a');
     const g2 = await A.smallClaim(an, rv, 'B3b');
     const b = await bulkChecked(m, { limit: 2 }, 'B03');
-    expect(b.failed).toEqual([{ claimId: bad.claimId, claimNumber: bad.claimNumber, code: 'analysis_input_invalid' }]);
+    expect(b.failed).toEqual([{ claimId: bad.claimId, claimNumber: bad.claimNumber, code: 'analysis_input_invalid', reasonCode: b.failed[0]?.reasonCode }]); // reasonCode: hardening C5.2 (additive; value checked in bulkChecked)
     expect(ids(b.analyzed)).toEqual([g1.claimId, g2.claimId]);
     expect(b.examined).toBe(3);
     expect(b.remaining).toBe(1);
@@ -162,11 +174,15 @@ describe.skipIf(A.SKIP_BULK)('[S] bulk analyze', () => {
     const good = await A.smallClaim(an, rv, 'B4g');
     const first = await bulkChecked(m, { limit: 1 }, 'B04 limit 1');
     expect(first.examined).toBe(4);
-    expect(ids(first.failed)).toEqual(bads.slice(0, 4).map((c) => c.claimId));
+    // REQ-20261012-hardening C5.1 (contract change of candidate order): `bad` already failed in B03, so it is ordered
+    // after the never-failed claims; the scan cap of 4 therefore covers the four new failing claims (was bads[0..3]).
+    expect(ids(first.failed)).toEqual(bads.slice(1, 5).map((c) => c.claimId));
+    expect(first.stoppedBy).toBe('candidates');
     expect(first.analyzed).toEqual([]);
     expect(first.remaining).toBe(6);
     const second = await bulkChecked(m, { limit: 2 }, 'B04 limit 2');
     expect(second.examined).toBe(6);
+    // C5.1: `good` (never failed) first, then every failed claim oldest first (all five have failed by now).
     expect(ids(second.failed)).toEqual(bads.map((c) => c.claimId));
     expect(ids(second.analyzed)).toEqual([good.claimId]);
     expect(second.remaining).toBe(5);
@@ -223,7 +239,8 @@ describe.skipIf(A.SKIP_BULK)('[S] bulk analyze', () => {
     const r = await A.bulk(lm, { limit: 5 });
     expect(r.status, r.text).toBe(200);
     const b = r.body;
-    expect(Object.keys(b).sort()).toEqual(['analyzed', 'examined', 'failed', 'limit', 'remaining', 'skipped']);
+    expect(Object.keys(b).sort()).toEqual(['analyzed', 'examined', 'failed', 'limit', 'remaining', 'skipped', 'stoppedBy']);
+    expect(b.stoppedBy, 'HD-B05 / C5.2: the budget stopped the run').toBe('budget');
     expect(b.limit).toBe(5);
     expect(b.examined).toBe(3);
     expect(ids(b.analyzed), 'the oldest three, in order').toEqual(made.slice(0, 3).map((c) => c.claimId));
@@ -239,7 +256,7 @@ describe.skipIf(A.SKIP_BULK)('[S] bulk analyze', () => {
     const sum = ev.filter((e) => e.action === 'claim.bulk_analyzed');
     expect(sum).toHaveLength(1);
     expect(sum[0].actor).toEqual({ id: lm.user.id, role: 'MANAGER' });
-    expect(sum[0].metadata).toEqual({ limit: 5, examined: 3, analyzed: 3, skipped: 0, failed: 0, remaining: 2 });
+    expect(sum[0].metadata).toEqual({ limit: 5, examined: 3, analyzed: 3, skipped: 0, failed: 0, remaining: 2, stoppedBy: 'budget' }); // stoppedBy: hardening C5.3 (additive)
     const per = ev.filter((e) => e.action === 'claim.analyzed');
     expect(per.map((e) => e.targetId).sort()).toEqual(made.slice(0, 3).map((c) => c.claimId).sort());
     for (const e of per) expect(e.metadata.bulk).toBe(true);

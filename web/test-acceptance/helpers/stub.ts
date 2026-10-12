@@ -117,6 +117,8 @@ export interface StubOpts {
   rejectTokens?: Set<string>;
   /** four-eyes (P3): claim ids for which the signed-in user is a revision author (ApprovalItem.selfAuthored) */
   selfAuthored?: Set<string>;
+  /** REQ-20261012-hardening C1: basis per self-authored claim id (default `revision_author`). */
+  selfAuthoredBasis?: Record<string, 'revision_author' | 'dd_invoice_editor' | 'label_author'>;
 }
 
 export function createStub(o: StubOpts = {}) {
@@ -182,11 +184,12 @@ export function createStub(o: StubOpts = {}) {
         return json(200, { items: items.slice((page - 1) * pageSize, page * pageSize), page, pageSize, total: items.length });
       }
       let m = /^\/claims\/([^/]+)$/.exec(p);
-      if (m && method === 'GET') { const c = claims.find((x) => x.id === m![1]); return c ? json(200, c) : json(404, { error: { code: 'not_found', message: 'Not found.', requestId: 'r' } }); }
+      // REQ-20261012-hardening C4.3 (additive): ClaimDetail requires analysisFailure (null unless the fixture sets it).
+      if (m && method === 'GET') { const c = claims.find((x) => x.id === m![1]); return c ? json(200, { analysisFailure: null, ...c }) : json(404, { error: { code: 'not_found', message: 'Not found.', requestId: 'r' } }); }
       m = /^\/claims\/([^/]+)\/packet$/.exec(p);
       if (m && method === 'GET') { const c = claims.find((x) => x.id === m![1]); if (!c) return json(404, { error: { code: 'not_found', message: 'Not found.', requestId: 'r' } }); return json(200, packets[c.id] ?? (packets[c.id] = mkPacket(c))); }
       if (method === 'GET' && p === '/approvals') {
-        const items = claims.filter((c) => ['PENDING_REVIEW', 'APPROVED'].includes(c.status)).map((c) => ({ ...c, packetRevision: 1, pendingFindingsCount: c.pendingReviewCents > 0 ? 1 : 0, waitingSince: c.updatedAt, selfAuthored: selfAuthored.has(c.id) }));
+        const items = claims.filter((c) => ['PENDING_REVIEW', 'APPROVED'].includes(c.status)).map((c) => ({ ...c, packetRevision: 1, pendingFindingsCount: c.pendingReviewCents > 0 ? 1 : 0, waitingSince: c.updatedAt, selfAuthored: selfAuthored.has(c.id), selfAuthoredBasis: selfAuthored.has(c.id) ? (o.selfAuthoredBasis?.[c.id] ?? 'revision_author') : null })); // basis: hardening C1 (additive)
         return json(200, { items, page: 1, pageSize: 25, total: items.length });
       }
       m = /^\/claims\/([^/]+)\/packet\/(approve|reject|send|revisions)$/.exec(p);

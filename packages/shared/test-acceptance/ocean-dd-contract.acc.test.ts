@@ -139,7 +139,8 @@ describe('C14-C16 shared registries (additive)', () => {
     const a = [...(M.AUDIT_ACTIONS as string[])];
     const i = a.indexOf('price_data.imported');
     expect(i).toBeGreaterThan(0);
-    expect(a.slice(i + 1)).toEqual(DD_AUDIT_ACTIONS);
+    // REQ-20261012-hardening C9/C15 (additive): the three hardening actions follow the C15 step-8 actions.
+    expect(a.slice(i + 1)).toEqual([...DD_AUDIT_ACTIONS, 'claim.analysis_failed', 'auth.password.change_failed', 'invite.existing_account']);
     expect(new Set(a).size).toBe(a.length);
   });
   it('flag registry entry intelligence.ocean_dd (C16), key order', () => {

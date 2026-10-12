@@ -100,7 +100,7 @@ describe('T9 analysis with learning (C4)', () => {
     expect(p.demandLetter).toContain(NO_CONFIRMED);
     expect(p.demandLetter).not.toContain('Sort and segregate');
     const e = await analyzedEvent(seq, k1.claimId);
-    expect(Object.keys(e.metadata).sort()).toEqual([...A.P7_ANALYZED_KEYS].sort());
+    expect(Object.keys(A.baseMeta(e.metadata)).sort()).toEqual([...A.P7_ANALYZED_KEYS].sort());
     expect(e.metadata).toMatchObject({ findingsCount: 2, pendingFindingsCount: 2, ignoredFindingsCount: 0, recoverableCents: 0, pendingReviewCents: 23500, rulesVersion: 'rules-v1', bulk: false, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v1', tenantLabelCount: 0, learnedFindingsCount: 1, reviewFlagsCount: 0, learnedLabelIds: [] });
     const v = await owner.get('/audit/verify');
     expect(v.body.valid, v.text).toBe(true);
@@ -216,7 +216,7 @@ describe('T9 analysis with learning (C4)', () => {
     const seq = await H.lastSeq(owner);
     const b = await A.bulk(an, { limit: 10 });
     expect(b.status, b.text).toBe(200);
-    expect(Object.keys(b.body).sort()).toEqual(['analyzed', 'examined', 'failed', 'limit', 'remaining', 'skipped']);
+    expect(Object.keys(b.body).sort()).toEqual(['analyzed', 'examined', 'failed', 'limit', 'remaining', 'skipped', 'stoppedBy']); // stoppedBy: REQ-20261012-hardening C5.2 (additive)
     for (const k of kinds) {
       const c = bulkMade[k]!;
       const p = (await vw.get(`/claims/${c.claimId}/packet`)).body;
@@ -226,7 +226,7 @@ describe('T9 analysis with learning (C4)', () => {
       expect(A.replaceDate(p.demandLetter, '2000-01-01').replaceAll(c.load, 'LOAD'), k).toBe(A.replaceDate(s.p.demandLetter, '2000-01-01').replaceAll(s.c.load, 'LOAD'));
       const e = (await A.eventsSince(owner, seq, 'claim.analyzed')).filter((x: any) => x.targetId === c.claimId);
       expect(e).toHaveLength(1);
-      expect(Object.keys(e[0].metadata).sort()).toEqual([...A.P7_ANALYZED_KEYS].sort());
+      expect(Object.keys(A.baseMeta(e[0].metadata)).sort()).toEqual([...A.P7_ANALYZED_KEYS].sort());
       expect(e[0].metadata.bulk).toBe(true);
       expect(e[0].metadata.classifierVersion).toBe('charge-knn-v1');
       expect(e[0].metadata.learnedFindingsCount).toBe(k === 'k1' ? 1 : 0);
@@ -293,7 +293,7 @@ describe('T17 CI-U04 learnedLabelIds and CI-A21 bulk once-per-request (C4, C9 fi
     await analyzeOk(an, p2);
     const e = await analyzedEvent(seq, p2.claimId);
     expect(e.metadata.learnedLabelIds).toEqual([lab.body.label.id]);
-    expect(Object.keys(e.metadata).sort()).toEqual([...A.P7_ANALYZED_KEYS].sort());
+    expect(Object.keys(A.baseMeta(e.metadata)).sort()).toEqual([...A.P7_ANALYZED_KEYS].sort());
     await I.setFlag(dev, 'intelligence.charge_suggestions', false, 'acceptance U04 flag off');
     try {
       const l2 = H.uniqLoad('U4C');

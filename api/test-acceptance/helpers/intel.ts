@@ -272,7 +272,12 @@ export async function insertClaims(tenantId: string, actorId: string, specs: Cla
   for (const s of specs) {
     const id = s.id ?? randomUUID();
     const upd = now - s.ageMs;
-    claimsV.push(`(${lit(id)},${lit(tenantId)},${lit(s.num)},${lit(s.carrier ?? 'Fixture Carrier')},'Fixture Shipper','${s.perspective}','${s.status}',${Math.min(s.rec + s.pend, 2147483647)},${s.rec},${s.pend},'USD',0,${ts(upd)},${ts(upd)})`);
+    // REQ-20261012-hardening C2.3 (test-design fix): an AWAITING_ANALYSIS claim carries no amounts (CHECK
+    // claims_awaiting_amounts_zero). Random generators may still draw amounts for such specs (their draws are kept so
+    // the rng sequence is unchanged); the stored row uses 0. Oracles read the rows back (loadOClaims).
+    const zero = s.status === 'AWAITING_ANALYSIS';
+    const rec = zero ? 0 : s.rec, pend = zero ? 0 : s.pend;
+    claimsV.push(`(${lit(id)},${lit(tenantId)},${lit(s.num)},${lit(s.carrier ?? 'Fixture Carrier')},'Fixture Shipper','${s.perspective}','${s.status}',${Math.min(rec + pend, 2147483647)},${rec},${pend},'USD',0,${ts(upd)},${ts(upd)})`);
     const packets: PktSpec[] = s.packets === null ? [] : s.packets ?? [{ findings: Array.from({ length: s.review ?? 0 }, (_, i) => ({ rule: `FILL-${i}`, review: true })) }];
     const pids: string[] = [];
     packets.forEach((p, pi) => {

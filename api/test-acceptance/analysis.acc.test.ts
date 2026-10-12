@@ -318,12 +318,12 @@ describe('AN-U01..U04 audit', () => {
     const e = ev[0];
     expect(e.actor).toEqual({ id: an.user.id, role: 'ANALYST' });
     expect(e.targetType).toBe('claim');
-    expect(Object.keys(e.metadata).sort()).toEqual([...A.P7_ANALYZED_KEYS].sort());
+    expect(Object.keys(A.baseMeta(e.metadata)).sort()).toEqual([...A.P7_ANALYZED_KEYS].sort());
     const p = (await vw.get(`/claims/${a1.claimId}/packet?revision=1`)).body;
     const docIdBySha = new Map(a1.docs.map((d) => [d.sha256, d.id]));
     // REQ-20261011-fuel-outlook F13 (additive; amended after review): no fuel inputs -> status no_inputs, no table,
     // no posting; priceImportId is always null in step 7.
-    expect(e.metadata).toEqual({
+    expect(A.baseMeta(e.metadata)).toEqual({
       claimId: a1.claimId, claimNumber: a1.claimNumber, packetId: a1res.packet.id, revision: 1, contentHash: a1res.packet.contentHash,
       perspective: 'SHIPPER', fromStatus: 'AWAITING_ANALYSIS', toStatus: 'PENDING_REVIEW',
       documentIds: p.sources.map((s: any) => docIdBySha.get(s.sha256)),
@@ -332,6 +332,8 @@ describe('AN-U01..U04 audit', () => {
       // REQ-20261011-charge-intelligence C9 (additive): ld5001 has no keyword-`other` line, so nothing is learned
       classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v1', tenantLabelCount: 0, learnedFindingsCount: 0, reviewFlagsCount: 0, learnedLabelIds: [],
       fuelCheckStatus: 'no_inputs', fscTableId: null, fscTableVersion: null, priceDate: null, fuelFindingsCount: 0, paramsSha256: null, priceImportId: null,
+      // REQ-20261012-hardening C4.4 (additive): number of source documents = packet_sources rows
+      documentCount: p.sources.length,
     });
     expect(e.metadata.contentHash).toBe(p.integrity.contentHash);
   });

@@ -24,6 +24,7 @@ const seedNearest = (text: string, category: string, source: string, sourceLabel
 function chargeLines(claimId: string, labelled = false, hostile = false) {
   return {
     claimId, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v1', threshold: 0.3,
+    influence: null, // REQ-20261012-hardening C3 (additive; the strict client schema requires the key)
     lines: [
       { index: 0, description: 'Linehaul', amount: '1500.00', ruleCategory: 'linehaul', suggestion: sug(null, 0.043, seedNearest('HYDRAULIC LIFTGATE SERVICE', 'accessorial', 'dohrn_2025', DOHRN)), label: null },
       { index: 1, description: 'Sort and segregate', amount: '85.00', ruleCategory: 'other', suggestion: labelled ? sug('accessorial', 1, { text: 'Sort and segregate', category: 'accessorial', origin: 'tenant', source: null, sourceLabel: "Your team's label", labelId: LID }) : sug('accessorial', 0.836, seedNearest('SORT AND SEGREGATE SERVICE', 'accessorial', 'dohrn_2025', DOHRN)), label: labelled ? { id: LID, category: 'accessorial' } : null },
@@ -171,7 +172,8 @@ describe.skipIf(SKIP)('T15 Charges tab (C13, S1)', () => {
     const { dlg } = await openCharges(stub);
     expect(dlg.textContent).toContain(TXT.empty);
   });
-  it('CI-W08 LRN findings appear in the Evidence tab with rule id, 50% and the needs-review marker', async () => {
+  // REQ-20261012-hardening C7.3 (contract change): the confidence is shown as a fixed rule setting, not as "50%".
+  it('CI-W08 LRN findings appear in the Evidence tab with rule id, the rule-setting text and the needs-review marker', async () => {
     const { stub, c } = mkStub('VIEWER');
     const base = mkPacket(c, { revision: 1, status: 'PENDING_REVIEW' });
     stub.packets[c.id] = { ...base, findings: [{ ...base.findings[0], id: '00000000-0000-4000-8000-0000000001aa', ruleId: 'LRN-ACCESSORIAL-REVIEW', title: 'Possible unauthorized accessorial (suggestion)', amountCents: 8500, confidence: 0.5, needsHumanReview: true }] };
@@ -179,7 +181,54 @@ describe.skipIf(SKIP)('T15 Charges tab (C13, S1)', () => {
     await user.click(within(dlg).getByRole('tab', { name: 'Evidence' }));
     await within(dlg).findByText('LRN-ACCESSORIAL-REVIEW', { exact: false }, WAIT);
     expect(dlg.textContent).toContain('Possible unauthorized accessorial (suggestion)');
-    expect(dlg.textContent).toContain('50%');
+    expect(dlg.textContent).toContain('rule setting 0.50 (fixed per rule; not a measured probability)');
+    expect(dlg.textContent).not.toContain('50%');
     expect(dlg.textContent?.toLowerCase()).toContain('needs human review');
   });
+});
+
+// REQ-20261012-hardening T7 HD-W06 / HD-W07 (Part C C6, C7.5): learned-label influence section and 409 texts.
+describe.skipIf(SKIP)('HD-W06 / HD-W07 Charges tab influence and label conflicts (C7.5)', () => {
+  const INF = { heading: 'Team labels that influenced this analysis', none: 'No team label influenced this analysis.', deleted: 'Deleted label', note: 'A team label can only move findings to human review or add review items. It never adds confirmed money.' };
+  const CONFLICT = 'This label was changed at the same time by someone else. Reload and try again.';
+  const HOSTILE = '<img src=x onerror=alert(1)>';
+  const withInfluence = (influence: any) => (id: string) => json(200, { ...chargeLines(id), influence });
+  it('HD-W06 influence null: section absent', async () => {
+    const { stub } = mkStub('VIEWER', { lines: withInfluence(null) });
+    const { dlg } = await openCharges(stub);
+    expect(dlg.textContent).not.toContain(INF.heading);
+    expect(dlg.textContent).not.toContain(INF.none);
+  });
+  it('HD-W06 influence {labels: []}: heading and the none text', async () => {
+    const { stub } = mkStub('VIEWER', { lines: withInfluence({ labels: [] }) });
+    const { dlg } = await openCharges(stub);
+    await within(dlg).findByText(INF.none, { exact: false }, WAIT);
+    expect(dlg.textContent).toContain(INF.heading);
+  });
+  it('HD-W06 present + deleted + hostile labels: description and category, Deleted label, note; hostile text stays text', async () => {
+    const { stub } = mkStub('VIEWER', { lines: withInfluence({ labels: [
+      { labelId: LID, description: 'Sort and segregate', category: 'accessorial' },
+      { labelId: '00000000-0000-4000-8000-00000000c0df', description: null, category: null },
+      { labelId: '00000000-0000-4000-8000-00000000c0e0', description: HOSTILE, category: 'detention' },
+    ] }) });
+    const { dlg } = await openCharges(stub);
+    await within(dlg).findByText(INF.heading, { exact: false }, WAIT);
+    const t = dlg.textContent ?? '';
+    for (const s of [INF.heading, 'Sort and segregate', INF.deleted, INF.note, HOSTILE]) expect(t, s).toContain(s);
+    expect(t).toMatch(/accessorial/i);
+    expect(t).toMatch(/detention/i);
+    expect(t.indexOf(INF.note), 'note after the list').toBeGreaterThan(t.indexOf(INF.deleted));
+    expect(dlg.querySelector('img[src="x"]')).toBeNull();
+    expect(dlg.querySelectorAll('img').length).toBe(0);
+  });
+  for (const [code, text] of [['conflict', CONFLICT], ['label_limit_reached', TXT.limit]] as const) {
+    it(`HD-W07 label PUT 409 ${code} -> "${text}"; server text never shown`, async () => {
+      const { stub } = mkStub('REVIEWER', { put: () => json(409, { error: { code, message: 'SERVER 409 TEXT', requestId: 'r' } }) });
+      const { dlg, user } = await openCharges(stub);
+      await user.click(within(rowOf(dlg, 'Sort and segregate')).getByRole('button', { name: 'Confirm Accessorial' }));
+      await alertWith(text);
+      if (code === 'conflict') expect(document.body.textContent).not.toContain(TXT.limit);
+      expect(document.body.textContent).not.toContain('SERVER 409 TEXT');
+    });
+  }
 });

@@ -172,7 +172,12 @@ describe.skipIf(SKIP)('T14 web /ocean (C18)', () => {
     for (const p of SH.DD_TARIFF_PRESETS) {
       await user.selectOptions(select, p.id);
       await screen.findByText(DD_PRESET_NOTE, { exact: false }, WAIT);
-      for (const t of [p.provenance.carrier, p.provenance.document, p.provenance.retrieved, p.provenance.verification, ...p.provenance.assumptions]) expect(screen.getAllByText(t, { exact: false }).length, `${p.id}: ${t}`).toBeGreaterThan(0);
+      // REQ-20261012-hardening C7.7 (contract change): the verification enum is shown as `Verification: ` + its C6 text.
+      const vText = `Verification: ${(SH as unknown as { DD_PRESET_VERIFICATION_TEXT: Record<string, string> }).DD_PRESET_VERIFICATION_TEXT[p.provenance.verification]}`;
+      for (const t of [p.provenance.carrier, p.provenance.document, p.provenance.retrieved, vText, ...p.provenance.assumptions]) expect(screen.getAllByText(t, { exact: false }).length, `${p.id}: ${t}`).toBeGreaterThan(0);
+      // HD-W09 (hardening C7.7): no raw verification enum next to "Verification: "
+      expect(document.body.textContent, `${p.id}: raw enum`).not.toContain('primary_search_extract');
+      expect(document.body.textContent).not.toMatch(/Verification: (primary|secondary)\b/);
       expect((screen.getByLabelText('Name') as HTMLInputElement).value, `${p.id} fills the name`).toBe(p.data.name);
       expect((screen.getByLabelText('Carrier') as HTMLInputElement).value).toBe(p.data.carrier);
     }
