@@ -67,6 +67,7 @@ function lockup(heightPx, cls) {
 }
 
 const NAV = [
+  ["/platform/", "Platform"],
   ["/how-it-works/", "How it works"],
   ["/security/", "Security status"],
   ["/about/", "About"],

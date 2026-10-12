@@ -21,3 +21,4 @@ h1 { font-size:2rem; line-height:1.2; margin:1.5rem 0 .5rem; } h2 { font-size:1.
 table { border-collapse:collapse; width:100%; } th, td { border:1px solid var(--line); padding:.4rem .6rem; text-align:left; vertical-align:top; }
 details { margin:.6rem 0; } summary { cursor:pointer; font-weight:600; }
 footer.site { margin-top:3rem; padding-top:1rem; padding-bottom:2rem; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem; }
+.scroll { overflow-x:auto; } .scroll table { min-width:36rem; }

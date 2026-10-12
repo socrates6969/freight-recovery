@@ -1,6 +1,6 @@
 <!--meta {"title":"How freight detention recovery works","description":"From rate confirmation, BOL and invoice to an evidence packet and a DRAFT demand letter, with the arithmetic shown. Pre-product; synthetic examples.","path":"/how-it-works/","crumb":"How it works"} -->
 <h1>How it works</h1>
-<p class="lead">A prototype pipeline, described as it actually behaves today. Pre-product; examples below are synthetic.</p>
+<p class="lead">The pipeline, described as it actually behaves today. Pre-product; examples below are synthetic.</p>
 
 <h2>1. Ingest</h2>
 <p>You provide one load's documents (PDF, CSV or text). Each is fingerprinted with SHA-256 so the packet can later show exactly which files the numbers came from.</p>
@@ -18,6 +18,16 @@
 <li>The demand letter is generated as a <strong>DRAFT, not sent, not legal advice</strong>. A person approves and sends it.</li>
 </ul>
 
+<h2>4. Approve with a second person</h2>
+<p>Nothing leaves the platform until someone other than the author approves it. People who edited the source data, or whose charge corrections influenced the result, cannot approve it either. Every step is recorded in a tamper-evident audit log.</p>
+
+<h2>The same flow for fuel and ocean fees</h2>
+<ul>
+<li><strong>Fuel surcharges:</strong> the platform recomputes the surcharge from the official weekly diesel price and the customer's own table, and shows which week the invoice used.</li>
+<li><strong>Ocean container fees:</strong> each demurrage or detention invoice is checked against the content the US rules require, the 30-day billing deadline and the carrier tariff; the dispute letter quotes the rule and is a DRAFT until approved.</li>
+</ul>
+<p>Details of every module are on the <a href="/platform/">Platform</a> page.</p>
+
 <h2>What is not here yet</h2>
-<p>No hosted product, no TMS/ELD/accounting integrations, no real-data handling, no security audit or certification. See <a href="/security/">security status</a>.</p>
+<p>No hosted product, no TMS/ELD/accounting integrations, no real customer data, and no external security assessment or certification. See <a href="/security/">security status</a>.</p>
 <p><a class="cta" href="/contact/">Become a design partner</a></p>
