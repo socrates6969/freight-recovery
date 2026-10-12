@@ -32,15 +32,17 @@ export async function crossTenantRead<T>(
   if (!isUuid(targetTenantId)) throw errors.notFound();
   const exists = await withSystemTx(base, (tx) => tx.tenant.findUnique({ where: { id: targetTenantId }, select: { id: true } }));
   if (!exists) throw errors.notFound();
-  return withTenantTx(base, targetTenantId, async (tx) => {
+  // Fix round 2 (C-FR2.1): the canonical tenant id of the loaded row, never the request parameter.
+  const tenantId = exists.id;
+  return withTenantTx(base, tenantId, async (tx) => {
     await appendAudit(tx, {
-      tenantId: targetTenantId,
+      tenantId,
       action: 'platform.cross_tenant_read',
       actorId: actor.userId,
       actorRole: actor.role,
       targetType: 'tenant',
-      targetId: targetTenantId,
-      metadata: { ...metadata, reason, targetTenantId },
+      targetId: tenantId,
+      metadata: { ...metadata, reason, targetTenantId: tenantId },
       ip: actor.ip,
       requestId: actor.requestId,
     });

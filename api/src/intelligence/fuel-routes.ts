@@ -103,7 +103,7 @@ export function registerFuelRoutes(app: FastifyInstance, deps: FuelRouteDeps): v
       // Read before the tenant transaction (cached per import; a store error is price_unavailable, never 500).
       const series = await dieselSeriesOrNull(deps.prices);
       const body = strictBody(FuelCheckView, await fuelCheck(ctx.db, params.id, series, charges));
-      await auditViewed(req, { kind: 'fuel_check', claimId: params.id, status: body.result.status }, { type: 'claim', id: params.id });
+      await auditViewed(req, { kind: 'fuel_check', claimId: body.claimId, status: body.result.status }, { type: 'claim', id: body.claimId });
       return body;
     },
   });

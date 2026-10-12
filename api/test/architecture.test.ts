@@ -296,6 +296,21 @@ describe('architecture', () => {
     }
   });
 
+  it('fix round 2 (C-FR2.1, H-1): audit target ids never come from request parameters', () => {
+    // Path parameters are canonicalised once, in defineRoute; nothing else reads req.params.
+    const route = files.find((f) => f.path === 'src/http/route.ts');
+    expect(route?.text).toMatch(/canonicalizeParams\(parseOrThrow\(schema\.params, req\.params, true\)\)/u);
+    for (const f of files) {
+      if (f.path !== 'src/http/route.ts') expect([f.path, /\b(req|request)\.params\b/u.test(f.text)]).toEqual([f.path, false]);
+      // targetId (audit rows, four-eyes refusals) and the `{ type, id }` targets of intelligence.viewed use the id
+      // of a loaded database row: never `params.x`, and never a raw service argument named `...Param`.
+      expect([f.path, /\btargetId\s*:\s*[^,\n}]*\bparams\b/u.test(f.text)]).toEqual([f.path, false]);
+      expect([f.path, /\btargetId\s*:\s*\w*Param\b/u.test(f.text)]).toEqual([f.path, false]);
+      expect([f.path, /\{\s*type:\s*'[^']+',\s*id:\s*params\./u.test(f.text)]).toEqual([f.path, false]);
+      expect([f.path, /\bclaimId:\s*params\./u.test(f.text)]).toEqual([f.path, false]);
+    }
+  });
+
   it('fix round 1 (C11): no Fastify request `.ip` read outside src/http/client-ip.ts', () => {
     for (const f of files) {
       if (f.path === 'src/http/client-ip.ts') continue;

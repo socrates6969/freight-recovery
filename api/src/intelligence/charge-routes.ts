@@ -43,7 +43,7 @@ export function registerChargeRoutes(app: FastifyInstance, deps: ChargeRouteDeps
       const ctx = requireTenant(req);
       await requireFlag();
       const body = strictBody(ChargeLinesResponse, await chargeLines(ctx.db, params.id));
-      await auditViewed(req, { kind: 'charge_lines', claimId: params.id, returned: body.lines.length }, { type: 'claim', id: params.id });
+      await auditViewed(req, { kind: 'charge_lines', claimId: body.claimId, returned: body.lines.length }, { type: 'claim', id: body.claimId });
       return body;
     },
   });

@@ -56,6 +56,23 @@ function parseOrThrow(schema: AnySchema | undefined, value: unknown, emptyAsObje
   return r.data;
 }
 
+const UUID_ANY_CASE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/**
+ * Fix round 2 (C-FR2.1, H-1): canonicalise path parameters at the request boundary. Every string value that is a
+ * UUID in any letter case becomes lower case, so lookups, responses and audit rows only ever see the database's
+ * canonical `uuid::text` form (audit `target_id` is TEXT and is compared with that form by the four-eyes readers
+ * and triggers). Non-UUID values (flag keys, malformed ids answered as 404) are returned unchanged.
+ */
+export function canonicalizeParams(params: unknown): unknown {
+  if (params === null || typeof params !== 'object' || Array.isArray(params)) return params;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(params as Record<string, unknown>)) {
+    out[k] = typeof v === 'string' && UUID_ANY_CASE.test(v) ? v.toLowerCase() : v;
+  }
+  return out;
+}
+
 export function defineRoute<
   B extends AnySchema | undefined = undefined,
   Q extends AnySchema | undefined = undefined,
@@ -73,7 +90,7 @@ export function defineRoute<
     preHandler: async (req) => {
       const body = parseOrThrow(schema.body, req.body, true);
       const query = parseOrThrow(schema.query, req.query, true);
-      const params = parseOrThrow(schema.params, req.params, true);
+      const params = canonicalizeParams(parseOrThrow(schema.params, req.params, true));
       (req as FastifyRequest & { frInput?: unknown }).frInput = { body, query, params };
     },
     handler: async (req, reply) => {

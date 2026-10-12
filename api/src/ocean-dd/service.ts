@@ -191,7 +191,7 @@ export async function updateTariff(db: TenantDb, actor: Actor, id: string, body:
       if (updated.count !== 1) throw errors.staleRevision();
       const fresh = await tx.ddTariff.findFirst({ where: { id }, select: CATALOG_SELECT });
       if (!fresh) throw errors.notFound();
-      await audit(tx, db, actor, 'dd_tariff.updated', 'dd_tariff', id, tariffMeta(id, fresh.version, data));
+      await audit(tx, db, actor, 'dd_tariff.updated', 'dd_tariff', fresh.id, tariffMeta(fresh.id, fresh.version, data));
       return toTariffView(fresh);
     });
   } catch (e) {
@@ -247,7 +247,7 @@ export async function updateCalendar(db: TenantDb, actor: Actor, id: string, bod
       if (updated.count !== 1) throw errors.staleRevision();
       const fresh = await tx.ddCalendar.findFirst({ where: { id }, select: CATALOG_SELECT });
       if (!fresh) throw errors.notFound();
-      await audit(tx, db, actor, 'dd_calendar.updated', 'dd_calendar', id, calendarMeta(id, fresh.version, data));
+      await audit(tx, db, actor, 'dd_calendar.updated', 'dd_calendar', fresh.id, calendarMeta(fresh.id, fresh.version, data));
       return toCalendarView(fresh);
     });
   } catch (e) {
@@ -451,7 +451,7 @@ export async function updateInvoice(db: TenantDb, actor: Actor, id: string, body
       if (updated.count !== 1) throw errors.staleRevision();
       const fresh = await tx.ddInvoice.findFirst({ where: { id }, select: INVOICE_SELECT });
       if (!fresh) throw errors.notFound();
-      await audit(tx, db, actor, 'dd_invoice.updated', 'dd_invoice', id, invoiceMeta(id, fresh.version, data));
+      await audit(tx, db, actor, 'dd_invoice.updated', 'dd_invoice', fresh.id, invoiceMeta(fresh.id, fresh.version, data));
       return toDetail(tx, fresh);
     });
   } catch (e) {
@@ -469,6 +469,6 @@ export async function deleteInvoice(db: TenantDb, actor: Actor, id: string): Pro
     if (!row) throw errors.notFound();
     if (row.status !== 'DRAFT') throw errors.invalidState();
     await tx.ddInvoice.delete({ where: { id } });
-    await audit(tx, db, actor, 'dd_invoice.deleted', 'dd_invoice', id, { invoiceId: id, version: row.version });
+    await audit(tx, db, actor, 'dd_invoice.deleted', 'dd_invoice', row.id, { invoiceId: row.id, version: row.version });
   });
 }

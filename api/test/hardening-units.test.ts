@@ -3,15 +3,19 @@
  * the AnalysisFailure error shape, the database-guard mappings, the derived client address and the
  * CLIENT_IP_HEADER / ORIGIN_VERIFY_SECRET configuration.
  */
-import { AnalysisInputError } from '@fr/shared';
+import { AnalysisInputError, IdParams, LEARNED_LABEL_IDS_MAX } from '@fr/shared';
+import type { ChargeClassifier } from '@fr/shared/charge-intel';
+import Fastify from 'fastify';
 import { describe, expect, it } from 'vitest';
 
 import { toHttpError } from '../src/app.js';
-import { INT4_MAX, NotStorableError, classifyAnalysisFailure, storableCents } from '../src/claims/analysis.js';
+import { sanitizeMetadata } from '../src/audit/chain.js';
+import { INT4_MAX, NotStorableError, classifyAnalysisFailure, learnedLabelIdsTruncated, storableCents } from '../src/claims/analysis.js';
 import { ConfigError, loadConfig } from '../src/config.js';
 import { deriveClientIp, parseViewerAddress, secretEquals } from '../src/http/client-ip.js';
 import { isFourEyesDbError, isPacketDecisionDbError } from '../src/http/db-guard.js';
 import { AnalysisFailure, HttpError } from '../src/http/errors.js';
+import { canonicalizeParams, defineRoute } from '../src/http/route.js';
 
 const ok = () => undefined;
 const refuse = () => {
@@ -193,5 +197,84 @@ describe('CLIENT_IP_HEADER / ORIGIN_VERIFY_SECRET configuration (C11)', () => {
     expect(problems({ ...base, ORIGIN_VERIFY_SECRET: '   ' }).join('\n')).toContain('ORIGIN_VERIFY_SECRET is set but empty');
     expect(problems({ ...base, ORIGIN_VERIFY_SECRET: 'short' }).join('\n')).toContain('ORIGIN_VERIFY_SECRET must be at least');
     expect(problems({ ...base, ORIGIN_VERIFY_SECRET: base.JWT_SECRET }).join('\n')).toContain('ORIGIN_VERIFY_SECRET must differ');
+  });
+});
+
+describe('fix round 2 (C-FR2.1): path parameters are canonicalised at the boundary', () => {
+  const UPPER = 'A1B2C3D4-E5F6-4A7B-8C9D-0E1F2A3B4C5D';
+
+  it('canonicalizeParams lower-cases UUID values of any case and leaves everything else unchanged', () => {
+    expect(canonicalizeParams({ id: UPPER })).toEqual({ id: UPPER.toLowerCase() });
+    expect(canonicalizeParams({ batchId: UPPER, docId: 'a1b2c3d4-E5F6-4a7b-8c9d-0e1f2a3b4c5d', key: 'Intelligence.Flag' })).toEqual({
+      batchId: UPPER.toLowerCase(),
+      docId: UPPER.toLowerCase(),
+      key: 'Intelligence.Flag',
+    });
+    expect(canonicalizeParams({ id: 'NOT-A-UUID' })).toEqual({ id: 'NOT-A-UUID' });
+    expect(canonicalizeParams({ id: `${UPPER}X` })).toEqual({ id: `${UPPER}X` });
+    expect(canonicalizeParams(undefined)).toBeUndefined();
+  });
+
+  it('defineRoute hands the handler the lower-case id (every route, any params schema)', async () => {
+    const app = Fastify();
+    let seen: unknown = null;
+    defineRoute(app, {
+      method: 'GET',
+      url: '/x/:id',
+      access: { kind: 'public' },
+      schema: { params: IdParams },
+      handler: async (_req, _reply, { params }) => {
+        seen = params;
+        return { ok: true };
+      },
+    });
+    await app.ready();
+    const r = await app.inject({ method: 'GET', url: `/x/${UPPER}` });
+    expect(r.statusCode).toBe(200);
+    expect(seen).toEqual({ id: UPPER.toLowerCase() });
+    await app.close();
+  });
+});
+
+describe('fix round 2 (C-FR2.2): learnedLabelIdsTruncated', () => {
+  const ids = (n: number, prefix = 'l') => Array.from({ length: n }, (_, i) => `${prefix}${i}`);
+  /** A classifier stub: each description names its nearest label after a colon ("x:<labelId>:<category>"). */
+  const stub: ChargeClassifier = {
+    classify: (d: string) => {
+      const [, labelId, code] = d.split(':');
+      // Category codes keep the description free of fixed-rule words ("detention" would classify the line).
+      const category = code === 'A' ? 'accessorial' : code === 'D' ? 'detention' : code === 'L' ? 'linehaul' : null;
+      return {
+        category: category as never,
+        similarity: 1,
+        abstained: false,
+        reason: null,
+        nearest: labelId ? ({ labelId } as never) : null,
+      };
+    },
+  };
+  const lines = (n: number, code = 'A') => ids(n).map((id) => ({ description: `zz charge:${id}:${code}` }));
+
+  it('below the cap, or without a classifier, never truncated', () => {
+    expect(learnedLabelIdsTruncated(ids(LEARNED_LABEL_IDS_MAX - 1), lines(200), stub)).toBe(false);
+    expect(learnedLabelIdsTruncated(ids(LEARNED_LABEL_IDS_MAX), lines(200), null)).toBe(false);
+  });
+
+  it('at the cap: truncated only when more distinct candidate labels exist than the cap', () => {
+    expect(learnedLabelIdsTruncated(ids(LEARNED_LABEL_IDS_MAX), lines(LEARNED_LABEL_IDS_MAX), stub)).toBe(false);
+    expect(learnedLabelIdsTruncated(ids(LEARNED_LABEL_IDS_MAX), lines(LEARNED_LABEL_IDS_MAX + 1), stub)).toBe(true);
+    expect(learnedLabelIdsTruncated(ids(LEARNED_LABEL_IDS_MAX), lines(LEARNED_LABEL_IDS_MAX + 1, 'D'), stub)).toBe(true);
+  });
+
+  it('candidates exclude lines the fixed rules classify, other categories and labels without an id', () => {
+    const fixed = ids(LEARNED_LABEL_IDS_MAX + 5).map((id) => ({ description: `lumper:${id}:A` }));
+    expect(learnedLabelIdsTruncated(ids(LEARNED_LABEL_IDS_MAX), fixed, stub)).toBe(false);
+    expect(learnedLabelIdsTruncated(ids(LEARNED_LABEL_IDS_MAX), lines(LEARNED_LABEL_IDS_MAX + 5, 'L'), stub)).toBe(false);
+    const seedOnly = ids(LEARNED_LABEL_IDS_MAX + 5).map(() => ({ description: 'zz charge::A' }));
+    expect(learnedLabelIdsTruncated(ids(LEARNED_LABEL_IDS_MAX), seedOnly, stub)).toBe(false);
+  });
+
+  it('the audit chain keeps the flag (whitelisted boolean)', () => {
+    expect(sanitizeMetadata({ learnedLabelIdsTruncated: true })).toEqual({ learnedLabelIdsTruncated: true });
   });
 });

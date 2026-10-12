@@ -272,8 +272,8 @@ export async function updateTable(db: TenantDb, actor: Actor, id: string, body: 
       if (updated.count !== 1) throw errors.staleRevision();
       const fresh = await tx.fscTable.findFirst({ where: { id }, select: TABLE_SELECT });
       if (!fresh) throw errors.notFound();
-      await auditTable(tx, db, actor, 'fsc_table.updated', id, {
-        fscTableId: id,
+      await auditTable(tx, db, actor, 'fsc_table.updated', fresh.id, {
+        fscTableId: fresh.id,
         version: fresh.version,
         previousVersion: row.version,
         kind: body.kind,
@@ -303,16 +303,18 @@ export async function archiveTable(db: TenantDb, actor: Actor, id: string): Prom
       data: { archivedAt: new Date(), version: { increment: 1 }, updatedById: actor.userId },
     });
     if (updated.count !== 1) throw errors.staleRevision();
-    await auditTable(tx, db, actor, 'fsc_table.archived', id, { fscTableId: id, version: row.version + 1, paramsSha256: fscParamsSha256(row.params) });
+    await auditTable(tx, db, actor, 'fsc_table.archived', row.id, { fscTableId: row.id, version: row.version + 1, paramsSha256: fscParamsSha256(row.params) });
   });
 }
 
 /** The claim checks of the input routes: 404 unknown/other tenant, 409 unless AWAITING_ANALYSIS. */
-async function lockAwaitingClaim(tx: TenantTx, claimId: string): Promise<void> {
-  if (!(await lockClaimForUpdate(tx, claimId))) throw errors.notFound();
-  const claim = await tx.claim.findFirst({ where: { id: claimId }, select: { status: true } });
+async function lockAwaitingClaim(tx: TenantTx, claimIdParam: string): Promise<string> {
+  if (!(await lockClaimForUpdate(tx, claimIdParam))) throw errors.notFound();
+  const claim = await tx.claim.findFirst({ where: { id: claimIdParam }, select: { id: true, status: true } });
   if (!claim) throw errors.notFound();
   if (claim.status !== 'AWAITING_ANALYSIS') throw errors.invalidState();
+  // Fix round 2 (C-FR2.1): the canonical id of the loaded row, never the request parameter.
+  return claim.id;
 }
 
 function auditInputs(tx: TenantTx, db: TenantDb, actor: Actor, action: 'claim.fuel_inputs_set' | 'claim.fuel_inputs_cleared', claimId: string, metadata: Record<string, unknown>) {
@@ -330,10 +332,10 @@ function auditInputs(tx: TenantTx, db: TenantDb, actor: Actor, action: 'claim.fu
 }
 
 /** PUT /claims/:id/fuel-inputs (F6, F10): created / changed / unchanged. */
-export async function setInputs(db: TenantDb, actor: Actor, claimId: string, body: SetFuelInputsInput): Promise<SetFuelInputsResponseDto> {
-  if (!isUuid(claimId)) throw errors.notFound();
+export async function setInputs(db: TenantDb, actor: Actor, claimIdParam: string, body: SetFuelInputsInput): Promise<SetFuelInputsResponseDto> {
+  if (!isUuid(claimIdParam)) throw errors.notFound();
   return db.tx(async (tx) => {
-    await lockAwaitingClaim(tx, claimId);
+    const claimId = await lockAwaitingClaim(tx, claimIdParam);
     const table = await tx.fscTable.findFirst({ where: { id: body.fscTableId }, select: { id: true, unit: true, archivedAt: true } });
     if (!table || table.archivedAt !== null) throw errors.fuelTableUnavailable();
     if (table.unit === 'per_mile' && body.miles === null) throw errors.milesRequired();
@@ -365,10 +367,10 @@ export async function setInputs(db: TenantDb, actor: Actor, claimId: string, bod
 }
 
 /** DELETE /claims/:id/fuel-inputs: idempotent; audits only when inputs were removed. */
-export async function clearInputs(db: TenantDb, actor: Actor, claimId: string): Promise<void> {
-  if (!isUuid(claimId)) throw errors.notFound();
+export async function clearInputs(db: TenantDb, actor: Actor, claimIdParam: string): Promise<void> {
+  if (!isUuid(claimIdParam)) throw errors.notFound();
   await db.tx(async (tx) => {
-    await lockAwaitingClaim(tx, claimId);
+    const claimId = await lockAwaitingClaim(tx, claimIdParam);
     const existing = await tx.claimFuelInput.findFirst({ where: { claimId }, select: { id: true } });
     if (!existing) return;
     await tx.claimFuelInput.delete({ where: { id: existing.id } });
@@ -387,7 +389,7 @@ export async function fuelCheck(db: TenantDb, claimId: string, series: PriceSeri
     const classifier = classifierFlag ? (await loadClassifier(tx)).classifier : null;
     try {
       const result = checkFuel(input.bundle, loaded?.input ?? null, classifier === null ? null : (d) => classifier.classify(d), DEFAULT_ANALYSIS_SETTINGS);
-      return { claimId, inputs: loaded?.inputs ?? null, table: loaded?.table ?? null, result };
+      return { claimId: claim.id, inputs: loaded?.inputs ?? null, table: loaded?.table ?? null, result };
     } catch (e) {
       if (e instanceof AnalysisInputError || e instanceof RangeError) throw errors.analysisInputInvalid();
       throw e;

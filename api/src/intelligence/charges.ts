@@ -139,7 +139,7 @@ export async function chargeLines(db: TenantDb, claimId: string): Promise<Charge
     const input = await loadAnalysisInput(tx, claimId);
     const labels = await readClassifierLabels(tx);
     const influenceIds = await learnedLabelIdsOfClaim(tx, claim.id);
-    return { invoiceLines: input.bundle.invoice?.lines ?? [], labels, influenceIds };
+    return { claimId: claim.id, invoiceLines: input.bundle.invoice?.lines ?? [], labels, influenceIds };
   });
   const { classifier } = classifierFromRows(read.labels);
   const byText = new Map(read.labels.map((l) => [l.normalizedText, { id: l.id, category: dbCategory(l.category) }]));
@@ -152,7 +152,8 @@ export async function chargeLines(db: TenantDb, claimId: string): Promise<Charge
     label: byText.get(normText(ln.description)) ?? null,
   }));
   return {
-    claimId,
+    // Fix round 2 (C-FR2.1): the canonical id of the loaded row, never the request parameter.
+    claimId: read.claimId,
     classifierVersion: CHARGE_CLASSIFIER_VERSION,
     seedVersion: SEED_VERSION,
     threshold: SUGGESTION_THRESHOLD,

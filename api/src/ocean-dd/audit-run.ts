@@ -306,7 +306,7 @@ export async function runDdAudit(tx: TenantTx, tenantId: string, id: string, act
     targetType: 'claim',
     targetId: claimId,
     metadata: {
-      invoiceId: id,
+      invoiceId: row.id,
       claimId,
       claimNumber,
       packetId: packet.id,
@@ -325,7 +325,7 @@ export async function runDdAudit(tx: TenantTx, tenantId: string, id: string, act
     requestId: actor.requestId,
   });
   return {
-    invoiceId: id,
+    invoiceId: row.id,
     claim: { id: claimId, claimNumber, status: 'PENDING_REVIEW', recoverableCents: result.recoverableCents, pendingReviewCents: result.pendingReviewCents, amountClaimedCents },
     packet: { id: packet.id, revision: 1, status: 'PENDING_REVIEW', contentHash: packet.contentHash },
     audit: { rulesVersion: DD_RULES_VERSION, findingsCount, pendingFindingsCount },

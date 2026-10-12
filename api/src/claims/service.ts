@@ -236,8 +236,9 @@ export function toHashPacket(p: PacketRow): HashPacket {
 }
 
 /** R28: packet DTO (default latest revision), integrity recomputed, read audited as packet.viewed. */
-export async function getPacket(tx: TenantTx, claimId: string, revision: number | undefined, actor: Actor): Promise<PacketDto> {
-  await findClaim(tx, claimId);
+export async function getPacket(tx: TenantTx, claimIdParam: string, revision: number | undefined, actor: Actor): Promise<PacketDto> {
+  // Fix round 2 (C-FR2.1): the canonical id of the loaded row, never the request parameter.
+  const claimId = (await findClaim(tx, claimIdParam)).id;
   const p = await loadPacketRow(tx, claimId, revision);
   if (!p) throw errors.notFound();
   const approvals = await tx.approval.findMany({
@@ -363,7 +364,8 @@ async function lockAndLoadLatest(tx: TenantTx, claimId: string): Promise<LockedS
   // A claim without a packet (AWAITING_ANALYSIS, created from imports) cannot be edited, approved,
   // rejected or sent: 409 invalid_state (never 500). Step 5 adds AWAITING_ANALYSIS -> PENDING_REVIEW.
   if (!latest) throw errors.invalidState();
-  return { claimId, tenantId: latest.tenantId, latest };
+  // Fix round 2 (C-FR2.1): callers use the canonical claim id of the loaded packet row, never the parameter.
+  return { claimId: latest.claimId, tenantId: latest.tenantId, latest };
 }
 
 export interface TransitionResult {
@@ -376,11 +378,11 @@ export interface TransitionResult {
 export async function transition(
   tx: TenantTx,
   kind: Exclude<Transition, 'edit'>,
-  claimId: string,
+  claimIdParam: string,
   input: { packetRevision: number; reason: string; acknowledgePendingFindings?: boolean | undefined },
   actor: Actor,
 ): Promise<TransitionResult> {
-  const { latest, tenantId } = await lockAndLoadLatest(tx, claimId);
+  const { claimId, latest, tenantId } = await lockAndLoadLatest(tx, claimIdParam);
   if (input.packetRevision !== latest.revision) throw errors.staleRevision();
   const from = latest.status as LiveStatus;
   if (!canTransition(kind, from)) throw errors.invalidState();
@@ -468,11 +470,11 @@ export async function transition(
 /** R30: create a new packet revision with an edited demand letter (copies content, new ids). */
 export async function createRevision(
   tx: TenantTx,
-  claimId: string,
+  claimIdParam: string,
   input: { baseRevision: number; demandLetter: string; reason: string },
   actor: Actor,
 ): Promise<TransitionResult> {
-  const { latest, tenantId } = await lockAndLoadLatest(tx, claimId);
+  const { claimId, latest, tenantId } = await lockAndLoadLatest(tx, claimIdParam);
   if (input.baseRevision !== latest.revision) throw errors.staleRevision();
   const from = latest.status as LiveStatus;
   if (!canTransition('edit', from)) throw errors.invalidState();

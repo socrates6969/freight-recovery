@@ -15,10 +15,12 @@ import {
   AnalysisInputError,
   CHARGE_CLASSIFIER_VERSION,
   DEFAULT_ANALYSIS_SETTINGS,
+  LEARNED_LABEL_IDS_MAX,
   LocalDateTime,
   PACKET_DISCLAIMER,
   RULES_VERSION,
   SEED_VERSION,
+  classifyLine,
   plain,
   type AnalysisFailureReason,
   type AnalyzeResponseDto,
@@ -407,6 +409,33 @@ export function buildAnalysisPacket(args: {
   };
 }
 
+/**
+ * Fix round 2 (C-FR2.2, H-4): whether the engine's `learnedLabelIds` (capped at LEARNED_LABEL_IDS_MAX, in line
+ * order) may omit a label that influenced the analysis. The engine only records the nearest tenant label of an
+ * invoice line that the fixed rules classify as `other` and the classifier places in `accessorial` or
+ * `detention`; the distinct labels of those candidate lines are an upper bound of the influencing labels. Below
+ * the cap nothing was dropped; at the cap the list counts as truncated when that upper bound exceeds the cap.
+ * Errs towards `true` (the stricter four-eyes exclusion), never towards `false`.
+ */
+export function learnedLabelIdsTruncated(
+  labelIds: readonly string[],
+  lines: readonly { description: string }[],
+  classifier: ChargeClassifier | null,
+): boolean {
+  if (classifier === null || labelIds.length < LEARNED_LABEL_IDS_MAX) return false;
+  const candidates = new Set<string>();
+  for (const ln of lines) {
+    if (classifyLine(ln.description) !== 'other') continue;
+    const s = classifier.classify(ln.description);
+    if (s.category !== 'accessorial' && s.category !== 'detention') continue;
+    const labelId = s.nearest?.labelId ?? null;
+    if (labelId === null) continue;
+    candidates.add(labelId);
+    if (candidates.size > LEARNED_LABEL_IDS_MAX) return true;
+  }
+  return false;
+}
+
 /** Step 7: the fuel-check flag and the active diesel import, read once per request before any transaction. */
 export interface AnalysisFuelOptions {
   enabled: boolean;
@@ -421,7 +450,7 @@ export interface AnalysisFuelOptions {
  */
 export async function analyzeClaim(
   tx: TenantTx,
-  claimId: string,
+  claimIdParam: string,
   actor: Actor,
   opts: {
     bulk: boolean;
@@ -434,10 +463,12 @@ export async function analyzeClaim(
     fuel?: AnalysisFuelOptions;
   },
 ): Promise<AnalyzeResponseDto> {
-  if (!isUuid(claimId)) throw errors.notFound();
-  if (!(await lockClaimForUpdate(tx, claimId))) throw errors.notFound();
-  const claim = await tx.claim.findFirst({ where: { id: claimId }, select: { id: true, tenantId: true, status: true, perspective: true, claimNumber: true, kind: true } });
+  if (!isUuid(claimIdParam)) throw errors.notFound();
+  if (!(await lockClaimForUpdate(tx, claimIdParam))) throw errors.notFound();
+  const claim = await tx.claim.findFirst({ where: { id: claimIdParam }, select: { id: true, tenantId: true, status: true, perspective: true, claimNumber: true, kind: true } });
   if (!claim) throw errors.notFound();
+  // Fix round 2 (C-FR2.1): every write, packet and audit row below uses the canonical id of the loaded row.
+  const claimId = claim.id;
   if (claim.status !== 'AWAITING_ANALYSIS') throw errors.invalidState();
   // Step 8 (REQ-20261011-ocean-dd, C17): OCEAN_DD claims are never analysed by the freight rules.
   if (claim.kind !== 'FREIGHT') throw errors.invalidState();
@@ -532,6 +563,9 @@ export async function analyzeClaim(
       learnedFindingsCount: summary.learnedFindingsCount,
       reviewFlagsCount: summary.reviewFlagsCount,
       learnedLabelIds: summary.learnedLabelIds,
+      // Fix round 2 (C-FR2.2): present (true) only when the capped list may omit an influencing label; approval
+      // then excludes every label author of the tenant (service and database guard).
+      ...(learnedLabelIdsTruncated(summary.learnedLabelIds, input.bundle.invoice?.lines ?? [], classifier) ? { learnedLabelIdsTruncated: true } : {}),
       ...fuelMeta,
     },
     ip: actor.ip,

@@ -250,6 +250,8 @@ const METADATA_KEYS = new Set([
   'documentCount',
   // Fix round 1 (C14, C15): a login served to a known device during a lockout (boolean only).
   'knownDevice',
+  // Fix round 2 (C-FR2.2): the analysis' learnedLabelIds list (capped at 50) may omit an influencing label.
+  'learnedLabelIdsTruncated',
 ]);
 const MAX_STRING = 2000;
 

@@ -166,14 +166,14 @@ async function markFailed(deps: ImportDeps, db: TenantDb, docId: string, reasonC
   await db.tx(async (tx) => {
     const d = await tx.importDocument.findFirst({ where: { id: docId }, select: { id: true, batchId: true, status: true, tenantId: true } });
     if (!d || d.status !== 'RECEIVED') return;
-    await tx.importDocument.update({ where: { id: docId }, data: { status: 'FAILED', storageKey: null, textKey: null } });
+    await tx.importDocument.update({ where: { id: d.id }, data: { status: 'FAILED', storageKey: null, textKey: null } });
     await appendAudit(tx, {
       tenantId: d.tenantId,
       action: 'import.document_rejected',
       ...auditActor(actor),
       targetType: 'import_document',
-      targetId: docId,
-      metadata: { documentId: docId, batchId: d.batchId, reasonCode, status: 'FAILED' },
+      targetId: d.id,
+      metadata: { documentId: d.id, batchId: d.batchId, reasonCode, status: 'FAILED' },
     });
   });
 }
@@ -237,11 +237,15 @@ export async function auditPrestoreRejection(db: TenantDb, tenantId: string, bat
   });
 }
 
-/** Pre-flight before reading the body: the batch exists in the tenant and is not full. */
-export async function assertBatchAcceptsUploads(db: TenantDb, batchId: string, maxFiles: number): Promise<void> {
-  await db.tx(async (tx) => {
+/**
+ * Pre-flight before reading the body: the batch exists in the tenant and is not full. Returns the batch's
+ * canonical id from the loaded row (fix round 2, C-FR2.1): the caller uses it for storage keys and audit rows.
+ */
+export async function assertBatchAcceptsUploads(db: TenantDb, batchId: string, maxFiles: number): Promise<string> {
+  return db.tx(async (tx) => {
     const b = await findBatch(tx, batchId);
     if (b._count.documents >= maxFiles) throw errors.batchFull();
+    return b.id;
   });
 }
 
@@ -290,8 +294,8 @@ export async function ingestDocument(deps: ImportDeps, db: TenantDb, input: Inge
         action: 'import.document_rejected',
         ...auditActor(actor),
         targetType: 'import_batch',
-        targetId: batchId,
-        metadata: { documentId: null, batchId, reasonCode, sizeBytes, sha256Prefix: input.sha256.slice(0, 12) },
+        targetId: batch.id,
+        metadata: { documentId: null, batchId: batch.id, reasonCode, sizeBytes, sha256Prefix: input.sha256.slice(0, 12) },
       });
     };
     if (batch._count.documents >= cfg.maxFilesPerBatch) {

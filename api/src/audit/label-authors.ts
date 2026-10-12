@@ -4,7 +4,12 @@
  * explicitly). For each claim's `claim.analyzed` event A with label ids L = A.metadata.learnedLabelIds, the
  * label authors are the non-null actors of `charge_label.set` events targeting a label in L with seq < A.seq,
  * plus the created_by_id of each still-existing label in L. Mirrors part (b) of the database trigger
- * `fr_approval_four_eyes_ext_guard` (migration 20261018000000_hardening). One query per call.
+ * `fr_approval_four_eyes_ext_guard` (migrations 20261018000000_hardening and 20261019000000_hardening_fr2).
+ *
+ * Fix round 2 (C-FR2.2, H-4): when A.metadata.learnedLabelIdsTruncated is true the stored list may omit an
+ * influencing label, so every label author of the tenant before the analysis is excluded: the non-null actors of
+ * every `charge_label.set` event with seq < A.seq, plus the created_by_id of every still-existing label created
+ * no later than A. One query per call.
  */
 import { assertUuid } from '../db/errors.js';
 import { unwrapRawTx, type TenantTx } from '../db/tenant.js';
@@ -27,6 +32,15 @@ export async function labelAuthorsByClaim(tx: TenantTx, claimIds: readonly strin
         AND a.target_type = 'claim'
         AND a.target_id = ANY(${ids}::text[])
         AND a.action = 'claim.analyzed'
+    ),
+    truncated AS (
+      SELECT a.target_id, a.tenant_id, a.seq, a.created_at
+      FROM audit_events a
+      WHERE a.tenant_id = fr_current_tenant()
+        AND a.target_type = 'claim'
+        AND a.target_id = ANY(${ids}::text[])
+        AND a.action = 'claim.analyzed'
+        AND a.metadata -> 'learnedLabelIdsTruncated' = 'true'::jsonb
     )
     SELECT f.claim_id, s.actor_id::text AS actor_id
     FROM influence f
@@ -40,7 +54,20 @@ export async function labelAuthorsByClaim(tx: TenantTx, claimIds: readonly strin
     UNION
     SELECT f.claim_id, c.created_by_id::text
     FROM influence f
-    JOIN charge_labels c ON c.tenant_id = f.tenant_id AND c.id::text = f.label_id`;
+    JOIN charge_labels c ON c.tenant_id = f.tenant_id AND c.id::text = f.label_id
+    UNION
+    SELECT t.target_id, s.actor_id::text
+    FROM truncated t
+    JOIN audit_events s
+      ON s.tenant_id = t.tenant_id
+     AND s.target_type = 'charge_label'
+     AND s.action = 'charge_label.set'
+     AND s.seq < t.seq
+    WHERE s.actor_id IS NOT NULL
+    UNION
+    SELECT t.target_id, c.created_by_id::text
+    FROM truncated t
+    JOIN charge_labels c ON c.tenant_id = t.tenant_id AND c.created_at <= t.created_at`;
   for (const r of rows) {
     const set = out.get(r.claim_id) ?? new Set<string>();
     set.add(r.actor_id);

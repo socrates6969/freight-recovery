@@ -222,7 +222,7 @@ export function registerImportRoutes(app: FastifyInstance, deps: ImportDeps): vo
  * R43 upload. Uploads are attributed to the signed-in user; for API-key requests, to the key creator
  * (four-eyes: that user cannot accept the document). Always ingests as `kind: 'user'`, never `system`.
  */
-async function uploadHandler(deps: ImportDeps, req: FastifyRequest, reply: FastifyReply, batchId: string, filename: string) {
+async function uploadHandler(deps: ImportDeps, req: FastifyRequest, reply: FastifyReply, batchIdParam: string, filename: string) {
   const ctx = requireTenant(req);
   const actor = actorOf(req);
   const cfg = deps.cfg.imports;
@@ -231,7 +231,8 @@ async function uploadHandler(deps: ImportDeps, req: FastifyRequest, reply: Fasti
   const stream = req.body as Readable | undefined;
   if (!stream || typeof (stream as { on?: unknown }).on !== 'function') throw errors.uploadMediaType();
 
-  await assertBatchAcceptsUploads(ctx.db, batchId, cfg.maxFilesPerBatch);
+  // Fix round 2 (C-FR2.1): from here on the canonical batch id of the loaded row, never the parameter.
+  const batchId = await assertBatchAcceptsUploads(ctx.db, batchIdParam, cfg.maxFilesPerBatch);
   const release = deps.uploadGate.tryEnter(ctx.tenantId);
   if (!release) throw errors.rateLimited(5);
   try {
