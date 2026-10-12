@@ -91,7 +91,7 @@ describe.skipIf(!canRunDb)('auth fix round 1 (PostgreSQL)', () => {
     expect([locked.statusCode, errorOf(locked).code]).toEqual([429, 'account_locked']);
     expect(locked.headers['retry-after']).toBeDefined();
     // The password did not change (still the seed password) and login is locked for this email.
-    const login = await app.inject({ method: 'POST', url: '/api/v1/auth/login', headers: new Client(app).headers(), payload: { email, password: PW } });
+    const login = await app.inject({ method: 'POST', url: '/api/v1/auth/login', headers: c.headers(), payload: { email, password: PW } });
     expect(login.statusCode).toBe(429);
   });
 

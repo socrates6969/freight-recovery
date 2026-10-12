@@ -410,6 +410,39 @@ describe.skipIf(!canRunDb)('ocean D&D audit (PostgreSQL)', () => {
       expect(ok.statusCode, ok.body).toBe(200);
     });
 
+    it('fix round 2 (C-FR2.1, H-1): an edit through an UPPER-CASE invoice id still makes its author a D&D editor (403); audit target ids are lower case', async () => {
+      // C = reviewer creates, E = admin edits via the upper-case id, F = owner makes the last (lower-case) edit,
+      // analyst audits; E must still be refused.
+      const created = DdInvoiceDetail.parse((await c.send('POST', '/api/v1/dd/invoices', tok.reviewer, invoiceBody(`${marker}-uc`))).json());
+      const upper = created.id.toUpperCase();
+      const e = await c.send('PUT', `/api/v1/dd/invoices/${upper}`, tok.admin, { version: 1, invoice: invoiceBody(`${marker}-uc`, { dueDate: '2026-04-25' }) });
+      expect(e.statusCode, e.body).toBe(200);
+      expect(DdInvoiceDetail.parse(e.json()).id).toBe(created.id);
+      const f = await c.send('PUT', `/api/v1/dd/invoices/${created.id}`, tok.owner, { version: 2, invoice: invoiceBody(`${marker}-uc`, { dueDate: '2026-04-26' }) });
+      expect(f.statusCode, f.body).toBe(200);
+      // A mixed-case GET returns the same resource.
+      expect(DdInvoiceDetail.parse((await c.get(`/api/v1/dd/invoices/${upper}`, tok.viewer)).json()).id).toBe(created.id);
+      const events = await admin.query<{ target_id: string }>(`SELECT target_id FROM audit_events WHERE target_type = 'dd_invoice' AND lower(target_id) = $1 ORDER BY seq`, [
+        created.id,
+      ]);
+      expect(events.rows.length).toBeGreaterThanOrEqual(3);
+      for (const r of events.rows) expect(r.target_id).toBe(created.id);
+      const out = DdAuditResponse.parse((await c.send('POST', `/api/v1/dd/invoices/${upper}/audit`, tok.analyst, {})).json());
+      expect(out.invoiceId).toBe(created.id);
+      for (const action of ['approve', 'reject'] as const) {
+        const payload = action === 'approve' ? { packetRevision: 1, reason: REASON, acknowledgePendingFindings: true } : { packetRevision: 1, reason: REASON };
+        for (const claimPath of [out.claim.id, out.claim.id.toUpperCase()]) {
+          const r = await c.send('POST', `/api/v1/claims/${claimPath}/packet/${action}`, tok.admin, payload);
+          expect([action, r.statusCode, errorOf(r).code]).toEqual([action, 403, 'four_eyes_required']);
+        }
+      }
+      const denied = await admin.query<{ target_id: string; metadata: { basis: string; claimId: string } }>(
+        `SELECT target_id, metadata FROM audit_events WHERE action = 'authz.four_eyes_denied' AND lower(target_id) = $1 ORDER BY seq`,
+        [out.claim.id],
+      );
+      expect(denied.rows.map((r) => [r.target_id, r.metadata.claimId, r.metadata.basis])).toEqual(Array.from({ length: 4 }, () => [out.claim.id, out.claim.id, 'dd_invoice_editor']));
+    });
+
     it('fix round 1 S4: a 50 x 20 invoice is accepted (201); a 262,145-byte body is refused (413)', async () => {
       const containers = Array.from({ length: 50 }, (_, i) => ({
         containerNumber: `SYNU${String(i).padStart(7, '0')}`,

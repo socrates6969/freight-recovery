@@ -25,6 +25,8 @@ import { Session, baseEnv, canRun, cleanupBatches, deleteBatchObjects, s3 } from
 import { Client, adminUrl, appUrl, canRunDb, step4Env } from './step4-helpers.js';
 
 const REASON = 'Checked against the original document.';
+/** Reason of direct approvals inserts: satisfies the BASE CHECK approvals_reason_length (at least 10 characters). */
+const DIRECT_REASON = 'Direct insert by the hardening integration test (synthetic).';
 const HEX = 'a'.repeat(64);
 const unique = () => `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
 
@@ -39,6 +41,18 @@ async function asApp<T>(c: pg.Client, tenant: string, fn: (c: pg.Client) => Prom
     const out = await fn(c);
     await c.query(commit ? 'COMMIT' : 'ROLLBACK');
     return out;
+  } catch (e) {
+    await c.query('ROLLBACK').catch(() => undefined);
+    throw e;
+  }
+}
+
+/** Run `fn` in one admin transaction; ROLLBACK on any failure so the shared client never stays in an aborted tx. */
+async function adminTx(c: pg.Client, fn: (c: pg.Client) => Promise<void>): Promise<void> {
+  await c.query('BEGIN');
+  try {
+    await fn(c);
+    await c.query('COMMIT');
   } catch (e) {
     await c.query('ROLLBACK').catch(() => undefined);
     throw e;
@@ -162,8 +176,8 @@ describe.skipIf(!canRunDb)('hardening: database guards and label-author four-eye
   const insertApproval = (claimId: string, packetId: string, actorId: string, action: 'APPROVE' | 'REJECT' | 'EDIT', toStatus: string) =>
     runtime.query(
       `INSERT INTO approvals (id, tenant_id, claim_id, packet_id, packet_revision, action, reason, from_status, to_status, content_hash, actor_id, actor_role)
-       VALUES ($1, $2, $3, $4, 1, $5::"ApprovalAction", 'direct', 'PENDING_REVIEW', $6, $7, $8, 'MANAGER')`,
-      [randomUUID(), acme, claimId, packetId, action, toStatus, HEX, actorId],
+       VALUES ($1, $2, $3, $4, 1, $5::"ApprovalAction", $9, 'PENDING_REVIEW', $6, $7, $8, 'MANAGER')`,
+      [randomUUID(), acme, claimId, packetId, action, toStatus, HEX, actorId, DIRECT_REASON],
     );
 
   it('the extended trigger refuses label authors (APPROVE/REJECT) as freight_app; EDIT and other actors pass', async () => {
@@ -194,14 +208,17 @@ describe.skipIf(!canRunDb)('hardening: database guards and label-author four-eye
     const { id, packetId } = await fixtureClaim();
     const inv = randomUUID();
     ddInvoices.push(inv);
-    await admin.query('BEGIN');
-    await admin.query('SET LOCAL session_replication_role = replica');
-    await admin.query(
-      `INSERT INTO dd_invoices (id, tenant_id, status, invoice_number, billing_party_name, data, claim_id, version, created_by_id, updated_by_id, updated_at)
-       VALUES ($1, $2, 'AUDITED', $3, 'Synthetic Line', '{}'::jsonb, $4, 1, $5, $6, now())`,
-      [inv, acme, `HD-INV-${unique()}`, id, uid.owner, uid.reviewer],
-    );
-    await admin.query('COMMIT');
+    // An AUDITED invoice satisfies the BASE CHECK dd_invoices_audit_consistent (claim_id, audited_at and
+    // audit_snapshot all set); replica mode only skips the triggers, never a CHECK.
+    await adminTx(admin, async (a) => {
+      await a.query('SET LOCAL session_replication_role = replica');
+      await a.query(
+        `INSERT INTO dd_invoices (id, tenant_id, status, invoice_number, billing_party_name, data, claim_id, audited_at, audit_snapshot, version, created_by_id,
+           updated_by_id, updated_at)
+         VALUES ($1, $2, 'AUDITED', $3, 'Synthetic Line', '{}'::jsonb, $4, now(), '{}'::jsonb, 1, $5, $6, now())`,
+        [inv, acme, `HD-INV-${unique()}`, id, uid.owner, uid.reviewer],
+      );
+    });
     for (const actor of [uid.owner, uid.reviewer]) {
       const e = await pgError(asApp(runtime, acme, () => insertApproval(id, packetId, actor, 'APPROVE', 'APPROVED')));
       expect([e?.code, e?.message]).toEqual(['P0001', 'four_eyes_required']);
@@ -246,9 +263,11 @@ describe.skipIf(!canRunDb)('hardening: database guards and label-author four-eye
   });
 
   it('a decision-guard refusal through Prisma maps to 409 invalid_state (never 500, never database text)', async () => {
+    // PENDING_REVIEW -> APPROVED is a legal packet transition (the BASE invalid_packet_transition trigger lets it
+    // through), so the refusal comes from the deferred decision guard at COMMIT.
     const { packetId } = await fixtureClaim();
     const err = await tenantDb(base, acme)
-      .tx((tx) => tx.evidencePacket.update({ where: { id: packetId }, data: { status: 'SEND_READY' } }))
+      .tx((tx) => tx.evidencePacket.update({ where: { id: packetId }, data: { status: 'APPROVED' } }))
       .then(
         () => null,
         (x: unknown) => x,
@@ -344,13 +363,15 @@ describe.skipIf(!canRunDb)('hardening: database guards and label-author four-eye
 
 const enc = (s: string) => new TextEncoder().encode(s);
 
-function files(load: string, opts: { duplicateCredit?: boolean } = {}): [string, string][] {
+function files(load: string, opts: { duplicateCredit?: boolean; extraLine?: string } = {}): [string, string][] {
   const credit = opts.duplicateCredit ? 'Charge: Credit | (5.00)\nCharge: Credit | (5.00)\n' : '';
+  const extra = opts.extraLine === undefined ? '' : `Charge: ${opts.extraLine} | 75.00\n`;
+  const total = opts.extraLine === undefined ? '2,118.00' : '2,193.00';
   return [
     ['bol.txt', `DOCUMENT: BILL OF LADING\nLoad Number: ${load}\nFacility: Widget Co DC 4\nAppointment Time: 2025-03-03 08:00\nArrival Time: 2025-03-03 07:45\nDeparture Time: 2025-03-03 11:30\n`],
     [
       'invoice.txt',
-      `DOCUMENT: FREIGHT INVOICE\nInvoice Number: INV-1001\nCarrier: Acme Freight LLC\nShipper: Widget Co\nLoad Number: ${load}\nInvoice Date: 2025-03-10\nCharge: Linehaul | 1500.00\nCharge: Fuel Surcharge | 168.00\nCharge: Detention | 300.00\nCharge: Lumper | 150.00\n${credit}Total: $2,118.00\n`,
+      `DOCUMENT: FREIGHT INVOICE\nInvoice Number: INV-1001\nCarrier: Acme Freight LLC\nShipper: Widget Co\nLoad Number: ${load}\nInvoice Date: 2025-03-10\nCharge: Linehaul | 1500.00\nCharge: Fuel Surcharge | 168.00\nCharge: Detention | 300.00\nCharge: Lumper | 150.00\n${extra}${credit}Total: $${total}\n`,
     ],
     [
       'rate_confirmation.txt',
@@ -364,7 +385,8 @@ describe.skipIf(!canRun)('hardening: failed analysis and bulk transparency (Post
   let s: Session;
   let admin: pg.Client;
   let acme = '';
-  const tok: Record<'analyst' | 'viewer', string> = { analyst: '', viewer: '' };
+  const tok: Record<'analyst' | 'viewer' | 'reviewer', string> = { analyst: '', viewer: '', reviewer: '' };
+  const labelIds: string[] = [];
   const batches: string[] = [];
   const claims: string[] = [];
   const client = s3();
@@ -374,7 +396,7 @@ describe.skipIf(!canRun)('hardening: failed analysis and bulk transparency (Post
     await app.ready();
     s = new Session(app);
     await s.init();
-    for (const k of ['analyst', 'viewer'] as const) tok[k] = await s.login(`${k}@acme.test`);
+    for (const k of ['analyst', 'viewer', 'reviewer'] as const) tok[k] = await s.login(`${k}@acme.test`);
     admin = new pg.Client({ connectionString: adminUrl });
     await admin.connect();
     acme = (await admin.query<{ id: string }>(`SELECT id FROM tenants WHERE slug = 'acme'`)).rows[0]?.id ?? '';
@@ -389,6 +411,7 @@ describe.skipIf(!canRun)('hardening: failed analysis and bulk transparency (Post
         await admin.query(`DELETE FROM ${t} WHERE packet_id IN (SELECT id FROM evidence_packets WHERE claim_id = ANY($1::uuid[]))`, [claims]);
       }
       await admin.query(`DELETE FROM evidence_packets WHERE claim_id = ANY($1::uuid[])`, [claims]);
+      await admin.query(`DELETE FROM charge_labels WHERE id = ANY($1::uuid[])`, [labelIds]);
       await admin.query('COMMIT');
       await cleanupBatches(admin, batches, claims);
       await deleteBatchObjects(client, acme, batches);
@@ -452,6 +475,44 @@ describe.skipIf(!canRun)('hardening: failed analysis and bulk transparency (Post
     // The list item is unchanged (no analysisFailure field).
     const list = (await get(tok.viewer, `/api/v1/claims?q=${encodeURIComponent(bad.claimNumber)}`)).json() as { items: Record<string, unknown>[] };
     expect(list.items[0]).not.toHaveProperty('analysisFailure');
+  });
+
+  it('fix round 2 (C-FR2.1, H-1): an analysis through an UPPER-CASE claim id still excludes the label author (403 label_author)', async () => {
+    await admin.query(`UPDATE feature_flags SET enabled = true WHERE key = 'intelligence.charge_suggestions'`);
+    // Letters a-f and q only: never contains a fixed-rule accessorial word, so the line stays 'other'.
+    const tag = unique().replace(/[^a-f]/gu, 'q');
+    const line = `Zz Wrapfix ${tag} Restow`;
+    const set = await app.inject({ method: 'PUT', url: '/api/v1/charge-labels', headers: s.headers(tok.reviewer), payload: { description: line, category: 'accessorial' } });
+    expect(set.statusCode, set.body).toBe(200);
+    const labelId = (set.json() as { label: { id: string } }).label.id;
+    labelIds.push(labelId);
+    const claim = await importClaim(files(`LD-HU${unique()}`, { extraLine: line }));
+    const r = await post(tok.analyst, `/api/v1/claims/${claim.id.toUpperCase()}/analyze`);
+    expect(r.statusCode, r.body).toBe(201);
+    expect((r.json() as { claim: { id: string } }).claim.id).toBe(claim.id);
+    const analyzed = (
+      await admin.query<{ target_id: string; metadata: Record<string, unknown> }>(`SELECT target_id, metadata FROM audit_events WHERE action = 'claim.analyzed' AND lower(target_id) = $1`, [
+        claim.id,
+      ])
+    ).rows;
+    expect(analyzed.map((a) => a.target_id)).toEqual([claim.id]);
+    expect(analyzed[0]?.metadata['claimId']).toBe(claim.id);
+    expect(analyzed[0]?.metadata['learnedLabelIds']).toContain(labelId);
+    expect(analyzed[0]?.metadata).not.toHaveProperty('learnedLabelIdsTruncated');
+    for (const claimPath of [claim.id, claim.id.toUpperCase()]) {
+      const a = await post(tok.reviewer, `/api/v1/claims/${claimPath}/packet/approve`, { packetRevision: 1, reason: REASON, acknowledgePendingFindings: true });
+      expect([a.statusCode, errorOf(a).code]).toEqual([403, 'four_eyes_required']);
+    }
+    const denied = (
+      await admin.query<{ target_id: string; metadata: Record<string, unknown> }>(
+        `SELECT target_id, metadata FROM audit_events WHERE action = 'authz.four_eyes_denied' AND lower(target_id) = $1 ORDER BY seq`,
+        [claim.id],
+      )
+    ).rows;
+    expect(denied.map((d) => [d.target_id, d.metadata['basis']])).toEqual([
+      [claim.id, 'label_author'],
+      [claim.id, 'label_author'],
+    ]);
   });
 
   it('bulk: never-failed claims first, failed items carry reasonCode, stoppedBy and the summary metadata', async () => {
