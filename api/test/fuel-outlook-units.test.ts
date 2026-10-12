@@ -8,16 +8,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { OutlookResponse, PRICE_SERIES, type ImportDocType } from '@fr/shared';
+import { OutlookQuery, OutlookResponse, PRICE_SERIES, type ImportDocType } from '@fr/shared';
 import type { FscTableSpec, FuelCheckInput, PriceSeriesData } from '@fr/shared/fuel';
 import { parsePriceCsv, type PriceSeriesKey } from '@fr/shared/outlook';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import { buildAnalysisPacket } from '../src/claims/analysis.js';
+import { errors } from '../src/http/errors.js';
 import { countRevisedValues, type ActiveImportRow, type InsertImportArgs, type InsertImportOutcome } from '../src/db/prices.js';
 import { assembleBundleWithProvenance, type BundleDocument, type BundleField } from '../src/imports/bundle.js';
 import { fscParamsSha256, milesText } from '../src/intelligence/fuel.js';
-import { outlookSeriesDto } from '../src/intelligence/outlook-routes.js';
+import { outlookSeriesDto, outlookTableId } from '../src/intelligence/outlook-routes.js';
 import { defaultPriceDataDir } from '../src/platform/price-files.js';
 import { PriceStore, dieselSeriesOrNull, type PriceReader } from '../src/platform/price-store.js';
 import { PricesUsageError, main as pricesMain, parseArgs as pricesArgs, type PriceImportDb } from '../src/platform/prices-cli.js';
@@ -463,6 +464,26 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 const rel = (p: string) => path.relative(apiRoot, p).split(path.sep).join('/');
 const files = walk(srcRoot).map((p) => ({ path: rel(p), text: readFileSync(p, 'utf8') }));
+
+describe('fix round 2: outlook fscTableId', () => {
+  it('a non-UUID fscTableId passes the schema and maps to the standard 404; unknown keys stay 400', () => {
+    expect(OutlookQuery.safeParse({ fscTableId: 'not-a-uuid' }).success).toBe(true);
+    expect(OutlookQuery.safeParse({}).success).toBe(true);
+    expect(OutlookQuery.safeParse({ fscTableId: 'x', other: '1' }).success).toBe(false);
+    expect(OutlookQuery.safeParse({ fscTableId: '' }).success).toBe(false);
+    expect(OutlookQuery.safeParse({ fscTableId: 'x'.repeat(65) }).success).toBe(false);
+    for (const bad of ['not-a-uuid', '1f0e2d3c-4b5a-4968-8778-695a4b3c2d1', '../x']) {
+      let caught: unknown = null;
+      try {
+        outlookTableId(bad);
+      } catch (e) {
+        caught = e;
+      }
+      expect([bad, caught]).toEqual([bad, errors.notFound()]);
+    }
+    expect(outlookTableId(TABLE.id)).toBe(TABLE.id);
+  });
+});
 
 describe('step 7 declarations', () => {
   it('fuel and outlook routes: permission, intelligence bucket, no API-key scope', () => {

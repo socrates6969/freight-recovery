@@ -21,6 +21,7 @@ import {
 import { evaluateFscTable, type FscTableSpec } from '@fr/shared/fuel';
 import type { FastifyInstance } from 'fastify';
 
+import { isUuid } from '../db/errors.js';
 import { errors } from '../http/errors.js';
 import { defineRoute, requireTenant } from '../http/route.js';
 import { strictBody } from '../http/strict-body.js';
@@ -89,6 +90,15 @@ export function outlookSeriesDto(key: PriceSeriesKey, data: PriceOutlook | null,
   };
 }
 
+/**
+ * Fix round 2 (F10 precedence 6): a non-UUID `fscTableId` is the standard 404, byte-identical to an unknown or
+ * other-tenant table id.
+ */
+export function outlookTableId(raw: string): string {
+  if (!isUuid(raw)) throw errors.notFound();
+  return raw;
+}
+
 export function registerOutlookRoutes(app: FastifyInstance, deps: OutlookRouteDeps): void {
   defineRoute(app, {
     method: 'GET',
@@ -102,7 +112,7 @@ export function registerOutlookRoutes(app: FastifyInstance, deps: OutlookRouteDe
       let table: FscTableSpec | null = null;
       if (query.fscTableId !== undefined) {
         if (!(await deps.flags.isEnabled(FUEL_FLAG))) throw errors.notFound();
-        const id = query.fscTableId;
+        const id = outlookTableId(query.fscTableId);
         const row = await ctx.db.tx((tx) =>
           tx.fscTable.findFirst({
             where: { id, archivedAt: null, priceSeries: 'diesel_us' },

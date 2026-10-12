@@ -419,7 +419,12 @@ describe.skipIf(!canRunDb)('fuel check, price store and outlook (PostgreSQL)', (
         expect([bad, (await c.send('POST', '/api/v1/fuel-tables', owner, bad)).statusCode]).toEqual([bad, 400]);
       }
       expect((await c.send('PUT', `/api/v1/claims/${randomUUID()}/fuel-inputs`, analyst, { shipDate: '2026-02-30', miles: '5', fscTableId: randomUUID() })).statusCode).toBe(400);
-      expect((await c.get('/api/v1/outlook?fscTableId=x', viewer)).statusCode).toBe(400);
+      // Fix round 2: a non-UUID fscTableId is the standard 404 (byte-identical to an unknown id); unknown keys stay 400.
+      const badId = await c.get('/api/v1/outlook?fscTableId=x', viewer);
+      const unknownId = await c.get(`/api/v1/outlook?fscTableId=${randomUUID()}`, viewer);
+      expect([badId.statusCode, unknownId.statusCode]).toEqual([404, 404]);
+      expect(badId.body.replace(/"requestId":"[^"]*"/u, '')).toBe(unknownId.body.replace(/"requestId":"[^"]*"/u, ''));
+      expect((await c.get('/api/v1/outlook?other=1', viewer)).statusCode).toBe(400);
       expect((await c.get('/api/v1/fuel-tables?includeArchived=yes', viewer)).statusCode).toBe(400);
     });
 

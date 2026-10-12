@@ -15,7 +15,12 @@ const dateText = z.string().regex(DATE);
 const decimalText = z.string().regex(DECIMAL);
 const count = z.int().min(0);
 
-export const OutlookQuery = z.strictObject({ fscTableId: uuid.optional() });
+/**
+ * Fix round 2 (F10 precedence 6): `fscTableId` is a bounded string here, not a uuid, so a syntactically invalid
+ * id reaches the route and gets the same 404 as an unknown or other-tenant id (like the `:id` path routes).
+ * Unknown query keys are still 400 (strict object).
+ */
+export const OutlookQuery = z.strictObject({ fscTableId: z.string().min(1).max(64).optional() });
 export type OutlookQueryInput = z.output<typeof OutlookQuery>;
 
 export const OutlookHorizon = z.strictObject({
