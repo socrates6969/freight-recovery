@@ -16,6 +16,8 @@ export * from './intelligence-dto.js';
 export * from './api-key-dto.js';
 export * from './four-eyes.js';
 export * from './analysis-dto.js';
+// Hardening (REQ-20261012-hardening, C6): transparency copy (outside the frozen engine directories).
+export * from './transparency-copy.js';
 // Step 5 (REQ-20261010-step5-analysis): rules engine, evidence renderers and analysis copy.
 export * from './analysis/index.js';
 // Step 6 (REQ-20261011-charge-intelligence): charge-intelligence constants, copy and DTOs only. The seed

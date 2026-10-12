@@ -7,13 +7,16 @@
 import {
   CATEGORY_LABELS,
   CHARGE_CATEGORIES,
+  CHARGE_LABEL_CONFLICT_TEXT,
   CHARGE_NOTE,
   CHARGE_TEXT,
   ChargeLinesResponse,
+  LEARNED_INFLUENCE_TEXT,
   SetChargeLabelBody,
   SetChargeLabelResponse,
   type ChargeCategory,
   type ChargeLineViewDto,
+  type ChargeLinesResponseDto,
 } from '@fr/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
@@ -30,7 +33,8 @@ const is404 = (e: unknown) => e instanceof ApiError && e.status === 404;
 export function chargeErrorText(e: unknown): string {
   const status = e instanceof ApiError ? e.status : 0;
   if (status === 403) return CHARGE_TEXT.forbidden;
-  if (status === 409) return CHARGE_TEXT.limit;
+  // Hardening (C7.5): a concurrent change (409 conflict) is not the label limit (409 label_limit_reached).
+  if (status === 409) return e instanceof ApiError && e.code === 'conflict' ? CHARGE_LABEL_CONFLICT_TEXT : CHARGE_TEXT.limit;
   if (status === 429) return CHARGE_TEXT.rateLimited;
   return CHARGE_TEXT.failed;
 }
@@ -38,6 +42,37 @@ export function chargeErrorText(e: unknown): string {
 /** Fix round 1 (S7): the server would refuse a label for this description (length, unsafe characters). */
 export function isLabelable(description: string): boolean {
   return SetChargeLabelBody.safeParse({ description, category: 'other' }).success;
+}
+
+/** Hardening (C3, C7.5): the team labels recorded by the claim's analysis (absent when not analysed). */
+export function LearnedInfluenceSection({ influence }: { influence: ChargeLinesResponseDto['influence'] }) {
+  if (influence === null) return null;
+  return (
+    <section aria-label={LEARNED_INFLUENCE_TEXT.heading} className="mb-3">
+      <h4 className="font-medium">{LEARNED_INFLUENCE_TEXT.heading}</h4>
+      {influence.labels.length === 0 ? (
+        <p className="muted text-sm">{LEARNED_INFLUENCE_TEXT.none}</p>
+      ) : (
+        <>
+          <ul className="text-sm">
+            {influence.labels.map((l, i) => (
+              <li key={`${l.labelId}:${i}`}>
+                {l.description !== null && l.category !== null ? (
+                  <>
+                    <SafeText value={l.description} />
+                    {` (${CATEGORY_LABELS[l.category]})`}
+                  </>
+                ) : (
+                  LEARNED_INFLUENCE_TEXT.deleted
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="muted text-sm">{LEARNED_INFLUENCE_TEXT.note}</p>
+        </>
+      )}
+    </section>
+  );
 }
 
 interface SaveVars {
@@ -129,7 +164,10 @@ export function ChargeLinesPanel({ claimId, onUnavailable }: { claimId: string; 
         <p role="alert">{step4ErrorText(q.error)}</p>
       ) : !d ? (
         <div className="skeleton h-24" aria-hidden="true" />
-      ) : d.lines.length === 0 ? (
+      ) : (
+        <LearnedInfluenceSection influence={d.influence} />
+      )}
+      {!d || q.isError ? null : d.lines.length === 0 ? (
         <p className="muted">{CHARGE_TEXT.empty}</p>
       ) : (
         <ul aria-label={CHARGE_TEXT.heading}>

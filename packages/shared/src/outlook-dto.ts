@@ -15,6 +15,9 @@ const dateText = z.string().regex(DATE);
 const decimalText = z.string().regex(DECIMAL);
 const count = z.int().min(0);
 
+/** Hardening (REQ-20261012-hardening, C8.2, FO-1): how the active price import was obtained. */
+export const PRICE_SOURCE_KINDS = ['fetch', 'bundled', 'file'] as const;
+
 /**
  * Fix round 2 (F10 precedence 6): `fscTableId` is a bounded string here, not a uuid, so a syntactically invalid
  * id reaches the route and gets the same 404 as an unknown or other-tenant id (like the `:id` path routes).
@@ -61,6 +64,7 @@ export const OutlookSeries = z.strictObject({
       rowCount: z.int().min(1),
       firstDate: dateText,
       lastDate: dateText,
+      sourceKind: z.enum(PRICE_SOURCE_KINDS),
     })
     .nullable(),
   latest: z.strictObject({ date: dateText, value: decimalText }).nullable(),

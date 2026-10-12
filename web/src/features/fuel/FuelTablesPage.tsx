@@ -8,6 +8,7 @@ import {
   FSC_KINDS,
   FSC_UNITS,
   FUEL_TABLES_TEXT,
+  FUEL_TABLE_LIMIT_TEXT,
   FscTable,
   FscTableBody,
   FscTableList,
@@ -31,7 +32,8 @@ export function fuelTableErrorText(e: unknown): string {
   const status = e instanceof ApiError ? e.status : 0;
   const code = e instanceof ApiError ? e.code : '';
   if (status === 403) return FUEL_TABLES_TEXT.forbidden;
-  if (status === 409 && code === 'fuel_table_limit_reached') return FUEL_TABLES_TEXT.limit;
+  // Hardening (C7.6, FO-10): says that archived tables count toward the limit.
+  if (status === 409 && code === 'fuel_table_limit_reached') return FUEL_TABLE_LIMIT_TEXT;
   if (status === 409 && code === 'stale_revision') return FUEL_TABLES_TEXT.stale;
   if (status === 409 && code === 'conflict') return FUEL_TABLES_TEXT.nameTaken;
   return FUEL_TABLES_TEXT.failed;

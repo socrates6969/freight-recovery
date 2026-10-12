@@ -1,4 +1,13 @@
-import { ANALYSIS_NOTE, ANALYSIS_TEXT, ANALYZE_AUTHOR_NOTE, ANALYZE_BATCH_DEFAULT, BulkAnalyzeResponse, type BulkAnalyzeResponseDto } from '@fr/shared';
+import {
+  ANALYSIS_NOTE,
+  ANALYSIS_TEXT,
+  ANALYZE_AUTHOR_NOTE,
+  ANALYZE_BATCH_DEFAULT,
+  BULK_ANALYZE_INTRO,
+  BULK_STOPPED_TEXT,
+  BulkAnalyzeResponse,
+  type BulkAnalyzeResponseDto,
+} from '@fr/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useId, useRef, useState } from 'react';
 
@@ -36,12 +45,13 @@ export function BulkAnalyzeDialog({ onClose }: { onClose: () => void }) {
   return (
     <Dialog title={ANALYSIS_TEXT.bulkTitle} onClose={onClose} describedBy={introId}>
       <div className="flex flex-col gap-3">
-        <p id={introId}>{ANALYSIS_TEXT.bulkIntro}</p>
+        <p id={introId}>{BULK_ANALYZE_INTRO}</p>
         <p className="muted text-sm">{ANALYSIS_NOTE}</p>
         <p className="muted text-sm">{ANALYZE_AUTHOR_NOTE}</p>
         {result ? (
           <div role="status" className="rounded-md bg-[var(--color-surface)] p-3 text-sm">
             <p>{ANALYSIS_TEXT.bulkSummary(result.analyzed.length, result.skipped.length, result.failed.length, result.remaining)}</p>
+            <p>{BULK_STOPPED_TEXT[result.stoppedBy]}</p>
             {result.failed.length > 0 ? (
               <p>
                 {ANALYSIS_TEXT.bulkFailedPrefix}

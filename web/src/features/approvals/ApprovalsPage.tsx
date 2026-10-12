@@ -1,5 +1,6 @@
 import {
   ApprovalsPage as ApprovalsPageSchema,
+  FOUR_EYES_CLAIM_BASIS_TEXT,
   FOUR_EYES_CLAIM_TEXT,
   FOUR_EYES_ERROR_CODE,
   Packet,
@@ -231,7 +232,7 @@ export function ApprovalsPage() {
                   <td>
                     <div className="flex flex-wrap gap-1">
                       {item.status === 'PENDING_REVIEW' && canApprove && item.selfAuthored ? (
-                        <span className="muted text-sm">{FOUR_EYES_CLAIM_TEXT}</span>
+                        <span className="muted text-sm">{FOUR_EYES_CLAIM_BASIS_TEXT[item.selfAuthoredBasis ?? 'revision_author']}</span>
                       ) : null}
                       {item.status === 'PENDING_REVIEW' && canApprove && !item.selfAuthored ? (
                         <>

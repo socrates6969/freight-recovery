@@ -145,7 +145,7 @@ export function ClaimsPage() {
         </div>
       ) : (
         <div className="card max-h-[70vh] overflow-auto">
-          <table className="data-table">
+          <table className="data-table" aria-label="Claims">
             <thead>
               <tr>
                 {COLUMNS.map((c) => {

@@ -84,7 +84,7 @@ export function ReviewQueuePage() {
         </div>
       ) : (
         <div className="card overflow-auto">
-          <table className="data-table">
+          <table className="data-table" aria-label="Review queue">
             <thead>
               <tr>
                 <th scope="col">File</th>

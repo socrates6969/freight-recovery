@@ -12,7 +12,7 @@ import { confidencePercent, fieldLabel, formatFieldValue, reviewText, sourceText
 export function FieldsTable({ fields, actions }: { fields: readonly ExtractedFieldDto[]; actions?: (f: ExtractedFieldDto) => ReactNode }) {
   return (
     <div className="max-h-[50vh] overflow-auto">
-      <table className="data-table text-sm">
+      <table className="data-table text-sm" aria-label="Extracted fields">
         <caption className="mb-2 text-left font-semibold">Extracted fields</caption>
         <thead>
           <tr>

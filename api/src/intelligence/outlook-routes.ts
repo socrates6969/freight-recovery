@@ -83,7 +83,7 @@ export function outlookSeriesDto(key: PriceSeriesKey, data: PriceOutlook | null,
   return {
     ...head,
     status: data.outlook.status,
-    provenance: { importId: p.id, sourceUrl: p.sourceUrl, retrievedAt: p.retrievedAt, sha256: p.sha256, rowCount: p.rowCount, firstDate: p.firstDate, lastDate: p.lastDate },
+    provenance: { importId: p.id, sourceUrl: p.sourceUrl, retrievedAt: p.retrievedAt, sha256: p.sha256, rowCount: p.rowCount, firstDate: p.firstDate, lastDate: p.lastDate, sourceKind: p.sourceKind },
     latest: last === undefined ? null : { date: last.date, value: last.value },
     backtestYears: data.outlook.backtestYears,
     horizons,

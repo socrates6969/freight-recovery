@@ -10,6 +10,7 @@ import {
   OUTLOOK_TEXT,
   OutlookResponse,
   FscTableList,
+  PRICE_SOURCE_KIND_TEXT,
   REASON_LABELS,
   outlookBacktestText,
   rangeText,
@@ -79,6 +80,7 @@ function SeriesSection({ s, unitText }: { s: OutlookSeriesDto; unitText: (x: str
         </>
       )}
       {provenanceText(s) !== null ? <p className="muted text-xs">{provenanceText(s)}</p> : null}
+      {s.provenance !== null ? <p className="muted text-xs">{PRICE_SOURCE_KIND_TEXT[s.provenance.sourceKind]}</p> : null}
     </section>
   );
 }

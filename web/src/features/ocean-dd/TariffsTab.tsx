@@ -3,7 +3,7 @@
  * presets (DD_TEXT.fromPreset, DD_PRESET_NOTE and the preset's provenance). Tiers are edited one per line as
  * `days | SIZE=rate, SIZE=rate` (days empty on the last tier); the body is validated with `DdTariffData`.
  */
-import { DD_PRESET_NOTE, DD_TARIFF_PRESETS, DD_TEXT, DdTariffData, DdTariffView, type DdTariffDataDto, type DdTariffPreset, type DdTariffViewDto } from '@fr/shared';
+import { DD_PRESET_NOTE, DD_PRESET_VERIFICATION_TEXT, DD_TARIFF_PRESETS, DD_TEXT, DdTariffData, DdTariffView, type DdTariffDataDto, type DdTariffPreset, type DdTariffViewDto } from '@fr/shared';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 
@@ -111,7 +111,7 @@ function Provenance({ preset }: { preset: DdTariffPreset }) {
     <div className="w-full text-sm" aria-label="Preset provenance">
       <p>{DD_PRESET_NOTE}</p>
       <p>
-        Carrier: <SafeText value={p.carrier} />. Document: <SafeText value={p.document} />. Retrieved: {p.retrieved}. Verification: {p.verification}.
+        Carrier: <SafeText value={p.carrier} />. Document: <SafeText value={p.document} />. Retrieved: {p.retrieved}. {`Verification: ${DD_PRESET_VERIFICATION_TEXT[p.verification]}`}
       </p>
       <ul className="muted">
         {p.assumptions.map((a) => (

@@ -1,4 +1,17 @@
-import { ANALYSIS_TEXT, AnalyzeResponse, ClaimDetail, ClaimDocumentsResponse, ClaimSummary, DD_TEXT, Packet, displayText, type PacketDto } from '@fr/shared';
+import {
+  ANALYSIS_FAILURE_TEXT,
+  ANALYSIS_TEXT,
+  AnalyzeResponse,
+  ClaimDetail,
+  ClaimDocumentsResponse,
+  ClaimSummary,
+  DD_TEXT,
+  Packet,
+  analysisFailureNote,
+  displayText,
+  findingConfidenceText,
+  type PacketDto,
+} from '@fr/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { useCallback, useId, useRef, useState, type KeyboardEvent } from 'react';
@@ -78,7 +91,7 @@ export function EvidencePanel({ packet }: { packet: PacketDto }) {
 
       <section>
         <h3 className="mb-2 font-semibold">Sources</h3>
-        <table className="data-table text-sm">
+        <table className="data-table text-sm" aria-label="Packet sources">
           <thead>
             <tr>
               <th scope="col">File</th>
@@ -119,7 +132,7 @@ export function EvidencePanel({ packet }: { packet: PacketDto }) {
                 <span className="num font-medium">{formatUsdCents(f.amountCents)}</span>
               </div>
               <p className="muted text-xs">
-                <SafeText value={f.ruleId} /> - confidence <span className="num">{Math.round(f.confidence * 100)}%</span>
+                <SafeText value={f.ruleId} /> - {findingConfidenceText(f.confidence)}
                 {f.needsHumanReview ? <span className="badge badge-warn ml-2">Needs human review</span> : null}
               </p>
               <p className="mt-1 text-sm">
@@ -257,7 +270,11 @@ export function ClaimSheet() {
       );
       setTab('Evidence');
     },
-    onError: (e) => setAnalyzeError({ id, text: analyzeErrorText(e) }),
+    onError: async (e) => {
+      setAnalyzeError({ id, text: analyzeErrorText(e) });
+      // Hardening (C4.3): a 422 records a failed attempt; reload the claim so the note is current.
+      if (e instanceof ApiError && e.status === 422) await queryClient.invalidateQueries({ queryKey: ['claim', id] });
+    },
   });
 
   const onTabKey = (e: KeyboardEvent<HTMLButtonElement>) => {
@@ -276,6 +293,13 @@ export function ClaimSheet() {
     c?.status === 'AWAITING_ANALYSIS' && canAnalyze ? (
       <AnalyzeClaimSection pending={analyze.isPending} errorText={analyzeError?.id === id ? analyzeError.text : null} onAnalyze={() => analyze.mutate()} />
     ) : null;
+  // Hardening (C7.2): the failed-analysis note is shown to every reader of the claim (not only analysts).
+  const failure = c?.status === 'AWAITING_ANALYSIS' ? c.analysisFailure : null;
+  const failureNote = failure ? (
+    <p className="mt-4 text-sm">
+      {analysisFailureNote(formatDateTime(failure.lastFailedAt), failure.failedAttempts, ANALYSIS_FAILURE_TEXT[failure.reasonCode])}
+    </p>
+  ) : null;
 
   return (
     <>
@@ -379,11 +403,17 @@ export function ClaimSheet() {
                     </Field>
                   </dl>
                 ) : null}
-                {tab === 'Summary' ? analyzeSection : null}
+                {tab === 'Summary' ? (
+                  <>
+                    {failureNote}
+                    {analyzeSection}
+                  </>
+                ) : null}
                 {tab === 'Evidence' ? (
                   !hasPacket ? (
                     <>
                       <p className="muted">{NO_PACKET_TEXT}</p>
+                      {failureNote}
                       {analyzeSection}
                     </>
                   ) : packet.isError ? (
@@ -437,7 +467,7 @@ export function ClaimSheet() {
                   ) : documents.data.items.length === 0 ? (
                     <p className="muted">No imported documents are linked to this claim.</p>
                   ) : (
-                    <table className="data-table text-sm">
+                    <table className="data-table text-sm" aria-label="Linked documents">
                       <thead>
                         <tr>
                           <th scope="col">Name</th>
