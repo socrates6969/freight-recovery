@@ -279,4 +279,27 @@ describe('architecture', () => {
     );
     for (const r of found) expect([r, /\/(platform|auth|users|api-keys|audit|flags)\b|approve|send|reject/u.test(r)]).toEqual([r, false]);
   });
+
+  it('hardening (H10): only an explicit allow-list of modules reads finding explanation/calculation text', () => {
+    // Finding text carries raw invoice-line descriptions (residuals SA-5/SC-7): a new reader (renderer, export,
+    // mail) must be added here deliberately after checking that it escapes or neutralises the text.
+    const FINDING_TEXT_READERS = ['src/claims/analysis.ts', 'src/claims/content-hash.ts', 'src/claims/service.ts', 'src/exports/rows.ts', 'src/ocean-dd/audit-run.ts'];
+    const found = files.filter((f) => /\.(explanation|calculation)\b|\b(explanation|calculation)\s*:/u.test(f.text)).map((f) => f.path);
+    expect(found.sort()).toEqual([...FINDING_TEXT_READERS].sort());
+  });
+
+  it('hardening (H10): the raw-SQL helpers of this run live in src/audit or src/db', () => {
+    const helpers = ['src/audit/label-authors.ts', 'src/audit/label-influence.ts', 'src/audit/analysis-failures.ts', 'src/db/analysis-candidates.ts'];
+    for (const h of helpers) {
+      const f = files.find((x) => x.path === h);
+      expect([h, f !== undefined && /\.\$queryRaw\s*[(<`]/u.test(f.text)]).toEqual([h, true]);
+    }
+  });
+
+  it('fix round 1 (C11): no Fastify request `.ip` read outside src/http/client-ip.ts', () => {
+    for (const f of files) {
+      if (f.path === 'src/http/client-ip.ts') continue;
+      expect([f.path, /\b(req|request)\.ip\b/u.test(f.text)]).toEqual([f.path, false]);
+    }
+  });
 });

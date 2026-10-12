@@ -3,7 +3,7 @@
  * status text and calculation as text, inputs form only with claims:analyze while AWAITING_ANALYSIS, fixed
  * error texts) and the Fuel tables page (list, add with schema validation, fixed 409 texts).
  */
-import { FUEL_NOTE, FUEL_STATUS_TEXT, FUEL_TABLES_TEXT, FUEL_TEXT, PERMISSION_MATRIX, type Role } from '@fr/shared';
+import { FUEL_NOTE, FUEL_STATUS_TEXT, FUEL_TABLE_LIMIT_TEXT, FUEL_TABLES_TEXT, FUEL_TEXT, PERMISSION_MATRIX, type Role } from '@fr/shared';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
@@ -47,6 +47,7 @@ const claim = (status: string) => ({
   createdAt: '2026-10-01T00:00:00.000Z',
   updatedAt: '2026-10-01T00:00:00.000Z',
   invoiceDate: null,
+  analysisFailure: null,
 });
 
 const table = {
@@ -198,7 +199,8 @@ describe('Fuel tables page', () => {
     await u.type(screen.getByLabelText('Step size'), '0.06');
     await u.type(screen.getByLabelText('Rate per step'), '0.01');
     await u.click(screen.getByRole('button', { name: FUEL_TABLES_TEXT.save }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(FUEL_TABLES_TEXT.limit);
+    // Hardening (C7.6, FO-10): the limit text says archived tables count.
+    expect(await screen.findByRole('alert')).toHaveTextContent(FUEL_TABLE_LIMIT_TEXT);
     const post = calls.find((c) => c.method === 'POST' && c.url === '/api/v1/fuel-tables');
     expect(JSON.parse(post?.body ?? '{}')).toEqual({
       name: 'New table',

@@ -110,14 +110,15 @@ describe('per-address failed-key limiter boundary (RATE_LIMIT_API_KEY_FAIL_MAX)'
   /** Fake limiter store with the @fastify/rate-limit semantics: hit n is exceeded when n > max. */
   function fakeStore(max: number, reportRemaining: boolean) {
     const hits = new Map<string, number>();
-    return async (req: { ip: string }) => {
-      const n = (hits.get(req.ip) ?? 0) + 1;
-      hits.set(req.ip, n);
+    return async (req: { clientIp: string }) => {
+      const n = (hits.get(req.clientIp) ?? 0) + 1;
+      hits.set(req.clientIp, n);
       return { allowed: n <= max, retryAfterSeconds: 600, ...(reportRemaining ? { remaining: Math.max(0, max - n) } : {}) };
     };
   }
   async function attempt(auth: InstanceType<typeof ApiKeyAuthenticator>, ip: string): Promise<number> {
-    const req = { ip, frRequestId: 'r', method: 'GET' } as never;
+    // Fix round 1 (C11): every per-address control uses the derived client address.
+    const req = { clientIp: ip, frRequestId: 'r', method: 'GET' } as never;
     try {
       await auth.authenticate(req, 'fr_live_malformed', undefined);
       return 200;

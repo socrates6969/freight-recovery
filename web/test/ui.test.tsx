@@ -135,6 +135,7 @@ describe('AppRoot routing and auth', () => {
       pendingFindingsCount: 1,
       waitingSince: '2026-10-01T00:00:00.000Z',
       selfAuthored: false,
+      selfAuthoredBasis: null,
     };
     const approved = { ...item, id: U(21), claimNumber: 'CLM-0015', status: 'APPROVED', pendingFindingsCount: 0 };
     const fetchImpl = async (url: RequestInfo | URL) => {
@@ -253,6 +254,7 @@ describe('fix round 1: fixed error texts, retry, Retry-After', () => {
       pendingFindingsCount: 0,
       waitingSince: '2026-10-01T00:00:00.000Z',
       selfAuthored: false,
+      selfAuthoredBasis: null,
     };
     const fetchImpl = authed((u) => {
       if (u.startsWith('/api/v1/approvals')) return json(200, { items: [item], page: 1, pageSize: 25, total: 1 });

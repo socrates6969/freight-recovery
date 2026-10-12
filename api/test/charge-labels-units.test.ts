@@ -30,7 +30,11 @@ vi.mock('../src/imports/bundle.js', () => ({
   })),
 }));
 
-const { chargeLines, deleteLabel, listLabels, setLabel } = await import('../src/intelligence/charges.js');
+// Hardening (C3): the influence ids come from the audit chain (raw SQL); faked per test.
+let influenceIds: string[] | null = null;
+vi.mock('../src/audit/label-influence.js', () => ({ learnedLabelIdsOfClaim: vi.fn(async () => influenceIds) }));
+
+const { chargeLines, deleteLabel, influenceView, listLabels, setLabel } = await import('../src/intelligence/charges.js');
 const { HttpError } = await import('../src/http/errors.js');
 
 const T = '11111111-1111-4111-8111-111111111111';
@@ -125,13 +129,13 @@ describe('setLabel', () => {
     expect((await setLabel(db as never, actor, { description: 'lumper fee', category: 'other' })).outcome).toBe('changed');
   });
 
-  it('retries once on a concurrent create; a second unique violation is a 500', async () => {
+  it('retries once on a concurrent create; a second unique violation is 409 conflict (hardening, SC-8)', async () => {
     const once = fakeDb([], { uniqueFailures: 1 });
     expect((await setLabel(once.db as never, actor, { description: 'Pallet fee', category: 'accessorial' })).outcome).toBe('created');
     const twice = fakeDb([], { uniqueFailures: 2 });
     const e = await setLabel(twice.db as never, actor, { description: 'Pallet fee', category: 'accessorial' }).catch((x: unknown) => x);
     expect(e).toBeInstanceOf(HttpError);
-    expect(e).toMatchObject({ statusCode: 500, code: 'internal_error' });
+    expect(e).toMatchObject({ statusCode: 409, code: 'conflict', message: 'The request conflicts with the current state.' });
   });
 });
 
@@ -165,5 +169,33 @@ describe('deleteLabel, listLabels, chargeLines', () => {
     ]);
     // The tenant label overrides the seed for the same normalized text.
     expect(r.lines[0]?.suggestion).toMatchObject({ category: 'other', similarity: 1, nearest: { origin: 'tenant', labelId: row().id } });
+    // Hardening (C3): not analysed -> influence null.
+    expect(r.influence).toBeNull();
+  });
+
+  it('hardening (F11): the tenant labels are read once per charge-lines request (suggestion and chip agree)', async () => {
+    const { db, calls } = fakeDb([row({ category: 'other' })]);
+    await chargeLines(db as never, CLAIM);
+    expect(calls.filter((c) => c.startsWith('findMany'))).toHaveLength(1);
+  });
+
+  it('hardening (C3): influence lists the recorded ids in order; a deleted label has null description and category', async () => {
+    const gone = '99999999-9999-4999-8999-999999999999';
+    influenceIds = [gone, row().id];
+    try {
+      const { db } = fakeDb([row({ category: 'other' })]);
+      const r = await chargeLines(db as never, CLAIM);
+      expect(r.influence).toEqual({
+        labels: [
+          { labelId: gone, description: null, category: null },
+          { labelId: row().id, description: row().description, category: 'other' },
+        ],
+      });
+      influenceIds = [];
+      expect((await chargeLines(db as never, CLAIM)).influence).toEqual({ labels: [] });
+    } finally {
+      influenceIds = null;
+    }
+    expect(influenceView(null, [])).toBeNull();
   });
 });

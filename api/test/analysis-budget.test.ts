@@ -13,7 +13,12 @@ vi.mock('../src/audit/audit.js', () => ({
   }),
 }));
 
-const { analyzeAwaiting } = await import('../src/claims/analysis.js');
+// Hardening (C5.1): candidates come from a raw-SQL helper; the fake transaction supplies them.
+vi.mock('../src/db/analysis-candidates.js', () => ({
+  analysisCandidates: vi.fn(async (tx: { claim: { findMany: () => Promise<unknown> } }) => tx.claim.findMany()),
+}));
+
+const { analyzeAwaiting, bulkStopReason } = await import('../src/claims/analysis.js');
 
 const TENANT = '00000000-0000-4000-8000-000000000090';
 const actor = { userId: '00000000-0000-4000-8000-000000000001', role: 'ANALYST' as const, ip: '127.0.0.1', requestId: 'r' };
@@ -45,7 +50,10 @@ describe('analyzeAwaiting budget (S5-1)', () => {
     expect(r.examined).toBe(3);
     expect(r.skipped.map((s) => s.claimNumber)).toEqual(['CLM-0', 'CLM-1', 'CLM-2']);
     expect([r.analyzed.length, r.failed.length, r.remaining, r.limit]).toEqual([0, 0, 7, 10]);
-    expect(appended).toEqual([{ action: 'claim.bulk_analyzed', metadata: { limit: 10, examined: 3, analyzed: 0, skipped: 3, failed: 0, remaining: 7 } }]);
+    expect(appended).toEqual([
+      { action: 'claim.bulk_analyzed', metadata: { limit: 10, examined: 3, analyzed: 0, skipped: 3, failed: 0, remaining: 7, stoppedBy: 'budget' } },
+    ]);
+    expect(r.stoppedBy).toBe('budget');
   });
 
   it('never charges for a single candidate and charges n-1 times when the budget suffices', async () => {
@@ -67,5 +75,55 @@ describe('analyzeAwaiting budget (S5-1)', () => {
     const none = { n: 0 };
     await analyzeAwaiting(fakeDb(0, none) as never, actor, 5, async () => true, true);
     expect(none.n).toBe(0);
+  });
+
+  it('hardening (C5.2): stoppedBy is candidates when every scanned candidate was examined', async () => {
+    appended.length = 0;
+    const r = await analyzeAwaiting(fakeDb(3) as never, actor, 10, async () => true);
+    expect([r.examined, r.stoppedBy]).toEqual([3, 'candidates']);
+    expect(appended[0]?.metadata).toMatchObject({ stoppedBy: 'candidates' });
+  });
+
+  it('hardening (C5.4): an unexpected error appends a stoppedBy=error summary, then rethrows the original error', async () => {
+    appended.length = 0;
+    const boom = new Error('limiter down');
+    const charge = vi.fn(async () => {
+      throw boom;
+    });
+    await expect(analyzeAwaiting(fakeDb(4) as never, actor, 10, charge)).rejects.toBe(boom);
+    expect(appended).toEqual([
+      { action: 'claim.bulk_analyzed', metadata: { limit: 10, examined: 1, analyzed: 0, skipped: 1, failed: 0, remaining: 7, stoppedBy: 'error' } },
+    ]);
+  });
+
+  it('hardening (C5.4): a failing error summary is logged as bulk_summary_audit_failed and the original error still wins', async () => {
+    const boom = new Error('limiter down');
+    const db = fakeDb(2);
+    let txCalls = 0;
+    const failingSummary = {
+      tenantId: db.tenantId,
+      tx: async <T,>(fn: (t: never) => Promise<T>): Promise<T> => {
+        txCalls += 1;
+        // 1: candidates, 2: first claim (404 -> skipped), 3: the error summary.
+        if (txCalls >= 3) throw new Error('audit down');
+        return db.tx(fn);
+      },
+    };
+    const logged: unknown[] = [];
+    const log = { error: (obj: Record<string, unknown>) => logged.push(obj) };
+    await expect(
+      analyzeAwaiting(failingSummary as never, actor, 10, async () => Promise.reject(boom), false, { enabled: false, series: null }, log),
+    ).rejects.toBe(boom);
+    expect(logged).toEqual([{ errorKind: 'bulk_summary_audit_failed' }]);
+  });
+});
+
+describe('bulkStopReason (C5.2)', () => {
+  it('budget wins, then limit, then candidates', () => {
+    expect(bulkStopReason(true, 10, 10)).toBe('budget');
+    expect(bulkStopReason(false, 10, 10)).toBe('limit');
+    expect(bulkStopReason(false, 11, 10)).toBe('limit');
+    expect(bulkStopReason(false, 9, 10)).toBe('candidates');
+    expect(bulkStopReason(false, 0, 1)).toBe('candidates');
   });
 });

@@ -349,6 +349,7 @@ describe('exports and claim sheet', () => {
     assignee: null,
     latestPacket: null,
     invoiceDate: null,
+    analysisFailure: null,
     createdAt: '2026-10-01T00:00:00.000Z',
     updatedAt: '2026-10-01T00:00:00.000Z',
   };

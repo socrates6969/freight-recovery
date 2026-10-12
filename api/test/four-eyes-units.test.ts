@@ -39,11 +39,13 @@ describe('four-eyes error contract', () => {
 
   it('appends authz.four_eyes_denied after the step-4 actions (step 5 appends after it)', () => {
     // Append-only list: four-eyes was appended last in its step; step 5 adds exactly two actions after it.
-    expect(AUDIT_ACTIONS.slice(-19, -14)).toEqual(['authz.four_eyes_denied', 'claim.analyzed', 'claim.bulk_analyzed', 'charge_label.set', 'charge_label.deleted']);
+    expect(AUDIT_ACTIONS.slice(-22, -17)).toEqual(['authz.four_eyes_denied', 'claim.analyzed', 'claim.bulk_analyzed', 'charge_label.set', 'charge_label.deleted']);
     // Step 7 (REQ-20261011-fuel-outlook) appends six actions after charge_label.deleted, in F13 order.
-    expect(AUDIT_ACTIONS.slice(-14, -8)).toEqual(['fsc_table.created', 'fsc_table.updated', 'fsc_table.archived', 'claim.fuel_inputs_set', 'claim.fuel_inputs_cleared', 'price_data.imported']);
+    expect(AUDIT_ACTIONS.slice(-17, -11)).toEqual(['fsc_table.created', 'fsc_table.updated', 'fsc_table.archived', 'claim.fuel_inputs_set', 'claim.fuel_inputs_cleared', 'price_data.imported']);
+    // Hardening (REQ-20261012-hardening, C9 and C15) appends three actions after the step-8 list.
+    expect(AUDIT_ACTIONS.slice(-3)).toEqual(['claim.analysis_failed', 'auth.password.change_failed', 'invite.existing_account']);
     // Step 8 (REQ-20261011-ocean-dd) appends eight D&D actions after price_data.imported, in C15 order.
-    expect(AUDIT_ACTIONS.slice(-8)).toEqual([
+    expect(AUDIT_ACTIONS.slice(-11, -3)).toEqual([
       'dd_tariff.created',
       'dd_tariff.updated',
       'dd_calendar.created',

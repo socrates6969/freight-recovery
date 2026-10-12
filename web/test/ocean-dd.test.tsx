@@ -7,6 +7,7 @@ import {
   DD_CHECK_LABELS,
   DD_NOTE,
   DD_PRESET_NOTE,
+  DD_PRESET_VERIFICATION_TEXT,
   DD_TARIFF_PRESETS,
   DD_TEXT,
   DD_CSV_COLUMNS,
@@ -199,7 +200,8 @@ describe('Ocean D&D page', () => {
     await u.selectOptions(screen.getByLabelText(DD_TEXT.fromPreset), 'msc-us-import-demurrage');
     expect(screen.getByLabelText('Name')).toHaveValue('MSC US import demurrage (all ports except Baltimore)');
     expect(screen.getByText(DD_PRESET_NOTE)).toBeInTheDocument();
-    expect(screen.getByLabelText('Preset provenance').textContent).toContain('Verification: primary');
+    // Hardening (C7.7): human-readable verification text instead of the raw enum.
+    expect(screen.getByLabelText('Preset provenance').textContent).toContain(`Verification: ${DD_PRESET_VERIFICATION_TEXT.primary}`);
   });
 
   it('CSV import: preview of invoices and row errors (DD_TEXT.csvErrors)', async () => {

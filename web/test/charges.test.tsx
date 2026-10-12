@@ -3,7 +3,7 @@
  * 404 hides it), chips and nearest example as text, controls only with charge_labels:manage, one PUT per
  * action with the fixed success/error texts.
  */
-import { CHARGE_NOTE, CHARGE_TEXT, PERMISSION_MATRIX, type Role } from '@fr/shared';
+import { CHARGE_LABEL_CONFLICT_TEXT, CHARGE_NOTE, CHARGE_TEXT, LEARNED_INFLUENCE_TEXT, PERMISSION_MATRIX, type Role } from '@fr/shared';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
@@ -39,6 +39,7 @@ const claim = {
   createdAt: '2026-10-01T00:00:00.000Z',
   updatedAt: '2026-10-01T00:00:00.000Z',
   invoiceDate: null,
+  analysisFailure: null,
 };
 
 const lines = {
@@ -46,6 +47,7 @@ const lines = {
   classifierVersion: 'charge-knn-v1',
   seedVersion: 'tariff-seed-v1',
   threshold: 0.3,
+  influence: null,
   lines: [
     {
       index: 0,
@@ -192,5 +194,46 @@ describe('claim sheet Charges tab', () => {
     await u.click(await screen.findByRole('tab', { name: 'Charges' }));
     await screen.findByRole('tab', { name: 'Summary', selected: true });
     expect(screen.queryByRole('tab', { name: 'Charges' })).toBeNull();
+  });
+});
+
+describe('hardening: learned influence and the label conflict (C7.5)', () => {
+  it('lists influencing labels as text (deleted ones by the fixed text) with the note; no section when not analysed', async () => {
+    const influence = {
+      labels: [
+        { labelId: U(801), description: `Lumper ${HOSTILE}`, category: 'accessorial' },
+        { labelId: U(802), description: null, category: null },
+      ],
+    };
+    const { fetchImpl } = setup('VIEWER', { chargeLines: () => json(200, { ...lines, influence }) });
+    const u = userEvent.setup();
+    const { container } = render(<AppRoot fetchImpl={fetchImpl} initialEntries={[`/claims/${claim.id}`]} />);
+    await u.click(await screen.findByRole('tab', { name: 'Charges' }));
+    const section = await screen.findByRole('region', { name: LEARNED_INFLUENCE_TEXT.heading });
+    expect(within(section).getByRole('heading', { name: LEARNED_INFLUENCE_TEXT.heading })).toBeInTheDocument();
+    expect(section.textContent).toContain(`Lumper ${HOSTILE} (Accessorial)`);
+    expect(within(section).getByText(LEARNED_INFLUENCE_TEXT.deleted)).toBeInTheDocument();
+    expect(within(section).getByText(LEARNED_INFLUENCE_TEXT.note)).toBeInTheDocument();
+    expect(container.ownerDocument.querySelector('script, img')).toBeNull();
+  });
+
+  it('an empty influence list shows the none text; null shows no section', async () => {
+    const empty = setup('VIEWER', { chargeLines: () => json(200, { ...lines, influence: { labels: [] } }) });
+    const u = userEvent.setup();
+    const { unmount } = render(<AppRoot fetchImpl={empty.fetchImpl} initialEntries={[`/claims/${claim.id}`]} />);
+    await u.click(await screen.findByRole('tab', { name: 'Charges' }));
+    expect(await screen.findByText(LEARNED_INFLUENCE_TEXT.none)).toBeInTheDocument();
+    expect(screen.queryByText(LEARNED_INFLUENCE_TEXT.note)).toBeNull();
+    unmount();
+    const none = setup('VIEWER');
+    render(<AppRoot fetchImpl={none.fetchImpl} initialEntries={[`/claims/${claim.id}`]} />);
+    await u.click(await screen.findByRole('tab', { name: 'Charges' }));
+    await screen.findByRole('list', { name: CHARGE_TEXT.heading });
+    expect(screen.queryByRole('region', { name: LEARNED_INFLUENCE_TEXT.heading })).toBeNull();
+  });
+
+  it('409 conflict shows the conflict text; 409 label_limit_reached keeps the limit text', () => {
+    expect(chargeErrorText(new ApiError(409, 'conflict', 'SERVER TEXT'))).toBe(CHARGE_LABEL_CONFLICT_TEXT);
+    expect(chargeErrorText(new ApiError(409, 'label_limit_reached', 'SERVER TEXT'))).toBe(CHARGE_TEXT.limit);
   });
 });

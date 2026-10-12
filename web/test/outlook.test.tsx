@@ -4,7 +4,7 @@
  * range with its measured coverage, MASE/DM) and the provenance line; the fuel-table select (S2) re-queries
  * with `fscTableId` and shows the rate per horizon. Nav link only with the flag.
  */
-import { OUTLOOK_NOTE, OUTLOOK_TEXT, PERMISSION_MATRIX, PRICE_SERIES, REASON_LABELS, outlookBacktestText, rangeText, type Role } from '@fr/shared';
+import { OUTLOOK_NOTE, OUTLOOK_TEXT, PERMISSION_MATRIX, PRICE_SOURCE_KIND_TEXT, PRICE_SERIES, REASON_LABELS, outlookBacktestText, rangeText, type Role } from '@fr/shared';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
@@ -49,7 +49,7 @@ function outlook(withTable: boolean) {
         frequency: 'weekly',
         citation: d.citation,
         status: 'ok',
-        provenance: { importId: U(10), sourceUrl: d.sourceUrl, retrievedAt: '2026-10-11', sha256: 'aca8fefdbb54'.padEnd(64, '0'), rowCount: 1699, firstDate: '1994-03-21', lastDate: '2026-10-05' },
+        provenance: { importId: U(10), sourceUrl: d.sourceUrl, retrievedAt: '2026-10-11', sha256: 'aca8fefdbb54'.padEnd(64, '0'), rowCount: 1699, firstDate: '1994-03-21', lastDate: '2026-10-05', sourceKind: 'fetch' },
         latest: { date: '2026-10-05', value: '6.199' },
         backtestYears: { from: 2011, to: 2026 },
         horizons: [
@@ -118,6 +118,8 @@ describe('Outlook page', () => {
     expect(rows[2]).toHaveTextContent('No change');
     expect(container.textContent).toContain(`Data: ${PRICE_SERIES.diesel_us.citation}. Retrieved 2026-10-11; last observation 2026-10-05; file sha256 aca8fefdbb54.`);
     expect(screen.getByText(OUTLOOK_TEXT.noData)).toBeInTheDocument();
+    // Hardening (C7.8, FO-1): the source kind of the active import, as its own paragraph.
+    expect(screen.getByText(PRICE_SOURCE_KIND_TEXT.fetch)).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/accura|guarantee[ds]? (that|future)|predicts/iu);
     expect(screen.getByRole('link', { name: OUTLOOK_TEXT.nav })).toBeInTheDocument();
 

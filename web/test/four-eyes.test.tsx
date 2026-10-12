@@ -3,7 +3,7 @@
  * the decision buttons and show the shared copy; a late 403 four_eyes_required shows the same copy as an
  * alert and refetches.
  */
-import { FOUR_EYES_CLAIM_TEXT, FOUR_EYES_DOCUMENT_TEXT } from '@fr/shared';
+import { FOUR_EYES_CLAIM_BASIS_TEXT, FOUR_EYES_CLAIM_TEXT, FOUR_EYES_DOCUMENT_TEXT } from '@fr/shared';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
@@ -52,14 +52,15 @@ const approvalItem = (n: number, overrides: Record<string, unknown> = {}) => ({
   pendingFindingsCount: 0,
   waitingSince: '2026-10-01T00:00:00.000Z',
   selfAuthored: false,
+  selfAuthoredBasis: null,
   ...overrides,
 });
 
 describe('four-eyes: approvals page', () => {
   it('replaces Approve/Reject with the fixed text on self-authored rows only; Edit and Send stay', async () => {
-    const mine = approvalItem(1, { selfAuthored: true });
+    const mine = approvalItem(1, { selfAuthored: true, selfAuthoredBasis: 'revision_author' });
     const other = approvalItem(2);
-    const approvedMine = approvalItem(3, { status: 'APPROVED', selfAuthored: true, latestPacket: { revision: 2, status: 'APPROVED' } });
+    const approvedMine = approvalItem(3, { status: 'APPROVED', selfAuthored: true, selfAuthoredBasis: 'revision_author', latestPacket: { revision: 2, status: 'APPROVED' } });
     const fetchImpl = authed((u) =>
       u.startsWith('/api/v1/approvals') ? json(200, { items: [mine, other, approvedMine], page: 1, pageSize: 25, total: 3 }) : undefined,
     );
@@ -69,13 +70,14 @@ describe('four-eyes: approvals page', () => {
     const approvedRow = screen.getByText('CLM-0023').closest('tr') as HTMLElement;
     expect(within(mineRow).queryByRole('button', { name: 'Approve' })).toBeNull();
     expect(within(mineRow).queryByRole('button', { name: 'Reject' })).toBeNull();
-    expect(within(mineRow).getByText(FOUR_EYES_CLAIM_TEXT)).toBeInTheDocument();
+    // Hardening (C7.1): the basis-specific text.
+    expect(within(mineRow).getByText(FOUR_EYES_CLAIM_BASIS_TEXT.revision_author)).toBeInTheDocument();
     expect(within(mineRow).getByRole('button', { name: 'Edit' })).toBeInTheDocument();
     expect(within(otherRow).getByRole('button', { name: 'Approve' })).toBeInTheDocument();
     expect(within(otherRow).getByRole('button', { name: 'Reject' })).toBeInTheDocument();
-    expect(within(otherRow).queryByText(FOUR_EYES_CLAIM_TEXT)).toBeNull();
+    expect(within(otherRow).queryByText(FOUR_EYES_CLAIM_BASIS_TEXT.revision_author)).toBeNull();
     expect(within(approvedRow).getByRole('button', { name: 'Send' })).toBeInTheDocument();
-    expect(within(approvedRow).queryByText(FOUR_EYES_CLAIM_TEXT)).toBeNull();
+    expect(within(approvedRow).queryByText(FOUR_EYES_CLAIM_BASIS_TEXT.revision_author)).toBeNull();
   });
 
   it('maps a late 403 four_eyes_required to the claim text (never the server text) and refetches the queue', async () => {
@@ -122,7 +124,7 @@ describe('four-eyes: review dialog', () => {
   it('hides Accept document for a self-authored document and shows the fixed text; Reject and Close stay', async () => {
     const fetchImpl = authed((u, init) => {
       if (u.startsWith('/api/v1/reviews')) return json(200, { items: [queueItem], page: 1, pageSize: 25, total: 1 });
-      if (u === base && (init?.method ?? 'GET') === 'GET') return json(200, { ...pending, selfAuthored: true });
+      if (u === base && (init?.method ?? 'GET') === 'GET') return json(200, { ...pending, selfAuthored: true, selfAuthoredBasis: 'revision_author' });
       return undefined;
     });
     const user = userEvent.setup();
@@ -178,5 +180,17 @@ describe('four-eyes: review dialog', () => {
     await user.type(within(dialog).getByRole('textbox', { name: 'Reason' }), 'Corrected from the paper copy');
     await user.click(within(dialog).getByRole('button', { name: 'Save correction' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(FOUR_EYES_DOCUMENT_TEXT);
+  });
+});
+
+describe('hardening: four-eyes basis texts (C7.1)', () => {
+  it.each([['dd_invoice_editor'], ['label_author']] as const)('shows the %s text instead of Approve/Reject', async (basis) => {
+    const mine = approvalItem(1, { selfAuthored: true, selfAuthoredBasis: basis });
+    const fetchImpl = authed((u) => (u.startsWith('/api/v1/approvals') ? json(200, { items: [mine], page: 1, pageSize: 25, total: 1 }) : undefined));
+    render(<AppRoot fetchImpl={fetchImpl as typeof fetch} initialEntries={['/approvals']} />);
+    const row = (await screen.findByText('CLM-0021')).closest('tr') as HTMLElement;
+    expect(within(row).getByText(FOUR_EYES_CLAIM_BASIS_TEXT[basis])).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'Approve' })).toBeNull();
+    expect(within(row).queryByRole('button', { name: 'Reject' })).toBeNull();
   });
 });

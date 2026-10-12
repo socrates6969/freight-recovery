@@ -3,7 +3,7 @@
  * AWAITING_ANALYSIS claims (Summary and Evidence tabs), its fixed error alerts, and the claims page's bulk
  * dialog. Role-aware: without `claims:analyze` nothing is shown.
  */
-import { ANALYSIS_NOTE, ANALYSIS_TEXT, ANALYZE_AUTHOR_NOTE } from '@fr/shared';
+import { ANALYSIS_FAILURE_TEXT, ANALYSIS_NOTE, ANALYSIS_TEXT, ANALYZE_AUTHOR_NOTE, BULK_ANALYZE_INTRO, BULK_STOPPED_TEXT, findingConfidenceText } from '@fr/shared';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
@@ -31,6 +31,7 @@ function claim(status: string, overrides: Record<string, unknown> = {}) {
     loadNumber: 'LD-42',
     invoiceNumber: 'INV-42',
     invoiceDate: null,
+    analysisFailure: null,
     carrierName: 'Acme Freight LLC',
     shipperName: 'Widget Co',
     perspective: 'SHIPPER',
@@ -82,7 +83,14 @@ interface Call {
   body: string | null;
 }
 
-function backend(opts: { permissions?: string[]; status?: string; analyze?: () => Response; bulk?: () => Response }) {
+function backend(opts: {
+  permissions?: string[];
+  status?: string;
+  analyze?: () => Response;
+  bulk?: () => Response;
+  claimOverrides?: Record<string, unknown>;
+  packet?: unknown;
+}) {
   const calls: Call[] = [];
   let status = opts.status ?? 'AWAITING_ANALYSIS';
   const fetchImpl = async (url: RequestInfo | URL, init?: RequestInit) => {
@@ -98,8 +106,8 @@ function backend(opts: { permissions?: string[]; status?: string; analyze?: () =
       return r;
     }
     if (u === '/api/v1/claims/analyze-awaiting' && method === 'POST') return opts.bulk ? opts.bulk() : json(500, errorBody('internal_error'));
-    if (u === `/api/v1/claims/${CLAIM_ID}`) return json(200, claim(status));
-    if (u === `/api/v1/claims/${CLAIM_ID}/packet`) return status === 'AWAITING_ANALYSIS' ? json(404, errorBody('not_found')) : json(200, packet);
+    if (u === `/api/v1/claims/${CLAIM_ID}`) return json(200, claim(status, opts.claimOverrides));
+    if (u === `/api/v1/claims/${CLAIM_ID}/packet`) return status === 'AWAITING_ANALYSIS' ? json(404, errorBody('not_found')) : json(200, opts.packet ?? packet);
     if (u.startsWith('/api/v1/claims?')) return json(200, { items: [claim(status)], page: 1, pageSize: 25, total: 1 });
     if (u.startsWith('/api/v1/features')) return json(200, { features: {} });
     return json(404, errorBody('not_found'));
@@ -189,21 +197,25 @@ describe('claims page: bulk analyze', () => {
           examined: 3,
           analyzed: [{ claimId: U(21), claimNumber: 'CLM-0021', packetId: U(31), findingsCount: 2, recoverableCents: 100, pendingReviewCents: 0 }],
           skipped: [{ claimId: U(22), claimNumber: 'CLM-0022', code: 'invalid_state' }],
-          failed: [{ claimId: U(23), claimNumber: '<b>CLM-0023</b>', code: 'analysis_input_invalid' }],
+          failed: [{ claimId: U(23), claimNumber: '<b>CLM-0023</b>', code: 'analysis_input_invalid', reasonCode: 'input_values' }],
           remaining: 4,
+          stoppedBy: 'candidates',
         }),
     });
     const user = userEvent.setup();
     render(<AppRoot fetchImpl={be.fetchImpl} initialEntries={['/claims']} />);
     await user.click(await screen.findByRole('button', { name: ANALYSIS_TEXT.bulkButton }));
     const dialog = await screen.findByRole('dialog', { name: ANALYSIS_TEXT.bulkTitle });
-    expect(within(dialog).getByText(ANALYSIS_TEXT.bulkIntro)).toBeInTheDocument();
+    // Hardening (C7.4): the intro says failed claims are tried after the others.
+    expect(within(dialog).getByText(BULK_ANALYZE_INTRO)).toBeInTheDocument();
     expect(within(dialog).getByText(ANALYSIS_NOTE)).toBeInTheDocument();
     expect(within(dialog).getByText(ANALYZE_AUTHOR_NOTE)).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: ANALYSIS_TEXT.bulkCancel })).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: ANALYSIS_TEXT.bulkConfirm }));
     const status = await within(dialog).findByRole('status');
     expect(status).toHaveTextContent(ANALYSIS_TEXT.bulkSummary(1, 1, 1, 4));
+    // Hardening (C7.4): the stop reason follows the summary line.
+    expect(status).toHaveTextContent(BULK_STOPPED_TEXT.candidates);
     expect(status).toHaveTextContent(`${ANALYSIS_TEXT.bulkFailedPrefix}<b>CLM-0023</b>`);
     expect(status.querySelector('b')).toBeNull();
     const posts = be.calls.filter((c) => c.method === 'POST' && c.url === '/api/v1/claims/analyze-awaiting');
@@ -231,3 +243,68 @@ describe('claims page: bulk analyze', () => {
     expect(screen.queryByRole('button', { name: ANALYSIS_TEXT.bulkButton })).toBeNull();
   });
 });
+
+describe('hardening: failed analysis, confidence wording (C7.2, C7.3)', () => {
+  const details = (code: string) => ({ error: { code: 'analysis_input_invalid', message: '<b>SERVER TEXT</b>', requestId: 'r', details: [{ path: 'analysis', code }] } });
+
+  it.each([
+    ['fuel_check', ANALYSIS_FAILURE_TEXT.fuel_check],
+    ['amount_out_of_range', ANALYSIS_FAILURE_TEXT.amount_out_of_range],
+    ['input_values', ANALYSIS_FAILURE_TEXT.input_values],
+    ['something_else', ANALYSIS_TEXT.invalid],
+  ])('a 422 with reason %s shows its fixed alert text', async (code, text) => {
+    const be = backend({ analyze: () => json(422, details(code)) });
+    const user = userEvent.setup();
+    render(<AppRoot fetchImpl={be.fetchImpl} initialEntries={[`/claims/${CLAIM_ID}`]} />);
+    await user.click(await screen.findByRole('button', { name: ANALYSIS_TEXT.button }));
+    const sheet = screen.getByRole('dialog', { name: /Claim CLM-0042/u });
+    expect(await within(sheet).findByRole('alert')).toHaveTextContent(text);
+    expect(sheet.textContent).not.toContain('SERVER TEXT');
+  });
+
+  it('shows the persistent failure note to every reader, also without claims:analyze', async () => {
+    const be = backend({
+      permissions: WITHOUT,
+      claimOverrides: { analysisFailure: { lastFailedAt: '2026-10-11T09:30:00.000Z', reasonCode: 'input_values', failedAttempts: 2 } },
+    });
+    render(<AppRoot fetchImpl={be.fetchImpl} initialEntries={[`/claims/${CLAIM_ID}`]} />);
+    const sheet = await screen.findByRole('dialog', { name: /Claim CLM-0042/u });
+    const note = await within(sheet).findByText((t) => t.startsWith('Last analysis attempt failed on '));
+    expect(note.textContent).toContain('(2 failed attempts so far). ');
+    expect(note.textContent?.endsWith(ANALYSIS_FAILURE_TEXT.input_values)).toBe(true);
+    expect(within(sheet).queryByRole('button', { name: ANALYSIS_TEXT.button })).toBeNull();
+  });
+
+  it('shows no failure note without analysisFailure', async () => {
+    const be = backend({});
+    render(<AppRoot fetchImpl={be.fetchImpl} initialEntries={[`/claims/${CLAIM_ID}`]} />);
+    const sheet = await screen.findByRole('dialog', { name: /Claim CLM-0042/u });
+    await within(sheet).findByRole('button', { name: ANALYSIS_TEXT.button });
+    expect(within(sheet).queryByText((t) => t.startsWith('Last analysis attempt failed'))).toBeNull();
+  });
+
+  it('labels finding confidence as a fixed rule setting, never a percentage', async () => {
+    const finding = {
+      id: U(50),
+      ruleId: 'INV-LINEHAUL-RATE',
+      title: 'Linehaul above contract',
+      direction: 'OVERCHARGE',
+      amountCents: 32500,
+      explanation: 'Synthetic explanation.',
+      calculation: ['1 - 1 = 0'],
+      confidence: 0.9,
+      needsHumanReview: false,
+      citations: [],
+      governingClause: null,
+    };
+    const be = backend({ status: 'PENDING_REVIEW', packet: { ...packet, findings: [finding] } });
+    const user = userEvent.setup();
+    render(<AppRoot fetchImpl={be.fetchImpl} initialEntries={[`/claims/${CLAIM_ID}`]} />);
+    const sheet = await screen.findByRole('dialog', { name: /Claim CLM-0042/u });
+    await user.click(within(sheet).getByRole('tab', { name: 'Evidence' }));
+    expect(await within(sheet).findByText((t) => t.includes(findingConfidenceText(0.9)))).toBeInTheDocument();
+    expect(sheet.textContent).not.toMatch(/confidence [0-9]+%/u);
+    expect(within(sheet).getByRole('table', { name: 'Packet sources' })).toBeInTheDocument();
+  });
+});
+
