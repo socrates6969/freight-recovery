@@ -55,6 +55,12 @@ export const ChargeLinesResponse = z.strictObject({
   seedVersion: z.literal(SEED_VERSION),
   threshold: z.literal(SUGGESTION_THRESHOLD),
   lines: z.array(ChargeLineView),
+  // Hardening (REQ-20261012-hardening, C3): team labels recorded by the claim's analysis (null: not analysed).
+  influence: z
+    .strictObject({
+      labels: z.array(z.strictObject({ labelId: uuid, description: z.string().nullable(), category: ChargeCategorySchema.nullable() })),
+    })
+    .nullable(),
 });
 export type ChargeLinesResponseDto = z.infer<typeof ChargeLinesResponse>;
 

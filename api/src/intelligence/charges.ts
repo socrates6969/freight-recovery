@@ -29,11 +29,12 @@ import { buildChargeClassifier, normText, type ChargeClassifier } from '@fr/shar
 import { createHash } from 'node:crypto';
 
 import { appendAudit } from '../audit/audit.js';
+import { learnedLabelIdsOfClaim } from '../audit/label-influence.js';
 import type { Actor } from '../claims/service.js';
 import { lockChargeLabels } from '../db/charge-label-locks.js';
 import { isUuid } from '../db/errors.js';
 import type { TenantDb, TenantTx } from '../db/tenant.js';
-import { HttpError, errors } from '../http/errors.js';
+import { errors } from '../http/errors.js';
 import { loadAnalysisInput } from '../imports/bundle.js';
 
 const LABEL_SELECT = { id: true, description: true, normalizedText: true, category: true, version: true, createdAt: true, updatedAt: true } as const;
@@ -76,39 +77,88 @@ export function normalizedTextSha256(normalizedText: string): string {
   return createHash('sha256').update(normalizedText, 'utf8').digest('hex');
 }
 
+/** Label columns the classifier and the charge-lines view need, in classifier order. */
+const CLASSIFIER_LABEL_SELECT = { id: true, description: true, category: true, normalizedText: true } as const;
+const CLASSIFIER_LABEL_ORDER = [{ normalizedText: 'asc' as const }, { id: 'asc' as const }];
+
+interface ClassifierLabelRow {
+  id: string;
+  description: string;
+  category: string;
+  normalizedText: string;
+}
+
+/** The tenant's label rows in classifier order (normalized text, then id). */
+async function readClassifierLabels(tx: TenantTx): Promise<ClassifierLabelRow[]> {
+  return tx.chargeLabel.findMany({ select: CLASSIFIER_LABEL_SELECT, orderBy: CLASSIFIER_LABEL_ORDER });
+}
+
+/**
+ * Hardening (REQ-20261012-hardening, SC-2): build the classifier from label rows already read (rows in
+ * classifier order). Pure CPU work, so a caller can run it after its transaction has committed.
+ */
+export function classifierFromRows(rows: readonly { id: string; description: string; category: string }[]): LoadedClassifier {
+  const labels = rows.map((r) => ({ id: r.id, description: r.description, category: dbCategory(r.category) }));
+  return { classifier: buildChargeClassifier(labels), labelCount: labels.length };
+}
+
 /**
  * The tenant's labels and the classifier built from them (inside the caller's tenant transaction). Build
  * it once per request and reuse it for every line / claim of that request (fix round 1, S1).
  */
 export async function loadClassifier(tx: TenantTx): Promise<LoadedClassifier> {
-  const rows = await tx.chargeLabel.findMany({
-    select: { id: true, description: true, category: true },
-    orderBy: [{ normalizedText: 'asc' }, { id: 'asc' }],
-  });
-  const labels = rows.map((r) => ({ id: r.id, description: r.description, category: dbCategory(r.category) }));
-  return { classifier: buildChargeClassifier(labels), labelCount: labels.length };
+  return classifierFromRows(await readClassifierLabels(tx));
 }
 
-/** C5: charge lines of a claim (any status). 404 for unknown, non-UUID or other-tenant ids. */
+/** Hardening (C3): the influence view from the recorded label ids and the label rows read in the same transaction. */
+export function influenceView(
+  influenceIds: readonly string[] | null,
+  labels: readonly { id: string; description: string; category: string }[],
+): ChargeLinesResponseDto['influence'] {
+  if (influenceIds === null) return null;
+  const byId = new Map(labels.map((l) => [l.id, l]));
+  return {
+    labels: influenceIds.map((labelId) => {
+      const row = byId.get(labelId);
+      return row ? { labelId, description: row.description, category: dbCategory(row.category) } : { labelId, description: null, category: null };
+    }),
+  };
+}
+
+/**
+ * C5: charge lines of a claim (any status). 404 for unknown, non-UUID or other-tenant ids. Hardening: the
+ * claim, its documents, the tenant's labels (read ONCE, used for both the suggestion and the label chip, F11)
+ * and the analysis influence are read in one tenant transaction; the classifier is built and the lines are
+ * classified after that transaction has committed (SC-2: no CPU work while the connection is held).
+ */
 export async function chargeLines(db: TenantDb, claimId: string): Promise<ChargeLinesResponseDto> {
   if (!isUuid(claimId)) throw errors.notFound();
-  return db.tx(async (tx) => {
+  const read = await db.tx(async (tx) => {
     const claim = await tx.claim.findFirst({ where: { id: claimId }, select: { id: true } });
     if (!claim) throw errors.notFound();
     const input = await loadAnalysisInput(tx, claimId);
-    const { classifier } = await loadClassifier(tx);
-    const labels = await tx.chargeLabel.findMany({ select: { id: true, normalizedText: true, category: true } });
-    const byText = new Map(labels.map((l) => [l.normalizedText, { id: l.id, category: dbCategory(l.category) }]));
-    const lines = (input.bundle.invoice?.lines ?? []).map((ln, index) => ({
-      index,
-      description: ln.description,
-      amount: ln.amount,
-      ruleCategory: classifyLine(ln.description),
-      suggestion: classifier.classify(ln.description),
-      label: byText.get(normText(ln.description)) ?? null,
-    }));
-    return { claimId, classifierVersion: CHARGE_CLASSIFIER_VERSION, seedVersion: SEED_VERSION, threshold: SUGGESTION_THRESHOLD, lines };
+    const labels = await readClassifierLabels(tx);
+    const influenceIds = await learnedLabelIdsOfClaim(tx, claim.id);
+    return { invoiceLines: input.bundle.invoice?.lines ?? [], labels, influenceIds };
   });
+  const { classifier } = classifierFromRows(read.labels);
+  const byText = new Map(read.labels.map((l) => [l.normalizedText, { id: l.id, category: dbCategory(l.category) }]));
+  const lines = read.invoiceLines.map((ln, index) => ({
+    index,
+    description: ln.description,
+    amount: ln.amount,
+    ruleCategory: classifyLine(ln.description),
+    suggestion: classifier.classify(ln.description),
+    label: byText.get(normText(ln.description)) ?? null,
+  }));
+  return {
+    claimId,
+    classifierVersion: CHARGE_CLASSIFIER_VERSION,
+    seedVersion: SEED_VERSION,
+    threshold: SUGGESTION_THRESHOLD,
+    lines,
+    influence: influenceView(read.influenceIds, read.labels),
+  };
 }
 
 const isUniqueViolation = (e: unknown): boolean => typeof e === 'object' && e !== null && (e as { code?: unknown }).code === 'P2002';
@@ -155,7 +205,8 @@ async function setLabelOnce(db: TenantDb, actor: Actor, body: SetChargeLabelInpu
 
 /**
  * PUT /charge-labels: create, change or keep the label of `normText(description)`. A concurrent create of
- * the same normalized text (unique violation) retries the whole transaction once; a second failure is a 500.
+ * the same normalized text (unique violation) retries the whole transaction once; a second unique violation
+ * is 409 conflict (hardening, SC-8; nothing was written by the failed attempt).
  */
 export async function setLabel(db: TenantDb, actor: Actor, body: SetChargeLabelInput): Promise<SetChargeLabelResponseDto> {
   try {
@@ -166,7 +217,7 @@ export async function setLabel(db: TenantDb, actor: Actor, body: SetChargeLabelI
   try {
     return await setLabelOnce(db, actor, body);
   } catch (e) {
-    if (isUniqueViolation(e)) throw new HttpError(500, 'internal_error');
+    if (isUniqueViolation(e)) throw errors.conflict();
     throw e;
   }
 }

@@ -20,8 +20,10 @@ import {
   RULES_VERSION,
   SEED_VERSION,
   plain,
+  type AnalysisFailureReason,
   type AnalyzeResponseDto,
   type BulkAnalyzeResponseDto,
+  type BulkStopReason,
   type EvidenceDoc,
   type FindingTrace,
   type FuelCheckStatus,
@@ -31,10 +33,11 @@ import type { ChargeClassifier } from '@fr/shared/charge-intel';
 import { buildEvidenceFuel, type FuelCheckInput, type PriceSeriesData } from '@fr/shared/fuel';
 
 import { appendAudit } from '../audit/audit.js';
+import { analysisCandidates } from '../db/analysis-candidates.js';
 import { isUuid } from '../db/errors.js';
 import { lockClaimForUpdate, type TenantDb, type TenantTx } from '../db/tenant.js';
 import { isAnalysisDbError } from '../http/db-guard.js';
-import { HttpError, errors } from '../http/errors.js';
+import { AnalysisFailure, HttpError, errors, type AnalysisFailureAudit } from '../http/errors.js';
 import { pointerToLocator, loadAnalysisInput, type AnalysisSource, type BundleProvenance, type FieldRef } from '../imports/bundle.js';
 import { parseInvoiceDate } from '../imports/commit-service.js';
 import { loadClassifier, type LoadedClassifier } from '../intelligence/charges.js';
@@ -145,14 +148,49 @@ export interface AnalysisPacketBuild {
 }
 
 /**
+ * Hardening (REQ-20261012-hardening, C4.1): the rules ran but an amount, a total or the sum of the two totals is
+ * negative or above INT4_MAX (reason `amount_out_of_range`). API only; the shared engine is unchanged.
+ */
+export class NotStorableError extends AnalysisInputError {
+  constructor(message = 'amount not storable') {
+    super(message);
+    this.name = 'NotStorableError';
+  }
+}
+
+/**
  * Cents of an engine amount (`-?digits.dd`, Python `quantize(0.01)` output) that must be storable:
- * >= 0 and <= INT4_MAX (policy D6 / RD3), else AnalysisInputError.
+ * >= 0 and <= INT4_MAX (policy D6 / RD3). A malformed amount throws AnalysisInputError; a well-formed amount
+ * outside the range throws NotStorableError.
  */
 export function storableCents(amount: string): number {
   if (!/^-?[0-9]+\.[0-9]{2}$/u.test(amount)) throw new AnalysisInputError('amount is not a cents decimal');
   const cents = BigInt(amount.replace('.', ''));
-  if (cents < 0n || cents > BigInt(INT4_MAX)) throw new AnalysisInputError('amount not storable');
+  if (cents < 0n || cents > BigInt(INT4_MAX)) throw new NotStorableError();
   return Number(cents);
+}
+
+/** True for the errors the analysis maps to 422 analysis_input_invalid. */
+export function isAnalysisRefusal(e: unknown): boolean {
+  return e instanceof AnalysisInputError || e instanceof RangeError;
+}
+
+/**
+ * Hardening (C4.1): the reason of a refused analysis. `original` is the error of the build with the claim's
+ * real inputs. `buildWithoutFuel` is given only when the fuel check ran with inputs (flag on, inputs present);
+ * it repeats the same pure build without fuel inputs. If that succeeds the fuel check caused the refusal.
+ * Otherwise the reason is `amount_out_of_range` for a NotStorableError and `input_values` for anything else.
+ */
+export function classifyAnalysisFailure(original: unknown, buildWithoutFuel: (() => unknown) | null): AnalysisFailureReason {
+  if (buildWithoutFuel !== null) {
+    try {
+      buildWithoutFuel();
+      return 'fuel_check';
+    } catch (e) {
+      if (!isAnalysisRefusal(e)) throw e;
+    }
+  }
+  return original instanceof NotStorableError ? 'amount_out_of_range' : 'input_values';
 }
 
 function locatorOf(displayName: string, ref: FieldRef | null): string {
@@ -211,7 +249,7 @@ export function buildAnalysisPacket(args: {
   const amounts = result.findings.map((f) => storableCents(f.amount));
   const recoverableCents = storableCents(result.recoverable_total);
   const pendingReviewCents = storableCents(result.pending_review_total);
-  if (recoverableCents + pendingReviewCents > INT4_MAX) throw new AnalysisInputError('total not storable');
+  if (recoverableCents + pendingReviewCents > INT4_MAX) throw new NotStorableError('total not storable');
 
   const sources: AnalysisSourceRow[] = input.sources.map((s: AnalysisSource, i) => ({
     id: randomUUID(),
@@ -411,12 +449,25 @@ export async function analyzeClaim(
   const fuelOn = opts.fuel?.enabled === true;
   const fuel = fuelOn ? ((await loadFuelInput(tx, claimId, opts.fuel?.series ?? null))?.input ?? null) : null;
 
+  const now = opts.now ?? new Date();
+  const build = (fuelInput: FuelCheckInput | null) =>
+    buildAnalysisPacket({ input, claim: { perspective: claim.perspective }, now, actorId: actor.userId, classifier, fuel: fuelInput });
   let built: AnalysisPacketBuild;
   try {
-    built = buildAnalysisPacket({ input, claim: { perspective: claim.perspective }, now: opts.now ?? new Date(), actorId: actor.userId, classifier, fuel });
+    built = build(fuel);
   } catch (e) {
-    if (e instanceof AnalysisInputError || e instanceof RangeError) throw errors.analysisInputInvalid();
-    throw e;
+    if (!isAnalysisRefusal(e)) throw e;
+    // Hardening (C4.1/C4.2): explain the refusal; nothing is written here (the caller's transaction rolls back
+    // and `claim.analysis_failed` is appended in its own transaction).
+    const reasonCode = classifyAnalysisFailure(e, fuel === null ? null : () => build(null));
+    throw new AnalysisFailure({
+      tenantId: claim.tenantId,
+      claimId: claim.id,
+      claimNumber: claim.claimNumber,
+      reasonCode,
+      bulk: opts.bulk,
+      documentCount: input.sources.length,
+    });
   }
 
   const tenantId = claim.tenantId;
@@ -466,6 +517,8 @@ export async function analyzeClaim(
       fromStatus: 'AWAITING_ANALYSIS',
       toStatus: 'PENDING_REVIEW',
       documentIds: input.sources.map((s) => s.documentId),
+      // Hardening (C4.4): the full number of source documents (documentIds is capped at 50 by the chain).
+      documentCount: input.sources.length,
       findingsCount: summary.findingsCount,
       pendingFindingsCount: summary.pendingFindingsCount,
       ignoredFindingsCount: summary.ignoredFindingsCount,
@@ -502,15 +555,60 @@ export async function analyzeClaim(
 }
 
 /**
+ * Hardening (C4.2): append `claim.analysis_failed` in its own tenant transaction (the analysis transaction has
+ * rolled back). Metadata exactly { claimId, claimNumber, reasonCode, bulk, rulesVersion, documentCount }.
+ */
+export async function appendAnalysisFailure(
+  db: TenantDb,
+  audit: AnalysisFailureAudit,
+  actor: { userId: string; role: string; ip: string; requestId: string },
+): Promise<void> {
+  await db.tx((tx) =>
+    appendAudit(tx, {
+      tenantId: audit.tenantId,
+      action: 'claim.analysis_failed',
+      actorId: actor.userId,
+      actorRole: actor.role,
+      targetType: 'claim',
+      targetId: audit.claimId,
+      metadata: {
+        claimId: audit.claimId,
+        claimNumber: audit.claimNumber,
+        reasonCode: audit.reasonCode,
+        bulk: audit.bulk,
+        rulesVersion: RULES_VERSION,
+        documentCount: audit.documentCount,
+      },
+      ip: actor.ip,
+      requestId: actor.requestId,
+    }),
+  );
+}
+
+/** Hardening (C5.2): budget when the limiter refused a candidate; else limit when `limit` claims were analyzed; else candidates. */
+export function bulkStopReason(budgetRefused: boolean, analyzedCount: number, limit: number): BulkStopReason {
+  if (budgetRefused) return 'budget';
+  if (analyzedCount >= limit) return 'limit';
+  return 'candidates';
+}
+
+/** Minimal logger used on the bulk error path (fastify's request logger satisfies it). */
+export interface BulkLog {
+  error(obj: Record<string, unknown>, msg: string): void;
+}
+
+/**
  * Bulk analyze (S1, policy D9): candidates fetched once (AWAITING_ANALYSIS with >= 1 linked ACCEPTED
- * document, oldest first, at most min(4 * limit, 100)); each analyzed in ITS OWN tenant transaction exactly
- * like the single route; 404/409 -> skipped, 422 -> failed, anything else propagates (500; analyses
- * already committed stay committed). One `claim.bulk_analyzed` summary event at the end.
+ * document, at most min(4 * limit, 100); hardening C5.1: claims without a failed analysis first, then oldest
+ * first); each analyzed in ITS OWN tenant transaction exactly like the single route; 404/409 -> skipped,
+ * 422 -> failed (with `claim.analysis_failed` appended in its own transaction), anything else propagates (500;
+ * analyses already committed stay committed). One `claim.bulk_analyzed` summary event at the end, also on the
+ * error path (`stoppedBy: 'error'`, hardening C5.4).
  *
  * Budget (S5-1): `chargeExtra` is called before every candidate after the first (the request itself paid
  * for the first); when it returns false the per-user `analysis` budget is spent and processing stops
- * early (200 with the work done so far; the unprocessed claims stay AWAITING_ANALYSIS and count in
- * `remaining`).
+ * early (200 with the work done so far and `stoppedBy: 'budget'`; the unprocessed claims stay
+ * AWAITING_ANALYSIS and count in `remaining`).
  */
 export async function analyzeAwaiting(
   db: TenantDb,
@@ -519,56 +617,68 @@ export async function analyzeAwaiting(
   chargeExtra: () => Promise<boolean> = async () => true,
   learning = false,
   fuel: AnalysisFuelOptions = { enabled: false, series: null },
+  log?: BulkLog,
 ): Promise<BulkAnalyzeResponseDto> {
   const take = Math.min(SCAN_FACTOR * limit, SCAN_CAP);
-  const candidates = await db.tx((tx) =>
-    tx.claim.findMany({
-      where: { status: 'AWAITING_ANALYSIS', kind: 'FREIGHT', documents: { some: { document: { status: 'ACCEPTED' } } } },
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-      take,
-      select: { id: true, claimNumber: true },
-    }),
-  );
+  const candidates = await db.tx((tx) => analysisCandidates(tx, take));
   // Fix round 1 (S1): the tenant's labels are read and the classifier is built ONCE per bulk request.
   const preloaded = learning && candidates.length > 0 ? await db.tx((tx) => loadClassifier(tx)) : undefined;
-  const out: BulkAnalyzeResponseDto = { limit, examined: 0, analyzed: [], skipped: [], failed: [], remaining: 0 };
-  for (const c of candidates) {
-    if (out.analyzed.length >= limit) break;
-    if (out.examined > 0 && !(await chargeExtra())) break;
-    out.examined += 1;
-    try {
-      const r = await db.tx((tx) => analyzeClaim(tx, c.id, actor, { bulk: true, learning, fuel, ...(preloaded ? { preloaded } : {}) }));
-      out.analyzed.push({
-        claimId: c.id,
-        claimNumber: c.claimNumber,
-        packetId: r.packet.id,
-        findingsCount: r.analysis.findingsCount,
-        recoverableCents: r.claim.recoverableCents,
-        pendingReviewCents: r.claim.pendingReviewCents,
+  const out: Omit<BulkAnalyzeResponseDto, 'stoppedBy'> = { limit, examined: 0, analyzed: [], skipped: [], failed: [], remaining: 0 };
+  const summary = (stoppedBy: BulkStopReason | 'error'): Promise<number> =>
+    db.tx(async (tx) => {
+      const remaining = await tx.claim.count({ where: { status: 'AWAITING_ANALYSIS' } });
+      await appendAudit(tx, {
+        tenantId: db.tenantId,
+        action: 'claim.bulk_analyzed',
+        actorId: actor.userId,
+        actorRole: actor.role,
+        targetType: 'tenant',
+        targetId: db.tenantId,
+        metadata: { limit, examined: out.examined, analyzed: out.analyzed.length, skipped: out.skipped.length, failed: out.failed.length, remaining, stoppedBy },
+        ip: actor.ip,
+        requestId: actor.requestId,
       });
-    } catch (e) {
-      // A database guard refusal (P8) means the claim was no longer analyzable: skipped, never 500.
-      if ((e instanceof HttpError && (e.statusCode === 404 || e.statusCode === 409)) || isAnalysisDbError(e)) {
-        out.skipped.push({ claimId: c.id, claimNumber: c.claimNumber, code: 'invalid_state' });
-      }
-      else if (e instanceof HttpError && e.code === 'analysis_input_invalid') out.failed.push({ claimId: c.id, claimNumber: c.claimNumber, code: 'analysis_input_invalid' });
-      else throw e;
-    }
-  }
-  out.remaining = await db.tx(async (tx) => {
-    const remaining = await tx.claim.count({ where: { status: 'AWAITING_ANALYSIS' } });
-    await appendAudit(tx, {
-      tenantId: db.tenantId,
-      action: 'claim.bulk_analyzed',
-      actorId: actor.userId,
-      actorRole: actor.role,
-      targetType: 'tenant',
-      targetId: db.tenantId,
-      metadata: { limit, examined: out.examined, analyzed: out.analyzed.length, skipped: out.skipped.length, failed: out.failed.length, remaining },
-      ip: actor.ip,
-      requestId: actor.requestId,
+      return remaining;
     });
-    return remaining;
-  });
-  return out;
+  let budgetRefused = false;
+  try {
+    for (const c of candidates) {
+      if (out.analyzed.length >= limit) break;
+      if (out.examined > 0 && !(await chargeExtra())) {
+        budgetRefused = true;
+        break;
+      }
+      out.examined += 1;
+      try {
+        const r = await db.tx((tx) => analyzeClaim(tx, c.id, actor, { bulk: true, learning, fuel, ...(preloaded ? { preloaded } : {}) }));
+        out.analyzed.push({
+          claimId: c.id,
+          claimNumber: c.claimNumber,
+          packetId: r.packet.id,
+          findingsCount: r.analysis.findingsCount,
+          recoverableCents: r.claim.recoverableCents,
+          pendingReviewCents: r.claim.pendingReviewCents,
+        });
+      } catch (e) {
+        if (e instanceof AnalysisFailure) {
+          out.failed.push({ claimId: c.id, claimNumber: c.claimNumber, code: 'analysis_input_invalid', reasonCode: e.audit.reasonCode });
+          await appendAnalysisFailure(db, e.audit, actor);
+        } else if ((e instanceof HttpError && (e.statusCode === 404 || e.statusCode === 409)) || isAnalysisDbError(e)) {
+          // A database guard refusal (P8) means the claim was no longer analyzable: skipped, never 500.
+          out.skipped.push({ claimId: c.id, claimNumber: c.claimNumber, code: 'invalid_state' });
+        } else throw e;
+      }
+    }
+  } catch (e) {
+    // Hardening (C5.4): leave a summary of the work done so far, then fail with the ORIGINAL error.
+    try {
+      await summary('error');
+    } catch {
+      log?.error({ errorKind: 'bulk_summary_audit_failed' }, 'bulk summary audit failed');
+    }
+    throw e;
+  }
+  const stoppedBy = bulkStopReason(budgetRefused, out.analyzed.length, limit);
+  const remaining = await summary(stoppedBy);
+  return { ...out, remaining, stoppedBy };
 }

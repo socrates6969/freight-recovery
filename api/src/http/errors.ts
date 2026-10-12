@@ -1,6 +1,7 @@
 /**
  * HTTP errors with fixed, human-readable messages (C1). Unknown errors never forward their message.
  */
+import type { AnalysisFailureReason } from '@fr/shared';
 
 export const ERROR_MESSAGES = {
   validation_error: 'Request validation failed.',
@@ -82,6 +83,28 @@ export class FourEyesRefusal extends HttpError {
   constructor(readonly audit: FourEyesAudit) {
     super(403, 'four_eyes_required');
     this.name = 'FourEyesRefusal';
+  }
+}
+
+/**
+ * Hardening (REQ-20261012-hardening, C4.2): audit context of a refused analysis. The error handler (single
+ * route) or the bulk loop writes `claim.analysis_failed` from it in its own tenant transaction.
+ */
+export interface AnalysisFailureAudit {
+  tenantId: string;
+  claimId: string;
+  claimNumber: string;
+  reasonCode: AnalysisFailureReason;
+  bulk: boolean;
+  /** Number of linked ACCEPTED documents used as input. */
+  documentCount: number;
+}
+
+/** 422 analysis_input_invalid with the reason code in `details` (C4.1); fixed message. */
+export class AnalysisFailure extends HttpError {
+  constructor(readonly audit: AnalysisFailureAudit) {
+    super(422, 'analysis_input_invalid', { details: [{ path: 'analysis', code: audit.reasonCode }] });
+    this.name = 'AnalysisFailure';
   }
 }
 

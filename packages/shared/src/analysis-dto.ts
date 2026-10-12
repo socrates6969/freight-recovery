@@ -4,8 +4,16 @@
  */
 import { z } from 'zod';
 
+import { ANALYSIS_FAILURE_REASONS } from './analysis-failure.js';
 import { EmptyBody } from './dto.js';
 import { FUEL_CHECK_STATUSES } from './fuel/constants.js';
+
+// Hardening (REQ-20261012-hardening, C4.1): reason codes of a refused analysis.
+export { ANALYSIS_FAILURE_REASONS, isAnalysisFailureReason, type AnalysisFailureReason } from './analysis-failure.js';
+
+/** Hardening (C5.2): why a bulk run stopped (response values; the audit summary may also say `error`). */
+export const BULK_STOP_REASONS = ['limit', 'budget', 'candidates'] as const;
+export type BulkStopReason = (typeof BULK_STOP_REASONS)[number];
 
 /** Bulk batch bounds (policy D9). */
 export const ANALYZE_BATCH_MAX = 25;
@@ -60,7 +68,11 @@ export const BulkAnalyzeResponse = z.object({
     }),
   ),
   skipped: z.array(z.object({ claimId: uuid, claimNumber: z.string(), code: z.literal('invalid_state') })),
-  failed: z.array(z.object({ claimId: uuid, claimNumber: z.string(), code: z.literal('analysis_input_invalid') })),
+  failed: z.array(
+    z.object({ claimId: uuid, claimNumber: z.string(), code: z.literal('analysis_input_invalid'), reasonCode: z.enum(ANALYSIS_FAILURE_REASONS) }),
+  ),
   remaining: z.int().min(0),
+  // Hardening (C5.2): budget > limit > candidates.
+  stoppedBy: z.enum(BULK_STOP_REASONS),
 });
 export type BulkAnalyzeResponseDto = z.infer<typeof BulkAnalyzeResponse>;

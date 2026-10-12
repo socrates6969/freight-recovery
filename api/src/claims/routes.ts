@@ -120,7 +120,7 @@ export function registerClaimRoutes(app: FastifyInstance): void {
       const learning = await app.flags.isEnabled('intelligence.charge_suggestions');
       // Step 7: the fuel-check flag and the active diesel import, read once per request (never a 500).
       const fuel = await analysisFuel(app);
-      return analyzeAwaiting(requireTenant(req).db, actorOf(req), body.limit, charge, learning, fuel);
+      return analyzeAwaiting(requireTenant(req).db, actorOf(req), body.limit, charge, learning, fuel, req.log);
     },
   });
 

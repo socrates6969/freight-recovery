@@ -10,6 +10,8 @@ export const FOUR_EYES_DB_MESSAGES: ReadonlySet<string> = new Set(['four_eyes_re
 export const ANALYSIS_DB_MESSAGES: ReadonlySet<string> = new Set(['claim_transition_invalid', 'analysis_packet_invalid']);
 /** Step 8 (REQ-20261011-ocean-dd, migration 20261016000000_ocean_dd): D&D invoice and claim-kind guards. */
 export const DD_DB_MESSAGES: ReadonlySet<string> = new Set(['dd_invoice_immutable', 'dd_invoice_claim_invalid', 'dd_invoice_insert_invalid', 'claim_kind_immutable']);
+/** Hardening (REQ-20261012-hardening, migration 20261018000000_hardening): deferred packet decision guard (FE-S2). */
+export const PACKET_DECISION_DB_MESSAGES: ReadonlySet<string> = new Set(['packet_decision_unrecorded']);
 
 /** Bound on how far the error chain is followed (cause / meta / driverAdapterError links). */
 const MAX_ERROR_CHAIN_DEPTH = 5;
@@ -50,4 +52,13 @@ export function isAnalysisDbError(err: unknown): boolean {
 /** A step-8 D&D guard raise (exact message match): the service checks were bypassed. */
 export function isDdDbError(err: unknown): boolean {
   return isTriggerRaise(err, GUARD_SQLSTATE, DD_DB_MESSAGES);
+}
+
+/**
+ * The hardening packet decision guard raise (exact message match): a packet status became APPROVED, REJECTED or
+ * SEND_READY without a matching decision row. Deferred to COMMIT, so the error is thrown by the transaction
+ * wrapper; the chain walk (cause / meta / driverAdapterError) finds it there.
+ */
+export function isPacketDecisionDbError(err: unknown): boolean {
+  return isTriggerRaise(err, GUARD_SQLSTATE, PACKET_DECISION_DB_MESSAGES);
 }

@@ -12,3 +12,10 @@ export const FOUR_EYES_CLAIM_TEXT = 'You edited this revision. Another approver 
 
 /** Shown instead of Accept document to the uploader or a CORRECT/ADD editor of the document. */
 export const FOUR_EYES_DOCUMENT_TEXT = 'You uploaded or edited this document. Another reviewer must accept it.';
+
+/**
+ * Hardening (REQ-20261012-hardening, C1): the refusal bases of approve/reject, in evaluation order. The first
+ * basis that applies is reported (audit `basis`, approval queue `selfAuthoredBasis`).
+ */
+export const FOUR_EYES_CLAIM_BASES = ['revision_author', 'dd_invoice_editor', 'label_author'] as const;
+export type FourEyesClaimBasis = (typeof FOUR_EYES_CLAIM_BASES)[number];

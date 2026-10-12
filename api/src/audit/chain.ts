@@ -244,6 +244,10 @@ const METADATA_KEYS = new Set([
   'containerCount',
   'dataSha256',
   'snapshotSha256',
+  // Hardening (REQ-20261012-hardening, C9): why a bulk run stopped (limit | budget | candidates | error) and the
+  // number of source documents of an analysis. Fixed codes and counts only.
+  'stoppedBy',
+  'documentCount',
 ]);
 const MAX_STRING = 2000;
 

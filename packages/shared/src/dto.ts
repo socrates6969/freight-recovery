@@ -4,6 +4,8 @@
  */
 import { z } from 'zod';
 
+import { ANALYSIS_FAILURE_REASONS } from './analysis-failure.js';
+import { FOUR_EYES_CLAIM_BASES } from './four-eyes.js';
 import { PLATFORM_ROLES, ROLES, TENANT_ROLES } from './rbac.js';
 import { hasUnsafeChars, stripUnsafeMultiline } from './text.js';
 
@@ -293,7 +295,17 @@ export const ClaimSummary = z.object({
   updatedAt: isoDate,
 });
 export type ClaimSummaryDto = z.infer<typeof ClaimSummary>;
-export const ClaimDetail = ClaimSummary.extend({ invoiceDate: isoDate.nullable() });
+/**
+ * Hardening (REQ-20261012-hardening, C4.3): the latest failed analysis of an AWAITING_ANALYSIS claim (null
+ * otherwise). `reasonCode` and `lastFailedAt` come from the latest `claim.analysis_failed` event.
+ */
+export const AnalysisFailureInfo = z.object({
+  lastFailedAt: isoDate,
+  reasonCode: z.enum(ANALYSIS_FAILURE_REASONS),
+  failedAttempts: z.int().min(1),
+});
+export type AnalysisFailureInfoDto = z.infer<typeof AnalysisFailureInfo>;
+export const ClaimDetail = ClaimSummary.extend({ invoiceDate: isoDate.nullable(), analysisFailure: AnalysisFailureInfo.nullable() });
 export type ClaimDetailDto = z.infer<typeof ClaimDetail>;
 
 export function paged<T extends z.ZodType>(item: T) {
@@ -304,8 +316,10 @@ export const ApprovalItem = ClaimSummary.extend({
   packetRevision: z.int(),
   pendingFindingsCount: z.int(),
   waitingSince: isoDate,
-  /** Four-eyes: true iff the requesting user authored any revision of this claim. */
+  /** Four-eyes: true iff any refusal basis applies to the requesting user (see selfAuthoredBasis). */
   selfAuthored: z.boolean(),
+  /** Hardening (C1): the first basis that applies (revision_author, dd_invoice_editor, label_author), null iff selfAuthored is false. */
+  selfAuthoredBasis: z.enum(FOUR_EYES_CLAIM_BASES).nullable(),
 });
 export type ApprovalItemDto = z.infer<typeof ApprovalItem>;
 export const ApprovalsPage = paged(ApprovalItem);

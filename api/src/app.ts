@@ -29,6 +29,7 @@ import { OutboxMailer, SesMailer } from './auth/mailer.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { authenticateAccessToken } from './auth/session.js';
 import { registerUserRoutes } from './auth/users-routes.js';
+import { appendAnalysisFailure } from './claims/analysis.js';
 import { registerClaimRoutes } from './claims/routes.js';
 import { loadConfig, type AppConfig } from './config.js';
 import { createDb } from './db/client.js';
@@ -38,8 +39,8 @@ import { registerImportRoutes } from './imports/routes.js';
 import { ChildProcessExecutor, type ParseExecutor } from './imports/sandbox/executor.js';
 import { KeyedGate } from './imports/sandbox/semaphore.js';
 import { TenantScopeError } from './db/errors.js';
-import { isAnalysisDbError, isDdDbError, isFourEyesDbError } from './http/db-guard.js';
-import { ERROR_MESSAGES, FourEyesRefusal, HttpError, errors } from './http/errors.js';
+import { isAnalysisDbError, isDdDbError, isFourEyesDbError, isPacketDecisionDbError } from './http/db-guard.js';
+import { AnalysisFailure, ERROR_MESSAGES, FourEyesRefusal, HttpError, errors } from './http/errors.js';
 import { enforceRouteAccess, requireTenant, zodDetails } from './http/route.js';
 import { registerSecurityHeaders, registerSecurityPipeline, type Limiter } from './http/security.js';
 import { registerChargeRoutes } from './intelligence/charge-routes.js';
@@ -90,10 +91,12 @@ function sendError(reply: FastifyReply, req: FastifyRequest, err: HttpError): vo
 }
 
 /** Four-eyes / analysis trigger matchers live in http/db-guard.ts (re-exported for existing callers). */
-export { isAnalysisDbError, isFourEyesDbError };
+export { isAnalysisDbError, isFourEyesDbError, isPacketDecisionDbError };
 
 /** Marker for the error handler: an analysis DB guard refused a write (logged as analysis_db_guard). */
 const ANALYSIS_GUARD_ERRORS = new WeakSet<HttpError>();
+/** Hardening (C2.2): the deferred packet decision guard refused a COMMIT (logged as packet_decision_db_guard). */
+const PACKET_DECISION_GUARD_ERRORS = new WeakSet<HttpError>();
 
 /** Map any thrown value to a fixed-shape HttpError (never forwards unknown messages). */
 export function toHttpError(err: unknown): HttpError {
@@ -109,6 +112,12 @@ export function toHttpError(err: unknown): HttpError {
   }
   // Step 8 D&D guards (AUDITED invoice immutable, claim kind fixed): plain 409 invalid_state.
   if (isDdDbError(err)) return errors.invalidState();
+  // Hardening (C2.2): a packet decision without a decision row reached COMMIT. Plain 409 invalid_state.
+  if (isPacketDecisionDbError(err)) {
+    const mapped = errors.invalidState();
+    PACKET_DECISION_GUARD_ERRORS.add(mapped);
+    return mapped;
+  }
   const fe = err as Partial<FastifyError> & { code?: string; statusCode?: number };
   switch (fe.code) {
     case 'FST_ERR_CTP_BODY_TOO_LARGE':
@@ -331,12 +340,24 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
         req.log.error({ errorKind: 'four_eyes_audit_failed' }, 'request failed');
         httpErr = new HttpError(500, 'internal_error');
       }
+    } else if (err instanceof AnalysisFailure) {
+      // Hardening (C4.2): the analysis transaction has rolled back; `claim.analysis_failed` is appended in its
+      // own tenant transaction. Fail closed (500) if it cannot be written.
+      try {
+        const ctx = requireTenant(req);
+        await appendAnalysisFailure(ctx.db, err.audit, { userId: ctx.user.id, role: ctx.role, ip: req.ip, requestId: req.frRequestId });
+      } catch {
+        req.log.error({ errorKind: 'analysis_failure_audit_failed' }, 'request failed');
+        httpErr = new HttpError(500, 'internal_error');
+      }
     } else if (httpErr.code === 'four_eyes_required') {
       req.log.error({ errorKind: 'four_eyes_db_guard' }, 'four-eyes database guard refused a write');
     } else if (ANALYSIS_GUARD_ERRORS.has(httpErr)) {
       req.log.error({ errorKind: 'analysis_db_guard' }, 'analysis database guard refused a write');
+    } else if (PACKET_DECISION_GUARD_ERRORS.has(httpErr)) {
+      req.log.error({ errorKind: 'packet_decision_db_guard' }, 'packet decision database guard refused a commit');
     }
-    if (httpErr.statusCode >= 500 && !(err instanceof FourEyesRefusal)) {
+    if (httpErr.statusCode >= 500 && !(err instanceof FourEyesRefusal) && !(err instanceof AnalysisFailure)) {
       const kind = err instanceof TenantScopeError ? 'tenant_scope_violation' : (err as Error | undefined)?.name ?? 'unknown';
       req.log.error({ errorKind: kind, code: (err as { code?: unknown } | undefined)?.code }, 'request failed');
     }

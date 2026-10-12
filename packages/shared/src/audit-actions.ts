@@ -79,6 +79,8 @@ export const AUDIT_ACTIONS = [
   'dd_invoice.updated',
   'dd_invoice.deleted',
   'dd_invoice.audited',
+  // Hardening (REQ-20261012-hardening, C4.2): a refused analysis (single or bulk), appended at the end.
+  'claim.analysis_failed',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
