@@ -42,7 +42,7 @@ export const mkDoc = (o: Record<string, any> = {}) => {
     id: id(), batchId: o.batchId ?? '00000000-0000-4000-8000-0000000b0001', displayName: 'rc.txt', detectedType: 'TXT', sizeBytes: 100, sha256: 'a'.repeat(64), docType: 'RATE_CONFIRMATION', docTypeBasis: 'HEADER',
     status: 'ACCEPTED', rejectReason: null, reviewReasons: [], fieldCount: fields.length, flaggedFieldCount: fields.filter((f: any) => f.needsReview).length,
     unresolvedFlaggedCount: fields.filter((f: any) => f.needsReview && f.status === 'PROPOSED').length, minConfidence: 0.95, loadNumber: 'LD-9001', pageCount: null,
-    createdAt: '2026-10-08T10:00:00.000Z', updatedAt: '2026-10-08T10:00:00.000Z', reviewThreshold: 0.9, warnings: [], providerName: 'deterministic', providerVersion: '1', decisions: [], ...o, fields,
+    createdAt: '2026-10-08T10:00:00.000Z', updatedAt: '2026-10-08T10:00:00.000Z', reviewThreshold: 0.9, warnings: [], providerName: 'deterministic', providerVersion: '1', decisions: [], selfAuthored: false, ...o, fields,
   };
 };
 export const mkBatch = (o: Record<string, any> = {}) => ({ id: '00000000-0000-4000-8000-0000000b0001', label: null, source: 'UPLOAD', documentCount: 0, createdBy: { id: '00000000-0000-4000-8000-0000000000e1', name: 'Test' }, createdAt: '2026-10-08T10:00:00.000Z', ...o });

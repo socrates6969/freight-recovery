@@ -4,6 +4,7 @@
  * The SQL normalization is a pre-filter; the caller re-checks every candidate with the JS key
  * (`normalizeLoadNumber`), so database and JavaScript case-mapping differences can only cause a miss on
  * exotic characters, never a wrong match. Runs inside the caller's tenant transaction (RLS applies).
+ * Step 8 (REQ-20261011-ocean-dd): only FREIGHT claims; imports never link to OCEAN_DD claims (defence in depth).
  */
 import { unwrapRawTx, type TenantTx } from './tenant.js';
 
@@ -12,6 +13,7 @@ export async function findClaimIdsByLoadKey(tx: TenantTx, perspective: string, k
   const rows = await raw.$queryRaw<{ id: string }[]>`
     SELECT id FROM claims
     WHERE perspective::text = ${perspective}
+      AND kind = 'FREIGHT'
       AND load_number IS NOT NULL
       AND upper(btrim(regexp_replace(normalize(load_number, NFKC), '[[:space:]]+', ' ', 'g'))) = ${key}
     ORDER BY created_at DESC, id DESC

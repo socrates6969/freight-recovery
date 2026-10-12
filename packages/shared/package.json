@@ -28,6 +28,26 @@
       "types": "./dist/extraction.d.ts",
       "source": "./src/extraction.ts",
       "default": "./dist/extraction.js"
+    },
+    "./analysis": {
+      "types": "./dist/analysis/index.d.ts",
+      "source": "./src/analysis/index.ts",
+      "default": "./dist/analysis/index.js"
+    },
+    "./charge-intel": {
+      "types": "./dist/charge-intel/index.d.ts",
+      "source": "./src/charge-intel/index.ts",
+      "default": "./dist/charge-intel/index.js"
+    },
+    "./fuel": {
+      "types": "./dist/fuel/index.d.ts",
+      "source": "./src/fuel/index.ts",
+      "default": "./dist/fuel/index.js"
+    },
+    "./outlook": {
+      "types": "./dist/outlook/index.d.ts",
+      "source": "./src/outlook/index.ts",
+      "default": "./dist/outlook/index.js"
     }
   },
   "scripts": {

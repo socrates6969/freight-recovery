@@ -69,9 +69,22 @@ export interface AppConfig {
   rateLimitPlatformMax: number;
   /** R71-R73 per user per 600 s. */
   rateLimitIntelligenceMax: number;
+  /** Step 5 (P11): both analyze routes, per user per 600 s. */
+  rateLimitAnalysisMax: number;
   /** Step 4 (Q13): tenant API keys. */
   apiKeys: ApiKeyConfig;
+  /** Step 7 (F16): maximum age of the cached active price import per series (0 = no cache). */
+  priceCacheTtlMs: number;
+  /**
+   * Fix round 1 (C11, P2): the CDN header that carries the viewer address (null = use TRUST_PROXY only) and the
+   * shared origin-verify secret that proves a request came through the CDN (null when unset).
+   */
+  clientIpHeader: typeof CLIENT_IP_HEADER_VALUE | null;
+  originVerifySecret: string | null;
 }
+
+/** The only accepted value of CLIENT_IP_HEADER (fix round 1, C11). */
+export const CLIENT_IP_HEADER_VALUE = 'cloudfront-viewer-address';
 
 export interface ApiKeyConfig {
   /** HMAC-SHA-256 key for stored secret hashes. Never logged. */
@@ -239,10 +252,14 @@ const STEP4_KNOBS = {
   similarCandidateLimit: { key: 'SIMILAR_CANDIDATE_LIMIT', def: 500, min: 10, max: 2000 },
   rateLimitPlatformMax: { key: 'RATE_LIMIT_PLATFORM_MAX', def: 120, min: 1, max: 100000 },
   rateLimitIntelligenceMax: { key: 'RATE_LIMIT_INTELLIGENCE_MAX', def: 120, min: 1, max: 100000 },
+  // Step 5 (P11): per-user bucket of the analyze routes.
+  rateLimitAnalysisMax: { key: 'RATE_LIMIT_ANALYSIS_MAX', def: 30, min: 1, max: 100000 },
   apiKeyMaxActive: { key: 'API_KEY_MAX_ACTIVE', def: 20, min: 1, max: 200 },
   apiKeyDefaultTtlDays: { key: 'API_KEY_DEFAULT_TTL_DAYS', def: 90, min: 1, max: 365, ceiling: 365 },
   rateLimitApiKeyMax: { key: 'RATE_LIMIT_API_KEY_MAX', def: 300, min: 1, max: 100000 },
   rateLimitApiKeyFailMax: { key: 'RATE_LIMIT_API_KEY_FAIL_MAX', def: 30, min: 1, max: 100000 },
+  // Step 7 (REQ-20261011-fuel-outlook, F16): active price import cache per series.
+  priceCacheTtlMs: { key: 'PRICE_CACHE_TTL_MS', def: 60000, min: 0, max: 3600000 },
 } as const satisfies Record<string, ImportKnob>;
 
 /** REVIEW_CONFIDENCE_THRESHOLD: decimal 0.50..1.00 (at most 3 fraction digits). */
@@ -586,6 +603,32 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
     if ([jwtSecret, csrfSecret, refreshPepper, mfaRaw].includes(pepperRaw)) problems.push('API_KEY_PEPPER must differ from every other secret');
   }
 
+  // ---- Fix round 1 (C11, P2): client address behind CloudFront ----
+  const clientIpHeaderRaw = env['CLIENT_IP_HEADER'];
+  let clientIpHeader: typeof CLIENT_IP_HEADER_VALUE | null = null;
+  if (clientIpHeaderRaw !== undefined && clientIpHeaderRaw !== '') {
+    if (clientIpHeaderRaw === CLIENT_IP_HEADER_VALUE) clientIpHeader = CLIENT_IP_HEADER_VALUE;
+    else problems.push(`CLIENT_IP_HEADER must be empty or exactly ${CLIENT_IP_HEADER_VALUE}`);
+  }
+  const originRaw = env['ORIGIN_VERIFY_SECRET'];
+  const originSetButBlank = originRaw !== undefined && originRaw.trim() === '';
+  if (originSetButBlank) problems.push('ORIGIN_VERIFY_SECRET is set but empty');
+  const originVerifySecret = originRaw !== undefined && !originSetButBlank ? originRaw : null;
+  if (clientIpHeader !== null && originVerifySecret === null) problems.push('ORIGIN_VERIFY_SECRET is required when CLIENT_IP_HEADER is set');
+  if (originVerifySecret !== null) {
+    const v = originVerifySecret;
+    if (v.length < MIN_SECRET_CHARS) problems.push(`ORIGIN_VERIFY_SECRET must be at least ${MIN_SECRET_CHARS} characters`);
+    if (looksLikePlaceholder(v)) problems.push('ORIGIN_VERIFY_SECRET looks like a placeholder, not a secret');
+    if (prod && DOCUMENTED_DEV_SECRETS.includes(v)) problems.push('ORIGIN_VERIFY_SECRET must not be a documented dev default');
+    if (prod) {
+      const weak = secretEntropyProblem(v);
+      if (weak) problems.push(`ORIGIN_VERIFY_SECRET ${weak} to be a random secret`);
+      const bits = (/^[0-9a-fA-F]+$/u.test(v) ? 4 : /^[A-Za-z0-9+/_-]+={0,2}$/u.test(v) ? 6 : 6.5) * v.replace(/=+$/u, '').length;
+      if (bits < MIN_PEPPER_ENTROPY_BITS) problems.push('ORIGIN_VERIFY_SECRET must carry at least 32 bytes of entropy');
+    }
+    if ([jwtSecret, csrfSecret, refreshPepper, mfaRaw, apiKeyPepper].includes(v)) problems.push('ORIGIN_VERIFY_SECRET must differ from every other secret');
+  }
+
   const totpIssuer = get('TOTP_ISSUER') ?? 'FreightRecovery';
   if (!/^[A-Za-z0-9 ._-]{1,64}$/u.test(totpIssuer)) problems.push('TOTP_ISSUER contains invalid characters');
 
@@ -629,6 +672,7 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
     intelligence: { pendingWeightPercent: s4.pendingWeightPercent, similarCandidateLimit: s4.similarCandidateLimit },
     rateLimitPlatformMax: s4.rateLimitPlatformMax,
     rateLimitIntelligenceMax: s4.rateLimitIntelligenceMax,
+    rateLimitAnalysisMax: s4.rateLimitAnalysisMax,
     apiKeys: {
       pepper: apiKeyPepper,
       maxActive: s4.apiKeyMaxActive,
@@ -637,5 +681,8 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
       rateLimitMax: s4.rateLimitApiKeyMax,
       rateLimitFailMax: s4.rateLimitApiKeyFailMax,
     },
+    priceCacheTtlMs: s4.priceCacheTtlMs,
+    clientIpHeader,
+    originVerifySecret,
   };
 }

@@ -121,6 +121,8 @@ locals {
     { name = "API_KEY_ALLOW_NON_EXPIRING", value = "false" },
     { name = "RATE_LIMIT_API_KEY_MAX", value = "300" },
     { name = "RATE_LIMIT_API_KEY_FAIL_MAX", value = "30" },
+    # Fix round 1 (C11): client address from CloudFront-Viewer-Address when x-origin-verify matches.
+    { name = "CLIENT_IP_HEADER", value = "cloudfront-viewer-address" },
   ]
 
   api_secrets = [
@@ -132,6 +134,8 @@ locals {
     { name = "REDIS_URL", valueFrom = aws_secretsmanager_secret.app["redis-url"].arn },
     # Step 4: HMAC key for stored API key hashes (Secrets Manager reference, never a literal value).
     { name = "API_KEY_PEPPER", valueFrom = aws_secretsmanager_secret.app["api-key-pepper"].arn },
+    # Fix round 1 (C11): the CloudFront origin-verify value (Secrets Manager reference, never a literal value).
+    { name = "ORIGIN_VERIFY_SECRET", valueFrom = aws_secretsmanager_secret.origin_verify.arn },
   ]
 }
 

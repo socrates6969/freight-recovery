@@ -1,6 +1,7 @@
 /**
  * HTTP errors with fixed, human-readable messages (C1). Unknown errors never forward their message.
  */
+import type { AnalysisFailureReason } from '@fr/shared';
 
 export const ERROR_MESSAGES = {
   validation_error: 'Request validation failed.',
@@ -30,6 +31,18 @@ export const ERROR_MESSAGES = {
   quota_exceeded: 'Storage quota reached.',
   export_too_large: 'Too many rows to export. Narrow your filters.',
   parser_busy: 'The parser is busy. Try again shortly.',
+  // Four-eyes (REQ-20261009-four-eyes)
+  four_eyes_required: 'A different person must make this decision.',
+  // Step 5 (REQ-20261010-step5-analysis)
+  analysis_input_invalid: 'The extracted values of this claim cannot be analysed automatically.',
+  // Step 6 (REQ-20261011-charge-intelligence)
+  label_limit_reached: 'This organization has reached the maximum number of charge labels.',
+  // Step 7 (REQ-20261011-fuel-outlook, F11)
+  fuel_table_limit_reached: 'This organization has reached the maximum number of fuel tables.',
+  fuel_table_unavailable: 'The fuel table does not exist or is archived.',
+  miles_required: 'Miles are required for a per-mile fuel table.',
+  // Step 8 (REQ-20261011-ocean-dd, C13)
+  dd_limit_reached: 'This organization has reached the maximum number of D&D tariffs, calendars or invoices.',
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;
@@ -54,6 +67,45 @@ export class HttpError extends Error {
   }
 
   readonly details: ErrorDetail[] | undefined;
+}
+
+/** Audit context carried by a four-eyes refusal; the error handler writes `authz.four_eyes_denied` from it
+ * in a separate tenant transaction (the business transaction has already rolled back). */
+export interface FourEyesAudit {
+  tenantId: string;
+  targetType: 'claim' | 'import_document';
+  targetId: string;
+  metadata: Record<string, unknown>;
+}
+
+/** 403 four_eyes_required raised by a service check (an author/editor tried to decide on their own work). */
+export class FourEyesRefusal extends HttpError {
+  constructor(readonly audit: FourEyesAudit) {
+    super(403, 'four_eyes_required');
+    this.name = 'FourEyesRefusal';
+  }
+}
+
+/**
+ * Hardening (REQ-20261012-hardening, C4.2): audit context of a refused analysis. The error handler (single
+ * route) or the bulk loop writes `claim.analysis_failed` from it in its own tenant transaction.
+ */
+export interface AnalysisFailureAudit {
+  tenantId: string;
+  claimId: string;
+  claimNumber: string;
+  reasonCode: AnalysisFailureReason;
+  bulk: boolean;
+  /** Number of linked ACCEPTED documents used as input. */
+  documentCount: number;
+}
+
+/** 422 analysis_input_invalid with the reason code in `details` (C4.1); fixed message. */
+export class AnalysisFailure extends HttpError {
+  constructor(readonly audit: AnalysisFailureAudit) {
+    super(422, 'analysis_input_invalid', { details: [{ path: 'analysis', code: audit.reasonCode }] });
+    this.name = 'AnalysisFailure';
+  }
 }
 
 export const errors = {
@@ -83,6 +135,14 @@ export const errors = {
   unresolvedFields: () => new HttpError(409, 'unresolved_fields'),
   quotaExceeded: () => new HttpError(422, 'quota_exceeded'),
   exportTooLarge: () => new HttpError(422, 'export_too_large'),
+  fourEyes: (audit: FourEyesAudit) => new FourEyesRefusal(audit),
+  analysisInputInvalid: () => new HttpError(422, 'analysis_input_invalid'),
+  labelLimitReached: () => new HttpError(409, 'label_limit_reached'),
+  fuelTableLimitReached: () => new HttpError(409, 'fuel_table_limit_reached'),
+  fuelTableUnavailable: () => new HttpError(422, 'fuel_table_unavailable'),
+  milesRequired: () => new HttpError(422, 'miles_required'),
+  ddLimitReached: () => new HttpError(409, 'dd_limit_reached'),
+  serviceUnavailable: () => new HttpError(503, 'service_unavailable'),
   parserBusy: () => new HttpError(503, 'parser_busy', { retryAfterSeconds: 5 }),
   accountLocked: (retryAfterSeconds: number) => new HttpError(429, 'account_locked', { retryAfterSeconds }),
 };

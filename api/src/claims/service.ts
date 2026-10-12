@@ -4,9 +4,12 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import type { ApprovalItemDto, ClaimDetailDto, ClaimSummaryDto, ClaimsQueryInput, PacketDto, PacketStatus, Role } from '@fr/shared';
+import type { ApprovalItemDto, ClaimDetailDto, ClaimSummaryDto, ClaimsQueryInput, FourEyesClaimBasis, PacketDto, PacketStatus, Role } from '@fr/shared';
 
+import { analysisFailureOf } from '../audit/analysis-failures.js';
 import { appendAudit } from '../audit/audit.js';
+import { ddInvoiceEditorsByClaim } from '../audit/dd-editors.js';
+import { labelAuthorsByClaim } from '../audit/label-authors.js';
 import { isUuid } from '../db/errors.js';
 import { lockClaimForUpdate, type TenantTx } from '../db/tenant.js';
 import { UNPROCESSABLE, errors } from '../http/errors.js';
@@ -30,6 +33,7 @@ const SUMMARY_INCLUDE = {
 interface SummaryRow {
   id: string;
   claimNumber: string;
+  kind: 'FREIGHT' | 'OCEAN_DD';
   loadNumber: string | null;
   invoiceNumber: string | null;
   invoiceDate: Date | null;
@@ -52,6 +56,7 @@ export function toClaimSummary(c: SummaryRow): ClaimSummaryDto {
   return {
     id: c.id,
     claimNumber: c.claimNumber,
+    kind: c.kind,
     loadNumber: c.loadNumber,
     invoiceNumber: c.invoiceNumber,
     carrierName: c.carrierName,
@@ -90,12 +95,30 @@ async function findClaim(tx: TenantTx, id: string): Promise<SummaryRow> {
 
 export async function getClaim(tx: TenantTx, id: string): Promise<ClaimDetailDto> {
   const c = await findClaim(tx, id);
-  return { ...toClaimSummary(c), invoiceDate: c.invoiceDate ? c.invoiceDate.toISOString() : null };
+  // Hardening (C4.3): only an AWAITING_ANALYSIS claim shows its failed analyses.
+  const failure = c.status === 'AWAITING_ANALYSIS' ? await analysisFailureOf(tx, c.id) : null;
+  return {
+    ...toClaimSummary(c),
+    invoiceDate: c.invoiceDate ? c.invoiceDate.toISOString() : null,
+    analysisFailure:
+      failure === null ? null : { lastFailedAt: failure.lastFailedAt.toISOString(), reasonCode: failure.reasonCode, failedAttempts: failure.failedAttempts },
+  };
 }
 
+/**
+ * Four-eyes (REQ-20261009-four-eyes, policy D1): transitions refused to any author of any revision of the
+ * claim. `send` is deliberately absent (D2: the approver, or an author, may mark send-ready).
+ */
+export const FOUR_EYES_GUARDED_TRANSITIONS: ReadonlySet<Exclude<Transition, 'edit'>> = new Set(['approve', 'reject']);
+
+/**
+ * Approval queue page. `viewerId` is the requesting user: each item carries `selfAuthored`, true iff the
+ * viewer created any revision (current or superseded) of that claim (four-eyes; no other user's data).
+ */
 export async function listApprovalQueue(
   tx: TenantTx,
   q: { status: readonly ('PENDING_REVIEW' | 'APPROVED')[]; page: number; pageSize: number; sort: ClaimSort },
+  viewerId: string,
 ): Promise<{ items: ApprovalItemDto[]; page: number; pageSize: number; total: number }> {
   const where = buildClaimWhere({ status: q.status as ClaimFilter['status'] });
   const include = {
@@ -113,14 +136,37 @@ export async function listApprovalQueue(
   };
   const total = await tx.claim.count({ where });
   const rows = await tx.claim.findMany({ where, orderBy: buildClaimOrderBy(q.sort), ...pageArgs(q.page, q.pageSize), include });
+  const pageIds = rows.map((r) => r.id);
+  const authored =
+    pageIds.length === 0
+      ? []
+      : await tx.evidencePacket.findMany({
+          where: { claimId: { in: pageIds }, createdById: viewerId },
+          select: { claimId: true },
+          distinct: ['claimId'],
+        });
+  // Step 8 (C14): D&D invoice editors are refused too; hardening (C1): label authors as well. One query per
+  // basis and page (independent of the page size).
+  const authoredSet = new Set(authored.map((a) => a.claimId));
+  const ddEditors = await ddInvoiceEditorsByClaim(tx, pageIds);
+  const labelAuthors = await labelAuthorsByClaim(tx, pageIds);
+  const basisOf = (claimId: string): FourEyesClaimBasis | null => {
+    if (authoredSet.has(claimId)) return 'revision_author';
+    if (ddEditors.get(claimId)?.has(viewerId) === true) return 'dd_invoice_editor';
+    if (labelAuthors.get(claimId)?.has(viewerId) === true) return 'label_author';
+    return null;
+  };
   const items = rows.map((r) => {
     const p = r.packets[0];
     const summary = toClaimSummary(r as unknown as SummaryRow);
+    const basis = basisOf(r.id);
     return {
       ...summary,
       packetRevision: p?.revision ?? 0,
       pendingFindingsCount: p?._count.findings ?? 0,
       waitingSince: (p?.createdAt ?? r.updatedAt).toISOString(),
+      selfAuthored: basis !== null,
+      selfAuthoredBasis: basis,
     };
   });
   return { items, page: q.page, pageSize: q.pageSize, total };
@@ -190,8 +236,9 @@ export function toHashPacket(p: PacketRow): HashPacket {
 }
 
 /** R28: packet DTO (default latest revision), integrity recomputed, read audited as packet.viewed. */
-export async function getPacket(tx: TenantTx, claimId: string, revision: number | undefined, actor: Actor): Promise<PacketDto> {
-  await findClaim(tx, claimId);
+export async function getPacket(tx: TenantTx, claimIdParam: string, revision: number | undefined, actor: Actor): Promise<PacketDto> {
+  // Fix round 2 (C-FR2.1): the canonical id of the loaded row, never the request parameter.
+  const claimId = (await findClaim(tx, claimIdParam)).id;
   const p = await loadPacketRow(tx, claimId, revision);
   if (!p) throw errors.notFound();
   const approvals = await tx.approval.findMany({
@@ -317,7 +364,8 @@ async function lockAndLoadLatest(tx: TenantTx, claimId: string): Promise<LockedS
   // A claim without a packet (AWAITING_ANALYSIS, created from imports) cannot be edited, approved,
   // rejected or sent: 409 invalid_state (never 500). Step 5 adds AWAITING_ANALYSIS -> PENDING_REVIEW.
   if (!latest) throw errors.invalidState();
-  return { claimId, tenantId: latest.tenantId, latest };
+  // Fix round 2 (C-FR2.1): callers use the canonical claim id of the loaded packet row, never the parameter.
+  return { claimId: latest.claimId, tenantId: latest.tenantId, latest };
 }
 
 export interface TransitionResult {
@@ -330,14 +378,36 @@ export interface TransitionResult {
 export async function transition(
   tx: TenantTx,
   kind: Exclude<Transition, 'edit'>,
-  claimId: string,
+  claimIdParam: string,
   input: { packetRevision: number; reason: string; acknowledgePendingFindings?: boolean | undefined },
   actor: Actor,
 ): Promise<TransitionResult> {
-  const { latest, tenantId } = await lockAndLoadLatest(tx, claimId);
+  const { claimId, latest, tenantId } = await lockAndLoadLatest(tx, claimIdParam);
   if (input.packetRevision !== latest.revision) throw errors.staleRevision();
   const from = latest.status as LiveStatus;
   if (!canTransition(kind, from)) throw errors.invalidState();
+  // Four-eyes (P1/P2): after the stale/state checks, before the acknowledgement check. Runs under the
+  // claim row lock taken by lockAndLoadLatest, so no revision can be added concurrently. All revisions
+  // count, superseded included; a null creator (seeded revision 1) excludes nobody.
+  if (FOUR_EYES_GUARDED_TRANSITIONS.has(kind)) {
+    const refuse = (basis: FourEyesClaimBasis) =>
+      errors.fourEyes({
+        tenantId,
+        targetType: 'claim',
+        targetId: claimId,
+        metadata: { claimId, packetId: latest.id, packetRevision: latest.revision, action: ACTION_FOR[kind], basis },
+      });
+    const authored = await tx.evidencePacket.findFirst({ where: { claimId, createdById: actor.userId }, select: { id: true } });
+    if (authored) throw refuse('revision_author');
+    // Step 8 (fix rounds 1 and 3, C14): for an OCEAN_DD claim, every editor of its D&D invoice (actors of
+    // dd_invoice.created / dd_invoice.updated in the tenant audit chain) is excluded too. The maps are keyed by
+    // the database's lower-case uuid text, so look up with the claim id of the loaded packet row.
+    const ddEditors = await ddInvoiceEditorsByClaim(tx, [latest.claimId]);
+    if (ddEditors.get(latest.claimId)?.has(actor.userId) === true) throw refuse('dd_invoice_editor');
+    // Hardening (C1, residual SC-1): authors of team charge labels that influenced the claim's analysis.
+    const labelAuthors = await labelAuthorsByClaim(tx, [latest.claimId]);
+    if (labelAuthors.get(latest.claimId)?.has(actor.userId) === true) throw refuse('label_author');
+  }
 
   if (kind === 'approve' && latest.findings.some((f) => f.needsHumanReview) && input.acknowledgePendingFindings !== true) {
     throw errors.unprocessable(UNPROCESSABLE.acknowledgePending);
@@ -400,11 +470,11 @@ export async function transition(
 /** R30: create a new packet revision with an edited demand letter (copies content, new ids). */
 export async function createRevision(
   tx: TenantTx,
-  claimId: string,
+  claimIdParam: string,
   input: { baseRevision: number; demandLetter: string; reason: string },
   actor: Actor,
 ): Promise<TransitionResult> {
-  const { latest, tenantId } = await lockAndLoadLatest(tx, claimId);
+  const { claimId, latest, tenantId } = await lockAndLoadLatest(tx, claimIdParam);
   if (input.baseRevision !== latest.revision) throw errors.staleRevision();
   const from = latest.status as LiveStatus;
   if (!canTransition('edit', from)) throw errors.invalidState();

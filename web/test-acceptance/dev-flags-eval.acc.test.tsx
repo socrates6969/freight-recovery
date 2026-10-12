@@ -24,7 +24,8 @@ const KEY = 'intelligence.worklist';
 const sw = (key = KEY) => screen.getByRole('switch', { name: key });
 
 describe('T-WEB-05 flags screen', () => {
-  it('three rows with switches named by key; no optimistic update; success toast; CSRF and body are exact', async () => {
+  // REQ-20261011-fuel-outlook F14 (additive): six rows (cost_outlook and fuel_check added).
+  it('six rows (C10 adds intelligence.charge_suggestions; step 7 adds cost_outlook and fuel_check) with switches named by key; no optimistic update; success toast; CSRF and body are exact', async () => {
     const gate = deferred<void>();
     const stub = devStub({ role: 'PLATFORM_DEV', putGate: gate.promise });
     const { user } = await renderApp(stub, ['/dev/flags']);
@@ -32,9 +33,10 @@ describe('T-WEB-05 flags screen', () => {
     await screen.findByRole('heading', { name: 'Feature flags' }, WAIT);
     const table = await screen.findByRole('table', { name: 'Feature flags' }, WAIT);
     expect(headers(table)).toEqual(['Flag', 'Description', 'State', 'Version', 'Last change']);
-    expect(within(table).getAllByRole('row').length).toBe(4);
-    expect(screen.getAllByRole('switch').length).toBe(3);
-    for (const k of ['intelligence.provenance', 'intelligence.similar_claims', KEY]) expect(sw(k).getAttribute('aria-checked')).toBe('true');
+    // REQ-20261011-ocean-dd C16 (additive): intelligence.ocean_dd is the seventh flag.
+    expect(within(table).getAllByRole('row').length).toBe(8); // header + 7 flags
+    expect(screen.getAllByRole('switch').length).toBe(7);
+    for (const k of ['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.provenance', 'intelligence.similar_claims', KEY]) expect(sw(k).getAttribute('aria-checked')).toBe('true');
     await user.click(sw());
     const dlg = await screen.findByRole('dialog', { name: `Change ${KEY}` }, WAIT);
     const confirm = within(dlg).getByRole('button', { name: 'Confirm' }) as HTMLButtonElement;

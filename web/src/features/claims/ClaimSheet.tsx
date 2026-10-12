@@ -1,4 +1,17 @@
-import { ClaimDetail, ClaimDocumentsResponse, ClaimSummary, Packet, displayText, type PacketDto } from '@fr/shared';
+import {
+  ANALYSIS_FAILURE_TEXT,
+  ANALYSIS_TEXT,
+  AnalyzeResponse,
+  ClaimDetail,
+  ClaimDocumentsResponse,
+  ClaimSummary,
+  DD_TEXT,
+  Packet,
+  analysisFailureNote,
+  displayText,
+  findingConfidenceText,
+  type PacketDto,
+} from '@fr/shared';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { X } from 'lucide-react';
 import { useCallback, useId, useRef, useState, type KeyboardEvent } from 'react';
@@ -10,10 +23,14 @@ import { ExportMenu } from '../../components/ui/ExportMenu';
 import { SafeText } from '../../components/ui/SafeText';
 import { useFocusTrap } from '../../components/ui/use-focus-trap';
 import { formatDateTime, formatDay, formatUsdCents, STATUS_LABEL } from '../../lib/format';
+import { FuelPanel } from '../fuel/FuelPanel';
+import { ChargeLinesPanel } from '../intelligence/ChargeLinesPanel';
 import { ProvenancePanel, SimilarPanel } from '../intelligence/ClaimIntelligenceTabs';
 import { useFeatures } from '../intelligence/use-features';
 
-const ALL_TABS = ['Summary', 'Evidence', 'History', 'Documents', 'Similar', 'Provenance'] as const;
+import { AnalyzeClaimSection, analyzeErrorText } from './AnalyzeClaimSection';
+
+const ALL_TABS = ['Summary', 'Evidence', 'History', 'Documents', 'Similar', 'Provenance', 'Charges', 'Fuel'] as const;
 export const NO_PACKET_TEXT = 'No evidence packet yet. Analysis has not run for this claim.';
 const DOC_TYPE_LABEL: Record<string, string> = { INVOICE: 'Invoice', RATE_CONFIRMATION: 'Rate confirmation', BILL_OF_LADING: 'Bill of lading', OTHER: 'Other' };
 type Tab = (typeof ALL_TABS)[number];
@@ -74,7 +91,7 @@ export function EvidencePanel({ packet }: { packet: PacketDto }) {
 
       <section>
         <h3 className="mb-2 font-semibold">Sources</h3>
-        <table className="data-table text-sm">
+        <table className="data-table text-sm" aria-label="Packet sources">
           <thead>
             <tr>
               <th scope="col">File</th>
@@ -115,7 +132,7 @@ export function EvidencePanel({ packet }: { packet: PacketDto }) {
                 <span className="num font-medium">{formatUsdCents(f.amountCents)}</span>
               </div>
               <p className="muted text-xs">
-                <SafeText value={f.ruleId} /> - confidence <span className="num">{Math.round(f.confidence * 100)}%</span>
+                <SafeText value={f.ruleId} /> - {findingConfidenceText(f.confidence)}
                 {f.needsHumanReview ? <span className="badge badge-warn ml-2">Needs human review</span> : null}
               </p>
               <p className="mt-1 text-sm">
@@ -179,6 +196,7 @@ export function ClaimSheet() {
   const location = useLocation();
   const canAssign = useCan('claims:assign');
   const canExportPackets = useCan('export:packets');
+  const canAnalyze = useCan('claims:analyze');
   const me = useSession((s) => s.user);
   const [tab, setTab] = useState<Tab>('Summary');
   const features = useFeatures();
@@ -191,9 +209,19 @@ export function ClaimSheet() {
     setHidden((h) => (h.includes('Provenance') ? h : [...h, 'Provenance']));
     setTab('Summary');
   }, []);
-  // Similar/Provenance appear only when their flag is on (fail closed) and the feature call did not 404.
+  const hideCharges = useCallback(() => {
+    setHidden((h) => (h.includes('Charges') ? h : [...h, 'Charges']));
+    setTab('Summary');
+  }, []);
+  const hideFuel = useCallback(() => {
+    setHidden((h) => (h.includes('Fuel') ? h : [...h, 'Fuel']));
+    setTab('Summary');
+  }, []);
+  // Similar/Provenance/Charges appear only when their flag is on (fail closed) and the feature call did not 404.
   const TABS = ALL_TABS.filter(
-    (t) => !hidden.includes(t) && (t === 'Similar' ? features.similar : t === 'Provenance' ? features.provenance : true),
+    (t) =>
+      !hidden.includes(t) &&
+      (t === 'Similar' ? features.similar : t === 'Provenance' ? features.provenance : t === 'Charges' ? features.charges : t === 'Fuel' ? features.fuel : true),
   );
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
@@ -230,6 +258,25 @@ export function ClaimSheet() {
       toast(e instanceof ApiError && e.status === 422 ? 'That person cannot be assigned to this claim.' : 'Assignment failed.', 'error'),
   });
 
+  // Step 5 (P10): analyze an AWAITING_ANALYSIS claim. The error is kept per claim id (inline alert).
+  const [analyzeError, setAnalyzeError] = useState<{ id: string; text: string } | null>(null);
+  const analyze = useMutation({
+    mutationFn: () => api.post(`/api/v1/claims/${encodeURIComponent(id)}/analyze`, {}, AnalyzeResponse),
+    onMutate: () => setAnalyzeError(null),
+    onSuccess: async () => {
+      toast(ANALYSIS_TEXT.success, 'success');
+      await Promise.all(
+        [['claim', id], ['packet', id], ['claims'], ['approvals']].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+      );
+      setTab('Evidence');
+    },
+    onError: async (e) => {
+      setAnalyzeError({ id, text: analyzeErrorText(e) });
+      // Hardening (C4.3): a 422 records a failed attempt; reload the claim so the note is current.
+      if (e instanceof ApiError && e.status === 422) await queryClient.invalidateQueries({ queryKey: ['claim', id] });
+    },
+  });
+
   const onTabKey = (e: KeyboardEvent<HTMLButtonElement>) => {
     const i = TABS.indexOf(tab);
     if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
@@ -242,6 +289,17 @@ export function ClaimSheet() {
 
   const c = claim.data;
   const title = c ? `Claim ${c.claimNumber}` : 'Claim';
+  const analyzeSection =
+    c?.status === 'AWAITING_ANALYSIS' && canAnalyze ? (
+      <AnalyzeClaimSection pending={analyze.isPending} errorText={analyzeError?.id === id ? analyzeError.text : null} onAnalyze={() => analyze.mutate()} />
+    ) : null;
+  // Hardening (C7.2): the failed-analysis note is shown to every reader of the claim (not only analysts).
+  const failure = c?.status === 'AWAITING_ANALYSIS' ? c.analysisFailure : null;
+  const failureNote = failure ? (
+    <p className="mt-4 text-sm">
+      {analysisFailureNote(formatDateTime(failure.lastFailedAt), failure.failedAttempts, ANALYSIS_FAILURE_TEXT[failure.reasonCode])}
+    </p>
+  ) : null;
 
   return (
     <>
@@ -252,6 +310,7 @@ export function ClaimSheet() {
             {c ? (
               <>
                 Claim <SafeText value={c.claimNumber} />
+                {c.kind === 'OCEAN_DD' ? <span className="badge ml-2">{DD_TEXT.kindBadge}</span> : null}
               </>
             ) : (
               title
@@ -344,9 +403,19 @@ export function ClaimSheet() {
                     </Field>
                   </dl>
                 ) : null}
+                {tab === 'Summary' ? (
+                  <>
+                    {failureNote}
+                    {analyzeSection}
+                  </>
+                ) : null}
                 {tab === 'Evidence' ? (
                   !hasPacket ? (
-                    <p className="muted">{NO_PACKET_TEXT}</p>
+                    <>
+                      <p className="muted">{NO_PACKET_TEXT}</p>
+                      {failureNote}
+                      {analyzeSection}
+                    </>
                   ) : packet.isError ? (
                     <p role="alert">The evidence packet could not be loaded.</p>
                   ) : packet.data ? (
@@ -388,6 +457,8 @@ export function ClaimSheet() {
                 ) : null}
                 {tab === 'Similar' && TABS.includes('Similar') ? <SimilarPanel claimId={id} onUnavailable={hideSimilar} /> : null}
                 {tab === 'Provenance' && TABS.includes('Provenance') ? <ProvenancePanel claimId={id} onUnavailable={hideProvenance} /> : null}
+                {tab === 'Charges' && TABS.includes('Charges') ? <ChargeLinesPanel claimId={id} onUnavailable={hideCharges} /> : null}
+                {tab === 'Fuel' && TABS.includes('Fuel') ? <FuelPanel claimId={id} claimStatus={c?.status ?? null} onUnavailable={hideFuel} /> : null}
                 {tab === 'Documents' ? (
                   documents.isError ? (
                     <p role="alert">The documents could not be loaded.</p>
@@ -396,7 +467,7 @@ export function ClaimSheet() {
                   ) : documents.data.items.length === 0 ? (
                     <p className="muted">No imported documents are linked to this claim.</p>
                   ) : (
-                    <table className="data-table text-sm">
+                    <table className="data-table text-sm" aria-label="Linked documents">
                       <thead>
                         <tr>
                           <th scope="col">Name</th>

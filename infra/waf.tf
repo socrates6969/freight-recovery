@@ -1,4 +1,6 @@
-# Regional WAF on the ALB: AWS managed rule groups, an IP rate limit, and a request-size rule.
+# Regional WAF on the ALB: AWS managed rule groups and request-size rules. Fix round 1 (C11.4): the IP-keyed
+# rules (rate limit, IP reputation) live in the CLOUDFRONT-scope ACL at the end of this file, where the source
+# address is the viewer (behind CloudFront the ALB only ever sees CloudFront's addresses).
 # Note: for ALBs, WAF inspects at most the first 8 KB of a body, so the size limit is enforced on the
 # declared Content-Length (regex below encodes > 65536 = var.body_limit_bytes) and, authoritatively,
 # by the API's own BODY_LIMIT_BYTES. The Common rule set's 8 KB body rule is set to COUNT so legitimate
@@ -134,28 +136,6 @@ resource "aws_wafv2_web_acl" "alb" {
   }
 
   rule {
-    name     = "ip-rate-limit"
-    priority = 1
-
-    action {
-      block {}
-    }
-
-    statement {
-      rate_based_statement {
-        limit              = var.waf_rate_limit_per_5min
-        aggregate_key_type = "IP"
-      }
-    }
-
-    visibility_config {
-      cloudwatch_metrics_enabled = true
-      metric_name                = "ip-rate-limit"
-      sampled_requests_enabled   = true
-    }
-  }
-
-  rule {
     name     = "aws-common"
     priority = 10
 
@@ -206,6 +186,51 @@ resource "aws_wafv2_web_acl" "alb" {
     }
   }
 
+  visibility_config {
+    cloudwatch_metrics_enabled = true
+    metric_name                = "${local.name}-alb"
+    sampled_requests_enabled   = true
+  }
+}
+
+resource "aws_wafv2_web_acl_association" "alb" {
+  resource_arn = aws_lb.main.arn
+  web_acl_arn  = aws_wafv2_web_acl.alb.arn
+}
+
+# Fix round 1 (C11.4): CloudFront-scope ACL (us-east-1) with the IP-keyed rules, attached to the distribution.
+resource "aws_wafv2_web_acl" "cloudfront" {
+  provider    = aws.us_east_1
+  name        = "${local.name}-cloudfront"
+  description = "Freight Recovery viewer-address protections"
+  scope       = "CLOUDFRONT"
+
+  default_action {
+    allow {}
+  }
+
+  rule {
+    name     = "ip-rate-limit"
+    priority = 1
+
+    action {
+      block {}
+    }
+
+    statement {
+      rate_based_statement {
+        limit              = var.waf_rate_limit_per_5min
+        aggregate_key_type = "IP"
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "ip-rate-limit"
+      sampled_requests_enabled   = true
+    }
+  }
+
   rule {
     name     = "aws-ip-reputation"
     priority = 30
@@ -230,12 +255,7 @@ resource "aws_wafv2_web_acl" "alb" {
 
   visibility_config {
     cloudwatch_metrics_enabled = true
-    metric_name                = "${local.name}-alb"
+    metric_name                = "${local.name}-cloudfront"
     sampled_requests_enabled   = true
   }
-}
-
-resource "aws_wafv2_web_acl_association" "alb" {
-  resource_arn = aws_lb.main.arn
-  web_acl_arn  = aws_wafv2_web_acl.alb.arn
 }

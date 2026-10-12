@@ -38,7 +38,7 @@ const P = '/api/v1';
 
 function meta(req: FastifyRequest): RequestMeta {
   const ua = req.headers['user-agent'];
-  return { ip: req.ip, requestId: req.frRequestId, userAgent: typeof ua === 'string' ? ua : undefined };
+  return { ip: req.clientIp, requestId: req.frRequestId, userAgent: typeof ua === 'string' ? ua : undefined };
 }
 
 function sendSession(reply: FastifyReply, deps: AuthDeps, s: SessionResult) {
@@ -62,7 +62,8 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps, forgotL
     rateGroup: 'auth',
     schema: { body: LoginBody },
     handler: async (req, reply, { body }) => {
-      const r = await login(deps, body.email, body.password, meta(req));
+      // Fix round 1 (C14): the refresh cookie (read as /auth/refresh does) only lets a known device past a lock.
+      const r = await login(deps, body.email, body.password, meta(req), req.cookies[REFRESH_COOKIE] ?? '');
       if (r.status === 'ok') return sendSession(reply, deps, r);
       return r;
     },
@@ -76,7 +77,7 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps, forgotL
     schema: { body: MfaVerifyBody },
     handler: async (req, reply, { body }) => {
       const input = 'code' in body ? { mfaToken: body.mfaToken, code: body.code } : { mfaToken: body.mfaToken, recoveryCode: body.recoveryCode };
-      return sendSession(reply, deps, await mfaVerify(deps, input, meta(req)));
+      return sendSession(reply, deps, await mfaVerify(deps, input, meta(req), req.cookies[REFRESH_COOKIE] ?? ''));
     },
   });
 
@@ -192,6 +193,8 @@ export function registerAuthRoutes(app: FastifyInstance, deps: AuthDeps, forgotL
     method: 'POST',
     url: `${P}/auth/change-password`,
     access: { kind: 'authenticated' },
+    // Fix round 1 (C10.1): the per-client-address `auth` bucket, before any password work.
+    rateGroup: 'auth',
     schema: { body: ChangePasswordBody },
     handler: async (req, reply, { body }) => {
       const ctx = requireCtx(req);

@@ -84,7 +84,19 @@ et eget avsnitt nedenfor: [Nettplattform: import og eksport (steg 3)](#nettplatt
 Steg 4 (utviklerdashbord, Recovery intelligence, API-nøkler for tenanter og evalueringsverktøyet) har
 også et eget avsnitt:
 [Nettplattform: utviklerdashbord, Recovery intelligence og API-nøkler (steg 4)](#nettplattform-utviklerdashbord-recovery-intelligence-og-api-nøkler-steg-4).
-TS-porten av Python-reglene er et senere steg (steg 5). Det finnes ingen lært modell og ingen LLM-kall. Krav og pakker seedes fra Python-CLI-ens
+Steg 5 (TS-porten av Python-reglene og kravbrevet, og analysehandlingen som gjør et importert krav om til
+pakkerevisjon 1) er beskrevet i
+[Nettplattform: kravanalyse (steg 5)](#nettplattform-kravanalyse-steg-5). Steg 6 (forslag til kategori for
+gebyrlinjer ut fra merkede eksempler, et etikettminne for teamet, lærte funn som bare går til gjennomgang,
+og en kalkulator for ventetid etter tariff) er beskrevet i
+[Nettplattform: gebyrintelligens (steg 6)](#nettplattform-gebyrintelligens-steg-6). Det finnes ingen
+trent modell og ingen LLM-kall: klassifisereren i steg 6 sammenligner et gebyrnavn med merkede eksempler.
+Steg 7 står i
+[Nettplattform: drivstoffkontroll, offentlige prisdata og kostnadsutsikt (steg 7)](#nettplattform-drivstoffkontroll-offentlige-prisdata-og-kostnadsutsikt-steg-7).
+Steg 8 (kontrollen av fakturaer for demurrage og detention for sjøcontainere mot 46 CFR Part 541 og 545.5, med
+kravtypen `OCEAN_DD`) står i
+[Nettplattform: kontroll av demurrage og detention for sjøcontainere (steg 8)](#nettplattform-kontroll-av-demurrage-og-detention-for-sjøcontainere-steg-8).
+Krav og pakker seedes fra Python-CLI-ens
 utdata på `tests/fixtures/` (syntetisk).
 
 ## Modulstruktur
@@ -272,6 +284,8 @@ hver forespørsel. Nettappen importerer de samme frosne dataene bare for å skju
 | `users:read`, `users:manage`, `audit:read`, `settings:manage`, `integrations:manage` | x | x | | | | | | |
 | `admins:manage`, `billing:manage`, `tenant:delete` | x | | | | | | | |
 | `apikeys:manage` (steg 4: opprette, liste og tilbakekalle tenantenes API-nøkler) | x | x | | | | | | |
+| `claims:analyze` (steg 5: analysere ett krav, masseanalyse; ingen API-nøkkel-scope) | x | x | x | x | x | | | |
+| `charge_labels:manage` (steg 6: sette og slette teamets gebyretiketter; ingen API-nøkkel-scope) | x | x | x | x | | | | |
 | `platform:health` (steg 4: også pipelinehelse og telemetri) | | | | | | | x | x |
 | `platform:flags`, `platform:logs` | | | | | | | x | |
 | `platform:eval` (steg 4: evalueringskjøringer) | | | | | | | x | |
@@ -335,7 +349,8 @@ graph TD
 ```mermaid
 %%{init: {'theme': 'neutral'}}%%
 graph TD
-    P["PENDING_REVIEW"] -- "approve (reason)" --> A["APPROVED"]
+    W["AWAITING_ANALYSIS (claim)"] -- "analyze (step 5)" --> P["PENDING_REVIEW"]
+    P -- "approve (reason)" --> A["APPROVED"]
     P -- "reject (reason)" --> J["REJECTED"]
     A -- "send (reason, hash match)" --> S["SEND_READY (terminal)"]
     P -- "edit" --> N["new revision PENDING_REVIEW"]
@@ -344,7 +359,12 @@ graph TD
     N -. "old revision" .-> X["SUPERSEDED"]
 
     style S fill:#1e90ff,stroke:#1565c0,color:#fff
+    style W fill:#1e90ff,stroke:#1565c0,color:#fff
 ```
+
+`AWAITING_ANALYSIS` er bare en kravstatus (importerte krav uten pakke ennå). Siden kjøringen
+`REQ-20261010-step5-analysis` lager analysehandlingen pakkerevisjon 1 i `PENDING_REVIEW` og flytter kravet dit;
+ingenting går tilbake til `AWAITING_ANALYSIS`. Se [kravanalyse (steg 5)](#nettplattform-kravanalyse-steg-5).
 
 Hver handling krever en begrunnelse og skriver en `approvals`-rad (som bare kan utvides) pluss en
 revisjonshendelse i én transaksjon, med kravraden låst `FOR UPDATE`. Godkjenning lagrer pakkens kanoniske
@@ -352,6 +372,9 @@ innholdshash. Sending regner den ut på nytt og krever at den er lik både godkj
 hashen. «Send» merker bare kravet som klart til sending: ingen e-post, ingen betaling. DB-triggeren
 `fr_packet_update_guard` håndhever de samme overgangene og gjør alle kolonner unntatt `status`
 uforanderlige. Redigering lager en ny revisjon; godkjenningsraden registrerer grunnrevisjonen (avvik 18).
+Siden kjøringen `REQ-20261009-four-eyes` avvises også godkjenning og avvisning (403 `four_eyes_required`)
+for alle som har laget en revisjon av kravets pakke; se
+[firøyeprinsippet](#nettplattform-firøyeprinsippet-arbeidsdeling).
 
 | Funksjon | Definert i | Kalles av | Formål |
 | --- | --- | --- | --- |
@@ -437,7 +460,7 @@ Hovedbeslutninger:
 - API-et **videreformidler** originalene. Det finnes ingen signerte URL-er.
 - PDF-er leses bare fra tekstlaget. Bilder lagres og flagges for manuell registrering.
 - Krav som opprettes fra import, starter i den nye statusen `AWAITING_ANALYSIS`, uten beløp og uten
-  bevispakke. Steg 5 legger til analysen.
+  bevispakke. Steg 5 legger til analysen ([kravanalyse (steg 5)](#nettplattform-kravanalyse-steg-5)).
 
 ## Modulstruktur (steg 3)
 
@@ -654,6 +677,12 @@ graph TD
 Et felt går én gang fra `PROPOSED` til `CONFIRMED`, `CORRECTED` eller `REJECTED`. En databasetrigger
 håndhever overgangene og holder uttrukket verdi, råverdi, konfidens og pekere uforanderlige.
 
+Siden kjøringen `REQ-20261009-four-eyes` avvises R49 (godta) med 403 `four_eyes_required` for den som
+lastet opp dokumentet, og for alle som har registrert en felt-`CORRECT` eller -`ADD` på det; se
+[firøyeprinsippet](#nettplattform-firøyeprinsippet-arbeidsdeling). Et dokument som går rett fra
+`RECEIVED` til `ACCEPTED` (ingen grunner til gjennomgang), har ingen menneskelig godkjenner (restrisiko
+FE-S1).
+
 ## Datamodell og lagring
 
 Fem nye tenant-tabeller: `import_batches`, `import_documents`, `extracted_fields`,
@@ -716,26 +745,38 @@ felt. Avvikene nedenfor er de **eneste** tillatte forskjellene. Alle andre forsk
 | D8 | PNG og JPEG godtas og strukturvalideres, men gir **ingen felt** (ingen OCR). Status er `NEEDS_REVIEW` med grunnen `IMAGE_NO_TEXT_LAYER`. En gjennomgåer kan sette typen (R46) og legge inn felt (R47). | Python leser ikke bilder, og OCR er utenfor omfanget av steg 3. |
 
 Beslektede merknader (ikke nye avvik): `parseMoney` beholder CPython-paritet, så `"1,2,3"` blir `123` og
-`"$-5"` blir `-5` (avgjørelse SQ1; steg 5 kan gjøre dette strengere som et nytt registrert avvik).
+`"$-5"` blir `-5` (avgjørelse SQ1; et senere steg kan gjøre dette strengere som et nytt registrert avvik;
+steg 5 gjorde det ikke, men avviser et negativt resultat ved lagring, RD3, 422).
 Forhåndsskanningen avviser fiendtlige PDF-er utenfor D2-delmengden. Opptil 16 nullbytes etter `IEND` i
 PNG tåles, som for JPEG. `strptime`-paritet følger CPython 3.12 for et ledende mellomrom foran `%H` eller
 `%d`. Feltrekkefølgen følger N7-nøkkelrekkefølgen og deretter `groupIndex` (SQ4).
 
 ## Grensesnitt for steg 5 (port av regler og bevis)
 
+**Status: levert** i kjøringen `REQ-20261010-step5-analysis` (se
+[kravanalyse (steg 5)](#nettplattform-kravanalyse-steg-5)). Punkt 1-6 brukes som beskrevet nedenfor; punkt 7
+(en LLM-leverandør) og strengere tolking av beløp gjenstår.
+
 1. **Inndata.** `loadBundleForClaim(tx, claimId)` gir `{bundle, sources}`. `bundle` er TS-versjonen av
-   `ExtractedBundle`, bygget fra de effektive feltverdiene i kravets dokumenter. Den er inndata til den
-   fremtidige `analyze(bundle, perspective, settings) -> Packet`, motparten til Pythons `run_pipeline`
-   etter `extract_bundle`.
+   `ExtractedBundle`, bygget fra de effektive feltverdiene i kravets dokumenter. Steg 5 la til
+   `loadAnalysisInput(tx, claimId)` (samme utvalg og rekkefølge av dokumenter, pluss feltproveniens og
+   `sizeBytes`); `loadBundleForClaim` delegerer nå til den med uendret signatur. Inngangen til motoren er
+   `buildEvidence(docs, bundle, perspective, settings, now)` i `@fr/shared/analysis`, motparten til
+   Pythons `run_pipeline` etter `extract_bundle`.
 2. **Kildehenvisning.** `pointerToLocator(displayName, pointer)` gir sitatlokatorer som `invoice.txt:L5`
    eller `file.pdf:p2:L14`. `sources[]` har `documentId`, `displayName`, `sha256` og `docType`.
-3. **Penger.** `packages/shared/src/decimal.ts` er grunnlaget for penge- og timeregning. Steg 5 legger
-   til avrunding med paritet mot Pythons `Decimal`.
+3. **Penger.** `packages/shared/src/decimal.ts` er grunnlaget for tolking av beløp. Steg 5 la til
+   `packages/shared/src/analysis/py-decimal.ts`, en `Decimal` som er nøyaktig lik CPython (presisjon 28,
+   ROUND_HALF_EVEN, quantize, formatering som `str` og `.2f`), for regnestykkene i reglene.
 4. **Tekst.** `plain` og `md` (`packages/shared/src/text-sanitize.ts`) er allerede portert med paritet.
-5. **Kravets livsløp.** Steg 5 legger til overgangen `AWAITING_ANALYSIS -> PENDING_REVIEW`, med
-   pakkerevisjon 1 og en revisjonshendelse i samme transaksjon. `claim_documents` viser kildedokumentene.
+5. **Kravets livsløp.** Steg 5 la til overgangen `AWAITING_ANALYSIS -> PENDING_REVIEW`, med
+   pakkerevisjon 1 og revisjonshendelsen `claim.analyzed` i samme transaksjon. `claim_documents` viser
+   kildedokumentene. Revisjon 1 registrerer `created_by_id` som brukeren som startet analysen, så den
+   brukeren kan ikke godkjenne den (FE-N2 lukket; migreringen `20261012000000_analysis` avviser en revisjon
+   1 uten forfatter for et krav som venter på analyse).
 6. **Paritetsmønster.** `tools/parity/` og `api/test/parity/` er mønsteret for regel-dumpen. CI setter
-   allerede opp Python.
+   allerede opp Python. Steg 5 la til `tools/parity/rules_dump.py` og `api/test/parity/rules.parity.test.ts`
+   (registrerte avvik RD1-RD6).
 7. **Leverandører.** `ExtractionProvider` er der en LLM-leverandør kan kobles inn senere, bak rensing og
    med obligatorisk kildehenvisning. Den kan aldri senke et flagg som de deterministiske kontrollene har
    satt.
@@ -1120,22 +1161,28 @@ graph TD
     style W fill:#1e90ff,stroke:#1565c0,color:#fff
 ```
 
-Stegregisteret `EVAL_STAGES` inneholder foreløpig bare `extraction`; steg 5 registrerer `rules`.
+Stegregisteret `EVAL_STAGES` inneholder foreløpig bare `extraction`. Et `rules`-steg var planlagt for steg 5,
+men ble utsatt; reglene sjekkes i stedet mot Python av paritetstestene.
 Sett-hashen `evalSetSha256` dekker manifestet og hver saksfil i rekkefølge; testdataene holdes byte-like av
 `.gitattributes` (`api/eval/sets/** -text`).
 
 ## Grensesnitt for steg 5
 
-1. Intelligence-funksjonene leser bare lagrede kolonner (`claims` beløp, status, transportør,
+Status etter kjøringen `REQ-20261010-step5-analysis`: punkt 1 er levert; punkt 2 og 3 ble utsatt og
+står åpne.
+
+1. **Levert.** Intelligence-funksjonene leser bare lagrede kolonner (`claims` beløp, status, transportør,
    perspektiv, `updated_at`; siste revisjon av `evidence_packets`; `packet_findings.rule_id` og
-   `needs_human_review`; `packet_sources.doc_type`; `approvals.created_at`). Når steg 5 lager pakkerevisjon
-   1 (`AWAITING_ANALYSIS -> PENDING_REVIEW`), fylles arbeidsliste, likhet og proveniens uten endringer i
-   steg 4. Steg 5 må holde `rule_id` stabil og ikke-tom.
-2. Steg 5 registrerer et `rules`-steg i `EVAL_STAGES` (og utvider `stage`-CHECK-en med en migrering), og
-   gjenbruker `computePassStats`, registreringen og dashbordet; Python-funksjonen `run_pipeline` er
-   oraklet.
-3. Telemetri: steg 5 legger til `observeComponent('rules-v1', ...)`. Flagg: steg 5 kan legge til en
-   registernøkkel.
+   `needs_human_review`; `packet_sources.doc_type`; `approvals.created_at`). Steg 5 lager nå pakkerevisjon
+   1 (`AWAITING_ANALYSIS -> PENDING_REVIEW`), så analyserte importerte krav kommer med i arbeidsliste,
+   likhet og proveniens uten endringer i steg 4. `rule_id` er en av de åtte stabile, ikke-tomme
+   `RULE_IDS` (`rules-v1`), eller fra steg 6 det lærte `LRN-ACCESSORIAL-REVIEW`, som bare går til
+   gjennomgang.
+2. **Åpent.** Et `rules`-steg i `EVAL_STAGES` (og en migrering som utvider `stage`-CHECK-en), som
+   gjenbruker `computePassStats`, registreringen og dashbordet, med Python-funksjonen `run_pipeline` som
+   orakel.
+3. **Åpent.** Telemetri `observeComponent('rules-v1', ...)`. Ingen flagg ble lagt til (analyse ved
+   opprettelse av krav er ikke bygget).
 
 ## Merknader (steg 4)
 
@@ -1152,3 +1199,2932 @@ Sett-hashen `evalSetSha256` dekker manifestet og hver saksfil i rekkefølge; tes
   rangering.
 - Ikke verifisert: container-images, compose-stacken, Playwright-ende-til-ende-tester, enhver
   AWS-utrulling.
+
+---
+
+# Nettplattform: firøyeprinsippet (arbeidsdeling)
+
+> Skrevet av scriber for kjøringen `REQ-20261009-four-eyes` 2026-10-10 (grenen `feat/four-eyes`,
+> byggecommit `8eb7062`). **Før produkt, kun syntetiske data, aldri utrullet.** Trusselrad T46,
+> standardvalgene og de aksepterte restrisikoene står i
+> [technical/web-platform-security.md, del 8](technical/web-platform-security.md#8-four-eyes-separation-of-duties)
+> (engelsk). Beskrivelse for brukere: [README.no.md, firøyeprinsippet](README.no.md#firøyeprinsippet-arbeidsdeling).
+> Mermaid-diagrammene er de samme som i den engelske originalen
+> ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-four-eyes-separation-of-duties)).
+
+## Oversikt (firøyeprinsippet)
+
+To beslutninger krever nå en annen person:
+
+1. **Krav.** En bruker som har laget **en hvilken som helst** pakkerevisjon av et krav (gjeldende eller
+   erstattet), kan ikke godkjenne eller avvise kravets gjeldende revisjon. En revisjon uten registrert
+   oppretter (seedet revisjon 1) utelukker ingen. Siden steg 5 registrerer revisjon 1 fra analyse den som
+   analyserte. «Klar til sending» er uendret.
+2. **Importerte dokumenter.** Den som lastet opp, og alle som har registrert en felt-`CORRECT` eller
+   -`ADD`, kan ikke godta dokumentet. Avvisning er uendret. Opplastinger med API-nøkkel regnes som
+   opplastinger gjort av den som opprettet nøkkelen.
+
+Kontrollen i tjenesten er den primære kontrollen. Databasetriggere er en ekstra sikring, et avslag er én
+fast 403 for alle kallere og logges i revisjonssporet, og brukergrensesnittet skjuler knappen for den
+utelukkede personen (bare kosmetisk). Ingen tabell, kolonne, tenant-tabell, RBAC-oppføring eller rute ble
+lagt til. Den eneste skjemaendringen er triggermigreringen `20261011000000_four_eyes`.
+
+## Modulstruktur (firøyeprinsippet)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Shared["packages/shared"]
+        FE["four-eyes.ts"]
+        AA["audit-actions.ts"]
+        DTO["dto.ts / import-dto.ts"]
+    end
+    subgraph Web["web/src/features"]
+        AP["ApprovalsPage.tsx"]
+        RQ["ReviewQueuePage.tsx"]
+    end
+    subgraph API["api/src"]
+        CR["claims/routes.ts"]
+        CS["claims/service.ts"]
+        IR["imports/routes.ts"]
+        RS["imports/review-service.ts"]
+        ID["imports/dto.ts"]
+        ER["http/errors.ts"]
+        APP["app.ts error handler"]
+        CH["audit/chain.ts"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261011000000_four_eyes"]
+        T1["approvals trigger"]
+        T2["review_decisions trigger"]
+    end
+
+    AP --> FE
+    RQ --> FE
+    AP --> DTO
+    RQ --> DTO
+    CR --> CS
+    IR --> RS
+    RS --> ID
+    CS --> ER
+    RS --> ER
+    ER --> APP
+    APP --> CH
+    APP --> AA
+    CS --> T1
+    RS --> T2
+    MIG --> T1
+    MIG --> T2
+
+    style FE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RQ fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ID fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ER fill:#1e90ff,stroke:#1565c0,color:#fff
+    style APP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style T1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style T2 fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Modul/funksjon | Formål | Viktige avhengigheter | Endret i denne kjøringen |
+| --- | --- | --- | --- |
+| `packages/shared/src/four-eyes.ts` | `FOUR_EYES_ERROR_CODE`, `FOUR_EYES_CLAIM_TEXT`, `FOUR_EYES_DOCUMENT_TEXT` (nøyaktig UI-tekst) | ingen | ny |
+| `packages/shared/src/audit-actions.ts` | legger til `authz.four_eyes_denied` (siste oppføring) | ingen | endret |
+| `packages/shared/src/dto.ts`, `import-dto.ts` | påkrevd `selfAuthored: boolean` bare på `ApprovalItem` og `ImportDocumentDetail` | zod | endret |
+| `api/src/http/errors.ts` | meldingen for `four_eyes_required`; `FourEyesRefusal` (403, bærer revisjonskonteksten); `errors.fourEyes(audit)` | `HttpError` | endret |
+| `api/src/app.ts` | asynkron feilhåndterer: skriver `authz.four_eyes_denied` i en egen tenant-transaksjon, 500 hvis det feiler; `isFourEyesDbError` gjør et triggeravslag om til 403 | `appendAudit`, `requireTenant` | endret |
+| `api/src/audit/chain.ts` | `basis` tillatt i `METADATA_KEYS` | ingen | endret |
+| `api/src/claims/service.ts` | `FOUR_EYES_GUARDED_TRANSITIONS`; forfatterkontroll i `transition()`; `listApprovalQueue(tx, query, viewerId)` beregner `selfAuthored` | `lockAndLoadLatest` | endret |
+| `api/src/claims/routes.ts` | sender `requireTenant(req).user.id` som innlogget bruker | kravtjenesten | endret |
+| `api/src/imports/review-service.ts` | `assertNotDocumentEditor` i `acceptDocument`; alle kall til detaljvisningen sender brukeren | `lockReviewable`, `documentDetail` | endret |
+| `api/src/imports/dto.ts` | `EDITOR_DECISIONS = {CORRECT, ADD}`; `isDocumentEditor(uploadedById, decisions, viewerId)` | ingen | endret |
+| `api/src/imports/service.ts`, `routes.ts`, `deps.ts` | `documentDetail(..., viewerId)`; `uploadedById` lastes internt (ingen DTO viser den); inntak avviser en `user`-aktør med id som ikke er en UUID; tilskrivingsregelen er dokumentert | lagring, DB | endret |
+| `api/prisma/migrations/20261011000000_four_eyes/` | `fr_approval_four_eyes_guard`, `fr_review_four_eyes_guard` og deres `BEFORE INSERT`-triggere | `evidence_packets`, `import_documents`, `import_review_decisions` | ny |
+| `web/src/features/approvals/ApprovalsPage.tsx` | skjuler Approve/Reject når `selfAuthored`; viser kravteksten ved 403 `four_eyes_required` og henter på nytt | delte konstanter | endret |
+| `web/src/features/imports/ReviewQueuePage.tsx` | skjuler Accept document når `selfAuthored`; viser dokumentteksten ved 403 og henter på nytt | delte konstanter | endret |
+
+## Funksjonskall (firøyeprinsippet)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST approve / reject"] --> TR["transition()"]
+    TR --> LK["lockAndLoadLatest"]
+    TR --> GT{"in GUARDED_TRANSITIONS?"}
+    GT -- yes --> AF["findFirst author rev"]
+    AF -- found --> FR["errors.fourEyes()"]
+    AF -- none --> INS1["insert approvals row"]
+    INS1 --> TG1["fr_approval_four_eyes_guard"]
+
+    R2["POST accept document"] --> ACC["acceptDocument()"]
+    ACC --> LR["lockReviewable"]
+    ACC --> AN["assertNotDocumentEditor"]
+    AN -- editor --> FR
+    AN -- not editor --> INS2["insert ACCEPT decision"]
+    INS2 --> TG2["fr_review_four_eyes_guard"]
+
+    FR --> EH["app error handler"]
+    TG1 -. "P0001 (bypass only)" .-> MAP["isFourEyesDbError"]
+    TG2 -. "P0001 (bypass only)" .-> MAP
+    MAP --> EH
+    EH --> AUD["appendAudit four_eyes_denied"]
+
+    style TR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MAP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalles av | Formål |
+| --- | --- | --- | --- |
+| `transition` | `api/src/claims/service.ts` | kravrutene (approve, reject, send) | tilstandsmaskin, så forfatterkontrollen for approve/reject, så kontrollen av bekreftelse |
+| `listApprovalQueue` | `api/src/claims/service.ts` | `GET /api/v1/approvals` | én `distinct`-spørring over sidens krav-id-er setter `selfAuthored` |
+| `acceptDocument`, `assertNotDocumentEditor` | `api/src/imports/review-service.ts` | `POST .../accept` | opplasterkontroll (`basis: uploader`), så CORRECT/ADD-kontroll (`basis: field_editor`), før kontrollen av uløste felt |
+| `documentDetail`, `isDocumentEditor` | `api/src/imports/service.ts`, `api/src/imports/dto.ts` | detalj, opplasting, sett type, godta, avvis, inntak | `selfAuthored` fra beslutningene som allerede er lastet (ingen ekstra spørring) |
+| `FourEyesRefusal`, `errors.fourEyes` | `api/src/http/errors.ts` | begge tjenestene | 403 `four_eyes_required` med `{tenantId, targetType, targetId, metadata}` |
+| `isFourEyesDbError` | `api/src/app.ts` | `toHttpError` | gjenkjenner SQLSTATE `P0001` og den nøyaktige meldingen `four_eyes_required` på feilen eller i `cause`/`meta`-kjeden (dybde 5, tåler sykluser) |
+| `fr_approval_four_eyes_guard` | migreringen `20261011000000_four_eyes` | `BEFORE INSERT ON approvals` | avviser `APPROVE`/`REJECT` fra enhver `created_by_id` på kravets pakker (samme tenant) |
+| `fr_review_four_eyes_guard` | migreringen `20261011000000_four_eyes` | `BEFORE INSERT ON import_review_decisions` | avviser `ACCEPT` fra opplasteren eller en CORRECT/ADD-aktør på dokumentet (samme tenant) |
+
+## Dataflyt (avslag etter firøyeprinsippet)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["Approve / reject / accept"] --> B["Route checks: 400, 401, 403, 404"]
+    B --> C["Business tx: row lock"]
+    C --> D{"Stale or wrong state?"}
+    D -- yes --> E["409 (unchanged)"]
+    D -- no --> F{"Requester excluded?"}
+    F -- no --> G["Insert decision row"]
+    G --> H{"Trigger agrees?"}
+    H -- yes --> I["Commit: 200"]
+    H -- no --> J["Rollback"]
+    F -- yes --> J
+    J --> K["Own tx: append four_eyes_denied"]
+    K --> L{"Audit append ok?"}
+    L -- yes --> M["403 four_eyes_required"]
+    L -- no --> N["500 internal_error"]
+
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+    style K fill:#1e90ff,stroke:#1565c0,color:#fff
+    style M fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Grenen «Trigger agrees?» er en reserve: den nås bare hvis applikasjonskoden hoppet over kontrollen i
+tjenesten. Da svarer API-et også 403 og logger `four_eyes_db_guard`, men skriver ingen revisjonshendelse
+(FE-N1). Alle redigeringer og beslutninger på ett krav tar kravradens lås, og alle feltredigeringer og
+beslutninger på ett dokument tar dokumentradens lås. Derfor kan ikke settet av forfattere eller
+redaktører som leses i transaksjonen, endre seg før commit.
+
+| Trinn | Hvor | Merknader |
+| --- | --- | --- |
+| Rekkefølge, approve/reject | `transition()` | 400 -> 401 -> 403 `forbidden` -> 404 -> 409 `stale_revision` -> 409 `invalid_state` -> **403 `four_eyes_required`** -> 422 |
+| Rekkefølge, accept | `acceptDocument()` | 400 -> 401 -> 403 `forbidden` -> 404 -> 409 `invalid_state` -> **403 `four_eyes_required`** -> 409 `unresolved_fields` |
+| Feilsvar | `sendError` | `{ code, message: "A different person must make this decision.", requestId }`, likt for UI og API; ingen `authz.denied`-hendelse |
+| Revisjonsspor | feilhåndtereren, tenantkjeden | krav: `claimId`, `packetId`, `packetRevision`, `action`, `basis: revision_author`; dokument: `documentId`, `batchId`, `action: ACCEPT`, `basis` |
+| UI | `selfAuthored` | skjuler knappen og viser den faste teksten; bare kosmetisk, serveren bestemmer |
+
+## Standardvalg (firøyeprinsippet)
+
+D1 en revisjonsforfatter kan heller ikke avvise; D2 «klar til sending» er ikke begrenset; D3 bare
+opplasteren og CORRECT/ADD-aktører er dokumentredaktører; D4 avvisning av dokumenter er ikke begrenset.
+Stedene å endre er `FOUR_EYES_GUARDED_TRANSITIONS` (krav) og `EDITOR_DECISIONS` (dokumenter), hver med en
+ny migrering for den tilhørende triggeren. Detaljer står i trusselmodellen, del 8.4.
+
+## Grensesnitt for steg 5 (firøyeprinsippet)
+
+- **Levert (FE-N2 lukket).** Steg 5 lager pakkerevisjon 1 for importerte krav og setter
+  `evidence_packets.created_by_id` til brukeren som startet analysen (enkeltvis og i masseanalyse). Den
+  brukeren er da revisjonsforfatter og kan ikke godkjenne eller avvise kravet. Triggeren
+  `evidence_packets_analysis_guard` avviser en revisjon 1 uten forfatter for et krav i `AWAITING_ANALYSIS`.
+  Avgjørelse (standardvalg D2 i steg 5): de som lastet opp eller redigerte felt i kravets dokumenter, er
+  **ikke** forfattere av kravet. Firøyeprinsippet for dokumenter tvang allerede en annen person til å
+  godta disse inndataene (unntatt automatisk godtatte dokumenter, FE-S1).
+- Enhver ny kodevei som setter inn en `approvals`-rad (`APPROVE`/`REJECT`) eller en `ACCEPT`-beslutning,
+  må kjøre kontrollen i tjenesten under samme radlås. Ellers avviser triggerne innsettingen.
+
+## Merknader (firøyeprinsippet)
+
+- Verifisert lokalt på Node 22.23.3 (CI-versjonen), **ikke i GitHub CI**: enhetstester shared 136, api
+  356, web 67; integrasjon 95 bestått (2 hoppet over fra før); akseptanse shared 36, api 690 bestått (9
+  hoppet over, 2 todo), web 150 bestått (1 hoppet over). Veien som feiler lukket i revisjonssporet, og
+  oversettelsen fra trigger til 403 dekkes bare av byggerens integrasjons- og enhetstester (de kan ikke
+  nås utenfra).
+- Aksepterte restrisikoer FE-S1..S4, FE-N1 og FE-N2 står i trusselmodellen, del 8.5.
+
+---
+
+# Nettplattform: kravanalyse (steg 5)
+
+> Skrevet av scriber for kjøringen `REQ-20261010-step5-analysis` 2026-10-10 (grenen `feat/analysis`,
+> byggecommits `d27c4a2`..`5c047fb`). **Før produkt, kun syntetiske data, aldri utrullet.** Trusselradene
+> T47-T52, standardvalgene og de aksepterte restrisikoene står i
+> [technical/web-platform-security.md, del 9](technical/web-platform-security.md#9-step-5-claim-analysis)
+> (engelsk). Beskrivelse for brukere: [README.no.md, kravanalyse](README.no.md#kravanalyse-steg-5).
+> Mermaid-diagrammene er de samme som i den engelske originalen
+> ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-claim-analysis-step-5)).
+
+## Oversikt (steg 5)
+
+Før steg 5 ble et krav opprettet ved import stående i `AWAITING_ANALYSIS` uten beløp og uten pakke, fordi
+regelmotoren bare fantes i Python-referansetjenesten. Steg 5 lukker sløyfen:
+import -> gjennomgang -> opprett krav -> **analyser** -> pakkerevisjon 1 -> gjennomgang etter
+firøyeprinsippet.
+
+- **Motor (`@fr/shared/analysis`).** En TypeScript-port av Pythons `rules/` (`detention.py`,
+  `invoice_checks.py`, `engine.py`) og `evidence/` (`letter.py`, Markdown-delen av `packet.py`). Modulen er
+  ren: ingen innebygde Node-moduler og ingen flyttall for penger eller timer. Den bruker en desimaltype som
+  er nøyaktig lik CPython (`py-decimal.ts`: presisjon 28, ROUND_HALF_EVEN, formatering som CPythons `str` og
+  `.2f`), CPythons `repr` for strenger og lister, og naive `YYYY-MM-DDTHH:MM:SS`-tidspunkter med
+  heltallsregning på dager. Regelversjon `rules-v1`, åtte regel-ID-er (`INV-DUPLICATE`,
+  `INV-LINEHAUL-RATE`, `INV-FUEL-SURCHARGE`, `INV-ACCESSORIAL-UNAUTH`, `INV-TOTAL-MISMATCH`,
+  `DET-UNBILLED`, `DET-UNDERBILLED`, `DET-OVERBILLED`). Innstillingene er konstanter
+  (`DEFAULT_ANALYSIS_SETTINGS`: ventetid i trinn på 15 minutter, toleranse 0,01, tvistefrist 90 dager).
+- **Hva et funn er.** Et funn er resultatet av en fast, deterministisk regel brukt på feltverdiene i
+  kravets godtatte dokumenter (hentet ut av parseren fra steg 3 og, der de var flagget, gjennomgått av en
+  person). Det er et **utkast til menneskelig gjennomgang, ikke et verifisert resultat**. Konfidensen på et
+  funn er en fast konstant per regel, kopiert fra Python-referansen (0,6, 0,85, 0,9 eller 0,95), ikke en
+  målt sannsynlighet, og produktet påstår ingenting om nøyaktighet. Evalueringsterskelen fra steg 4 kjøres
+  på syntetiske testdata og er ikke et mål på nøyaktighet.
+- **Ruter.** `POST /api/v1/claims/:id/analyze` (201) og `POST /api/v1/claims/analyze-awaiting` (200,
+  masseanalyse). Begge krever den nye tillatelsen `claims:analyze` (OWNER, ADMIN, MANAGER, REVIEWER,
+  ANALYST), har ingen API-nøkkel-scope og deler ratebegrensningsgruppen `analysis` per bruker
+  (`RATE_LIMIT_ANALYSIS_MAX`, standard 30 per 10 minutter).
+- **Livsløp.** Én analyse kjører i én tenant-transaksjon under radlåsen på kravet. Den lager pakkerevisjon
+  1 (`PENDING_REVIEW`, opprettet av den som ba om analysen) med kilder, funn (med sitater og en styrende
+  klausul), en tidslinje og innholdshashen. Den setter kravet til `PENDING_REVIEW` med `recoverableCents`,
+  `pendingReviewCents` og `amountClaimedCents`, øker `version` og legger til `claim.analyzed`. Ingen
+  `approvals`-rad skrives. Deretter gjelder den eksisterende gjennomgangsflyten uendret.
+- **Databasevakter.** Migreringen `20261012000000_analysis` legger til to triggere og ingen endring i
+  tabeller, kolonner, enumer eller tilganger.
+- **Nett.** En seksjon **Analyze claim** i kravpanelet (fanene Summary og Evidence) og en dialog **Analyze
+  awaiting claims** på kravsiden, begge vist bare med `claims:analyze` (tekstene i appen er på engelsk).
+
+Utsatt (ikke bygget): analyse ved opprettelse av krav (ikke noe flagg; masseanalysen er automatiseringen,
+med en eksplisitt menneskelig utløser), et `rules`-steg i evalueringsverktøyet, telemetrikomponenten
+`rules-v1`, et endepunkt for nedlasting av Markdown, strengere tolking av beløp, brevmaler per transportør.
+
+## Modulstruktur (steg 5)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src/features/claims"]
+        CSH["ClaimSheet.tsx"]
+        ACS["AnalyzeClaimSection.tsx"]
+        CPG["ClaimsPage.tsx"]
+        BAD["BulkAnalyzeDialog.tsx"]
+    end
+    subgraph Shared["packages/shared"]
+        ENG["analysis/ engine"]
+        PDC["analysis/py-decimal.ts"]
+        REN["analysis/ letter + markdown"]
+        CPY["analysis/copy.ts"]
+        ADT["analysis-dto.ts"]
+        RBC["rbac.ts + audit-actions.ts"]
+        TXS["text-sanitize.ts"]
+    end
+    subgraph API["api/src"]
+        CR["claims/routes.ts"]
+        CA["claims/analysis.ts"]
+        BU["imports/bundle.ts"]
+        SEC["http/security.ts + config"]
+        DG["http/db-guard.ts"]
+        CH["audit/chain.ts"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261012000000_analysis"]
+        TG1["claims_status_guard"]
+        TG2["packets_analysis_guard"]
+    end
+    subgraph Parity["parity (tests only)"]
+        PT["rules.parity.test.ts"]
+        PY["rules_dump.py (Python)"]
+    end
+
+    CSH --> ACS
+    CPG --> BAD
+    ACS --> CPY
+    BAD --> CPY
+    BAD --> ADT
+    ACS -. "HTTP" .-> CR
+    BAD -. "HTTP" .-> CR
+    CR --> SEC
+    SEC --> RBC
+    CR --> CA
+    CA --> BU
+    CA --> ENG
+    ENG --> PDC
+    ENG --> REN
+    REN --> TXS
+    CA --> CH
+    CA --> DG
+    CA --> TG1
+    CA --> TG2
+    MIG --> TG1
+    MIG --> TG2
+    PT --> ENG
+    PT --> PY
+
+    style CSH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ACS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CPG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BAD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ENG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PDC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style REN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CPY fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ADT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RBC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BU fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SEC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PY fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Modul/funksjon | Formål | Viktige avhengigheter | Endret i denne kjøringen |
+| --- | --- | --- | --- |
+| `packages/shared/src/analysis/py-decimal.ts` | CPythons `Decimal`-semantikk: tolking, addisjon, subtraksjon, multiplikasjon, vanlig divisjon og heltallsdivisjon, sammenligning, quantize, `str`, `.2f`, Pythons `max`/`sum` | ingen (BigInt) | ny |
+| `packages/shared/src/analysis/py-text.ts`, `local-datetime.ts` | CPythons `repr(str)` og repr av lister, `_norm_text`; naive tidspunkter, epokesekunder via days-from-civil, `%Y-%m-%d %H:%M` | ingen | ny |
+| `packages/shared/src/analysis/invoice-checks.ts`, `detention.ts`, `engine.ts` | Port av `rules/*.py`: `classifyLine`, fjerning av duplikater, fakturakontroller, `computeDetention`, `applyRules`; `applyRulesTraced` gir også spor per funn for sitatene | `py-decimal`, `py-text`, `local-datetime` | ny |
+| `packages/shared/src/analysis/letter.ts`, `markdown.ts`, `evidence.ts` | Port av `evidence/letter.py` og Markdown-delen av `packet.py`: `buildDemandLetter`, `renderPacketMarkdown`, `buildEvidence` (`buildEvidenceTraced`), `packetLoadNumber` | `text-sanitize.ts` (`plain`, `md`) | ny |
+| `packages/shared/src/analysis/types.ts`, `copy.ts`, `index.ts` | `AnalysisInputError`, `DEFAULT_ANALYSIS_SETTINGS`, `RULES_VERSION`, `RULE_IDS`, `DRAFT_BANNER`, `PACKET_DISCLAIMER`; UI-tekstene `ANALYSIS_NOTE`, `ANALYZE_AUTHOR_NOTE`, `ANALYSIS_TEXT`; underbanen `@fr/shared/analysis` | ingen | ny |
+| `packages/shared/src/analysis-dto.ts` | `AnalyzeBody` (streng `{}`), `BulkAnalyzeBody` (`limit` 1..25), svarskjemaer, `ANALYZE_BATCH_MAX = 25`, `ANALYZE_BATCH_DEFAULT = 10` | zod | ny |
+| `packages/shared/src/rbac.ts`, `audit-actions.ts` | `claims:analyze` lagt til (5 roller); `claim.analyzed`, `claim.bulk_analyzed` lagt til | ingen | endret |
+| `api/src/imports/bundle.ts` | `assembleBundleWithProvenance` (registrerer hvilket dokument og felt som fylte hver plass i bunten); `loadAnalysisInput` (kilder med `sizeBytes`, felt med side, linje og utdrag; felt sortert etter `ordinal, id`); `loadBundleForClaim` delegerer, uendret signatur | Prisma tenant-tx | endret |
+| `api/src/claims/analysis.ts` | `buildAnalysisPacket` (ren: rader, sitater, klausuler, tidslinje, hash, lagringskontroll), `analyzeClaim` (ett krav, én tx), `analyzeAwaiting` (masseanalyse), `storableCents`, `INT4_MAX` | `@fr/shared/analysis`, `bundle.ts`, `lockClaimForUpdate`, `appendAudit`, `packetContentHash` | ny |
+| `api/src/claims/routes.ts` | `POST /claims/:id/analyze` (201), `POST /claims/analyze-awaiting` (200); tillatelse `claims:analyze`, ingen `apiKeyScope`, `rateGroup: 'analysis'` | `analysis.ts` | endret |
+| `api/src/http/security.ts`, `context.ts`, `config.ts`, `app.ts` | Ratebegrensningsgruppen `analysis` (per bruker, vindu på 10 minutter); `RATE_LIMIT_ANALYSIS_MAX` (standard 30, 1..100000); `app.analysisLimiter` (null når ratebegrensning er av) sendes til masseanalysen | lager for ratebegrensning (Redis) | endret |
+| `api/src/http/db-guard.ts` | Eksakt gjenkjenning av triggerfeil (SQLSTATE `P0001` + eksakt melding, gjennom `cause`/`meta`/`driverAdapterError`, dybde 5), delt av firøyeprinsippet og analysen; `isAnalysisDbError` | ingen | ny (flyttet fra `app.ts`) |
+| `api/src/http/errors.ts`, `audit/chain.ts` | 422 `analysis_input_invalid`; metadatanøkler for steg 5 på tillatelseslisten | ingen | endret |
+| `api/prisma/migrations/20261012000000_analysis/` | `fr_claim_status_guard` + triggeren `claims_status_guard`; `fr_analysis_packet_guard` + triggeren `evidence_packets_analysis_guard` | `claims`, `evidence_packets` | ny |
+| `web/src/features/claims/AnalyzeClaimSection.tsx`, `ClaimSheet.tsx` | Analyseknapp med begge merknadene i fanene Summary og Evidence; faste feiltekster per statuskode; ved suksess lastes krav, pakke, kravliste og godkjenninger på nytt, og Evidence-fanen vises | `useCan('claims:analyze')`, delte tekster | ny / endret |
+| `web/src/features/claims/BulkAnalyzeDialog.tsx`, `ClaimsPage.tsx` | Knapp i verktøylinjen og modal dialog; POST `{ limit: 10 }`; sammendrag i et `role="status"`-område; kravnumre som feilet, via `SafeText` | `Dialog`, delte tekster | ny / endret |
+| `tools/parity/rules_dump.py`, `api/test/parity/rules.parity.test.ts` | Python-orakel (bare i tester, aldri i drift) og sammenligningen TS mot Python i `test:integration` | Python-referansetjenesten | ny |
+
+## Funksjonskall (steg 5)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST claims/:id/analyze"] --> PIPE["security pipeline"]
+    R2["POST analyze-awaiting"] --> PIPE
+    PIPE --> AC["analyzeClaim (one tx)"]
+    PIPE --> AW["analyzeAwaiting"]
+    AW --> SCAN["candidate scan (own tx)"]
+    AW --> CHG["chargeExtra (bucket)"]
+    AW --> AC
+    AW --> AUD2["audit bulk_analyzed"]
+    AC --> LK["lockClaimForUpdate"]
+    AC --> LI["loadAnalysisInput"]
+    LI --> PROV["assembleBundleWithProvenance"]
+    AC --> BP["buildAnalysisPacket"]
+    BP --> BE["buildEvidenceTraced"]
+    BE --> AR["applyRulesTraced"]
+    BE --> DL["buildDemandLetter"]
+    BP --> SC["storableCents"]
+    BP --> HASH["packetContentHash"]
+    AC --> INS["insert packet + children"]
+    INS --> TG2["packets_analysis_guard"]
+    AC --> CU["claim.update"]
+    CU --> TG1["claims_status_guard"]
+    AC --> AUD1["audit claim.analyzed"]
+
+    style AC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AW fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PROV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TG2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD2 fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalles av | Formål |
+| --- | --- | --- | --- |
+| `analyzeClaim(tx, claimId, actor, { bulk })` | `api/src/claims/analysis.ts` | enkeltruten (inne i `db.tx`), `analyzeAwaiting` (én `db.tx` per kandidat) | UUID-kontroll og radlås (404), ny kontroll av status og «ingen pakke» under låsen (409), last inndata (409 uten godtatt dokument), bygg (422), sett inn, oppdater, revisjonsspor |
+| `analyzeAwaiting(db, actor, limit, chargeExtra)` | `api/src/claims/analysis.ts` | masseruten | kandidater én gang, én tx per kandidat, resultatlister, stopp ved tomt budsjett, sammendragshendelse |
+| `loadAnalysisInput(tx, claimId)` | `api/src/imports/bundle.ts` | `analyzeClaim` | koblede `ACCEPTED`-dokumenter (eldste kobling først, likhet avgjøres av koblings-ID) til `{ bundle, provenance, sources }` |
+| `buildAnalysisPacket({ input, claim, now, actorId })` | `api/src/claims/analysis.ts` | `analyzeClaim` | ren: kjøring av motoren, lagringskontroll, rader for kilder, funn, sitater, klausuler og tidslinje, `HashPacket` og innholdshash |
+| `buildEvidenceTraced` / `buildEvidence` | `packages/shared/src/analysis/evidence.ts` | `buildAnalysisPacket`, paritetstesten | resultat, brev (UTC-dato for `now`), Markdown (lagres ikke), lastnummer |
+| `applyRules` / `applyRulesTraced` | `packages/shared/src/analysis/engine.ts` | `buildEvidence*`, paritetstesten | fakturafunn, funn om ventetid, fordeling etter perspektiv, summer |
+| `isAnalysisDbError` | `api/src/http/db-guard.ts` | `toHttpError` i `app.ts`, `analyzeAwaiting` | gjør `claim_transition_invalid` / `analysis_packet_invalid` om til 409 `invalid_state` (enkeltvis) eller `skipped` (masseanalyse) |
+| `fr_claim_status_guard`, `fr_analysis_packet_guard` | migreringen `20261012000000_analysis` | `BEFORE UPDATE OF status ON claims`, `BEFORE INSERT ON evidence_packets` | databasens sikring av livsløpet (nedenfor) |
+
+## Dataflyt (analyse av ett krav)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["POST claims/:id/analyze"] --> B["Pipeline: 403, 401, 429, 403, 400"]
+    B --> C["Tenant tx: lock claim row"]
+    C --> D{"Claim visible?"}
+    D -- no --> E["404 not_found"]
+    D -- yes --> F{"AWAITING, no packet, accepted doc?"}
+    F -- no --> G["409 invalid_state"]
+    F -- yes --> H["Load bundle + provenance"]
+    H --> I["Rules, letter, rows, hash"]
+    I --> J{"Input valid and storable?"}
+    J -- no --> K["422 analysis_input_invalid"]
+    J -- yes --> L["Insert rev 1 + children"]
+    L --> M["Claim to PENDING_REVIEW"]
+    M --> N{"Triggers agree?"}
+    N -- no --> O["Rollback: 409 invalid_state"]
+    N -- yes --> P["Append claim.analyzed: 201"]
+
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style J fill:#1e90ff,stroke:#1565c0,color:#fff
+    style N fill:#1e90ff,stroke:#1565c0,color:#fff
+    style P fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Ingenting skrives før 422-kontrollen, så en avvist analyse (404, 409, 422) endrer ingenting og skriver ingen
+`claim.analyzed`. Grenen «Triggers agree?» er en sikring som kontrollene i tjenesten gjør uoppnåelig gjennom
+API-et; nås den likevel, svarer API-et 409 `invalid_state` (aldri 500, aldri databaseteksten) og logger
+`analysis_db_guard` på feilnivå.
+
+| Steg | Hvor | Merknader |
+| --- | --- | --- |
+| Rekkefølge, ett krav | sikkerhetspipelinen, `analyzeClaim` | origin/CSRF 403 -> 401 -> 429 (`analysis`-bøtten) -> 403 `forbidden` -> 400 -> 404 -> 409 `invalid_state` -> 422 `analysis_input_invalid` |
+| Rekkefølge, masseanalyse | sikkerhetspipelinen | origin/CSRF 403 -> 401 -> 429 -> 403 -> 400 -> 200 (resultat per krav i svaret) |
+| 422 | `buildAnalysisPacket` | motoren avviser inndata (feilformet desimaltall eller tidspunkt, trinn 0), eller et resultat kan ikke lagres: et lagret funnbeløp eller en sum er negativ eller over 2 147 483 647 cent, eller de to summene til sammen er over grensen (RD3) |
+| Samtidighet | `lockClaimForUpdate` + ny kontroll | N parallelle analyser av ett krav: nøyaktig én 201, resten 409; én pakke, én hendelse, `version` +1 én gang. Unik `(claim_id, revision)` og indeksen for én levende revisjon er en ekstra sikring |
+| Svar | `AnalyzeResponse` | `claim` (id, status, tre centbeløp), `packet` (id, revisjon 1, status, `contentHash`), `analysis` (`rulesVersion`, `findingsCount`, `pendingFindingsCount`, `ignoredFindingsCount`) |
+
+## Kravets livsløp og databasevakter (steg 5)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    CM["import commit"] --> AW["AWAITING_ANALYSIS"]
+    AW -- "analyze: rev 1 with author" --> PR["PENDING_REVIEW"]
+    PR --> FL["existing review flow"]
+    FL -. "back to AWAITING: refused" .-> AW
+
+    style AW fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PR fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Trigger (funksjon) | Utløses av | Avviser | Feil |
+| --- | --- | --- | --- |
+| `claims_status_guard` (`fr_claim_status_guard`) | `BEFORE UPDATE OF status ON claims` | en statusendring **til** `AWAITING_ANALYSIS`; en endring **fra** `AWAITING_ANALYSIS` til noe annet enn `PENDING_REVIEW`, eller til `PENDING_REVIEW` når det ikke finnes en `evidence_packets`-rad for samme krav og tenant med `revision = 1` og `created_by_id` som ikke er null | `P0001` `claim_transition_invalid` |
+| `evidence_packets_analysis_guard` (`fr_analysis_packet_guard`) | `BEFORE INSERT ON evidence_packets` | en pakke for et krav i `AWAITING_ANALYSIS` med mindre `revision = 1`, `created_by_id` ikke er null og `status = 'PENDING_REVIEW'` | `P0001` `analysis_packet_invalid` |
+
+Begge funksjonene er `SECURITY DEFINER` (eier = migreringsrollen), har `search_path = public, pg_temp`,
+sammenligner `tenant_id` eksplisitt (så en manglende `app.tenant_id` ikke kan skjule rader), og har
+`EXECUTE` trukket tilbake fra `PUBLIC`. Eksisterende rader valideres ikke på nytt. Oppdateringer som ikke
+endrer `status`, andre statusendringer, innsetting av krav og innsetting av pakker for andre krav påvirkes
+ikke; særlig er beløps- og `version`-kolonnene til et krav i `AWAITING_ANALYSIS` **ikke** beskyttet av
+databasen (restrisiko SA-6 i trusselmodellen). De fire tidligere migreringene er uendret byte for byte.
+
+## Masseanalyse og ratebudsjettet `analysis`
+
+`POST /api/v1/claims/analyze-awaiting` med `{ "limit": n }` (1..25, standard 10; dialogen i nettappen
+sender alltid 10):
+
+1. **Kandidater**, hentet én gang i en kort tenant-transaksjon: tenantens krav i `AWAITING_ANALYSIS` med
+   minst ett koblet `ACCEPTED`-dokument, eldste `createdAt` først (likhet avgjøres av id), høyst
+   `min(4 x limit, 100)`.
+2. **Hver kandidat i sin egen transaksjon**, nøyaktig som enkeltruten. En kandidat som ikke lenger kan
+   analyseres (404/409, eller en avvisning fra en databasevakt), havner i `skipped` (`invalid_state`); en
+   som får 422, havner i `failed` (`analysis_input_invalid`). Enhver annen feil avslutter forespørselen
+   med 500; analyser som allerede er lagret, blir stående.
+3. **Budsjett (rettingsrunde 1, S5-1).** Forespørselens eget `analysis`-token dekker den første
+   kandidaten. Før hver ny kandidat tas ett token til fra brukerens `analysis`-bøtte
+   (`app.analysisLimiter`). Det trekkes per **forsøkt** kandidat, så kandidater som hoppes over eller
+   feiler, koster også ett. Med `RATE_LIMIT_ENABLED=false` (bare utvikling og test; produksjon avviser det)
+   trekkes ingenting ekstra.
+4. **Stoppvilkår:** `analyzed` når `limit`, kandidatene er brukt opp, eller bøtten er tom. Et stopp på
+   grunn av budsjettet gir fortsatt 200 med samme form; krav som ikke ble forsøkt, blir i
+   `AWAITING_ANALYSIS` og telles i `remaining`. `examined` = forsøkte kandidater = analyzed + skipped +
+   failed.
+5. **Sammendrag.** Én `claim.bulk_analyzed`-hendelse (mål `tenant`) i egen transaksjon, med `limit`,
+   `examined`, `analyzed`, `skipped`, `failed` og `remaining` (tenantens krav som fortsatt venter på
+   analyse etter kjøringen).
+
+Virkning: en bruker kan utføre høyst `RATE_LIMIT_ANALYSIS_MAX` analyser per vindu på 10 minutter, enten
+enkeltruten eller masseruten brukes. Før rettingsrunde 1 kostet én masseforespørsel ett token for opptil 25
+analyser (25 ganger forsterkning, sikkerhetsfunn S5-1, Low). Samtidige masseforespørsler analyserer aldri
+et krav to ganger; den som taper kappløpet, rapporterer kravet som `skipped`.
+
+Kjente begrensninger (trusselmodellen del 9.5): kandidater som hoppes over eller feiler, bruker av
+budsjettet (SA-1); en feil i ratebegrenseren midt i kjøringen (for eksempel at Redis ikke svarer) avslutter
+forespørselen med 500 og uten `claim.bulk_analyzed` (SA-2); dialogen sier ikke at budsjettet stoppet
+kjøringen, men sammendraget («n still awaiting analysis») er fortsatt riktig (SA-3); et krav som feiler med
+422, forblir en kandidat og forsøkes først i hver kjøring fordi det er gammelt (SA-8).
+
+## Innholdet i pakken (revisjon 1)
+
+| Del | Innhold |
+| --- | --- |
+| Pakke | `revision 1`, `PENDING_REVIEW`, kravets perspektiv, `loadNumber` (første ikke-tomme fra faktura, ratebekreftelse (rate confirmation), fraktbrev (bill of lading)), `generatedAt` = analysetidspunktet, `PACKET_DISCLAIMER`, utkastet til kravbrev (datert med UTC-datoen for `generatedAt`), USD, `verifier NOT_RUN`, `createdBy` = den som ba om analysen, innholdshash |
+| Kilder | én per koblet `ACCEPTED`-dokument i koblingsrekkefølge: visningsnavn, type, SHA-256, størrelsen på den lagrede originalen |
+| Funn | funn for eget perspektiv i motorens rekkefølge (regel-ID, tittel, retning, beløp i cent, forklaring, utregningssteg, konfidens, `needsHumanReview`); funn i motsatt retning telles (`ignoredFindingsCount`), men lagres ikke |
+| Sitater | per regel, feltene som ga grunnlaget, som `{sourceId, locator, excerpt}` med lokator `<navn>:L<linje>`, `<navn>:p<side>:L<linje>` eller `<navn>:manual`; utdrag gjennom `plain(..., 200)`; duplikater fjernet |
+| Styrende klausul | feltet i ratebekreftelsen (rate confirmation) som regelen sammenligner med (linehaul-rate, drivstofftillegg, godkjente tilleggstjenester, fri ventetid), eller null |
+| Tidslinje | avtalt tid, ankomst, avgang (fraktbrev) og fakturadato, lagret med naive lokale tider lest som UTC; anlegg og fakturanummer gjennom `plain(..., 100)` |
+
+Sitater, styrende klausuler og tidslinjen er tillegg som bare finnes i TS, uten motpart i Python. De inngår
+i innholdshashen, så hashbindingen ved godkjenning og sending dekker dem.
+
+## Revisjonsspor (steg 5)
+
+| Handling | Når | Mål | Metadata (eksakt nøkkelsett) |
+| --- | --- | --- | --- |
+| `claim.analyzed` | hver vellykket analyse, i samme transaksjon som skrivingen | `claim` | `claimId`, `claimNumber`, `packetId`, `revision`, `contentHash`, `perspective`, `fromStatus`, `toStatus`, `documentIds`, `findingsCount`, `pendingFindingsCount`, `ignoredFindingsCount`, `recoverableCents`, `pendingReviewCents`, `rulesVersion`, `bulk` |
+| `claim.bulk_analyzed` | én gang per masseforespørsel som når handleren og fullføres, etter transaksjonene per krav | `tenant` | `limit`, `examined`, `analyzed`, `skipped`, `failed`, `remaining` (alle heltall) |
+
+Ingen navn, filnavn, uttrukne verdier, brevtekst eller begrunnelser havner i metadata. Avviste analyser (409,
+422) skriver ingen hendelse; avvisning på grunn av manglende tillatelse beholder den eksisterende
+`authz.denied`-oppførselen. Rensingen av metadata kutter lister ved 50 elementer, så `documentIds` ville
+være ufullstendig for et krav med mer enn 50 koblede godtatte dokumenter; radene i `packet_sources` er
+fortsatt fullstendige (SA-4).
+
+## Python-paritet: registrerte avvik (RD1-RD6)
+
+`api/test/parity/rules.parity.test.ts` (del av `npm run test:integration`; samme regel for å finne Python
+som paritetstestene fra steg 3: CI uten Python feiler, en lokal kjøring uten Python hoppes over med en
+melding) sender de samme sakene til TS-motoren og til `tools/parity/rules_dump.py`, som kaller
+Python-referansen med eksplisitte `Settings`. Den sammenligner med eksakt strenglikhet: `classifyLine`,
+JSON fra `computeDetention`, JSON fra `applyRules`, brevet, Markdown og lastnummeret, og kontrollerer at
+begge sider avviser de samme inndataene. Paritetsdomene: desimaltall
+`-?(0|[1-9][0-9]{0,14})(\.[0-9]{1,6})?`; tidspunkter `YYYY-MM-DDTHH:MM:SS`, år 1000-9999; strenger av
+tildelte kodepunkter uten kontrolltegn, bidi-kontrolltegn eller U+2028/U+2029, høyst 200 kodepunkter;
+trinn 1..240; frist 1..3650 dager.
+
+| ID | Avvik (TS mot Python) | Begrunnelse |
+| --- | --- | --- |
+| RD1 | Tidspunkter er bare naive `YYYY-MM-DDTHH:MM:SS`; forskyvninger avvises (`AnalysisInputError`). Pythons veier med tidssoner har ingen TS-inndata. | Uttrekket fra steg 3 lagrer naive lokale tider; det finnes ingen tidssone å bruke. |
+| RD2 | `%Y` fyller ut år under 1000 til 4 sifre (CPython på Linux gjør ikke det). | Korpuset bruker år 1000 og senere. |
+| RD3 | API-et avviser negative resultater og resultater over INT4 (422) der Python ville gitt dem ut. Den rene motoren er fortsatt lik Python. | Beløp lagres som int4-cent; et negativt kravbeløp gir ingen mening. |
+| RD4 | Store/små bokstaver og utskrivbarhet følger ICU-tabellene i Node 22, ikke Pythons Unicode-database. | Korpuset utelater kodepunkter som ikke er tildelt. |
+| RD5 | Ende til ende lister TS-pakken kravets godtatte koblede dokumenter; Python lister hver innleste fil. | Bare godtatte dokumenter gir grunnlag for et krav. |
+| RD6 | Brevdatoen er UTC-datoen for `generatedAt`; Python bruker den lokale datoen for `datetime.now()`. | Uavhengig av serverens tidssone; paritetskjøringer sender samme `now`. |
+
+Byggerens korpus (frø `20261010`): 2 132 saker (4 ende-til-ende-saker fra testdataene, 623 inndata fra
+Pythons testfiler, 1 200 genererte bunter, 300 genererte ventetidssaker, 5 klassifiseringsbunker med 200
+beskrivelser hver). Resultat i byggerens kjøring: null forskjeller på Node 22 og Node 24, hver regel-ID
+brukt, og ingen registrerte avvik trengtes innenfor korpuset. Testerens uavhengige orakel
+(`api/test-acceptance/helpers/rules_oracle.py`) besto P01-P05 i akseptansekjøring 1; antall saker per
+korpus er ennå ikke registrert.
+
+## Standardvalg (steg 5)
+
+| ID | Standard | Stedet å endre |
+| --- | --- | --- |
+| D1 | `claims:analyze` = OWNER, ADMIN, MANAGER, REVIEWER, ANALYST; ingen API-nøkkel-scope | raden i `rbac.ts` |
+| D2 | Forfatter av revisjon 1 = den som ba om analysen (enkeltvis og i masseanalyse); de som lastet opp eller redigerte felt i dokumentene, er ikke forfattere av kravet | `analysis.ts` + firøyepredikatet |
+| D3 | Analyse ved opprettelse av krav er ikke bygget; masseanalysen er automatiseringen | fremtidig flagg + migreringsrad |
+| D4 | Bare funn for eget perspektiv lagres | `buildAnalysisPacket` |
+| D5 | Null funn gir likevel revisjon 1 med nullbeløp og brevet «No amount is requested» | `analyzeClaim` |
+| D6 | Negative resultater eller resultater over INT4 -> 422, kravet uendret | `buildAnalysisPacket` |
+| D7 | Innstillingene er konstanter (15 min, 0,01, 90 dager) | `DEFAULT_ANALYSIS_SETTINGS` |
+| D8 | Brevdato = UTC-datoen for `generatedAt`; naive tider i tidslinjen lagres som UTC | `buildEvidence`, tidslinjen |
+| D9 | Masseanalyse: `limit` 1..25 (standard 10), skannetak `min(4 x limit, 100)`, eldste først | `analyzeAwaiting` |
+| D10 | Ratebegrensningsgruppen `analysis`, `RATE_LIMIT_ANALYSIS_MAX` 30 per 10 minutter, trukket per kandidat i masseanalyse | konfigurasjon, `analyzeAwaiting` |
+
+## Grensesnitt for senere steg (etter steg 5)
+
+- Hold `rule_id` innenfor `RULE_IDS` og øk `RULES_VERSION` når en regel endres; intelligence fra steg 4 og
+  paritetstestene er avhengige av begge. Steg 6 holder fast ved dette for reglene og legger til den lærte ID-en
+  `LRN-ACCESSORIAL-REVIEW` utenfor `RULE_IDS`, versjonert med `CHARGE_CLASSIFIER_VERSION` og `SEED_VERSION`
+  (se [gebyrintelligens (steg 6)](#nettplattform-gebyrintelligens-steg-6)).
+- Åpent: `rules`-steget i evalueringen, telemetri `rules-v1`, analyse ved opprettelse av krav, et
+  endepunkt for nedlasting av Markdown, strengere tolking av beløp.
+- En fremtidig HTML-, Markdown- eller PDF-visning av lagrede funn må rense `explanation` og `calculation`:
+  de inneholder den rå beskrivelsen av fakturalinjen (SA-5). Bare brevet bruker `plain()`.
+- En ny kodevei som skriver kravbeløp, må holde seg til analysetransaksjonen eller utvide statusvakten
+  (SA-6).
+
+## Merknader (steg 5)
+
+- Hva som ble kjørt (lokalt, Windows, **ikke GitHub CI**): byggeren kjørte lint, typecheck og
+  enhetstester (shared 165, api 370, web 78), paritetstestene for reglene (2 132 saker, null forskjeller på
+  Node 22 og 24) og integrasjonstestene på Node 22.23.3 (16 filer, 107 bestått, 3 lokale plassholdere
+  hoppet over), alt ved `b12ce2a`. Den uavhengige akseptansekjøringen 1 (Node 22.23.3, `CI=true`, ved
+  `b12ce2a`) ga shared 81/81 og api 754 bestått, 4 feilet, 10 hoppet over; alle de 4 feilene ble
+  klassifisert som testdesign og rettet i testfilene, men den bekreftende kjøringen ble stoppet av lite
+  ledig minne. Akseptansetestene for nettappen (AN-W01..W11) er ikke kjørt ennå. Rettingsrunde 1
+  (`5c047fb`) ble bare kontrollert med lint, typecheck og utvalgte enhetstester; det finnes ingen
+  integrasjons- eller akseptansekjøring ved `5c047fb`.
+- Gjennomgangens vurdering da dette ble skrevet: FAIL (validering ufullstendig), ingen kodefeil funnet.
+  Avvikene 1-8 i kjøringens `implementation.md` ble godtatt.
+- `.env.example` har `RATE_LIMIT_ANALYSIS_MAX=30` uten kommentartegn, i motsetning til innstillingene fra
+  steg 4; verdien er lik standardverdien.
+- Ikke verifisert: GitHub CI, container-images, compose-stacken, Playwright, enhver AWS-utrulling.
+
+---
+
+# Nettplattform: gebyrintelligens (steg 6)
+
+> Skrevet av scriber for kjøringen `REQ-20261011-charge-intelligence` 2026-10-11 (grenen
+> `feat/charge-intelligence` fra `feat/analysis` ved `51ea826`, byggecommits `959aa36`..`43d7d4c`, pluss
+> `a1b1c2a` som bare gjør en konstant tilgjengelig fra pakkeroten). **Før produkt, aldri utrullet.**
+> Plattformen har fortsatt bare syntetiske data; det eneste unntaket er frøsettet med offentlige
+> gebyrnavn fra tariffer som er beskrevet nedenfor (en eierbeslutning, åpent spørsmål OQ1). Trusselradene
+> T53-T57 og restrisikoene SC-1..SC-11 står i
+> [technical/web-platform-security.md, del 10](technical/web-platform-security.md#10-step-6-charge-intelligence)
+> (engelsk). Beskrivelse for brukere: [README.no.md, gebyrforslag](README.no.md#gebyrforslag-og-teametiketter-steg-6).
+> Mermaid-diagrammene er de samme som i den engelske originalen
+> ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-charge-intelligence-step-6)).
+
+## Hvorfor (steg 6)
+
+Reglene fra steg 5 bestemmer kategorien til en gebyrlinje på fakturaen med nøkkelordtabellene fra
+Python-referansen (`classifyLine`: detention, linehaul, fuel, accessorial eller `other`).
+`INV-ACCESSORIAL-UNAUTH` kontrollerer bare linjer som `classifyLine` kaller `accessorial`, så en linje den
+kaller `other`, blir aldri sammenlignet med tilleggstjenestene som er godkjent i fraktavtalen (rate
+confirmation).
+
+Planleggeren målte dette på 175 fakturerbare gebyrnavn hentet ordrett fra seks offentlige regeltariffer
+fra transportører (bare navn). Nøkkelordreglene gjenkjente **19 av de 159 navnene på tilleggstjenester**
+(34 av 175 navn totalt). De fleste reelle formuleringer av tilleggstjenester ville altså passere kontrollen
+av ikke-godkjente tilleggstjenester uten å bli sett. En prototype uten avhengigheter, med nærmeste nabo på
+tegn-n-gram og evaluert med én transportør holdt utenfor om gangen på de samme navnene, gjenkjente langt
+flere (tall i [evalueringsterskelen](#evalueringsterskel-regresjonskontroll-på-frøsettet)). En
+embeddingmodell (MiniLM via ONNX) ble også prøvd i kjøringens prototype. Den ble ikke tatt i bruk, fordi den
+ville gitt kjernepakken en stor native avhengighet. Grunnlaget (filen med merkede navn, tekstuttrekkene fra
+de seks tariffene og prototypen) ligger i kjøringsmappen og er ikke committet.
+
+Steg 6 legger til, uten å endre noe regelresultat fra steg 5:
+
+1. en deterministisk klassifiserer for gebyrlinjer, `charge-knn-v1`, i `@fr/shared` (ren TypeScript, ingen
+   ny avhengighet): nærmeste merkede eksempel etter n-gram-likhet, med en terskel for å avstå;
+2. frøsettet `tariff-seed-v1` med kildehenvisninger (175 navn fra 6 offentlige tariffer);
+3. et **etikettminne for teamet**: gjennomgåere bekrefter eller retter kategorien til en linje; etiketten
+   lagres i en ny tenant-tabell og brukes av alle senere forslag og analyser for den tenanten. Dette er et
+   minne som slås opp når en linje klassifiseres. Ingenting trenes, og det finnes ingen modellvekter;
+4. et **lært lag** i analysen som bare legger til punkter for gjennomgang: funnet
+   `LRN-ACCESSORIAL-REVIEW`, og `DET-UNBILLED` / `DET-UNDERBILLED` satt til gjennomgang når en linje ligner
+   ventetid (detention) under et annet navn;
+5. en **evalueringsterskel** i CI med én transportør holdt utenfor om gangen (en regresjonskontroll på
+   frøsettet, ikke et mål på nøyaktighet på fakturaer);
+6. en ren **kalkulator for ventetid etter tariff** (`computeTariffDetention`), som ennå ikke er koblet til
+   noen rute;
+7. en fane **Charges** i kravpanelet.
+
+Punkt 3, 4 og 7 ligger bak plattformens nødbryter `intelligence.charge_suggestions` (standard på). Når den
+er av, er analysen nøyaktig som i steg 5, og de fire gebyrrutene svarer 404.
+
+**Hva det ikke er.** Ingen LLM-kall, ingen nettverkskall, ingen trening og ingen lagret modell. Et forslag
+er en likhet med et merket eksempel. Det er ikke verifisert. Det kan bare legge til punkter for menneskelig
+gjennomgang og bekrefter aldri et beløp. Evalueringstallene kommer fra 175 offentlige tariffnavn, ikke fra
+kundefakturaer, og er ikke et mål på nøyaktighet.
+
+## Frøsett v1 og dataenes opphav
+
+`packages/shared/src/charge-intel/seed-v1.ts` inneholder `SEED_V1`: en fryst liste med 175
+`{ text, label, source }`-oppføringer, lik i rekkefølge og tekst med kjøringens
+`data/seed-charge-names-6carriers.json`. Etiketter: accessorial 159, detention 12, fuel 3, linehaul 1. Det
+lengste navnet har 82 tegn. Navnene gir 157 ulike normaliserte tekster, og 14 normaliserte tekster finnes
+hos 2 til 4 transportører. `SEED_SOURCES` gir kildehenvisningen for hver kilde; alle URL-er ble hentet
+2026-10-11.
+
+| Kildenøkkel | Tariff | Gyldig fra | Navn | URL |
+| --- | --- | --- | --- | --- |
+| `magnum_2026` | Magnum LTL 125 Rules and Special Services Tariff | 2026-04-01 | 27 | `https://magnumlog.com/wp-content/uploads/2026/04/2026-Rules-Tariff-125-04.01.26.pdf` |
+| `gardewine_2025` | Gardewine GWN Tariff 100 General Rules, Domestic Canada LTL | 2025-12-01 | 27 | `https://gardewine.com/wp-content/uploads/2026/06/GWN_RULES_TARIFF_100_DEC_2025_FINAL-V2.pdf` |
+| `dohrn_2025` | Dohrn Transfer Company accessorial recap, Rules Tariff DHRN 100 series | 2025-01-20 | 30 | `https://dohrn.com/wp-content/uploads/2025/01/Dohrn-Rules-Tariff-Effective-01.20.2025.pdf` |
+| `states_2023` | States Logistics Services LTL Accessorials and Miscellaneous Charges | 2023-11-30 | 19 | `https://stateslogistics.com/wp-content/uploads/2024/07/LTLAccessorialMiscServices.pdf` |
+| `xpo_2025` | XPO Logistics Freight Tariff CNWY 199-AJ.4, accessorial services | 2025-11-03 | 43 | `https://www.xpo.com/cdn/download_files/s1/p2831/CNWY_199-AJ.4_Eff_11.3.2025.pdf` |
+| `estes_2025` | Estes Express Lines Accessorial Charges (Rules Tariff EXLA 105) | 2025-11-17 | 29 | `https://www.estes-express.com/downloads/EXLAaccessorialCharges.pdf` |
+
+Bare gebyrnavn lagres: ingen tarifftekst, ingen satser og ingen kunde-, forsendelses- eller fakturadata.
+Tarifftekstene er ikke committet.
+
+**Eierbeslutning og åpent spørsmål OQ1.** Hardregel 4 i CLAUDE.md sier «Synthetic data only». 2026-10-10/11
+bestemte eieren, Marius Carlsson, i forespørselen til denne kjøringen at reelle offentlige data kan brukes
+der det trengs («real shipment data is okay. go look for real data. only use synthetic data ... when you
+have to.»). Frøsettet bruker beslutningen snevert: generiske tjenestenavn som transportører publiserer i
+tariffene sine, med kildehenvisning, og ingen kunde-, forsendelses- eller fakturaposter i repoet. Regel 4 i
+CLAUDE.md og skillen project-conventions ble **ikke** endret av agentene. En datert unntaksmerknad der er
+åpent spørsmål OQ1 til eieren. To punkter henger sammen med dette og er også åpne: de seks URL-ene ble funnet
+med nettsøk, og eieren må bekrefte at de svarer til filene som ble lastet ned (OQ2), og vilkårene for
+gjenbruk av tariffene er ikke kontrollert (sikkerhetsgjennomgangen S8).
+
+## Modulstruktur (steg 6)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src/features"]
+        CSH["claims/ClaimSheet.tsx"]
+        CLP["ChargeLinesPanel.tsx"]
+        UF["use-features.ts"]
+    end
+    subgraph Shared["packages/shared/src"]
+        CON["charge-intel/constants"]
+        SEED["charge-intel/seed-v1"]
+        FEAT["charge-intel/features"]
+        CLS["charge-intel/classifier"]
+        LRN["charge-intel/learned"]
+        EVA["charge-intel/evaluate"]
+        DTO["charge-intel-dto + copy"]
+        TD["analysis/tariff-detention"]
+        S5["analysis/ (step 5, unchanged)"]
+        RBC["rbac + audit-actions + flags"]
+    end
+    subgraph API["api/src"]
+        CRT["charge-routes.ts"]
+        CHS["intelligence/charges.ts"]
+        LCK["db/charge-label-locks.ts"]
+        CA["claims/analysis.ts"]
+        CR["claims/routes.ts"]
+        ECLI["eval/charges.ts (CLI)"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261013000000_charge_intel"]
+        TBL["charge_labels (RLS FORCE)"]
+        FLG["feature_flags row"]
+    end
+
+    CSH --> CLP
+    CLP --> UF
+    CLP --> DTO
+    CLP -. "HTTP" .-> CRT
+    CRT --> CHS
+    CHS --> LCK
+    CHS --> CLS
+    CHS --> TBL
+    CR --> CA
+    CA --> CHS
+    CA --> LRN
+    LRN --> CLS
+    LRN --> S5
+    CLS --> FEAT
+    CLS --> SEED
+    CLS --> CON
+    EVA --> CLS
+    EVA --> S5
+    ECLI --> EVA
+    TD --> S5
+    CRT --> RBC
+    MIG --> TBL
+    MIG --> FLG
+
+    style CSH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style UF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CON fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SEED fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FEAT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LRN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EVA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RBC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CRT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LCK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ECLI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TBL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FLG fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Modul/funksjon | Formål | Viktige avhengigheter | Endret i denne kjøringen |
+| --- | --- | --- | --- |
+| `packages/shared/src/charge-intel/constants.ts` | `CHARGE_CLASSIFIER_VERSION` `charge-knn-v1`, `SEED_VERSION` `tariff-seed-v1`, terskel 3/10, `CHARGE_CATEGORIES`, `CHARGE_LABELS_MAX` 2000, `CHARGE_QUERY_TEXT_MAX` 200, `LEARNED_RULE_IDS` (og fra `a1b1c2a` `LEARNED_LABEL_IDS_MAX` 50) | ingen | ny |
+| `charge-intel/seed-v1.ts` | `SEED_V1` (175 frosne oppføringer), `SEED_SOURCES` (kildehenvisning), opphavsmerknad | constants | ny |
+| `charge-intel/features.ts` | `featureText` (tak på 200 tegn), `chargeFeatures`, `featureNorm2`, `featureDot` | `normText` fra `analysis/py-text` | ny |
+| `charge-intel/classifier.ts` | `buildChargeClassifier` (invertert indeks, memo), `buildChargeClassifierByScan` og `rankNearest` (referansegjennomgang), `accepts`, `beats`, `formatSimilarity`, `seedExamples` | features, seed, DTO-typer | ny (indeksen kom i rettingsrunde 1) |
+| `charge-intel/learned.ts` | `buildEvidenceLearned`, `applyLearning`: det lærte laget oppå resultatet fra steg 5; returnerer `learnedFindingsCount`, `reviewFlagsCount`, `labelIds` | `applyRulesTraced`, `classifyLine`, `dedupe`, brev og Markdown fra steg 5 | ny |
+| `charge-intel/evaluate.ts` | `evaluateLeaveOneCarrierOut` -> `ChargeEvalReport` | klassifisereren, `classifyLine` fra steg 5 | ny |
+| `charge-intel-dto.ts`, `charge-intel/copy.ts` | Zod-skjemaer for rutene og evalueringsrapporten; tekstene `CHARGE_NOTE`, `CHARGE_EVAL_NOTE`, `CHARGE_TEXT`, `CATEGORY_LABELS` | zod | ny |
+| `analysis/tariff-detention.ts` | `computeTariffDetention` (ren; ikke koblet til) | `py-decimal`, `local-datetime` fra steg 5 | ny |
+| `rbac.ts`, `audit-actions.ts`, `feature-flags.ts`, `analysis-dto.ts`, `index.ts`, `package.json` | `charge_labels:manage`; `charge_label.set`, `charge_label.deleted`; flagget `intelligence.charge_suggestions`; tre nye felt i `analysis`-svaret; eksporter fra roten; underbanen `./charge-intel` | ingen | endret |
+| `api/src/intelligence/charges.ts` | `loadClassifier`, `chargeLines`, `setLabel`, `deleteLabel`, `listLabels` | Prisma-tenant-transaksjon, `loadAnalysisInput`, `appendAudit` | ny |
+| `api/src/intelligence/charge-routes.ts` | de fire rutene (rategruppe `intelligence`, ingen API-nøkkel-scope, flagget sjekkes etter kontrollene i pipelinen) | `charges.ts`, `auditViewed` | ny |
+| `api/src/db/charge-label-locks.ts` | `lockChargeLabels`: rådgivende transaksjonslås `charge-labels:<tenantId>` | `advisoryXactLock` | ny (rettingsrunde 1) |
+| `api/src/claims/analysis.ts`, `claims/routes.ts` | klassifisererargument, lært lag, styrende klausul for LRN, felt i svar og revisjonsspor; flagget leses én gang per forespørsel; masseanalysen bygger klassifisereren én gang per forespørsel | `@fr/shared/charge-intel`, `charges.ts` | endret |
+| `api/src/db/tenant.ts`, `http/errors.ts`, `audit/chain.ts`, `app.ts`, `scripts/seed.ts` | `ChargeLabel` i `TENANT_MODELS`; 409 `label_limit_reached`; tillatte metadatanøkler; registrering av rutene; `--reset` sletter `charge_labels` | ingen | endret |
+| `api/src/eval/charges.ts` | CLI `npm run eval:charges` (ingen database, ikke noe nettverk, ingenting registreres) | `evaluateLeaveOneCarrierOut` | ny |
+| `api/prisma/migrations/20261013000000_charge_intelligence/` | tabell, CHECK-er, RLS FORCE, policy, tilganger, flaggrad | `tenants`, `users`, `feature_flags` | ny |
+| `web/src/features/intelligence/ChargeLinesPanel.tsx`, `use-features.ts`, `claims/ClaimSheet.tsx`, `api/client.ts` | fanen Charges, flagget `charges`, hjelperen `put()` | `useCan('charge_labels:manage')`, delte tekster | ny / endret |
+| `.github/workflows/web-ci.yml` | ett steg: gebyrevalueringen med faste grenser | `npm run eval:charges` | endret |
+
+Pakkeroten `@fr/shared` eksporterer bare konstantene, tekstene, DTO-skjemaene og `computeTariffDetention`.
+Frøsettet, klassifisereren, evalueringen og det lærte laget ligger under underbanen `@fr/shared/charge-intel`,
+så nettappens pakke tar ikke med frøsettet. Motorfilene fra steg 5 under `packages/shared/src/analysis/`
+ble ikke endret (bare `index.ts` fikk den nye eksporten).
+
+## Klassifisereren `charge-knn-v1` (eksakte regler)
+
+| Trinn | Regel |
+| --- | --- |
+| Normaliser | `normText(s)`: små bokstaver, hver sekvens av tegn utenfor `[a-z0-9]` blir ett mellomrom, trimmet (funksjonen fra steg 5) |
+| Tak på spørringen | `featureText(s)` = de første 200 tegnene av `normText(s)`, med avsluttende mellomrom fjernet. Etiketter (høyst 200) og frønavn (høyst 82) kuttes aldri; en lang fakturabeskrivelse kuttes |
+| Kjennetegn | for k = 3, 4, 5 teller hver delstreng med lengde k av `" " + n + " "` 1 per forekomst; hvert ord `w` gir nøkkelen `"w:" + w` med vekt 2 per forekomst; en tom tekst har ingen kjennetegn |
+| Likhet | `dot(q, e) / sqrt(N(q) * N(e))`, der `N` er summen av kvadrerte tellinger. Vises med tre desimaler (én IEEE-divisjon, bare for visning) |
+| Eksempler | tenantens etiketter sortert etter normalisert tekst (deretter id), fulgt av frøsettet i filrekkefølge uten frøoppføringene der den normaliserte teksten er lik en tenant-etikett sin |
+| Nærmeste | blant eksempler som deler et kjennetegn (`dot > 0`), slår `e` ut `e'` hvis og bare hvis `dot(q,e)^2 * N(e') > dot(q,e')^2 * N(e)`. Ved likhet vinner det tidligste eksemplet: en teametikett før frøsettet, og innenfor frøsettet filrekkefølgen |
+| Godta | `100 * dot^2 >= 9 * N(q) * N(e)`, altså likhet >= 0,30 eksakt |
+| Resultat | `empty` (ingen kjennetegn), `no_match` (ingen felles kjennetegn), kategorien til det nærmeste eksemplet, eller `below_threshold` (avstår; det nærmeste eksemplet vises likevel) |
+
+Hver beslutning bruker eksakte heltall: vanlige doubles så lenge begge produktene er høyst 2^53, BigInt over
+det. Ingen avrunding i flyttall kan endre en rangering eller terskeltesten, og resultatet er det samme på
+Node 22 og Node 24. k = 1, så hvert forslag viser til nøyaktig ett merket eksempel (frøoppføringer med sin
+`sourceLabel`, teametiketter som «Your team's label»).
+
+**Hvorfor 0,30.** Terskelen ble valgt ut fra fordelingen av likheter når én transportør holdes utenfor om
+gangen på frøsettet: ved 0,30 er 160 av de 161 forslagene riktige, og de 14 svakeste treffene avstår. De
+likhetene i frøsettet som ligger nærmest terskelen, er 0,3031, 0,3061 og 0,3094. Dette er et valg på
+frøsettet, ikke en egenskap ved fakturaer. Det er et standardvalg eieren kan endre (OQ3); stedet å endre er
+`constants.ts`, sammen med nye evalueringsgrenser.
+
+**Kostnad (rettingsrunde 1, sikkerhetsfunn S1).** Det første bygget gikk gjennom alle eksempler for hver
+linje, uten tak på spørringen. Med 2 000 etiketter på 200 tegn tok klassifiseringen av 250 linjer omtrent 7
+til 9 s synkron CPU (målt i sikkerhetsgjennomgangen, Node 24). Rettingen har fire deler: taket på 200 tegn;
+en invertert indeks fra kjennetegn til (eksempelposisjon, antall), der kandidatene vurderes i
+eksempelrekkefølge med den samme eksakte sammenligningen; forslag huskes per kjennetegnstekst (høyst 1 000
+per klassifiserer); og én klassifiserer per forespørsel (masseanalysen bygger den én gang per
+masseforespørsel). Målt på Node 22 med 2 000 etiketter og 250 ulike linjer på 4 000 tegn: omtrent
+**0,47 s** med indeksen mot omtrent **5,5 s** med full gjennomgang. Grensen i enhetstesten ved takene er
+20 s. Den fulle gjennomgangen er beholdt som `rankNearest` / `buildChargeClassifierByScan`. En randomisert
+enhetstest (3 000 spørringer over tilfeldige etiketter, duplikater i frøsettet og likheter) viser at
+indeksen og gjennomgangen gir identiske resultater. Testerens uavhengige orakel er enig med produktet på
+2 000 genererte spørringer.
+
+## Etikettminnet for teamet
+
+Tabellen `charge_labels` (migreringen `20261013000000_charge_intelligence`):
+
+| Kolonne | Merknader |
+| --- | --- |
+| `id` uuid PK, `tenant_id` uuid FK `tenants` | unik `(tenant_id, normalized_text)` og `(id, tenant_id)` |
+| `normalized_text` text | CHECK `^[a-z0-9]+( [a-z0-9]+)*$`, 1..200 tegn; kan ikke oppdateres |
+| `description` text | den trimmede inndataen, CHECK 1..200 tegn |
+| `category` text | CHECK én av `detention`, `linehaul`, `fuel`, `accessorial`, `other` |
+| `created_by_id`, `created_at`, `updated_by_id`, `updated_at`, `version` | FK-er til `users`; CHECK `version >= 1` |
+
+- **Isolasjon.** `ENABLE` + `FORCE ROW LEVEL SECURITY`, policyen `charge_labels_tenant_isolation`
+  `FOR ALL` med `USING` og `WITH CHECK` `tenant_id = fr_current_tenant()`. `REVOKE ALL ... FROM PUBLIC`.
+  `freight_app` har SELECT, INSERT og DELETE, og UPDATE bare på `description`, `category`, `updated_by_id`,
+  `updated_at` og `version`. `ChargeLabel` står i `TENANT_MODELS` og `TenantTx`, og hver spørring kjører i
+  tenant-transaksjonen. Testene på tvers av tenanter er skrevet, men ikke kjørt ennå (se merknadene).
+- **Betydning.** Én etikett per normalisert tekst per tenant. PUT med en ny tekst setter den inn
+  (`version 1`, utfall `created`). PUT med en annen kategori erstatter kategori og beskrivelse
+  (`version + 1`, `changed`). PUT med samme kategori skriver ingenting (`unchanged`). Den siste etiketten
+  gjelder. DELETE fjerner den, og senere forslag bruker den ikke lenger. Pakker som allerede er laget,
+  endres aldri.
+- **Tak.** Høyst 2 000 etiketter per tenant (`CHARGE_LABELS_MAX`). En innsetting over taket får 409
+  `label_limit_reached`; oppdateringer er alltid tillatt. Rettingsrunde 1 (S2): PUT og DELETE tar først en
+  rådgivende transaksjonslås på `charge-labels:<tenantId>`, så samtidige PUT-er kan ikke gå over taket.
+  Taket håndheves av tjenesten, ikke av en databasetrigger.
+- **Virkning.** Etiketter endrer forslag, LRN-funn og gjennomgangsflagg i senere analyser og i visningen av
+  gebyrlinjer. De endrer aldri et regelresultat fra steg 5: nøkkelordresultatet vinner, og en etikett på en
+  linje som `classifyLine` allerede klassifiserer, har ingen virkning i analysen.
+- **Revisjonsspor.** `charge_label.set` (`labelId`, `category`, `outcome`, `normalizedTextSha256`, pluss
+  `previousCategory` ved endring) og `charge_label.deleted` (`labelId`, `category`,
+  `normalizedTextSha256`). `normalizedTextSha256` er hex-SHA-256 av den normaliserte teksten (rettingsrunde
+  1, S4): den knytter rader i revisjonssporet til en formulering uten å lagre teksten. Utfallet
+  `unchanged`, avvisninger og etikettlisten skriver ingen hendelse. `GET .../charge-lines` skriver
+  `intelligence.viewed` (`kind: charge_lines`). `npm run db:seed -- --reset` sletter etikettene til de
+  seedede tenantene.
+
+| Rute | Tillatelse | Svar ved suksess |
+| --- | --- | --- |
+| `GET /api/v1/claims/:id/charge-lines` | `claims:read` | 200: hver fakturalinje i kravets godtatte dokumenter (duplikater med), med regelkategori, forslag og teametikett |
+| `GET /api/v1/charge-labels?page&pageSize` | `claims:read` | 200: etiketter etter normalisert tekst, `pageSize` 1..100 (standard 25) |
+| `PUT /api/v1/charge-labels` | `charge_labels:manage` | 200: `{ label, outcome }` |
+| `DELETE /api/v1/charge-labels/:id` | `charge_labels:manage` | 204 |
+
+Alle fire rutene bruker ratebøtten `intelligence` per bruker og har ingen API-nøkkel-scope (API-nøkler får
+403). Rekkefølge: origin/CSRF 403 -> 401 -> 429 -> 403 -> 400 -> 404 (flagg av, ukjent id, id som ikke er
+UUID, eller id fra en annen tenant; byte for byte like) -> 409.
+
+## Funksjonskall (steg 6)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST claims/:id/analyze"] --> FL["flag read (once)"]
+    R2["POST analyze-awaiting"] --> FL
+    R2 --> LC2["loadClassifier (once)"]
+    FL --> AC["analyzeClaim (one tx)"]
+    LC2 --> AC
+    AC --> LI["loadAnalysisInput"]
+    AC --> LC1["loadClassifier (single)"]
+    AC --> BP["buildAnalysisPacket"]
+    BP --> BEL["buildEvidenceLearned"]
+    BEL --> AR["applyRulesTraced (step 5)"]
+    BEL --> AL["applyLearning"]
+    AL --> CL["classifier.classify"]
+    BEL --> DL["letter + Markdown"]
+    AC --> AUD["audit claim.analyzed"]
+    R3["GET charge-lines"] --> CLN["chargeLines"]
+    CLN --> LC3["loadClassifier"]
+    R4["PUT charge-labels"] --> SL["setLabel"]
+    SL --> LK["lockChargeLabels"]
+    SL --> AUD2["audit charge_label.set"]
+
+    style FL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LC1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LC2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LC3 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BEL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R3 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R4 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD2 fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalles av | Formål |
+| --- | --- | --- | --- |
+| `loadClassifier(tx)` | `api/src/intelligence/charges.ts` | `analyzeClaim` (enkeltvis), `analyzeAwaiting` (én gang per masseforespørsel), `chargeLines` | leser tenantens etiketter og bygger klassifisereren; returnerer `labelCount` |
+| `buildEvidenceLearned(docs, bundle, perspective, settings, now, classifier \| null)` | `charge-intel/learned.ts` | `buildAnalysisPacket` | `buildEvidence` fra steg 5 pluss det lærte laget; med `null` er `evidence` nøyaktig lik `buildEvidence(...)` |
+| `applyLearning(...)` | `charge-intel/learned.ts` | `buildEvidenceLearned` | LRN-funn, gjennomgangsflagg på DET, summer, `labelIds` |
+| `buildChargeClassifier(labels)` | `charge-intel/classifier.ts` | `loadClassifier`, tester | eksempelliste, invertert indeks, `classify(description)` |
+| `evaluateLeaveOneCarrierOut()` | `charge-intel/evaluate.ts` | `api/src/eval/charges.ts`, tester | rapporten på frøsettet for CI-terskelen |
+| `setLabel`, `deleteLabel`, `listLabels`, `chargeLines` | `api/src/intelligence/charges.ts` | `charge-routes.ts` | etikettminnet og visningen av gebyrlinjer |
+| `computeTariffDetention(start, departure, terms)` | `analysis/tariff-detention.ts` | bare tester | ventetid etter tariff (ikke koblet til) |
+
+## Det lærte laget i analysen
+
+Rutene leser flagget én gang per forespørsel, før transaksjonen. Når flagget er på, laster enkeltanalysen
+klassifisereren inne i sin transaksjon. Masseanalysen bygger den én gang per masseforespørsel, fra
+etikettene slik de er lagret når forespørselen starter, og bruker den for hver kandidat.
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["Step 5 rules (unchanged)"] --> B{"Flag on?"}
+    B -- no --> Z["Step 5 packet, exactly"]
+    B -- yes --> C["Each unique line, amount > 0"]
+    C --> D{"classifyLine = other?"}
+    D -- no --> N["Keyword result wins"]
+    D -- yes --> E{"Nearest category?"}
+    E -- accessorial --> F{"Rate con, unauthorized, not contract amount?"}
+    F -- yes --> G["LRN-ACCESSORIAL-REVIEW (review)"]
+    F -- no --> N
+    E -- detention --> H["DET-UNBILLED/UNDERBILLED to review"]
+    E -- "other or abstain" --> N
+    G --> T["Totals, letter, hash"]
+    H --> T
+    N --> T
+
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style D fill:#1e90ff,stroke:#1565c0,color:#fff
+    style E fill:#1e90ff,stroke:#1565c0,color:#fff
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style G fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+1. **Bare `other`-linjer.** Reglene fra steg 5 kjører uendret. Bare unike fakturalinjer (dedupliseringen
+   fra steg 5) som `classifyLine` kaller `other`, og som har et beløp over null, blir klassifisert.
+2. **`LRN-ACCESSORIAL-REVIEW`** når forslaget er `accessorial`, bunten har en fraktavtale, linjen ikke er
+   godkjent der (samme inneholder-test som `INV-ACCESSORIAL-UNAUTH`), og beløpet er ulikt både avtalt
+   `linehaul_rate` og `fuel_surcharge`. Den siste betingelsen er **vakten mot avtalte beløp**: frøsettet har
+   ingen generisk formulering for linehaul, så «Freight charges» ligger nærmest «HEAVY LIFT CHARGES»
+   (0,445), og vakten hindrer at hovedfraktlinjen flagges som en tilleggstjeneste. Funnet har retningen
+   `overcharge`, en fast `confidence 0.5` (ikke en sannsynlighet) og `needs_human_review = true`. Tittel
+   «Possible unauthorized accessorial (suggestion)». Forklaringen og utregningen nevner det nærmeste
+   eksemplet, opphavet («public tariff example, <tariff>» eller «your team's label»), likheten, regelen om
+   0,30, listen over godkjente tilleggstjenester og gebyret, og slutter med «Suggestion only - verify before
+   disputing.» Funnet siterer beløpsfeltet på linjen, og den styrende klausulen er «Authorized
+   accessorials».
+3. **Ligner ventetid** når forslaget er `detention`. Dette lager aldri penger. I stedet får hvert
+   `DET-UNBILLED`- og `DET-UNDERBILLED`-funn `needs_human_review = true`, ett ekstra utregningstrinn per
+   lignende linje («Possible detention billed under another name: ... Confirm before claiming.») og
+   linjesitatet til den lignende linjen. Regel-ID, tittel, forklaring, beløp, retning og konfidens er
+   uendret. Begrunnelsen: når ventetid kanskje allerede er fakturert under et annet navn, må en person sjekke
+   før den kreves som ufakturert.
+4. **Summer.** `recoverableCents` er summen av funn for eget perspektiv uten gjennomgang, og
+   `pendingReviewCents` summen av dem med gjennomgang. LRN-funn og flaggede DET-funn venter derfor på
+   gjennomgang, og utkastet til brev (bare bekreftede funn) tar dem aldri med. For transportørens perspektiv
+   går et LRN-funn i motsatt retning: det telles i `ignoredFindingsCount` og lagres ikke.
+5. **Paritet uendret.** Når flagget er av, eller når det ikke oppstår noe LRN-funn og ingen lignende linje
+   som flagger et lagret funn, er den lagrede pakken (funn, summer, brev, innholdshash, kilder, tidslinje)
+   nøyaktig det steg 5 lagrer for samme inndata og tidspunkt. Paritetsgarantien mot Python fra steg 5 for
+   `classifyLine`, `computeDetention`, `applyRules`, brevet, Markdown og `buildEvidence` er uendret.
+6. **Sporbarhet (rettingsrunde 1, S3).** `learnedLabelIds`: de ulike id-ene til teametiketter (høyst 50, i
+   linjerekkefølge) som var nærmeste eksempel for et LRN-funn eller en linje som ligner ventetid. De
+   registreres i `claim.analyzed`, så en etikett som flyttet penger til gjennomgang, kan fortsatt spores
+   etter at den er slettet.
+
+`AnalyzeResponse.analysis` får `classifierVersion` (`charge-knn-v1`, eller null når flagget er av),
+`learnedFindingsCount` og `reviewFlagsCount`. `claim.analyzed` får `classifierVersion`, `seedVersion`,
+`tenantLabelCount`, `learnedFindingsCount`, `reviewFlagsCount` og `learnedLabelIds`. Formen på svaret fra
+masseanalysen er uendret.
+
+**Nødbryter.** Plattformflagget `intelligence.charge_suggestions` (oppføring i registeret pluss en
+migreringsrad, på, standard på, synlig for tenanter). Av: analysen er nøyaktig som i steg 5
+(`classifierVersion null`), de fire rutene svarer 404 etter kontrollene 401/429/403/400, og nettappen
+skjuler fanen. En feil ved lesing av flagget regnes som av og huskes i høyst 1 s (akseptert avvik S6: av er
+den sikre retningen).
+
+## Evalueringsterskel (regresjonskontroll på frøsettet)
+
+`evaluateLeaveOneCarrierOut()` klassifiserer hvert av de 175 frønavnene med bare navnene fra de fem andre
+transportørene som eksempler, med reglene over og uten teametiketter. Resultater (deterministiske, like ved
+hver kjøring):
+
+| Mål | Resultat |
+| --- | --- |
+| Nærmeste eksempel har riktig kategori (topp-1) | 173 av 175; accessorial 158 av 159 |
+| Ved terskelen 0,30 | 161 foreslått: 160 riktige, 1 feil; 14 avstått. Accessorial gjenkjent: 145 av 159 |
+| Variant med ulike navn (utelater også like navn fra andre transportører) | topp-1 173; 157 foreslått: 156 riktige, 1 feil; 18 avstått; accessorial gjenkjent 141 |
+| Nøkkelordreglene (`classifyLine`) | 34 av 175; accessorial 19 av 159 |
+| Navn på tilleggstjenester som pipelinen ville kontrollere (`classifyLine` accessorial, eller `other` pluss et foreslått accessorial) | 145 av 159 |
+| Feil oppført i rapporten | 2 |
+
+```bash
+npm run build
+npm run eval:charges                 # human summary; the second line is CHARGE_EVAL_NOTE
+npm run eval:charges -- --json       # one JSON line (ChargeEvalReport)
+npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1
+```
+
+Avslutningskode 0 betyr at alle oppgitte grenser er nådd, 1 at en grense ikke er nådd (navngitt på stderr),
+og 2 er en bruksfeil. Ingen database, ikke noe nettverk, ingenting registreres. CI (`web-ci.yml`) kjører den
+siste linjen etter evalueringen av uttrekk, i steget «Charge classifier evaluation (seed-set regression
+check, not an accuracy measure)». Grensene er lik dagens tall, så enhver endring i klassifisereren,
+terskelen eller frøsettet som senker dem, får CI til å feile.
+
+**Hva tallene betyr.** `CHARGE_EVAL_NOTE`: «Leave-one-carrier-out check on 175 public tariff charge names
+from 6 carriers. It is a regression check on this seed set, not an accuracy measure on invoices.» Tallene
+er optimistiske selv for tariffnavn: 14 normaliserte navn går igjen hos flere transportører (varianten med
+ulike navn viser virkningen). Frøsettet er LTL-tariffordforråd med 1 navn for linehaul og 3 for fuel.
+Formuleringer på fakturaer er ikke målt, fordi det ikke finnes reelle fakturaer i repoet.
+
+## Kalkulator for ventetid etter tariff (ren; ikke koblet til ennå)
+
+`computeDetention` fra steg 5 (Python-modellen: timer ganger en timesats, rundet ned til trinnet, med et
+maksimum) er uendret. Reelle tariffer fakturerer ventetid annerledes: per trinn, «or fraction thereof»
+(avrunding opp), med minste- og høyestebeløp. `computeTariffDetention(clockStart, departure, terms)` i
+`@fr/shared/analysis` regner ut dette med eksakte desimaltall og heltall av sekunder:
+
+```
+over = (departure - clockStart) - 60 * freeMinutes                    (seconds)
+n    = floor(over / (60 * incrementMinutes))   rounding 'down'
+       ceil (over / (60 * incrementMinutes))   rounding 'up'
+over <= 0 or n = 0  ->  amount 0.00 (the minimum is never applied to a zero amount)
+base   = Q(n * ratePerIncrement)
+amount = min(max(base, minimumCharge), maximumCharge)     each bound only when given; Q = half-even cents
+```
+
+Inndata: `freeMinutes` 0..1440, `incrementMinutes` 1..240, `rounding` `down` | `up`, beløp som
+`^[0-9]+(\.[0-9]{1,6})?$`, minstebeløp ikke over høyestebeløp, naive `YYYY-MM-DDTHH:MM:SS`-tidspunkter;
+alt annet kaster `AnalysisInputError`. Resultatet har `increments`, `billableMinutes`, `amount`,
+`minimumApplied`, `maximumApplied` og lesbare `steps`. En avgang før klokken starter regnes som innenfor
+fritiden (beløp 0; byggerens avvik 9, spesifikasjonen sier ikke noe om det).
+
+| Tariff (oversettelse av vilkår) | Klokke | Resultat |
+| --- | --- | --- |
+| XPO CNWY 199-AJ.4 Item 211, med trekkvogn: fritid 60 min (>= 10 000 lb), trinn på 15 min rundet opp («or fraction thereof»), $72,25 per trinn, minstebeløp $95,50 | 08:00 -> 09:20 | 20 min over, 2 trinn, **$144,50** |
+| samme | 08:00 -> 09:05 | 1 trinn = $72,25, hevet til minstebeløpet **$95,50** |
+| samme | 08:00 -> 09:00 | innenfor fritiden, **$0,00** |
+| samme med fritid 30 min (1 000-4 999 lb) | 08:00 -> 11:47:30 | 197,5 min over, 14 trinn, **$1 011,50** |
+| States Logistics LTL (2023): første 30 min gratis, $26,25 per 15 min, minstebeløp $105, høyestebeløp $630; avrunding ikke oppgitt, derfor `down` | 08:00 -> 08:50 | 1 trinn = $26,25, hevet til minstebeløpet **$105,00** |
+| samme | 08:00 -> 12:10 | 220 min over, 14 trinn, **$367,50** (avrunding opp ville gitt 15 og $393,75) |
+| samme | 08:00 -> 16:00 | 450 min over, 30 trinn = $787,50, begrenset til **$630,00** |
+| Estes Item 501 (stopp >= 20 000 lb): $40,00 per 15 min; arket oppgir verken fritid eller avrunding, så dette er en illustrasjon med en avtalt fritid på 60 min og `down` | 08:00 -> 10:10 | 70 min over, 4 trinn, **$160,00** (`up`: $200,00) |
+
+Med avrunding `down` og uten minste- eller høyestebeløp er funksjonen lik motoren fra steg 5 med
+`rate_per_hour = ratePerIncrement * 60 / incrementMinutes` (for States: $105,00 per time, 220 min over,
+210 fakturerbare minutter, $367,50). Testeren kontrollerte denne likheten på 320 genererte saker.
+
+**Brukes ikke av analysen ennå.** Ingen rute, ikke noe uttrekksfelt og ingen analysevei kaller den i steg 6.
+Å hente fritid, trinn, avrunding, minste- og høyestebeløp ut av fraktavtaler krever nye feltnøkler, en
+migrering av listen over tillatte nøkler og et registrert avvik i uttrekksparitet. Det er utsatt, så
+analysen regner fortsatt ut ventetid med modellen fra steg 5. Også utsatt: ventetid uten trekkvogn
+(dagsatser i trinn, for eksempel XPO Item 212 med $217 per dag, Estes Item 515 med $110 for de første 24 t,
+$150 for de neste 24 t og $225 per dag fra dag 3, States med $125 per 24 t etter 72 t), valg av fritid
+etter forsendelsens vekt, og fratrekk for måltidspauser.
+
+## Nett: fanen Charges
+
+`ClaimSheet.tsx` viser fanen **Charges** etter de eksisterende fanene når `GET /features` melder at flagget
+er på (feiler lukket). `ChargeLinesPanel.tsx` laster `GET /claims/:id/charge-lines`; 404 skjuler fanen. Den
+viser `CHARGE_NOTE` («Suggestions compare each charge name with labelled examples: public carrier tariff
+charge names and your team's labels. They are not verified. A suggestion only adds items for human review;
+it never confirms an amount.»), og per linje beskrivelse og beløp, en brikke `Rules: <kategori>`, en brikke
+`Suggested: <kategori> (<likhet>)` eller `No suggestion`, `Nearest example: '<tekst>' (<kilde>)` og
+`Team label: <kategori>` når en slik finnes. Brukere med `charge_labels:manage` får i tillegg **Confirm
+<kategori>** (når forslaget ikke er avstått og er ulikt teametiketten) og en nedtrekksliste **Category**
+med **Save label**. Hver handling sender én PUT; ved suksess vises «Label saved. It applies to future
+analyses.», og linjene lastes på nytt. Feil viser faste tekster (403, 409, 429, annet), aldri tekst fra
+serveren. Rettingsrunde 1 (S7): kontrollene er deaktivert for en beskrivelse serveren ville avvist
+(`isLabelable` bruker serverens regel i `SetChargeLabelBody`: over 200 tegn, kontroll- eller bidi-tegn, eller
+tom normalisert tekst). Alle ikke-klarerte strenger vises som React-tekst (`SafeText`). Lærte funn vises i
+den eksisterende fanen Evidence som alle andre funn, merket som at de trenger menneskelig gjennomgang
+(tekstene i appen er på engelsk).
+
+## Python-paritet: registrerte avvik (RD7-RD10)
+
+RD1-RD6 fra steg 5 er uendret.
+
+| ID | Avvik (TS mot Python) | Begrunnelse |
+| --- | --- | --- |
+| RD7 | Når flagget er på, kan lagrede pakker inneholde `LRN-ACCESSORIAL-REVIEW`-funn, som Python aldri lager. Beløpene deres ligger i `pendingReviewCents`. | Linjer nøkkelordreglene ikke kan plassere, ville ellers aldri bli kontrollert mot godkjente tilleggstjenester. Bare til gjennomgang. |
+| RD8 | Når flagget er på, kan et lagret `DET-UNBILLED` eller `DET-UNDERBILLED` ha `needs_human_review = true`, ekstra utregningstrinn og ekstra sitater. Det flytter beløpet fra innkrevbart til ventende og ut av brevet. | En linje som ligner ventetid under et annet navn, betyr at «ufakturert» kan være feil; en person avgjør. |
+| RD9 | `ignoredFindingsCount` (svar og revisjonsspor) kan ta med LRN-funn i motsatt retning. | Samme deling etter perspektiv som i steg 5. |
+| RD10 | `computeTariffDetention` har ingen motpart i Python. | Ny tariffmodell. Funksjonene fra steg 5 beholder paritetsgarantien. |
+
+## Standardvalg (steg 6)
+
+| ID | Standard | Stedet å endre |
+| --- | --- | --- |
+| D1 | Terskel 0,30 eksakt (3/10) | `constants.ts`, pluss nye evalueringsgrenser |
+| D2 | Ett nærmeste eksempel; teametiketter før frøsettet; ved likhet vinner det tidligste eksemplet | `classifier.ts` |
+| D3 | Det lærte laget ser bare linjer som nøkkelordreglene kaller `other`; nøkkelordresultatet vinner | `learned.ts` |
+| D4 | LRN krever fraktavtale, beløp > 0, ikke godkjent, beløp ulikt avtalt linehaul og fuel; konfidens 0,5; alltid gjennomgang | `learned.ts` |
+| D5 | Linjer som ligner ventetid, setter bare DET-UNBILLED/UNDERBILLED til gjennomgang; de lager aldri penger | `learned.ts` |
+| D6 | `charge_labels:manage` = OWNER, ADMIN, MANAGER, REVIEWER (ikke ANALYST: etiketter endrer fremtidige analyser for hele tenanten); lesing krever `claims:read`; ingen API-nøkkel-scope | `rbac.ts` |
+| D7 | 2 000 etiketter per tenant (kontroll i tjenesten, skrivinger serialisert per tenant) | `CHARGE_LABELS_MAX` |
+| D8 | Flagget `intelligence.charge_suggestions` er på som standard; av = nøyaktig steg 5 | flaggregisteret og migreringsraden |
+| D9 | Avrunding `down` når tariffen ikke sier «or fraction thereof» | den som kaller `computeTariffDetention` |
+| D10 | Frøsettet er en TS-konstant under underbanen `@fr/shared/charge-intel`; tarifftekstene er ikke committet | `seed-v1.ts` |
+
+D1, D6 og D7 venter på eierens bekreftelse (OQ3).
+
+## Utsatt (steg 6)
+
+Uttrekk av ventetidsvilkår fra fraktavtaler og bruk av dem i analysen; ventetid uten trekkvogn (dagsatser i
+trinn); fritid etter forsendelsens vekt; fratrekk for måltidspauser; embeddinger; lærte virkninger på
+reglene for linehaul og fuel; en telemetrikomponent for klassifisereren; import og eksport av etiketter; et
+tidsbudsjett per forespørsel for klassifisering (foreslått av sikkerhetsgjennomgangen; ikke bygget, se SC-2).
+
+## Grensesnitt for senere steg (etter steg 6)
+
+- **Tariffvilkår kommer neste.** `computeTariffDetention` og `TariffDetentionTerms` er klare for et steg som
+  henter fritid, trinn, avrunding, minste- og høyestebeløp ut av fraktavtalen. Det steget trenger nye
+  feltnøkler for uttrekk, en migrering av listen over tillatte nøkler og et registrert avvik i
+  uttrekksparitet. Når vilkårene mangler, må analysen beholde `computeDetention` fra steg 5, så pariteten
+  holder.
+- `packet_findings.rule_id` kan nå også være `LRN-ACCESSORIAL-REVIEW` (`LEARNED_RULE_IDS`). Reglene fra steg
+  5 beholder `RULE_IDS` og `RULES_VERSION` `rules-v1`; lært oppførsel versjoneres med
+  `CHARGE_CLASSIFIER_VERSION` og `SEED_VERSION`, som begge registreres i `claim.analyzed`. `similar-v1` fra
+  steg 4 behandler regel-ID-er som vanlige strenger, så et LRN-funn teller med i overlappen av regel-ID-er.
+- En ny versjon av frøsettet må oppdatere `SEED_VERSION`, kildehenvisningene og CI-grensene samtidig, og
+  følge regelen om opphav (bare navn, med kildehenvisning, etter eierens beslutning om OQ1).
+- Teksten i LRN-funn inneholder den rå beskrivelsen av fakturalinjen, som funnene fra steg 5 (SA-5): en
+  fremtidig HTML-, Markdown- eller PDF-visning av funn må rense den.
+
+## Merknader (steg 6)
+
+- Hva som ble kjørt (lokalt, Windows, Node 22.23.3, **ikke GitHub CI**; modus for lite minne, så tunge
+  testsett ble ikke kjørt):
+  - Byggeren ved `3a8125d`: lint og typecheck rene (shared, api, web); enhetstester shared 190 (16 filer),
+    api 392 (28 filer), web alle 11 filer; `prisma generate`; `prisma migrate diff` (uten database);
+    `eval:charges` med CI-grensene ga avslutningskode 0, og en grense som med vilje skulle feile
+    (`--min-top1 174`), ga 1.
+  - Byggeren ved `43d7d4c` (rettingsrunde 1): lint og typecheck rene; enhetstester shared 195 (17 filer),
+    api 393 (28 filer), og nettappens filer for gebyrer, analyse og steg 4 (33 tester); `eval:charges` ga 0
+    med uendrede tall.
+  - Testeren, nivå L (rene akseptansetester i shared) ved `3a8125d` med fersk `dist`: 6 filer, 73 av 73
+    bestått; hele akseptansesettet for shared 148 av 148; eslint og tsc på testfilene rene. Den første
+    kjøringen (før M2 og S2 var bygget) hadde 31 feil: 30 ikke implementert ennå og 1 kontraktsavvik
+    (`formatSimilarity` returnerte et tall), rettet i `57a3ca4`.
+  - Testeren etter rettingsrunde 1: nivå L med de nye sakene (tak på spørringen, kostnadsgrense, `labelIds`)
+    ga 77 av 78 ved `43d7d4c`; CI-S25 målte 808 ms mot grensen på 20 s. Den ene feilen (D1: pakkeroten
+    eksporterte ikke `LEARNED_LABEL_IDS_MAX`) ble rettet i `a1b1c2a` (rettingsrunde 2; byggerens
+    enhetstester for shared 196). Ved `a1b1c2a` besto hele akseptansesettet for shared 153 av 153.
+  - Sikkerhetsgjennomgang av `51ea826..3a8125d`: ingen Critical eller High. S1 (Medium, CPU i
+    klassifisereren) og S2, S3, S4, S7 (Low/Info) ble rettet i `43d7d4c`; S5 og S6 ble akseptert; S8
+    registrerer dataenes opphav.
+- **Ikke kjørt ennå:** akseptansetester på nivå H (API, database, på tvers av tenanter, RBAC,
+  revisjonsspor, flagg, CLI, nett) og integrasjonstestene (`api/test/integration/charge-labels.int.test.ts`
+  og de oppdaterte låsingene i fire eksisterende filer) er skrevet, men venter på eierens klarsignal (OQ4).
+  Det samme gjelder paritetstestene, kontrollen av migreringsavvik mot en skyggedatabase,
+  `verify-ci-locally` og GitHub CI. Tenant-isolasjonen for `charge_labels` er derfor bare kontrollert med
+  kodegjennomgang og enhetstester, ikke med en kjøring mot databasen. Sakene på nivå H som kom etter
+  rettingsrunde 1 (`learnedLabelIds`, hashen, kappløpet om taket, byggingen i masseanalysen), er skrevet og
+  venter på den samme kjøringen.
+- Rekkefølge for den tunge kjøringen på Node 22: `npm run build`, så `/verify-ci-locally --node 22 --only
+  acceptance` (`CI=true`), så `npm run test:acceptance -w web`.
+- Steg 6 bygger på steg 5, der den bekreftende kjøringen (R3) fortsatt er åpen på `feat/analysis`.
+- Gjennomgangens vurdering: venter (gjennomgåeren kjører etter denne dokumentasjonen).
+- Ikke verifisert: GitHub CI, container-images, compose-stacken, Playwright, enhver AWS-utrulling.
+
+---
+
+# Nettplattform: drivstoffkontroll, offentlige prisdata og kostnadsutsikt (steg 7)
+
+> Skrevet av scriber for kjøringen `REQ-20261011-fuel-outlook` 2026-10-11 (grenen `feat/fuel-outlook` fra
+> `feat/charge-intelligence` ved `5f7eb7e`, byggecommits `a164f56`..`cbb340f`, rettingsrunde 1 `1a95245`).
+> **Før produkt, aldri utrullet.** Tenantdata er fortsatt syntetiske. Den eneste nye typen reelle data er to
+> offentlige prisserier fra amerikanske myndigheter (diesel og en produsentprisindeks for trailerlast), lagt
+> inn med kildehenvisning etter en eierbeslutning (åpent spørsmål OQ1, se nedenfor). Trusselradene T58-T65
+> og restrisikoene FO-1..FO-12 står i
+> [technical/web-platform-security.md, del 11](technical/web-platform-security.md#11-step-7-fuel-check-public-price-data-and-cost-outlook)
+> (engelsk). Beskrivelse for brukere: [README.no.md, drivstoffkontroll og kostnadsutsikt](README.no.md#drivstoffkontroll-og-kostnadsutsikt-steg-7).
+> Mermaid-diagrammene er de samme som i den engelske originalen
+> ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-fuel-check-public-price-data-and-cost-outlook-step-7)).
+
+## Hvorfor (steg 7)
+
+To kostnader på en fraktfaktura endrer seg over tid og beregnes av noen andre: drivstofftillegget (FSC) og
+den underliggende prisen for trailerlast. Steg 7 legger til tre ting, uten å endre noe regelresultat fra
+steg 5 eller steg 6:
+
+1. **Kontroll av drivstofftillegg.** En tenant lagrer drivstofftabellene (FSC-tabellene) til sine
+   transportører. En gjennomgåer registrerer sendingsdato, miles og tabell for et krav. Analysen slår opp den
+   offentlige ukentlige amerikanske dieselprisen som gjelder for sendingsdatoen, regner tillegget på nytt med
+   eksakte desimaler og sammenligner med de fakturerte drivstofflinjene. En differanse over toleransen blir
+   ett funn `FSC-INDEX-MISMATCH` som **bare går til gjennomgang**, og som viser prisuken, tabellraden og hvert
+   steg i regnestykket. Hvis det fakturerte beløpet er lik tabellresultatet for en naboukes pris, sier funnet
+   det («feil uke-sonden»). Fakturering med feil publiseringsuke er feiltypen eieren undersøkte på den
+   offentlige dieselhistorikken; de tallene står i forretningscaset i kjøringen og er ikke produktpåstander.
+2. **Globalt lager for offentlige priser.** Ukentlig diesel og den månedlige produsentprisindeksen for
+   trailerlast (PPI) ligger i to tabeller som bare kan utvides, og som ikke tilhører noen tenant. Bare et
+   kommandolinjeverktøy for import med eierforbindelsen skriver dem, fra en strengt tolket CSV, og hver import
+   lagrer kilde-URL, hentedato og sha256. Ingen forespørselsvei henter noe utenfra.
+3. **Kostnadsutsikt.** Diesel om 1, 4, 8 og 13 uker og PPI for trailerlast om 1 måned, hver med et
+   80 %-intervall. En modellprognose vises bare for en horisont der en walk-forward-backtest på den lagrede
+   historikken viser at den slår «ingen endring»; ellers faller horisonten automatisk tilbake til «ingen
+   endring». Et CI-steg gjentar backtesten på den medfølgende historikken.
+
+**Ærlighet.** Utsikten er backtestet på offentlige data 2011-2026 (diesel) og 2009-2026 (PPI); den er ingen
+garanti. Dekningen som vises ved hvert intervall, er dekningen i backtesten, ikke et løfte. Ingen tall for
+treffsikkerhet, besparelser eller innkreving finnes i produktet. FSC-funnet er til gjennomgang: tabellen,
+milene og sendingsdatoen legges inn av mennesker og må kontrolleres før noe bestrides.
+
+## Offentlige prisdata og opphav
+
+`api/data/public-prices/` inneholder nøyaktig fire filer: `GASDESW.csv`, `PCU4841214841212.csv`,
+`manifest.json` og `README.md`. De to CSV-filene er byte for byte like filene eieren lastet ned fra FRED
+2026-10-11, og er merket `-text` i `.gitattributes`, slik at ingen konvertering av linjeskift endrer sha256.
+
+| Serienøkkel | FRED-id | Innhold | Rader | Første .. siste | sha256 (prefiks) | Fast kilde-URL |
+| --- | --- | --- | --- | --- | --- | --- |
+| `diesel_us` | `GASDESW` | Gjennomsnittlig dieselpris i USA, USD per gallon, ukentlig (mandagsdatoer) | 1 699 | 1994-03-21 .. 2026-10-05 | `aca8fefdbb54` | `https://fred.stlouisfed.org/graph/fredgraph.csv?id=GASDESW` |
+| `ppi_tl` | `PCU4841214841212` | Produsentprisindeks, stykkgods med lastebil, langdistanse trailerlast, juni 1992 = 100, månedlig | 411 | 1992-06-01 .. 2026-08-01 | `83894390a4fd` | `https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCU4841214841212` |
+
+- **Kilder.** U.S. Energy Information Administration (diesel) og U.S. Bureau of Labor Statistics (PPI),
+  begge hentet fra FRED, Federal Reserve Bank of St. Louis. Kildehenvisningene står i `PRICE_SERIES`
+  (`packages/shared/src/outlook/constants.ts`) og vises på siden Outlook og i hvert FSC-funn.
+- **Lisens.** Begge seriesidene på FRED har merknaden **«Public Domain: Citation Requested»** (kontrollert på
+  nytt av scriber 2026-10-11 på `https://fred.stlouisfed.org/series/GASDESW` og
+  `https://fred.stlouisfed.org/series/PCU4841214841212`). EIA og BLS opplyser at publiserte data er i det
+  fri (public domain), og ber om å bli oppgitt som kilde.
+- **Detalj om kildehenvisningen.** FREDs egen foreslåtte kildehenvisning for PPI bruker hele serietittelen
+  «Producer Price Index by Industry: General Freight Trucking, Long-Distance Truckload: General Freight
+  Trucking, Long-Distance, Truckload [PCU4841214841212]». Produktets kildehenvisning (Part C F2, låst av
+  tester) bruker den kortere tittelen uten gjentakelsen. README for dataene gir nå også FREDs nøyaktige
+  foreslåtte kildehenvisninger.
+- **Ikke med.** PPI for dyphavsfrakt og USDAs ukentlige rater for kjølebil per rute ble bare brukt i eierens
+  backtester og blir liggende i kjøringskatalogen.
+- **Eierbeslutning og OQ1.** Harde regel 4 i CLAUDE.md sier «kun syntetiske data». Eieren tillot reelle
+  offentlige data i forespørselen for denne kjøringen. Seriene i repoet inneholder ingen kunde-,
+  transportør- eller sendingsdata. Et datert unntak i CLAUDE.md for offentlige prisserier fra myndigheter er
+  åpent spørsmål OQ1 for eieren; agentene endret ikke CLAUDE.md.
+- **Revisjoner.** De siste PPI-månedene er foreløpige, og BLS reviderer dem. En senere import blir det
+  aktive øyeblikksbildet; tidligere importer beholdes. Siden rettingsrunde 1 avvises en ny import som endrer
+  verdier som allerede er dekket, med mindre operatøren gir `--accept-revisions` (se importen).
+
+## Modulstruktur (steg 7)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src/features"]
+        CSH["claims/ClaimSheet.tsx"]
+        FP["fuel/FuelPanel.tsx"]
+        FTP["fuel/FuelTablesPage.tsx"]
+        OP["outlook/OutlookPage.tsx"]
+        SH["shell/AppShell + routes"]
+    end
+    subgraph Shared["packages/shared/src"]
+        FW["fuel/week"]
+        FT["fuel/table"]
+        FC["fuel/check"]
+        FE["fuel/evidence"]
+        OC["outlook/csv + sha256"]
+        OA["outlook/ar + backtest"]
+        OO["outlook/outlook"]
+        DTO["fuel-dto, outlook-dto, copy"]
+        LRN["charge-intel/learned (step 6)"]
+    end
+    subgraph API["api/src"]
+        FR["intelligence/fuel-routes"]
+        FS["intelligence/fuel.ts"]
+        OR["intelligence/outlook-routes"]
+        PS["platform/price-store"]
+        PF["platform/price-files"]
+        CLI["platform/prices-cli"]
+        DBP["db/prices.ts"]
+        CA["claims/analysis + routes"]
+        EV["eval/outlook.ts (CLI)"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261014000000_fuel_outlook"]
+        TT["fsc_tables, claim_fuel_inputs"]
+        GT["price_imports, observations"]
+    end
+
+    SH --> FTP
+    SH --> OP
+    CSH --> FP
+    FP --> DTO
+    OP --> DTO
+    FP -. "HTTP" .-> FR
+    FTP -. "HTTP" .-> FR
+    OP -. "HTTP" .-> OR
+    FR --> FS
+    FS --> FC
+    FS --> TT
+    CA --> FS
+    CA --> PS
+    CA --> FE
+    FE --> FC
+    FE --> LRN
+    FC --> FW
+    FC --> FT
+    OR --> PS
+    OR --> FT
+    PS --> DBP
+    PS --> OO
+    OO --> OA
+    DBP --> GT
+    CLI --> PF
+    CLI --> OC
+    CLI --> DBP
+    EV --> PF
+    EV --> OC
+    EV --> OA
+    MIG --> TT
+    MIG --> GT
+
+    style CSH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FTP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FW fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style OR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DBP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GT fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Modul/funksjon | Formål | Viktige avhengigheter | Endret i denne kjøringen |
+| --- | --- | --- | --- |
+| `packages/shared/src/fuel/constants.ts`, `fuel/copy.ts` | `FUEL_CHECK_VERSION` `fsc-v1`, `FUEL_RULE_IDS` `['FSC-INDEX-MISMATCH']`, `FSC_CONFIDENCE` 0.7, `FSC_TABLES_MAX` 50, `FSC_ROWS_MAX` 200, `FUEL_CHECK_STATUSES`, typer, enheter, trinnvarianter; UI-tekstene `FUEL_NOTE`, `FUEL_STATUS_TEXT`, `FUEL_TEXT`, `FUEL_TABLES_TEXT` | ingen | ny |
+| `fuel/week.ts` | `applicablePosting`, `addDays`, `weekdayIndex`, `weekRuleText`, `civilFromDays` (heltallsaritmetikk på kalenderdatoer, ingen `Date`-tolking) | `daysFromCivil` fra steg 5 `local-datetime` | ny |
+| `fuel/table.ts` | `evaluateFscTable` (heltall skalert med 10^4 i BigInt, mpg avrundet halv opp), `expectedAmount` | steg 5 `py-decimal`, DTO-skjemaer | ny |
+| `fuel/check.ts` | `checkFuel` (returnerer `FuelCheckResult`), `computeFuelCheck` (legger til funnet og sporet av drivstofflinjer) | week, table, steg 5 `classifyLine`/`dedupe`, valgfri klassifiserer fra steg 6 | ny |
+| `fuel/evidence.ts` | `buildEvidenceFuel`: bevisene fra steg 6 pluss FSC-funnet; med input null er resultatet nøyaktig `buildEvidenceLearned` | `applyRulesTraced`, `applyLearning`, renderere for brev og Markdown | ny |
+| `outlook/constants.ts`, `outlook/copy.ts` | `PRICE_SERIES` (fryst register med faste URL-er, kildehenvisninger, grenser), `OUTLOOK_SERIES`, `GATE_MIN_ORIGINS` 100, `GATE_MIN_DM` 1.96, `RANGE_QUANTILES` [0.1, 0.9]; `OUTLOOK_NOTE`, `outlookBacktestText`, `rangeText`, `METHOD_LABELS`, `REASON_LABELS`, `OUTLOOK_TEXT`, `OUTLOOK_EVAL_NOTE` | ingen | ny |
+| `outlook/sha256.ts`, `outlook/csv.ts` | SHA-256 i ren JS (ingen innebygde Node-moduler i shared); `parsePriceCsv`, `PriceCsvError` | steg 5 `py-decimal`, `local-datetime` | ny |
+| `outlook/ar.ts`, `outlook/backtest.ts`, `outlook/outlook.ts` | `ar2Forecast`, `backtestSeries` (walk-forward, DM, terskel, intervaller), `computeOutlook` (status, horisonter, `backtestYears`) | konstanter | ny |
+| `fuel-dto.ts`, `outlook-dto.ts`, `index.ts`, `package.json`, `audit-actions.ts`, `feature-flags.ts`, `analysis-dto.ts` | Zod-skjemaer for rutene; eksporter fra roten (ingen motorer); underveiene `./fuel` og `./outlook`; seks revisjonshandlinger; to flagg; `fuelCheckStatus`, `fuelFindingsCount` i `AnalyzeResponse` | zod | ny / endret |
+| `api/src/intelligence/fuel.ts`, `fuel-routes.ts` | drivstofftabeller (liste, opprette, endre, arkivere), drivstoffdata (sette, fjerne), visningen av drivstoffkontrollen; `fscParamsSha256` (rettingsrunde 1) | tenanttransaksjon, `db/fuel-locks.ts`, `checkFuel`, `appendAudit` | ny |
+| `api/src/intelligence/outlook-routes.ts` | `GET /api/v1/outlook` (med valgfri `fscTableId`, S2) | `app.prices`, `evaluateFscTable` | ny |
+| `api/src/platform/price-store.ts` | `PriceStore`: aktiv import per serie hurtigbufret i `PRICE_CACHE_TTL_MS`; observasjoner og beregnet utsikt lagret per import-id (høyst 2 per serie); `dbPriceReader`, `dieselSeriesOrNull` | `db/prices.ts`, `computeOutlook` | ny |
+| `api/src/platform/price-files.ts` | streng leser for manifestet, beskyttet fillesing (vanlig fil inne i datakatalogen, sha256 kontrollert), `defaultPriceDataDir()` | `node:fs`, `node:crypto` | ny |
+| `api/src/platform/prices-cli.ts` | `npm run prices:import` (`--file`, `--bundled`, `--list`, `--fetch`, `--accept-revisions`); den eneste modulen som kaller `fetch(` | `price-files`, `parsePriceCsv`, `db/prices.ts` | ny |
+| `api/src/db/prices.ts` | `readActiveImport`, `readObservations`, `insertImport` (advisory lock, importreglene, `countRevisedValues`, plattformhendelsen `price_data.imported`) | `withSystemTx`, `appendAudit` | ny |
+| `api/src/db/fuel-locks.ts` | advisory lock per tenant når tabeller opprettes (taket på 50) | `advisoryXactLock` | ny |
+| `api/src/claims/analysis.ts`, `claims/routes.ts` | drivstofflaget i enkelt- og masseanalyse; flagg og dieselserie lest én gang per forespørsel; drivstoffeltene i sammendraget og i `claim.analyzed` | `buildEvidenceFuel`, `fuel.ts`, `app.prices` | endret |
+| `api/src/eval/outlook.ts` | `npm run eval:outlook` (ingen database, intet nettverk, ingen miljøvariabler, ingen skriving) | `price-files`, `parsePriceCsv`, `backtestSeries` | ny |
+| `api/src/db/tenant.ts`, `http/errors.ts`, `audit/chain.ts`, `config.ts`, `app.ts`, `scripts/seed.ts` | `FscTable`, `ClaimFuelInput` i `TENANT_MODELS`; tre nye feilkoder og `serviceUnavailable`; tillatte metadatanøkler; `PRICE_CACHE_TTL_MS`; dekorasjonen `prices`; seed importerer de medfølgende dataene | ingen | endret |
+| `api/prisma/migrations/20261014000000_fuel_outlook/` | fire tabeller, CHECK-er, RLS FORCE, tilganger, triggere som bare tillater utvidelse, to flaggrader | `tenants`, `users`, `claims`, `feature_flags` | ny |
+| `api/data/public-prices/` | medfølgende historikk, manifest, README | ingen | ny |
+| `web/src/features/fuel/*`, `outlook/OutlookPage.tsx`, `claims/ClaimSheet.tsx`, `shell/AppShell.tsx`, `app-root.tsx`, `intelligence/use-features.ts`, `api/client.ts` | fanen Fuel, siden Fuel tables, siden Outlook, menylenker, late ruter, flaggene `fuel` og `outlook`, hjelperen `delete()` | tekster og DTO-er fra shared | ny / endret |
+| `.github/workflows/web-ci.yml`, `api/Dockerfile`, `.gitattributes`, `.env.example`, `package.json` (rot og api) | CI-steget for utsikten; `COPY api/data`; `-text`; `PRICE_CACHE_TTL_MS`; skriptene `eval:outlook` og `prices:import` | ingen | endret |
+
+Pakkeroten `@fr/shared` eksporterer bare konstanter, tekster og DTO-er. Motorene (`table`, `check`,
+`evidence`, `csv`, `ar`, `backtest`, `outlook`) ligger under underveiene `@fr/shared/fuel` og
+`@fr/shared/outlook`. Ingen fil under `packages/shared/src/analysis/` eller `packages/shared/src/charge-intel/`
+ble endret (`git diff --stat 5f7eb7e` er tom for begge).
+
+## Funksjonskall (steg 7)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST claims/:id/analyze"] --> FL["flags read (once)"]
+    R2["POST analyze-awaiting"] --> FL
+    FL --> GS["prices.getSeries diesel"]
+    GS --> AC["analyzeClaim (one tx)"]
+    AC --> LI["loadAnalysisInput"]
+    AC --> IN["read claim fuel inputs"]
+    IN --> BP["buildAnalysisPacket"]
+    BP --> BEF["buildEvidenceFuel"]
+    BEF --> LRN["step 6 learned result"]
+    BEF --> CF["computeFuelCheck"]
+    CF --> AP["applicablePosting"]
+    CF --> EVT["evaluateFscTable"]
+    AC --> AUD["audit claim.analyzed"]
+    R3["GET /outlook"] --> GO["prices.getOutlook"]
+    GO --> CO["computeOutlook (memo)"]
+    CO --> BT["backtestSeries"]
+    BT --> AR["ar2Forecast"]
+    R4["prices:import CLI"] --> PC["parsePriceCsv"]
+    PC --> II["insertImport (owner tx)"]
+
+    style FL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BEF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style EVT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R3 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R4 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style II fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalles av | Formål |
+| --- | --- | --- | --- |
+| `applicablePosting(observations, shipDate, offsetDays)` | `fuel/week.ts` | `computeFuelCheck` | den ukentlige publiseringen som gjelder for en sendingsdato, eller null |
+| `evaluateFscTable(table, price)` | `fuel/table.ts` | `computeFuelCheck`, ruten for utsikten (S2) | eksakt tabellsats `{ rate, steps, row, reachesFirstStep }` |
+| `checkFuel(bundle, input, classify, settings?)` | `fuel/check.ts` | visningen av drivstoffkontrollen | bare `FuelCheckResult` |
+| `computeFuelCheck(...)` | `fuel/check.ts` | `buildEvidenceFuel` | resultatet pluss funnet og sporet av drivstofflinjer |
+| `buildEvidenceFuel(docs, bundle, persp, settings, now, classifier, input)` | `fuel/evidence.ts` | `buildAnalysisPacket` | bevisene fra steg 6 pluss FSC-funnet og `fuel` |
+| `parsePriceCsv(bytes, seriesKey)` | `outlook/csv.ts` | import, evalueringsverktøy | streng tolking med sha256 |
+| `backtestSeries(dates, values, key)`, `computeOutlook(...)` | `outlook/backtest.ts`, `outlook/outlook.ts` | evalueringsverktøy, `PriceStore.getOutlook` | walk-forward, terskel, intervaller, punkt og intervall i dag |
+| `insertImport(ownerBase, args)` | `api/src/db/prices.ts` | importverktøyet, seed | én transaksjon med eierforbindelsen: lås, sammenlign, sett inn, revisjonsspor |
+| `PriceStore.getSeries(key)`, `getOutlook(key)` | `platform/price-store.ts` | analyserutene, ruten for drivstoffkontrollen, ruten for utsikten | hurtigbufret lesing av den aktive importen |
+
+## Dataflyt (drivstoffkontroll)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["Step 6 result (unchanged)"] --> B{"Flag on and inputs set?"}
+    B -- no --> Z["Step 6 packet, exactly"]
+    B -- yes --> C{"Table archived or contract FSC?"}
+    C -- yes --> Z
+    C -- no --> D{"Fuel line and posting found?"}
+    D -- no --> Z
+    D -- yes --> E["Rate from table at posted price"]
+    E --> F{"Miles or linehaul present?"}
+    F -- no --> Z
+    F -- yes --> G{"Difference above tolerance?"}
+    G -- no --> Z
+    G -- yes --> H["Probe weeks -1, -2, -3, +1"]
+    H --> I["FSC-INDEX-MISMATCH (review)"]
+
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style C fill:#1e90ff,stroke:#1565c0,color:#fff
+    style D fill:#1e90ff,stroke:#1565c0,color:#fff
+    style E fill:#1e90ff,stroke:#1565c0,color:#fff
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style G fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+    style I fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+«Step 6 packet, exactly» betyr at lagrede funn, summer, brev og innholdshash er det steg 6 lagrer for samme
+input og tidspunkt; svaret og revisjonshendelsen rapporterer likevel drivstoffstatusen (for eksempel
+`no_fuel_line`).
+
+## Ukeregelen
+
+EIA publiserer den nasjonale gjennomsnittsprisen for diesel ukentlig, datert mandag. GSAs regel for
+drivstofftillegg (slik planleggeren registrerte den fra GSA Freight Management Programs side om
+drivstofftillegg 2026-10-11) bruker mandagens pris for sendinger som hentes fra den påfølgende onsdagen til og
+med tirsdagen etter, og hentedatoen avgjør.
+
+`applicablePosting(observations, shipDate, o)`: gjeldende observasjon er den siste `w` med
+`w.date + o <= shipDate`, og bare hvis `shipDate <= w.date + o + 6`; ellers finnes det ingen pris. Vinduet er
+`effectiveFrom = w.date + o` til `effectiveTo = effectiveFrom + 6`. Hver tabell har sin egen
+`effectiveOffsetDays` `o` (0..6, **standard 2 = onsdag til tirsdag**, GSA-regelen; 0 = mandag til søndag).
+Regelteksten i et funn er `Monday posting applies <dag o> to <dag o+6>`.
+
+Med de medfølgende dataene og standardverdien: sendingsdato 2026-10-07 (onsdag) bruker publiseringen
+2026-10-05 ($6.199); 2026-10-05 og 2026-10-06 bruker 2026-09-28 ($6.382); 2026-10-14 har ingen publisering
+ennå (status `price_unavailable`).
+
+## Drivstofftabeller (eksakt beregning)
+
+P = publisert pris (3 desimaler), B = basispris, S = trinnstørrelse, R = sats per trinn, M = miles per gallon.
+
+| Type | Parametere | Enhet | Sats |
+| --- | --- | --- | --- |
+| `step`, `above_base` | `basePrice`, `stepSize`, `ratePerStep` | per_mile eller percent | P > B: k = ceil((P - B) / S), sats = R x k; ellers 0 |
+| `step`, `from_base` | samme | per_mile eller percent | P >= B: k = floor((P - B) / S) + 1, sats = R x k; ellers 0 |
+| `mpg` | `basePrice`, `mpg`, `decimals` 2/3/4 | bare per_mile | P > B: (P - B) / M avrundet halv opp til `decimals`; ellers 0 |
+| `rows` | 1..200 `{ atLeast, rate }`, `atLeast` strengt stigende | per_mile eller percent | satsen i den siste raden med `atLeast <= P`; ellers 0 |
+
+- All aritmetikk er eksakt: desimaler gjøres om til heltall skalert med 10^4 og deles i BigInt; satser
+  formateres som Python `str(Decimal)`. Ingen flyttall og ingen løkke over trinn, så ekstreme parametere
+  koster ingen CPU.
+- Forventet tillegg: per mile `Q(miles x sats)`; prosent `Q(sats x L / 100)`, der L er
+  fraktavtalens `linehaul_rate` når den finnes (grunnlag «rate confirmation»), ellers summen av de unike
+  fakturalinjene som `classifyLine` kaller `linehaul` (grunnlag «invoice linehaul lines»). Q er avrunding
+  til hele cent med halv-til-partall.
+- Formater: `basePrice`, `stepSize`, `atLeast` med opptil 2 heltallssifre og 4 desimaler, > 0. Satser per
+  mile `0..9.9999`; prosentsatser opptil 100 med 3 desimaler; `mpg` 1..20. Miles har én desimal,
+  0.1..10000.0.
+- Regneeksempel (enhetstestet): tabell med basis $1.20, trinn $0.06, $0.01 per mile per trinn, `above_base`;
+  sendingsdato 2026-10-07; prisen $6.199 gir ceil(4.999 / 0.06) = 84 trinn, $0.84 per mile, **$420.00** for
+  500.0 miles. En faktura på $435.00 gir et funn om overfakturering på $15.00, og sonden viser til
+  publiseringen 2026-09-28 ($6.382, 87 trinn), én uke før gjeldende publisering. En tabell i Bison-stil med
+  `from_base` (basis $1.12, trinn $0.05) gir 102 trinn ved $6.199.
+
+## Drivstoffkontrollen i analysen
+
+**Status, første treff:** `no_inputs` -> `table_archived` -> `contract_amount` (fraktavtalen oppgir et fast
+`fuel_surcharge`: steg 5 `INV-FUEL-SURCHARGE` kontrollerer allerede det beløpet, så FSC-kontrollen hoppes over
+for å unngå dobbelttelling) -> `no_fuel_line` -> `price_unavailable` -> `miles_missing` -> `no_linehaul` ->
+`finding` (|fakturert - forventet| over `settings.amountTolerance`) -> `within_tolerance`. Med flagget av er
+statusen `off`.
+
+**Fakturerte drivstofflinjer** er de unike fakturalinjene (duplikatfjerningen fra steg 5) som
+`classifyLine` kaller `fuel`. Når flagget for gebyrforslag er på, legges unike `other`-linjer til der
+forslaget fra steg 6 er `fuel` uten å avstå, merket «(suggested fuel line)».
+
+**Funnet** `FSC-INDEX-MISMATCH`, tittel «Fuel surcharge differs from the fuel table (review)»: confidence 0.7
+(en fast verdi, ikke en sannsynlighet), `needs_human_review = true`, retning `overcharge` eller
+`underbilled`, beløp `Q(|fakturert - forventet|)`, ingen styrende klausul, kildehenvisninger = de fakturerte
+drivstofflinjene. Beregningen viser i rekkefølge: sendingsdatoen og publiseringsvinduet med regelteksten;
+publisert pris med kildehenvisning og de første 12 heks-sifrene i importens sha256; tabellinjen (versjon,
+trinn eller rad, sats); forventet beløp; de fakturerte linjene; differansen; og, bare når en naboukes
+publisering forklarer fakturaen, «The billed amount equals the table result for the price posted <dato>
+($<pris>), <n> week(s) earlier|later than the applicable posting.» Forklaringen slutter med «Verify the
+table, the miles and the ship date before disputing.»
+
+**Feil uke-sonden.** Bare for `finding`: observasjonene 1, 2 og 3 uker før, deretter 1 uke etter, beregnes med
+samme tabell, miles og L; den første der forventet beløp er nøyaktig lik det fakturerte, oppgis.
+
+**Plassering og summer.** Et FSC-funn i eget perspektiv legges etter egne funn fra steg 6; et funn i motsatt
+retning går til `ignored_findings` og lagres ikke. Det telles bare i `pendingReviewCents`:
+`recoverableCents` er uendret, og utkastet til kravbrev viser det aldri. Godkjenning med funn til gjennomgang
+krever fortsatt `acknowledgePendingFindings`, og firøyeprinsippet er uendret.
+
+**Paritet.** Med input null, eller enhver annen status enn `finding`, er bevisene nøyaktig
+`buildEvidenceLearned(...)`; med flagget av er lagret pakke, summer, brev og innholdshash som i steg 6.
+
+**Lagret i pakkesammendraget og i `claim.analyzed`:** `fuelCheckStatus`, `fscTableId`, `fscTableVersion`,
+`priceImportId`, `priceDate`, `fuelFindingsCount` (0 eller 1) og, siden rettingsrunde 1 (L2), `paramsSha256`:
+sha256 av kanonisk JSON for tabellparameterne som ble brukt (null uten drivstoffdata eller med flagget av).
+Tabeller endres på stedet (versjon + 1); hashen i revisjonshendelsene og i pakken gjør de nøyaktige
+parameterne sporbare.
+
+**Drivstoffdata** er ett sett per krav (`claim_fuel_inputs`): sendingsdato, miles (null tillatt for
+prosenttabeller) og tabell. De kan opprettes, endres eller fjernes bare mens kravet er `AWAITING_ANALYSIS`
+(ellers 409 `invalid_state`; kravraden låses). PUT rapporterer `created`, `changed` eller `unchanged`.
+Visningen av drivstoffkontrollen (`GET /claims/:id/fuel-check`) beregner en forhåndsvisning i alle statuser og
+endrer aldri en lagret pakke.
+
+## Prislager og import
+
+Tabeller (migreringen `20261014000000_fuel_outlook`):
+
+| Tabell | Omfang | Hovedpunkter |
+| --- | --- | --- |
+| `fsc_tables` | tenant | navn unikt per tenant; CHECK-er på verdiene for type, enhet og trinnvariant, `mpg` krever `per_mile`, `price_series = 'diesel_us'`, forskyvning 0..6, navn 1..80, `params` et JSON-objekt på høyst 16 KB, `version >= 1`; RLS ENABLE + FORCE med tenantpolicyen; `freight_app`: SELECT, INSERT, UPDATE begrenset til kolonner, **ingen DELETE** (tabeller arkiveres) |
+| `claim_fuel_inputs` | tenant | unik `(tenant_id, claim_id)`; sammensatte fremmednøkler `(claim_id, tenant_id)` og `(fsc_table_id, tenant_id)`; `miles numeric(6,1)` 0.1..10000.0 eller null; sendingsdato 1994-01-01..2100-12-31; RLS ENABLE + FORCE; SELECT, INSERT, DELETE, UPDATE begrenset til kolonner |
+| `price_imports` | global | `series_key`, `source_kind` (`file`, `bundled`, `fetch`), `source_url` (CHECK: seriens faste FRED-URL), `retrieved_at`, `sha256` (64 heks), `row_count` 1..5000, `first_date <= last_date`, `imported_at` |
+| `price_observations` | global | primærnøkkel `(import_id, period_date)`, `value numeric(10,3) > 0` |
+
+De to globale tabellene har RLS ENABLE + FORCE med en SELECT-policy for alle som har tilgangen, og en
+INSERT-policy som krever systemmodus. `freight_app` har **bare SELECT**, så API-et i drift kan ikke skrive
+prisdata. Radtriggere avviser UPDATE og DELETE, og en setningstrigger avviser TRUNCATE for alle roller
+(`fr_append_only()`). Ingen av modellene er i `TENANT_MODELS`, så tenantklienten når dem ikke; lesing skjer
+gjennom `withSystemTx` i `db/prices.ts`.
+
+**Aktiv import.** Per serie er den nyeste `imported_at` (likt: høyeste id) aktiv. Data leses bare fra den
+aktive importen; eldre importer blir liggende som historikk.
+
+**Import** (`npm run prices:import`; bare eierforbindelsen `MIGRATE_DATABASE_URL`, som aldri skrives ut):
+
+| Kall | Kildetype |
+| --- | --- |
+| `-- --series <key> --file <path> --source-url <fast url> --retrieved-at <YYYY-MM-DD>` | `file` |
+| `-- --bundled` (kjøres også av `npm run db:seed`) | `bundled` (URL og dato fra manifestet, sha256 kontrollert) |
+| `-- --series <key> --fetch` | `fetch` (hentedato = i dag, UTC) |
+| `-- --list` | skriver nøkkel, import-id, sha256, rader, første og siste dato, kildetype, hentedato |
+
+`--accept-revisions` kan legges til alle importformene. Regler:
+
+- `--source-url` må være den faste URL-en; `--retrieved-at` må være en ekte dato som ikke er etter i dag
+  (UTC).
+- `--file` avviser symbolske lenker og filer som ikke er vanlige filer, og leser høyst 1 MiB; bytene hashes og
+  tolkes én gang. All input valideres før databasen åpnes.
+- `--fetch` laster bare ned den faste https-URL-en: `redirect: 'error'`, tidsavbrudd 20 s som også dekker
+  innholdet, et tak på 1 MiB under strømming, status 200 påkrevd. `prices-cli.ts` er den eneste modulen under
+  `api/src` som kaller `fetch(` (arkitekturtest), og ingen rute, lagermodul eller analysemodul importerer den.
+- Én transaksjon med eierforbindelsen per serie, under en advisory lock på serienøkkelen. Utfall, i
+  rekkefølge: `unchanged` (samme sha256 som den aktive importen; ingen skriving, ingen revisjonshendelse);
+  `would_remove_history` (den nye filen dekker ikke datointervallet til den aktive importen);
+  **`revisions_refused`** (rettingsrunde 1, L1: verdier for datoer som den aktive importen allerede dekker, er
+  endret; antallet skrives ut; kjør på nytt med `--accept-revisions` for å importere dem); ellers `imported`,
+  med importraden, alle observasjoner og plattformhendelsen `price_data.imported` (`seriesKey`, `importId`,
+  `sha256`, `rowCount`, `firstDate`, `lastDate`, `sourceKind`, `sourceUrl`, `retrievedAt`, `revisedValues`) i
+  samme transaksjon.
+- Avslutningskoder: 0 importert, uendret eller liste; 2 bruk, validering, tolking, `would_remove_history`
+  eller `revisions_refused` (ingenting skrevet); 3 feil i database eller nettverk (ingenting skrevet;
+  driverfeil gjentas aldri). Seed sender ikke `--accept-revisions`, så en revidert medfølgende fil avvises og
+  logges, uten å stoppe seed.
+
+**CSV-format** (`parsePriceCsv`): høyst 1 048 576 byte; en UTF-8-BOM avvises; bare LF, CR og skrivbar ASCII;
+CR bare rett før LF; overskriften nøyaktig `observation_date,<fredId>`; 1..5000 rader `YYYY-MM-DD,<verdi>`
+med verdi `^[0-9]{1,4}(\.[0-9]{1,3})?$`; ekte datoer, strengt stigende; ukeserier: mandager med nøyaktig 7
+dagers avstand; månedsserier: den 1. i påfølgende måneder; verdier innenfor seriens grenser (diesel 0.5..20,
+PPI 10..2000). Feil har en kode og et linjenummer som starter på 1. Alle regulære uttrykk er forankret og uten
+nøstede kvantorer.
+
+**Opphav som vises til brukere.** Siden Outlook skriver `Data: <kildehenvisning>. Retrieved <dato>; last
+observation <dato>; file sha256 <12 heks>.`, og hvert FSC-funn viser serien og de første 12 heks-sifrene i
+importens sha256. Kildetypen er synlig i `--list` og i revisjonshendelsen, ikke i brukergrensesnittet.
+
+## Kostnadsutsikt
+
+`OUTLOOK_SERIES`: `diesel_us` (sesong m = 52, evaluering over de siste 15 årene, oppvarming 104) med
+horisontene 1 uke `ar2`, 4 uker `combo`, 8 og 13 uker `naive`; `ppi_tl` (m = 12, evaluering over andre
+halvdel av historikken, oppvarming 36) med horisonten 1 måned `ar2`.
+
+**Metoder.**
+
+- `naive` («No change»): siste verdi.
+- `ar2` («Trend model»): en AR(2) med konstantledd på logaritmiske endringer `z_i = ln y_i - ln y_{i-1}`,
+  tilpasset med minste kvadraters metode på de siste 8 sesongene (`W = 8m` nivåer) før hvert startpunkt
+  (Gauss-eliminasjon med delvis pivotering), iterert h steg og gjort om til et nivå
+  `y_t x exp(summen av stegene)`. En pivot på null eller en koeffisient som ikke er endelig, gir den naive
+  verdien.
+- `combo` («Average of trend model and no change»): `(naive + ar2) / 2` i nivåer.
+
+**Walk-forward-backtest.** Startpunkter `t = s0 .. n-1-h`, med `s0 = max(floor(n/2), n - 15 x 52)` for diesel
+og `floor(n/2)` for PPI; hver prognose bruker bare data fram til sitt startpunkt. `maeRatio` (merket «MASE vs
+no change») er summen av absolutte kandidatfeil delt på summen av absolutte naive feil over de samme
+startpunktene. Diebold-Mariano-statistikken bruker `d = |e_naive| - |e_candidate|` med en Bartlett-vektet
+varians over `h - 1` etterslep.
+
+**Terskel (per horisont).** Kandidatmodellen brukes (grunn `model_beats_naive`) bare hvis den ikke er naiv,
+det finnes **minst 100 startpunkter**, **`maeRatio < 1`** og **DM >= 1.96**. En modell som ikke består, faller
+automatisk tilbake til «ingen endring» (grunn `fallback_gate`, vist som «The model no longer beats "no
+change"; showing "no change"»). Naive horisonter viser grunnen `naive_by_design`. Terskelen kjøres på den
+aktive importen, så den vurderes på nytt hver gang en ny import blir aktiv; ingenting beregnes fra data hentet
+under en forespørsel.
+
+**Intervaller (80 %).** For hvert startpunkt j: den logaritmiske feilen `l_j = ln y_{t_j+h} - ln f_j`,
+volatiliteten `vol_j` (populasjonsstandardavviket til de siste m logaritmiske endringene, gulv 1e-9) og den
+skalerte feilen `r_j = l_j / vol_j`. Ved startpunkt i er intervallet `[q0.1, q0.9]` av de skalerte feilene
+der utfallet allerede var kjent (`r_0..r_{i-h}`), ganger `vol_i` (kvantiler av type 7). **Dekning** er andelen
+startpunkter fra og med oppvarmingen der utfallet havnet innenfor. Dagens intervall bruker alle N skalerte
+feil og dagens volatilitet: `low = f x exp(q0.1 x vol)`, `high = f x exp(q0.9 x vol)`. Intervallet blir derfor
+bredere når prisene svinger. I eierens kontroll av intervaller dekket vanlige feilkvantiler 62-76 % av
+utfallene og volatilitetsskalerte intervaller 74-81 %, og derfor ble denne metoden valgt. Hvert intervall på
+siden har sin målte dekning: «80% range. In the backtest, <c>% of outcomes fell inside ranges built this way.»
+
+**Låst backtest på den medfølgende historikken** (deterministisk; gjenskapt av planleggeren i Python, av
+byggeren og av testerens uavhengige orakel):
+
+| Serie, horisont | Metode brukt (grunn) | Startpunkter | maeRatio | DM | Intervalldekning |
+| --- | --- | --- | --- | --- | --- |
+| Diesel, 1 uke | `ar2` (slår ingen endring) | 779 (fra 2011-10-31) | 0.850 | 5.64 | 526 / 675 = 77,9 % |
+| Diesel, 4 uker | `combo` (slår ingen endring) | 776 | 0.960 | 2.75 | 530 / 672 = 78,9 % |
+| Diesel, 8 uker | `naive` (bevisst) | 772 | 1 | 0 | 520 / 668 = 77,8 % |
+| Diesel, 13 uker | `naive` (bevisst) | 767 | 1 | 0 | 510 / 663 = 76,9 % |
+| PPI trailerlast, 1 måned | `ar2` (slår ingen endring) | 205 (fra 2009) | 0.872 | 2.33 | 125 / 169 = 74,0 % |
+
+Uavrundet: diesel 1 uke 0.850402 / 5.6375, 4 uker 0.960302 / 2.7485, PPI 0.872139 / 2.3327.
+
+**Eksempel i dag** (siste dieselpublisering 2026-10-05 på $6.199; siste PPI-verdi 2026-08-01):
+
+| Horisont | Måldato | Punkt | 80 %-intervall |
+| --- | --- | --- | --- |
+| Diesel 1 uke | 2026-10-12 | 6.124 | 5.903 - 6.392 |
+| Diesel 4 uker | 2026-11-02 | 6.136 | 5.301 - 7.175 |
+| Diesel 8 uker | 2026-11-30 | 6.199 | 4.777 - 8.189 |
+| Diesel 13 uker | 2027-01-04 | 6.199 | 4.384 - 9.395 |
+| PPI trailerlast 1 måned | 2026-09-01 | 218.0 | 210.9 - 225.9 |
+
+Tallene endres med hver nye import. De er en backtest på offentlige data, ingen garanti.
+
+**Horisonter som ikke vises, og hvorfor** (eierens backtester i kjøringskatalogen, gjenskapt av
+planleggeren):
+
+| Horisont | Grunnlag | Beslutning |
+| --- | --- | --- |
+| Diesel 8-13 uker med modell | Ingen modell slår «ingen endring» signifikant: best ved 8 uker er combo med maeRatio 0.982 og DM 1.65; ved 13 uker er alle modeller dårligere enn naiv | vises som «ingen endring» med intervall |
+| PPI trailerlast 3 måneder | Svakt: AR(2) maeRatio 0.888 med DM 1.53 (under 1.96). Planleggeren målte også bare 64,7 % dekning for et intervall med ingen endring der, for langt fra 80 % til å kalle det et 80 %-intervall | vises ikke |
+| PPI dyphavsfrakt | Ved 1 måned er alle modeller dårligere enn naiv; ved 6 måneder når ingen modell DM 1.96. Det eneste signalet (combo ved 3 måneder, maeRatio 0.959, DM 2.27) ble ikke fulgt opp; eierens vurdering var «i praksis en tilfeldig gang» | ikke bygget, ikke med |
+| Kjølebilrater per rute (USDA, 10 551 ruter, 78 824 prognoser ved 1 uke) | «Ingen endring» slår samlet AR, videreføring av drivstoff, sesongmodeller og kombinasjon (MAE-forhold 1.002 til 9.36 ved 1 og 4 uker) | ikke bygget. Forretningscaset merker at dette stemmer med Rana og Caplice, «Forecasting Long Haul Truckload Spot Market Rates», MIT Center for Transportation & Logistics, 2020, https://dspace.mit.edu/handle/1721.1/124451 |
+
+**Kostnad og hurtigbuffer.** Begge medfølgende serier beregnes på omtrent 25-30 ms på Node 22 (målinger fra
+byggeren og testeren). `PriceStore` hurtigbufrer id-en til den aktive importen per serie i
+`PRICE_CACHE_TTL_MS` (standard 60 s; 0 slår av) og lagrer observasjoner og utsikt per import-id (høyst 2 per
+serie). Den første forespørselen etter en ny import beregner synkront i hendelsesløkken (sikkerhetsfunn I4,
+akseptert).
+
+**FSC per horisont (S2).** `GET /outlook?fscTableId=<id>` beregner en av tenantens ikke-arkiverte
+dieseltabeller ved avrundet punkt, nedre og øvre grense for hver dieselhorisont og ved siste pris
+(`fscTable.current`). Tabellen leses i en tenanttransaksjon; selve den offentlige utsikten er felles og
+inneholder ingen tenantdata.
+
+## Evalueringsterskel (`eval:outlook`)
+
+```bash
+npm run build
+npm run eval:outlook                    # human summary; line 2 is OUTLOOK_EVAL_NOTE
+npm run eval:outlook -- --json          # one JSON line (OutlookEvalReport, unrounded)
+npm run eval:outlook -- --min-coverage 0.70 --max-coverage 0.90 --require-model diesel_us:1,diesel_us:4,ppi_tl:1
+```
+
+Verktøyet leser `api/data/public-prices/manifest.json` (eller `--data-dir`), kontrollerer hver sha256, tolker
+filene og kjører backtesten for hver konfigurerte horisont. Ingen database, intet nettverk, ingen
+miljøvariabler, ingen skriving. Avslutningskode 0: alle grenser oppfylt; 1: en grense ikke oppfylt
+(`bound not met: <flagg> (<detalj>)` på stderr); 2: feil i bruk, manifest, sha256 eller tolking. CI kjører den
+siste linjen i steget «Cost outlook backtest gate (walk-forward on bundled public data; not a guarantee)»,
+etter gebyrevalueringen. Terskelen feiler hvis en dekning havner utenfor 70-90 %, eller hvis en påkrevd
+horisont faller tilbake til «ingen endring». `OUTLOOK_EVAL_NOTE`: «Walk-forward backtest on bundled public
+price history (U.S. EIA and BLS data via FRED). It is a regression check of the forecast and range rules, not
+a guarantee about future prices.»
+
+## Nett
+
+- **Kravarket, fanen `Fuel`** (`FuelPanel.tsx`, flagget `intelligence.fuel_check`): `FUEL_NOTE`,
+  drivstoffdataene (sendingsdato, miles, drivstofftabell) og statusteksten; for et beregnet resultat også
+  publiseringsdato, pris, forventet, fakturert, differanse og beregningslinjene. Kan redigeres med
+  `claims:analyze` mens kravet er `AWAITING_ANALYSIS`; ellers vises «Fuel inputs can only change before the
+  claim is analysed.» Feil er faste tekster i `role="alert"` (403, 409, 422 `miles_required`, 422
+  `fuel_table_unavailable`, 429, annet); en 404 skjuler fanen.
+- **Siden Fuel tables** (`/settings/fuel-tables`, menyen «Fuel tables»): viser alle tabeller, også arkiverte.
+  Med `settings:manage`: legge til, endre (sender `expectedVersion`) og arkivere. Feltene avhenger av typen;
+  en radtabell redigeres som ett par `atLeast,rate` per linje og valideres i nettleseren med skjemaet fra
+  shared. Faste 409-tekster for taket, en utdatert versjon og et navn som er tatt.
+- **Siden Outlook** (`/outlook`, menyen «Outlook», flagget `intelligence.cost_outlook`): `OUTLOOK_NOTE` én
+  gang; per serie navn, enhet, siste verdi og dato, «Backtested on public data <fra>-<til>; not a
+  guarantee.», én rad per horisont (måldato, metodenavn, grunn, punkt, intervall, `rangeText(coverage)`,
+  maeRatio og DM) og opphavslinjen. Med drivstoffflagget på legger en liste «Fuel table» til
+  drivstofftillegget per dieselhorisont.
+- Alle upålitelige tekster (tabellnavn, linjebeskrivelser) vises som React-tekst (`SafeText`); tall er
+  DTO-strengene slik de kommer.
+
+## Ruter, roller, revisjonsspor, feil og konfigurasjon
+
+| Rute | Tillatelse | Flagg | Suksess |
+| --- | --- | --- | --- |
+| `GET /api/v1/fuel-tables?includeArchived=true\|false` | `claims:read` | fuel_check | 200 `FscTableList` (navn, så id) |
+| `POST /api/v1/fuel-tables` | `settings:manage` | fuel_check | 201 `FscTable` |
+| `PUT /api/v1/fuel-tables/:id` | `settings:manage` | fuel_check | 200 (`expectedVersion` påkrevd) |
+| `DELETE /api/v1/fuel-tables/:id` | `settings:manage` | fuel_check | 204 (arkiverer; idempotent) |
+| `GET /api/v1/claims/:id/fuel-check` | `claims:read` | fuel_check | 200 `FuelCheckView` |
+| `PUT /api/v1/claims/:id/fuel-inputs` | `claims:analyze` | fuel_check | 200 `{ inputs, outcome }` |
+| `DELETE /api/v1/claims/:id/fuel-inputs` | `claims:analyze` | fuel_check | 204 (idempotent) |
+| `GET /api/v1/outlook?fscTableId=<uuid>` | `claims:read` | cost_outlook | 200 `OutlookResponse` |
+
+- **Roller.** Ingen ny tillatelse. `settings:manage` = OWNER, ADMIN; `claims:analyze` = OWNER, ADMIN,
+  MANAGER, REVIEWER, ANALYST; `claims:read` = alle tenantroller. Plattformroller får 403. Ingen omfang for
+  API-nøkler gir tilgang til disse rutene, så en forespørsel med API-nøkkel får 403 (rettingsrunde 1, I1: en
+  integrasjonstest kontrollerer dette for alle 8 rutene; skrevet, ikke kjørt).
+- **Ratebegrensning.** Alle åtte bruker bøtta `intelligence` per bruker; analysen beholder bøtta `analysis`.
+- **Feil.** Nye: 409 `fuel_table_limit_reached` (50 tabeller per tenant, arkiverte medregnet), 422
+  `fuel_table_unavailable`, 422 `miles_required`. Gjenbrukt: 409 `conflict` (navnet er tatt),
+  `stale_revision`, `invalid_state`; 404 `not_found`; 503 `service_unavailable` (utsikten når prislageret
+  ikke kan leses). En ugyldig samling dokumenter i visningen av drivstoffkontrollen gir 422
+  `analysis_input_invalid`, aldri 500. Rekkefølge: origin/CSRF 403 -> 401 -> 429 -> 403 -> 400 -> 404 (flagg
+  av, ukjent id, id som ikke er UUID, eller id fra en annen tenant; byte for byte like) -> 409 -> 422.
+- **Revisjonsspor.** Tenantkjeden: `fsc_table.created`, `fsc_table.updated` (med sortert `changedFields`),
+  `fsc_table.archived` (alle med `paramsSha256` siden rettingsrunde 1), `claim.fuel_inputs_set`,
+  `claim.fuel_inputs_cleared`, `intelligence.viewed` (`kind: fuel_check`) og drivstoffnøklene i
+  `claim.analyzed`. Plattformkjeden: `price_data.imported` (ingen aktør). Ingen tabellnavn og ingen
+  fakturatekst i metadata. Skriving som ikke endrer noe, avvisninger og lesing av utsikten gir ingen
+  hendelse.
+- **Flagg.** `intelligence.fuel_check` («Fuel tables and fuel-surcharge check») og
+  `intelligence.cost_outlook` («Cost outlook from public price data»), oppføringer i registeret pluss
+  migreringsrader, på, synlige for tenanter. Av: rutene svarer 404 etter 401/429/403/400, nettappen skjuler
+  fanen, sidene og menylenkene, og med `fuel_check` av er analysen nøyaktig steg 6 (`fuelCheckStatus 'off'`).
+  En lesefeil for et flagg teller som av. En `fscTableId` på utsikten mens `fuel_check` er av, gir 404.
+- **Konfigurasjon.** `PRICE_CACHE_TTL_MS` (standard 60000, 0..3600000). Importen bruker bare
+  `MIGRATE_DATABASE_URL`. API-imaget inneholder nå `api/data` (4 offentlige filer), slik at `--bundled`
+  virker der.
+
+## Python-paritet: registrerte avvik (RD11-RD13)
+
+RD1-RD10 er uendret.
+
+| ID | Avvik (TS mot Python) | Begrunnelse |
+| --- | --- | --- |
+| RD11 | Med drivstoffflagget på og drivstoffdata registrert kan lagrede pakker inneholde funnet `FSC-INDEX-MISMATCH`, som Python aldri lager. Beløpene står bare i `pendingReviewCents`. | Drivstofftabeller og offentlige priser har ingen motpart i Python. Bare til gjennomgang. |
+| RD12 | `AnalyzeResponse.analysis` og `claim.analyzed` har drivstoffeltene (`fuelCheckStatus` er `off` når flagget er av). | Sporbarhet for drivstoffkontrollen. |
+| RD13 | Utsikten og prislageret har ingen motpart i Python. | Ny funksjon. Regelresultatene fra steg 5 beholder paritetsgarantien. |
+
+## Standardvalg (steg 7)
+
+| ID | Standard | Hvor det kan endres |
+| --- | --- | --- |
+| D1 | Sendingsdato og miles legges inn per krav (ingen uttrekking), bare mens `AWAITING_ANALYSIS` | `fuel.ts`; uttrekking utsatt |
+| D2 | Ukeregel per tabell, `effectiveOffsetDays` standard 2 (onsdag-tirsdag, GSA) | standard i DTO |
+| D3 | Tabelltyper trinn (over/fra basis), mpg (halv opp), rader; prosentgrunnlag = avtalt linehaul, ellers fakturaens linehaul-linjer | `table.ts`, `check.ts` |
+| D4 | Et fast avtalt drivstofftillegg (`fuel_surcharge` satt) hopper over kontrollen (`contract_amount`) | `check.ts` |
+| D5 | Ett funn `FSC-INDEX-MISMATCH` bare til gjennomgang, confidence 0.7, toleranse = analysens toleranse | `fuel/constants.ts` |
+| D6 | Rekkefølge for feil uke-sonden -1, -2, -3, +1 uker | `check.ts` |
+| D7 | Horisonter diesel 1/4/8/13 uker, PPI trailerlast 1 måned; kandidater ar2/combo/naive/naive og ar2 | `OUTLOOK_SERIES` |
+| D8 | Terskel: >= 100 startpunkter, maeRatio < 1, DM >= 1.96; ellers «ingen endring» | `outlook/constants.ts` |
+| D9 | Intervall: volatilitetsskalert empirisk q0.1/q0.9, oppvarming 104/36, volatilitetsgulv 1e-9 | `outlook/constants.ts` |
+| D10 | Bare eierforbindelsen skriver priser; bare utvidelse; importer er fulle øyeblikksbilder; krymping avvises; revisjoner krever `--accept-revisions` | migrering, `db/prices.ts` |
+| D11 | Tabeller `settings:manage`; drivstoffdata `claims:analyze`; lesing `claims:read`; ingen API-nøkler | ruter |
+| D12 | Begge flagg på som standard; en lesefeil teller som av | register og migrering |
+| D13 | Medfølgende historikk i `api/data/public-prices/` (`-text`), kopiert inn i API-imaget | `.gitattributes`, `Dockerfile` |
+
+D1, D2, D5, D8, D11 og D12 venter på eierens bekreftelse (OQ2).
+
+## Utsatt (steg 7)
+
+Regionale dieselpriser (PADD; EIA tilbyr historikken bare som XLS; OQ5); prognoser for PPI dyphavsfrakt og
+rater per rute; planlagte eller automatiske importer; en plattformrute for opplasting av priser; uttrekking av
+miles eller sendingsdato fra dokumenter; ny kontroll av pakker som allerede er analysert; drivstofftillegg i
+andre valutaer enn USD; kanadiske priser (NRCan); andre intervallmetoder; varsler; en versjonshistorikktabell
+for drivstofftabeller (hashen `paramsSha256` holder parameterne sporbare inntil videre); visning av
+importens kildetype i brukergrensesnittet.
+
+## Grensesnitt for senere steg (etter steg 7)
+
+- `packet_findings.rule_id` kan nå også være `FSC-INDEX-MISMATCH` (`FUEL_RULE_IDS`), versjonert med
+  `FUEL_CHECK_VERSION` `fsc-v1`. Utsikten er versjonert med `OUTLOOK_VERSION` `outlook-v1`.
+- En ny prisserie trenger en oppføring i `PRICE_SERIES` med fast URL, en ny CHECK for parene i
+  `price_imports` (ny migrering), medfølgende data og en manifestoppføring hvis terskelen skal dekke den, og,
+  for bruk i FSC, at serien lastes etter tabellens `priceSeries` (i dag laster rutene bare `diesel_us`).
+- En endring av horisont, kandidat eller terskelkonstant endrer de låste backtesttallene og CI-grensene
+  samtidig; kjør `eval:outlook` på nytt og dokumenter den nye tabellen.
+- Uttrekking av miles og sendingsdato fra dokumenter vil kreve nye feltnøkler for uttrekking, en migrering av
+  listen over tillatte nøkler og et registrert paritetsavvik for uttrekking, som de utsatte tariffvilkårene i
+  steg 6.
+
+## Merknader (steg 7)
+
+- Hva som ble kjørt (lokalt, Windows, Node 22.23.3, **ikke GitHub CI**; modus for lite minne, så tunge
+  testsett ble ikke kjørt):
+  - Byggeren ved `cbb340f`: lint og typecheck rene i hele repoet (akseptansefilene medregnet); utvalgte
+    enhetstester besto (shared fuel og outlook; api `outlook-eval-cli`, `fuel-outlook-units` og de berørte
+    låsingene; nett fuel, outlook, charges, analysis og ui, 35 tester); `prisma generate`; `prisma migrate
+    diff` fra skjemaet ved `5f7eb7e` (ingen database). `eval:outlook` `main()` med CI-grensene gir
+    avslutningskode 0; en manipulert kopi, et ugyldig manifest, en sti som rømmer og en manglende katalog gir
+    2; for stramme grenser gir 1. Alle låste tall gjenskapes.
+  - Testeren, nivå L ved `cbb340f` (etter rettingen av D1 i `d87db5e`), `dist` for shared bygget på nytt: hele
+    akseptanseprosjektet for shared **263/263** (17 filer), api `outlook-eval-cli` og `fuel-static`
+    **13/13**; eslint på de tre akseptansekatalogene avslutningskode 0; tsc 0 feil for shared, api og web.
+    Første kjøring hadde 22 feil, alle fra én produktfeil D1 (`checkFuel` returnerte en innpakning i stedet
+    for `FuelCheckResult`), rettet uten å endre noen test. Uavhengige orakler (BigInt-rasjonaler for FSC, en
+    separat implementasjon av AR(2), DM og intervaller for utsikten) gjenskaper alle låste tall.
+  - Sikkerhetsgjennomgang av `5f7eb7e..cbb340f` (statisk): ingen Critical, High eller Medium. L1, L2 og I1
+    ble rettet i `1a95245`; I2, I3 og I4 ble akseptert.
+  - Byggeren ved `1a95245` (rettingsrunde 1): lint og typecheck rene; 52 enhetstester i api besto
+    (`fuel-outlook-units`, `analysis-units`, `outlook-eval-cli` inkludert kjøringen med CI-grensene,
+    `audit-chain`, `seed`). Testerens kjøring på nivå L er eldre enn denne commiten.
+- **Ikke kjørt ennå (nivå H, venter på eierens klarsignal, OQ4):** `npm run build` og den bygde
+  `eval:outlook`; `api/test/integration/fuel-outlook.int.test.ts` (RLS FORCE, tilganger, avvisning på tvers
+  av tenanter, bare utvidelse også for eieren, CHECK for fast URL, import fra ende til ende, 403 for
+  API-nøkler, avvisningen fra L1) og de tilføyde låsingene i tre andre integrasjonsfiler; akseptansefilene
+  på nivå H (API, database, import, nett); paritetstestene; kontrollen av migreringsavvik mot en
+  skyggedatabase; `verify-ci-locally`. Isolasjonen på databasenivå for de to nye tenanttabellene og
+  utvidelsesregelen for pristabellene er derfor kontrollert med kodegjennomgang og enhetstester alene. Da
+  dette ble skrevet, hadde testerens arbeidskatalog ikke-committede oppdateringer på nivå H for tilleggene i
+  kontrakten fra rettingsrunden (`paramsSha256`, `revisions_refused`).
+- Steg 5 og 6 venter fortsatt på sine egne tunge valideringskjøringer.
+- Gjennomgangens vurdering: venter (gjennomgåeren kjører etter denne dokumentasjonen).
+- Ikke verifisert: GitHub CI, container-images, compose-stacken, Playwright, enhver AWS-utrulling.
+
+---
+
+# Nettplattform: kontroll av demurrage og detention for sjøcontainere (steg 8)
+
+> Skrevet av scriber for kjøringen `REQ-20261011-ocean-dd` 2026-10-11 (grenen `feat/ocean-dd` fra `ce107d0`,
+> toppen av steg 7; byggecommits `7419c32` (M1), `527fc14` (M2), `332e5b7` (M3), `afadac3` (S1); rettingsrunde 1
+> `1ca8eb5`, rettingsrunde 2 `22e4a73`, rettingsrunde 3 `10f8941`). **Før produkt, aldri utrullet.** Fakturaene i tester og testdata er syntetiske; tariffmalene
+> inneholder publiserte, offentlige tariffsatser med kildehenvisning (åpent spørsmål OQ2 nedenfor).
+> Trusselradene T66-T74 og restrisikoene DD-1..DD-12 står i
+> [technical/web-platform-security.md, del 12](technical/web-platform-security.md#12-step-8-ocean-demurrage-and-detention-audit)
+> (engelsk). Beskrivelse for brukere:
+> [README.no.md, kontroll av demurrage og detention](README.no.md#kontroll-av-demurrage-og-detention-for-sjøcontainere-steg-8).
+> Mermaid-diagrammene er de samme som i den engelske originalen
+> ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-ocean-demurrage-and-detention-audit-step-8)).
+
+**Ikke juridisk rådgivning.** Kontrollen sammenligner fakturadataene en bruker legger inn, med teksten i
+46 CFR Part 541, 46 CFR 545.5 og en tariff brukeren knytter til. Funnene er utkast til menneskelig
+gjennomgang. Om en faktura faktisk ikke kan kreves betalt, eller om et gebyr er urimelig, er en juridisk
+vurdering: la en advokat gå gjennom funnene før noen bygger på dem eller sender noe. Det fremsettes ingen
+påstand om treffsikkerhet, etterlevelse eller inndrivingsgrad noe sted.
+
+## Hvorfor (steg 8)
+
+Rederier, terminaloperatører (MTO) og NVOCC-er fakturerer importører og eksportører i USA for demurrage
+(containeren står på terminalen) og detention (containeren er utenfor terminalen) når den gebyrfrie tiden er
+over. Siden **28. mai 2024** sier Federal Maritime Commissions regel 46 CFR Part 541 hva en D&D-faktura må
+inneholde og når den må utstedes. Et manglende element eller for sen utstedelse kan fjerne betalingsplikten
+til den som faktureres. Kontrollene er en sjekkliste pluss kalenderregning, så en deterministisk motor kan
+finne kandidater nøyaktig, og et menneske (helst sammen med en advokat) avgjør. Steg 8 legger til den
+motoren, tre tenanttabeller, kravtypen `OCEAN_DD`, som gjenbruker den eksisterende bevispakken og
+firøyegodkjenningen, og en side i nettappen.
+
+### Rettslig grunnlag (kontrollert mot eCFR, tittel 46 oppdatert per 2026-10-07)
+
+Planleggeren leste eCFR-teksten og versjonshistorikken og kopiene hos Cornell LII 2026-10-11.
+`DD_REGULATION_TEXT` (`packages/shared/src/ocean-dd/regulation.ts`, versjon `ecfr-2026-10-07`) siterer
+paragrafene nedenfor ordrett; en akseptansetest låser bytene med sha256.
+
+| Paragraf | Hva den sier (kort) | Brukt av |
+| --- | --- | --- |
+| 46 CFR 541.5 | Mangler noe av minimumsinformasjonen, faller betalingsplikten for gebyret bort | klausulen i `DD-541-6-CONTENT` når et element mangler (funn med bare unøyaktigheter viser til 541.6(b) eller (d)) |
+| 46 CFR 541.6(a)-(e) | 20 påkrevde elementer: B/L- og containernumre, lossehavn (import), grunnlaget for ansvaret; fakturadato og forfallsdato, gebyrfri tid i dager med start og slutt, tilgjengelighetsdato (import) eller tidligste returdato (eksport), datoene det er fakturert for; totalbeløp, tariffregelen eller kontrakten, satsene; kontaktinformasjon, en digital lenke til tvisteprosessen, frister for tvister; to erklæringer | problemlisten i `DD-541-6-CONTENT` |
+| 46 CFR 541.7(a) | Utstedes innen 30 kalenderdager fra datoen gebyret sist påløp, ellers plikter den fakturerte ikke å betale | `DD-541-7-LATE` |
+| 46 CFR 541.7(b) | NVOCC-varianten: innen 30 kalenderdager fra utstedelsesdatoen på fakturaen NVOCC-en selv mottok | `DD-541-7-LATE` (NVOCC) |
+| 46 CFR 541.8(a), (b) | Minst 30 dager fra utstedelse til å be om reduksjon, refusjon eller ettergivelse; den som fakturerer må forsøke å løse saken innen 30 dager | problemene A04/A05 under 541.6(d)(3); brevteksten |
+| 46 CFR 545.5(c)(2)(i), (ii) | Insentivprinsippet: lastens tilgjengelighet; detention når tomme containere ikke kan leveres tilbake, vil sannsynligvis bli ansett som urimelig | `DD-545-AVAILABILITY`, `DD-545-RETURN-REFUSED` |
+
+**46 CFR 541.4 kontrolleres med vilje ikke.** Forespørselen ba om en kontroll av hvem som kan faktureres
+(541.4, «properly issued invoices»). D.C. Circuit opphevet den paragrafen 2025-09-23 (World Shipping Council
+v. FMC, 152 F.4th 215), og FMC fjernet den med virkning fra 2025-12-29 (FR Doc. 2025-23920); historikken i eCFR
+viser «[Reserved]» fra den datoen. Ingen regel kontrollerer derfor hvem som ble fakturert. `billedPartyName`
+lagres og skrives bare i brevet (beslutning D1, åpent spørsmål OQ1).
+
+Part 541 gjelder ikke fakturering mellom rederier og terminaloperatører (541.2(b)); typene fakturerende part
+er rederi, terminaloperatør og NVOCC. For fakturaer datert før 2024-05-28 melder Part 541-kontrollene «ikke
+relevant», og bare regnekontrollene og 545.5-kontrollene kjører. NVOCC-forlengelsen av tvistefristen i
+541.7(c) er ikke modellert.
+
+## Modulstruktur (steg 8)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src/features"]
+        OP["ocean-dd/OceanDdPage"]
+        IT["InvoicesTab + Editor"]
+        AV["AuditView"]
+        TT["TariffsTab + Calendars"]
+        CI["CsvImportTab"]
+        CB["claims badge + nav"]
+    end
+    subgraph Shared["packages/shared/src"]
+        DT["ocean-dd/dates"]
+        TF["ocean-dd/tariff"]
+        AU["ocean-dd/audit"]
+        LT["ocean-dd/letter"]
+        CS["ocean-dd/csv"]
+        PR["presets, regulation, copy"]
+        DTO["ocean-dd-dto (Zod)"]
+        REG["rbac, actions, flags"]
+    end
+    subgraph API["api/src"]
+        RT["ocean-dd/routes"]
+        SV["ocean-dd/service"]
+        AR["ocean-dd/audit-run"]
+        LK["db/dd-locks"]
+        LS["db/dd-invoice-list"]
+        CL["claims/service (4-eyes)"]
+        AN["claims/analysis guard"]
+        HR["http/route bodyLimit"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        MIG["20261016000000_ocean_dd"]
+        TB["dd_tariffs, dd_calendars"]
+        IV["dd_invoices"]
+        CK["claims.kind + trigger"]
+    end
+
+    OP --> IT
+    OP --> TT
+    OP --> CI
+    IT --> AV
+    IT --> AU
+    CI --> CS
+    TT --> PR
+    CB --> REG
+    IT -. "HTTP" .-> RT
+    TT -. "HTTP" .-> RT
+    CI -. "HTTP" .-> RT
+    RT --> HR
+    RT --> REG
+    RT --> SV
+    RT --> AR
+    SV --> LK
+    SV --> LS
+    SV --> AU
+    SV --> DTO
+    AR --> AU
+    AR --> LT
+    AR --> PR
+    AU --> TF
+    TF --> DT
+    CS --> DTO
+    SV --> TB
+    SV --> IV
+    AR --> CK
+    CL --> IV
+    AN --> CK
+    MIG --> TB
+    MIG --> IV
+    MIG --> CK
+
+    style OP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AU fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style REG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CL fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style HR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style MIG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CK fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Modul/funksjon | Formål | Viktige avhengigheter | Endret i denne kjøringen |
+| --- | --- | --- | --- |
+| `packages/shared/src/ocean-dd/constants.ts` | `DD_RULES_VERSION` `dd-rules-v1`, `DD_RULE_IDS` (7), `DD_PART541_EFFECTIVE` 2024-05-28, 30-dagerskonstantene, grenser (50 containere, 20 perioder, 10 trinn, 20 størrelser, 400 kalenderdatoer, 60 avviste datoer), CSV-grenser, `DD_TARIFFS_MAX`/`DD_CALENDARS_MAX` 200, `DD_INVOICES_MAX` 2000, `DD_INVOICE_PAGE_SIZE_MAX` 50, `DD_INVOICE_BODY_LIMIT` 262144, `DD_CSV_MAX_FILE_BYTES` 4000000 (rettingsrunde 2), `DD_SOURCE_FILES` | ingen | ny |
+| `ocean-dd/dates.ts` | `isDdDate`, `ddDayNumber`, `ddDateFromDayNumber`, `ddIsoWeekday`, `ddAddDays`, `ddDaysBetween`: heltallsdatoer (Hinnant), 2000-01-01..2099-12-31, ingen `Date`-parsing, ingen tidssoner | ingen | ny |
+| `ocean-dd/tariff.ts` | `computeFreeTimeEnd`, `computeTariffCharge` (gebyrfri tid, gebyrdatoer, trinn, nøyaktige stegtekster) | dates | ny |
+| `ocean-dd/audit.ts` | `auditDdInvoice`: de 7 reglene, fordelingen, kildehenvisninger (RFC 6901-pekere), klausuler, kontroller, sammendrag per container; alle tekster i én tabell | tariff, regulation, `text-sanitize` `plain` | ny |
+| `ocean-dd/letter.ts` | `buildDdDisputeLetter` (utkast, sendes aldri) | `plain` | ny |
+| `ocean-dd/csv.ts` | `parseDdCsv`: tokenisering i ett gjennomløp, 35 kolonner, gruppering, fil- og radfeil | `DdInvoiceData` | ny |
+| `ocean-dd/presets.ts`, `regulation.ts`, `copy.ts` | 4 dypfrosne tariffmaler med opphav; ordrett CFR-tekst; tekster i brukergrensesnittet (`DD_NOTE`, `DD_PACKET_DISCLAIMER`, `DD_PRESET_NOTE`, `DD_TEXT`, kontrolletiketter) | DTO-skjemaer | ny |
+| `ocean-dd-dto.ts` | Zod-skjemaer (strenge, normaliserende, idempotente): `DdInvoiceData/Body`, `DdTariffData`, `DdCalendarData`, visninger, lister, spørringer, `DdAuditResult`, `DdAuditResponse`, PUT-kropper | `dto.ts` `singleLine` | ny |
+| `dto.ts`, `rbac.ts`, `audit-actions.ts`, `feature-flags.ts`, `index.ts` | `CLAIM_KINDS`, `ClaimSummary.kind`; `dd_invoices:manage`, `dd_tariffs:manage`; 8 revisjonshandlinger; flagget `intelligence.ocean_dd`; eksport fra pakkeroten | ingen | endret |
+| `api/src/ocean-dd/routes.ts` | de 12 rutene under `/api/v1/dd`; flaggsjekk etter autentisering, ratebegrensning, tillatelse og skjema; ingen API-nøkkelscope; `bodyLimit` 262144 på POST/PUT av fakturaer | `defineRoute`, service, audit-run | ny |
+| `api/src/ocean-dd/service.ts` | tariffer, kalendere (liste, opprett, endre; tak 200), fakturaer (liste, hent med forhåndsvisning, opprett med tak 2000, endre, slett; bare DRAFT), referansekontroller, revisjonshendelser | tenanttransaksjon, `dd-locks`, `dd-invoice-list`, `auditDdInvoice` | ny |
+| `api/src/ocean-dd/audit-run.ts` | `buildDdPacket` (ren bortsett fra id-er og hashing), `runDdAudit` (én transaksjon: krav, pakkerevisjon 1, faktura AUDITED, revisjonshendelse) | `auditDdInvoice`, `buildDdDisputeLetter`, `hashPacket`, `nextClaimNumber` | ny |
+| `api/src/db/dd-locks.ts`, `db/dd-invoice-list.ts` | `lockDdInvoiceForUpdate`, `lockDdCatalog(tx, tenantId, 'tariffs' \| 'calendars' \| 'invoices')`; fakturalisten med JSON-sti-lesing (rettingsrunde 1, S1) | rå SQL i tenanttransaksjonen | ny |
+| `api/src/claims/service.ts`, `audit/dd-editors.ts`, `claims/analysis.ts`, `db/claim-load-key.ts` | `kind` i sammendrag; firøyeregelen `dd_invoice_editor` for alle aktører bak fakturaens hendelser `dd_invoice.created/updated` og `selfAuthored` i godkjenningskøen (S3, rettingsrunde 3); analysen avviser krav som ikke er FREIGHT; masseanalyse og oppslag på lastnummer bare FREIGHT | Prisma | endret |
+| `api/src/http/route.ts`, `http/errors.ts`, `http/db-guard.ts`, `audit/chain.ts`, `db/tenant.ts`, `app.ts`, `scripts/seed.ts` | `bodyLimit` per rute (kontrollert 1..262144); `dd_limit_reached`; databasevaktene mappes til 409 `invalid_state`; metadatanøklene fra C15; `TENANT_MODELS` + `TenantTx`; registrering av rutene; seed-tilbakestillingen sletter D&D-rader | ingen | endret |
+| `api/prisma/migrations/20261016000000_ocean_dd/`, `schema.prisma` | enumen `ClaimKind` og `claims.kind`, de tre tabellene, CHECK-er, triggere, RLS FORCE, policyer, tilganger, flaggrad | `tenants`, `users`, `claims` | ny |
+| `web/src/features/ocean-dd/*` | side med fanene Invoices, Tariffs, Calendars, Import CSV; fakturaredigering med forhåndsvisning; revisjonsvisning; malvelger | delt motor, tekster, DTO-er | ny |
+| `web/src/app-root.tsx`, `shell/AppShell.tsx`, `intelligence/use-features.ts`, `claims/ClaimsPage.tsx`, `claims/ClaimSheet.tsx` | ruten `/ocean`, menypunktet `Ocean D&D`, flagget `oceanDd`, merket `D&D` | ingen | endret |
+
+Ingen fil under `packages/shared/src/analysis/`, `charge-intel/`, `fuel/` eller `outlook/` ble endret.
+
+## Funksjonskall (steg 8)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    R1["POST dd/invoices/:id/audit"] --> RA["runDdAudit (one tx)"]
+    RA --> LK["lockDdInvoiceForUpdate"]
+    RA --> LD["load tariff + calendar"]
+    LD --> BP["buildDdPacket"]
+    BP --> AD["auditDdInvoice"]
+    AD --> CT["computeTariffCharge"]
+    CT --> FE["computeFreeTimeEnd"]
+    FE --> DN["ddDayNumber etc."]
+    AD --> CH["checks + summaries"]
+    BP --> LTR["buildDdDisputeLetter"]
+    BP --> HP["hashPacket + sources"]
+    RA --> NC["nextClaimNumber"]
+    NC --> CW["claim + packet rows"]
+    CW --> IA["invoice AUDITED"]
+    IA --> AE["audit dd_invoice.audited"]
+    R2["GET dd/invoices/:id"] --> GI["getInvoice preview"]
+    GI --> AD
+    R3["POST dd/invoices"] --> CR["createInvoice"]
+    CR --> LC["lockDdCatalog invoices"]
+    R4["POST claims/:id/approve"] --> TR["transition: 4-eyes"]
+
+    style R1 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LTR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style HP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R2 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style R3 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TR fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalt av | Formål |
+| --- | --- | --- | --- |
+| `computeFreeTimeEnd(start, tariff, calendar)` | `ocean-dd/tariff.ts` | `computeTariffCharge`, innholdsproblem A02 | sluttdatoen `F` for gebyrfri tid |
+| `computeTariffCharge({ start, stop, sizeType, tariff, calendar })` | `ocean-dd/tariff.ts` | `auditDdInvoice` | gebyrdatoer med trinn og sats, sum i cent, stegtekster |
+| `auditDdInvoice({ invoice, tariff, calendar })` | `ocean-dd/audit.ts` | `getInvoice` (forhåndsvisning), `buildDdPacket`, fakturaredigeringen i nettappen | `DdAuditResult`: funn, summer, kontroller, sammendrag per container |
+| `buildDdDisputeLetter(invoice, result, today)` | `ocean-dd/letter.ts` | `buildDdPacket` | utkastet til brev |
+| `parseDdCsv(text)` | `ocean-dd/csv.ts` | bare `CsvImportTab` i nettappen | fakturaer pluss radfeil; ingen CSV-parser på serveren |
+| `buildDdPacket({ invoice, tariff, calendar, now, actorId })` | `api/src/ocean-dd/audit-run.ts` | `runDdAudit` | kilder med sha256, funnrader, tidslinje, brev, innholdshash, øyeblikksbilde |
+| `runDdAudit(tx, tenantId, id, actor, now)` | `api/src/ocean-dd/audit-run.ts` | `POST /dd/invoices/:id/audit` | revisjonstransaksjonen |
+| `createInvoice`, `updateInvoice`, `deleteInvoice`, `getInvoice`, `listInvoices` | `api/src/ocean-dd/service.ts` | rutene | CRUD for fakturaer (skriving bare for DRAFT) |
+| `transition(...)` | `api/src/claims/service.ts` | rutene for godkjenning og avvisning | regelen for revisjonsforfatter, deretter regelen for fakturaredaktør |
+
+## Dataflyt (kontroll av én faktura)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["Per container: C_i, last_i"] --> B["DD-TOTAL-MISMATCH, DD-PERIOD-ARITH"]
+    B --> C{"Tariff evaluable?"}
+    C -- yes --> D["T_i; DD-TARIFF-OVERCHARGE"]
+    C -- no --> E["RETURN uses invoice rates"]
+    D --> F["DD-545-RETURN-REFUSED"]
+    E --> F
+    F --> G["DD-545-AVAILABILITY"]
+    G --> H{"Part 541 applies?"}
+    H -- no --> K["Checks and summaries"]
+    H -- yes --> I["DD-541-7-LATE"]
+    I --> J["DD-541-6-CONTENT"]
+    J --> K
+
+    style A fill:#1e90ff,stroke:#1565c0,color:#fff
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style C fill:#1e90ff,stroke:#1565c0,color:#fff
+    style D fill:#1e90ff,stroke:#1565c0,color:#fff
+    style E fill:#1e90ff,stroke:#1565c0,color:#fff
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style G fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+    style I fill:#1e90ff,stroke:#1565c0,color:#fff
+    style J fill:#1e90ff,stroke:#1565c0,color:#fff
+    style K fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+«Part 541 applies» betyr at fakturadatoen mangler eller er 2024-05-28 eller senere. Rekkefølgen på boksene er
+rekkefølgen på funnene i resultatet og i pengefordelingen nedenfor. Tilgjengelighetsregelen kjører bare for
+demurrage på importfakturaer med en tariff som kan beregnes.
+
+## Datoer, gebyrfri tid og tariffgebyr
+
+Alle datoer er sivile `YYYY-MM-DD`-strenger som gjøres om til heltallige dagnumre (dager siden 1970-01-01);
+ukedager er ISO (1 = mandag). Penger er heltall i cent og skrives som `d.dd`. Motoren leser aldri klokken.
+
+En tariff (`DdTariffData`) angir `freeDays` N, `freeDayBasis` (`calendar` eller `working`), `startDayRule`
+(`included` eller `additional`), `chargeDayBasis` (`calendar` eller `working`), `workingWeekdays` og opptil 10
+trinn, hvert med et antall dager (det siste ubegrenset) og en sats per containertype (`20DV`, `40DV`, `40HC`,
+...). En kalender (`DdCalendarData`) lister `closedDates` (planlagt stengt, for eksempel helligdager) og
+`shutoutDates` (uplanlagt stengt). Det finnes ingen innebygd helligdagsliste; brukeren legger inn terminalens
+datoer.
+
+- **Dag som teller som gebyrfri.** Kalenderbasis: enhver dato som ikke er i `shutoutDates`. Arbeidsdagsbasis:
+  en arbeidsukedag som ikke er i noen av listene.
+- **Slutt på gebyrfri tid F** for klokkestart S. `included` (startdagen er gebyrfri dag 1 hvis den teller):
+  den N-te tellende dagen på eller etter S (N = 0: F = S - 1). `additional` (for eksempel Hapag-Lloyds «day of
+  interchange plus 4 working days»): den N-te tellende dagen etter S (N = 0: F = S). Søket stopper med en
+  `RangeError` etter 3 660 dager eller etter 2099-12-31; kontrollen melder da tariffkontrollen som
+  `invalid_dates`.
+- **Gebyrdager** er datoene etter F til og med klokkestopp E. Kalenderbasis: alle datoer som ikke er i
+  `shutoutDates` (stengte dager **faktureres**). Arbeidsdagsbasis: arbeidsukedager som ikke er i noen av
+  listene. Dager med «shutout» er altså aldri gebyrfrie og faktureres aldri; stengte dager er ikke gebyrfrie
+  ved gebyrfri tid i arbeidsdager og faktureres ved fakturering i kalenderdager (slik Hapag-Lloyds amerikanske
+  veiledning beskriver det, beslutning D5).
+- **Trinn** gjelder ordenstallet til gebyrdagen: den k-te gebyrdatoen hører til det første trinnet der
+  summen av dager når k. Summen T er summen av satsene. Hvert steg skrives ut i funnets utregning (gebyrfri tid,
+  stengte dager som er hoppet over, gebyrdager, én linje per trinn, sum).
+- **Klokkestart og -stopp** hentes fra containerens dokumentasjon (`clockStart`, `clockStop`) når den er lagt
+  inn, ellers fra fakturaens oppgitte start på gebyrfri tid og den siste fakturerte datoen.
+
+## Regler og fordeling av beløp
+
+| Rekkefølge | Regel-id | Finner | Konfidens | Status | Klausul |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `DD-TOTAL-MISMATCH` | totalbeløpet er høyere enn summen av gebyrlinjene | 0.9 | **bekreftet** (regning) | ingen |
+| 2 | `DD-PERIOD-ARITH` | en gebyrlinje er høyere enn dager x oppgitt sats | 0.9 | **bekreftet** | ingen |
+| 3 | `DD-TARIFF-OVERCHARGE` | gebyrene for en container er høyere enn det den tilknyttede tariffen gir | 0.9 | **bekreftet** (beslutning D2, OQ4) | tilknyttet tariff |
+| 4 | `DD-545-RETURN-REFUSED` | detention fakturert for datoer da retur av tom container ble avvist | 0.5 | gjennomgang | 46 CFR 545.5(c)(2)(ii) |
+| 5 | `DD-545-AVAILABILITY` | gebyrfri tid for importdemurrage regnet fra før lasten var tilgjengelig | 0.5 | gjennomgang | 46 CFR 545.5(c)(2)(i) |
+| 6 | `DD-541-7-LATE` | fakturaen ble utstedt mer enn 30 kalenderdager etter at gebyret sist påløp (NVOCC: etter fakturaen den mottok) | 0.7 | gjennomgang | 46 CFR 541.7(a) eller (b) |
+| 7 | `DD-541-6-CONTENT` | ett eller flere av elementene i 541.6 mangler eller stemmer ikke (25 mulige problemer, blant annet gebyrfri tid som avviker fra tariffen, gebyrer på eller før oppgitt slutt på gebyrfri tid, og tvistefrister som 541.8 ikke tillater) | 0.7 | gjennomgang | 46 CFR 541.5 når et element mangler; 46 CFR 541.6(b) eller 541.6(d) når det bare er unøyaktigheter (rettingsrunde 3, F3) |
+
+«Bekreftet» betyr at regnestykket er sikkert **gitt dataene som er lagt inn** (fakturalinjene og tenantens egen
+tilknyttede tariff); disse beløpene utgjør `recoverableCents`. Alle regelverksfunn (regel 4-7) går bare til
+gjennomgang (`needsHumanReview`), teller i `pendingReviewCents` og er formulert som «... may not be payable
+under 46 CFR 541.x - review»; funnet om avvist retur siterer 46 CFR 545.5(c)(2)(ii) ordrett («Absent
+extenuating circumstances, ... are likely to be found unreasonable.») etterfulgt av «- review» (rettingsrunde 3,
+F4). Et innholdsfunn viser til 541.5 («failure to include ... eliminates any obligation ... to pay») bare når
+minst ett påkrevd element **mangler**; når problemene bare er **unøyaktigheter** (gebyrfri tid eller slutten på
+den avviker fra tariffen, gebyrer på eller før oppgitt slutt på gebyrfri tid, tvistefrister utenfor 541.8), er
+tittelen «Required invoice information inaccurate (46 CFR 541.6)», og klausulen er 46 CFR 541.6(b) eller 541.6(d),
+hentet fra det første problemet, fordi 541.5 handler om utelatelse, ikke feil opplysninger (rettingsrunde 3, F3).
+Konfidensverdiene er faste merkelapper, ikke sannsynligheter. Alle krav, bekreftet eller ikke, går
+fortsatt gjennom firøyegodkjenning.
+
+**Ingen dobbelttelling.** Per container er grunnlaget `C_i` summen av `min(oppgitt, dager x sats)` over
+linjene. Reglene tar beløp i fast rekkefølge: TOTAL (bare det totalbeløpet overstiger), PERIOD (bare det hver
+linje overstiger), deretter fra `C_i`: TARIFF = `C_i - T_i`, RETURN og AVAILABILITY hver begrenset til det som
+er igjen, så tar LATE restgebyret for containerne som er fakturert for sent, og CONTENT tar det som er igjen
+etter det. Summen av funnbeløpene blir dermed aldri høyere enn de oppgitte gebyrene pluss totalavviket, og
+pakkens summer gir mening. «Sist påløpt» er den seneste fakturerte datoen for containeren på fakturaen;
+nøyaktig 30 dager er i tide (beslutning D4). Fristene i 541.8 kontrolleres som del av 541.6(d)(3)
+(beslutning D3).
+
+`checks` viser, for fakturaen og deretter per container (container for container), om hver kontroll fant
+noe, var i orden, ikke ble vurdert (med en grunn som `no_tariff`, `size_not_in_tariff`, `no_evidence`) eller
+ikke er relevant.
+
+## Regneeksempler (publiserte tariffer; låst i enhets- og akseptansetester)
+
+Regnet ut med et uavhengig Python-orakel før spesifikasjonen ble skrevet, og gjenskapt av produktet og av
+testerens uavhengige TypeScript-orakel. Fakturaene rundt dem er syntetiske.
+
+| Mal | Container og datoer | Gebyrfri tid slutter | Gebyrdager | Tariffgebyr |
+| --- | --- | --- | --- | --- |
+| Maersk US import detention 2026 | 40DV, ut av terminalen man. 2026-03-02, retur 2026-03-20 | 2026-03-05 | 15 dager: 4 x $210 + 4 x $260 + 7 x $290 | **$3,910.00** |
+| Maersk, Memorial Day 2026-05-25 stengt | 40DV, 2026-05-22 til 2026-06-02 | 2026-05-27 | 6 dager: 4 x $210 + 2 x $260 | **$1,360.00** |
+| Hapag-Lloyd US import detention, merchant haulage | 40HC, utleveringsdag tors. 2026-07-02, 2026-07-03 stengt, 2026-07-14 shutout, retur 2026-07-20 | 2026-07-09 | 10 dager: 3 x $200 + 3 x $250 + 4 x $300 | **$2,550.00** (uten shutout: 11 dager, **$2,850.00**) |
+| MSC US import demurrage | 40DV, tilgjengelig man. 2026-09-07 (Labor Day, stengt), ut 2026-09-22 | 2026-09-11 | 11 dager: 5 x $80 + 6 x $150 | **$1,300.00** (20DV: 5 x $65 + 6 x $120 = **$1,045.00**) |
+| MSC, klokken startet i stedet 2026-09-04 | 40DV, 2026-09-04 til 2026-09-22 | 2026-09-10 | 12 dager: 5 x $80 + 7 x $150 | **$1,450.00** (differansen på $150.00 er tilgjengelighetseksempelet) |
+| CMA CGM US import demurrage (sekundærkilde) | 40DV, 2026-02-02 til 2026-02-20 | 2026-02-05 | 15 dager: 5 x $295 + 5 x $355 + 5 x $395 | **$5,225.00** |
+
+Syntetiske fakturaeksempler i enhetstestene: en Maersk-container fakturert $440.00 mer enn tariffen gir et
+bekreftet `DD-TARIFF-OVERCHARGE`; en faktura datert 36 dager etter siste fakturerte dato gir `DD-541-7-LATE`
+for restbeløpet $3,910.00 (nøyaktig 30 dager gir ikke funn); en NVOCC-faktura 45 dager etter fakturaen den
+mottok, gir varianten i 541.7(b); en faktura som mangler 23 elementer, gir ett `DD-541-6-CONTENT`-funn som
+lister dem.
+
+## Tariffmaler og opphav
+
+`DD_TARIFF_PRESETS` (fryst, `packages/shared/src/ocean-dd/presets.ts`) er **utgangspunkt** som en bruker
+kopierer inn i en tenanttariff; de brukes aldri automatisk, og tenantens servicekontrakt eller en nyere
+tariff kan avvike (`DD_PRESET_NOTE`). Alle ble hentet 2026-10-11 (import til USA, tørrcontainere).
+Tariff-PDF-ene er ikke lagt inn i repoet (beslutning D10).
+
+| Mal-id | Vilkår | Kilde | Verifisering |
+| --- | --- | --- | --- |
+| `maersk-us-import-detention-2026` | 4 arbeidsdager (man.-lør.) gebyrfritt, startdagen medregnet, fakturert per kalenderdag: $210 (1.-4. gebyrdag), $260 (5.-8.), deretter $290; 20DV/40DV/40HC/45HC | Maersk «US import detention tariff effective 01 Jan 2026» (PDF-adresse hos maersk.com), gjeldende fra 2026-01-01 | `primary_search_extract`: teksten ble lest gjennom en søkemotors utdrag av PDF-en; direkte nedlasting ga «Page Not Found», så ingen sha256 |
+| `msc-us-import-demurrage` | 4 arbeidsdager gebyrfritt; 20DV $65 i 5 dager, deretter $120; 40DV/40HC/45HC $80 i 5 dager, deretter $150 | MSC «Detention, demurrage and per diem charges» (USA), del A.1, alle havner unntatt Baltimore | `primary` (PDF, sha256 `7ee60b30...bb4e3`; udatert dokument) |
+| `hapag-lloyd-us-import-detention-mh-2025` | utleveringsdagen pluss 4 arbeidsdager gebyrfritt; $200 x 3 dager, $250 x 3 dager, deretter $300 per kalenderdag | Hapag-Lloyd «USA - Detention, effective October 1, 2025», import merchant haulage, unntatt California; reglene for stengte dager fra «D&D Tariff Guide for the United States», mai 2026 | `primary` (PDF, sha256 `5aea8cf3...2bfdd`; veiledningen sha256 `76666957...4a7b`) |
+| `cma-cgm-us-import-demurrage-standard` | 4 arbeidsdager gebyrfritt; 40DV/40HC $295 (5 dager), $355 (5 dager), deretter $395 | et blogginnlegg i en bransjepublikasjon som siterer CMA CGM, gjeldende fra 2026-02-22; cma-cgm.com ga en side for robotbeskyttelse | **bare `secondary`: kontroller mot CMA CGMs tariff før bruk** |
+
+Hver mal lagrer forutsetningene sine (for eksempel om startdagen teller, at MSCs gebyrdager er kalenderdager,
+arbeidsdager mandag-fredag, hvordan «days 5-8» oversettes til gebyrdager). Brukergrensesnittet viser
+transportør, dokument, hentedato, verifiseringsnivå og forutsetninger ved siden av malen.
+
+## Datamodell og databasevakter
+
+Migreringen `20261016000000_ocean_dd` (generert DDL pluss en håndskrevet sikkerhetsdel; tidligere migreringer
+uendret):
+
+- **`claims.kind`** (enumen `ClaimKind`: `FREIGHT`, `OCEAN_DD`; NOT NULL, standard `FREIGHT`). Triggeren
+  `claims_kind_guard` (`fr_claim_kind_guard`) avviser enhver endring av `kind` for alle roller
+  (`claim_kind_immutable`).
+- **`dd_tariffs`**, **`dd_calendars`**, **`dd_invoices`**: `tenant_id`, `ENABLE` + `FORCE ROW LEVEL SECURITY`, én
+  policy `<tabell>_tenant_isolation` `FOR ALL` med `USING`/`WITH CHECK tenant_id = fr_current_tenant()`, `REVOKE
+  ALL FROM PUBLIC`, UPDATE-tilganger for `freight_app` begrenset til enkeltkolonner (aldri `id`, `tenant_id` eller
+  `created_by_id`), ingen TRUNCATE; DELETE bare på `dd_invoices`. Hele dataobjektet er `jsonb` med en
+  størrelses-CHECK (64 KiB for tariffer og kalendere, 256 KiB for fakturaer); tekstkolonner kopiert fra det har
+  lengde-CHECK-er; `total_due_cents >= 0`.
+- **Unike nøkler:** navn på tariffer og kalendere per tenant; fakturaer per (tenant, fakturerende part,
+  fakturanummer).
+- **Referanser** til tariff, kalender og krav er sammensatte fremmednøkler `(id, tenant_id)` med `ON DELETE
+  RESTRICT`, så en rad kan bare peke innenfor sin egen tenant.
+- **Revisjonskonsistens:** `status` er `DRAFT` (uten krav og øyeblikksbilde) eller `AUDITED` (krav,
+  `audited_at` og `audit_snapshot` er satt). Triggeren `dd_invoices_guard` (`fr_dd_invoice_guard`): innsetting
+  må være `DRAFT`; en `AUDITED`-rad kan verken endres eller slettes, for noen rolle (`dd_invoice_immutable`);
+  overgang til `AUDITED` krever et krav av typen `OCEAN_DD` i samme tenant.
+- **Flaggrad** `intelligence.ocean_dd` (på). De tre modellene står i `TENANT_MODELS` og `TenantTx`;
+  seed-tilbakestillingen sletter D&D-rader før kravene; seeden lager ingen.
+
+**Hvorfor OCEAN_DD-krav holdes utenfor veiene fra steg 5.** De har ingen importerte dokumenter og intet
+lastnummer, og pakken bygges fra D&D-øyeblikksbildet. Derfor gir `POST /claims/:id/analyze` 409
+`invalid_state` for et krav som ikke er FREIGHT, masseanalysen velger bare `kind = 'FREIGHT'`, og oppslaget på
+lastnummer ved import legger til `AND kind = 'FREIGHT'`. Alt annet (liste, kravpanel, godkjenninger,
+redigering, avvisning, klar til sending, eksport) virker som før; eksportene viser ennå ikke `kind`.
+
+## Kontrollkjøring, bevispakke og brev
+
+`POST /api/v1/dd/invoices/:id/audit` (tillatelsen `claims:analyze`, ratebøtten `analysis`) låser fakturaen,
+avviser en som allerede er kontrollert (409), henter tilknyttet tariff og kalender i samme tenanttransaksjon
+og bygger pakken. Hvis et beløp ikke får plass i et 32-bits heltall, feiler forespørselen med 422
+`analysis_input_invalid`, og ingenting skrives. Ellers, i **én transaksjon**: et nytt krav (`kind OCEAN_DD`,
+perspektiv SHIPPER, neste `CLM-nnnn`, transportør = fakturerende part, avsender = fakturert part, intet
+lastnummer, status `PENDING_REVIEW` med bekreftet sum og sum til gjennomgang), bevispakkerevisjon 1 med den som
+kjørte kontrollen som forfatter, fakturaen satt til `AUDITED` med øyeblikksbildet (`updated_by_id` blir stående
+uendret siden rettingsrunde 3, F1), og revisjonshendelsen `dd_invoice.audited`.
+
+- **Kilder (øyeblikksbilder, hver med sha256 og størrelse av kanonisk JSON):** `dd-invoice.json` (dokumenttype
+  INVOICE), `dd-tariff.json` og `dd-calendar.json` (OTHER, når de er tilknyttet) og
+  `ecfr-46-cfr-541-545.5.json` (OTHER: objektet `DD_REGULATION_TEXT`). Øyeblikksbildet
+  `{ invoice, tariff, calendar, rulesVersion }` lagres på fakturaen med egen sha256, så en senere endring av
+  tariffen eller kalenderen endrer aldri et kontrollert resultat.
+- **Kildehenvisninger** peker inn i øyeblikksbildene med RFC 6901-pekere, for eksempel
+  `dd-invoice.json#/containers/0/periods/1/amount`, med verdien som utdrag. **Klausuler** siterer regelverket,
+  for eksempel lokatoren `ecfr-46-cfr-541-545.5.json#46 CFR 541.5` med den ordrette CFR-teksten som utdrag,
+  eller den tilknyttede tariffen (`dd-tariff.json#/tiers`).
+- **Tidslinje:** faktura utstedt; gebyrer sist påløpt; for fakturerende parter som ikke er NVOCC,
+  30-dagersfristen for utstedelse (46 CFR 541.7).
+- **Ansvarsfraskrivelse** (`DD_PACKET_DISCLAIMER`): automatiske kontroller av dataene som er lagt inn; ikke
+  juridisk rådgivning; utkast til menneskelig gjennomgang; la en advokat gå gjennom dem før noen bygger på dem.
+- **Brev** (`buildDdDisputeLetter`): begynner med «DRAFT - FOR HUMAN REVIEW. NOT SENT. NOT LEGAL ADVICE.»,
+  er adressert til den fakturerende parten, lister hvert funn med beløp og «(needs review)» der det gjelder,
+  oppgir bekreftet beløp og beløp til gjennomgang, siterer 46 CFR 541.8(b) ordrett (løse saken «within thirty
+  (30) calendar days of receiving such a request or at a later date as agreed upon by both parties»;
+  rettingsrunde 3, F4) og minner avsenderen om fristen i
+  541.8(a) regnet fra fakturadatoen. Uten funn står det «(No items found. Do not send.)» og at det ikke kreves
+  noe beløp. Ingenting sendes noen gang på e-post; «send» merker fortsatt bare pakken som klar til sending.
+
+## Firøyeprinsippet for OCEAN_DD-krav
+
+Regelen fra steg 4 er uendret: forfatteren av en revisjon (for revisjon 1 den som kjørte kontrollen) kan ikke
+godkjenne eller avvise den. I tillegg avviser `transition()` godkjenning og avvisning med 403
+`four_eyes_required` (revisjonsgrunnlag `dd_invoice_editor`) for **alle brukere som opprettet eller endret
+fakturadataene**, fordi fakturadataene er bevisene i revisjon 1. Siden rettingsrunde 3 (gjennomgang F1/F2) hentes
+redaktørene fra tenantens revisjonskjede: `ddInvoiceEditorsByClaim` (`api/src/audit/dd-editors.ts`, én spørring
+inne i tenanttransaksjonen) gir de ulike aktørene bak hendelsene `dd_invoice.created` og `dd_invoice.updated` for
+kravets faktura. Rettingsrunde 1 brukte radens `created_by_id`/`updated_by_id`, som ikke fanget tidligere
+redaktører, og fordi kontrollkjøringen overskrev `updated_by_id` med den som kjørte kontrollen, heller ikke den
+siste redaktøren; kontrollkjøringen rører ikke lenger `updated_by_id`. Godkjenningskøen merker slike krav
+`selfAuthored` (ett kall per side). Regelen for revisjonsforfatter sjekkes først. Regelen er en kontroll i
+tjenesten under kravlåsen; det finnes ingen databasetrigger for den (restrisiko DD-6).
+
+## Ruter, roller, revisjonsspor, grenser og flagg
+
+| Rute | Tillatelse | Svar ved suksess |
+| --- | --- | --- |
+| `GET /api/v1/dd/tariffs?page&pageSize` | `claims:read` | 200 liste (navn, så id; pageSize 1..100) |
+| `POST /api/v1/dd/tariffs`, `PUT /api/v1/dd/tariffs/:id` | `dd_tariffs:manage` | 201 / 200 (`{ version, data }` ved PUT) |
+| `GET /api/v1/dd/calendars?page&pageSize` | `claims:read` | 200 liste |
+| `POST /api/v1/dd/calendars`, `PUT /api/v1/dd/calendars/:id` | `dd_tariffs:manage` | 201 / 200 |
+| `GET /api/v1/dd/invoices?page&pageSize&status` | `claims:read` | 200 liste (sist endret først; **pageSize 1..50**) |
+| `POST /api/v1/dd/invoices` | `dd_invoices:manage` | 201 detaljer med forhåndsvisning |
+| `GET /api/v1/dd/invoices/:id` | `claims:read` | 200 detaljer med forhåndsvisning |
+| `PUT /api/v1/dd/invoices/:id` | `dd_invoices:manage` | 200 (`{ version, invoice }`; bare DRAFT) |
+| `DELETE /api/v1/dd/invoices/:id` | `dd_invoices:manage` | 204 (bare DRAFT) |
+| `POST /api/v1/dd/invoices/:id/audit` | `claims:analyze` | 201 `{ invoiceId, claim, packet, audit }` |
+
+- **Roller.** `dd_invoices:manage`: OWNER, ADMIN, MANAGER, REVIEWER, ANALYST. `dd_tariffs:manage`: OWNER, ADMIN,
+  MANAGER, REVIEWER. Lesing `claims:read`; kontrollkjøringen `claims:analyze`. VIEWER kan bare lese;
+  PLATFORM_DEV og SUPER_ADMIN får 403. Ingen rute har et API-nøkkelscope, så API-nøkler får 403 (beslutning D7).
+- **Ratebegrensning.** Alle rutene bruker bøtten `intelligence` per bruker, kontrollkjøringen bøtten
+  `analysis`.
+- **Revisjonshandlinger (8, tenantkjeden):** `dd_tariff.created`, `dd_tariff.updated`, `dd_calendar.created`,
+  `dd_calendar.updated`, `dd_invoice.created`, `dd_invoice.updated`, `dd_invoice.deleted`,
+  `dd_invoice.audited`. Metadata inneholder bare id-er, versjoner, antall, sha256-verdier og summer
+  (`dataSha256` av de normaliserte dataene; `snapshotSha256`, `contentHash`, antall funn og cent ved
+  kontrollen); aldri navn, numre eller annen fakturatekst. (Spesifikasjonens prosa sa «sju»; tabellen lister
+  åtte, og koden følger tabellen.)
+- **Feil.** Ny: 409 `dd_limit_reached` (et tak per tenant er nådd). Gjenbrukt: 400 `validation_error`
+  (også `{ path: 'tariffId' | 'calendarId', code: 'not_found' }` for en referanse utenfor tenanten), 404
+  `not_found` (flagg av, ukjent id, ikke-UUID eller en annen tenants id, byte for byte like), 409 `conflict`
+  (navn eller fakturanummer i bruk), `stale_revision`, `invalid_state` (skriving til eller ny kontroll av en
+  AUDITED-faktura; meldingene fra databasevaktene mappes også hit), 413 `payload_too_large`, 422
+  `analysis_input_invalid`. Rekkefølge: origin/CSRF 403 -> 401 -> 429 -> 403 -> 400 -> 404 -> 400 referanse ->
+  409 -> 422.
+- **Grenser.** Per faktura 50 containere med 20 perioder hver, klokkespenn 730 dager, periodespenn 365 dager;
+  per tariff 10 trinn og 20 containertyper; per kalender 400 datoer per liste. Per tenant 200 tariffer, 200
+  kalendere og **2 000 fakturaer** (DRAFT og AUDITED; kontrollert under en advisory lock, rettingsrunde 1 S2).
+  Sider i fakturalisten har høyst **50** rader og leser bare listekolonner pluss to verdier via JSON-sti, aldri
+  hele dataene eller øyeblikksbildet (S1). Forespørselskropper: den globale grensen på 64 KiB gjelder overalt
+  unntatt **`POST` og `PUT /dd/invoices`, som tar imot opptil 262 144 byte** (256 KiB), så en faktura på
+  maksimal størrelse får plass; en `bodyLimit` over 262144 avvises ved registrering, og en arkitekturtest
+  tillater nøyaktig disse to rutene (S4). CSV: høyst 1 000 000 tegn, 2 000 datarader og 50 fakturaer per fil;
+  nettleseren avviser en fil over 4 000 000 byte før den leses (S5).
+- **Flagget** `intelligence.ocean_dd` («Ocean demurrage and detention invoice audit»), på som standard
+  (beslutning D8, OQ3), synlig for tenanter. Av: alle D&D-ruter gir 404 etter 401/429/403/400, og nettappen
+  skjuler siden; eksisterende OCEAN_DD-krav kan fortsatt leses, og pakkene deres kan fortsatt godkjennes,
+  avvises, redigeres og merkes klar til sending. En feil ved lesing av flagget regnes som av.
+
+## Nett
+
+- **Siden Ocean D&D** (`/ocean`, menypunktet `Ocean D&D`, vist når flagget er på og brukeren har
+  `claims:read`) med fanene **Invoices**, **Tariffs**, **Calendars** og **Import CSV**; kontroller bare for
+  brukere med tilhørende tillatelse.
+- **Fakturaredigering:** alle fakturafelt, underskjemaer for containere og perioder, valg av tariff og
+  kalender, og en **forhåndsvisning** som regnes ut i nettleseren med den samme `auditDdInvoice` så snart
+  skjemaet er gyldig. Lagring sender `version`. Fakturavisningen viser `DD_NOTE`, kontrollene med etiketter,
+  funnene (regel-id, tittel, beløp, «needs human review») og, for en DRAFT og en bruker med `claims:analyze`,
+  **Run audit** med merknaden om at den som kjører blir forfatter av revisjon 1; ved suksess lenkes det til det
+  nye kravet.
+- **Tariffs:** liste og redigering (trinn som linjer `days | SIZE=rate, ...`) med malvelgeren «Start from a
+  public tariff», `DD_PRESET_NOTE` og opphavet. **Calendars:** én dato per linje.
+- **Import CSV:** filen tolkes i nettleseren av `parseDdCsv` (API-et tar bare imot validert JSON, beslutning
+  D9); en forhåndsvisning lister fakturaer og radfeil; importen sender fakturaene én og én og viser utfallet for
+  hver.
+- Kravlisten og kravpanelet viser merket `D&D` for OCEAN_DD-krav. Feil er faste tekster i `role="alert"` etter
+  status; meldinger fra serveren vises aldri; all ikke-klarert tekst vises som React-tekst (`SafeText`).
+
+## Standardvalg (steg 8)
+
+| ID | Standard | Hvor det kan endres |
+| --- | --- | --- |
+| D1 | Ingen kontroll etter 46 CFR 541.4 (opphevet og fjernet); `billedPartyName` bare lagret | `audit.ts` (ny regel-id hvis det noen gang legges til) |
+| D2 | Ny tariffberegning, linjeregning og totalavvik er bekreftet (review false, 0.9); alle CFR- og 545.5-funn bare til gjennomgang | `audit.ts` |
+| D3 | Fristene i 541.8 kontrolleres under 541.6(d)(3) | `audit.ts` |
+| D4 | Sist påløpt = seneste fakturerte dato på fakturaen; nøyaktig 30 dager er i tide; NVOCC bruker bare 541.7(b) | `audit.ts` |
+| D5 | Shutout-dager aldri gebyrfrie og aldri fakturert; stengte dager ikke gebyrfrie ved arbeidsdagsbasis, fakturert ved kalenderbasis | `tariff.ts` |
+| D6 | Fordelingsrekkefølge TOTAL, PERIOD, TARIFF, RETURN, AVAILABILITY, LATE, CONTENT | `audit.ts` |
+| D7 | `dd_invoices:manage` inkludert ANALYST; `dd_tariffs:manage` REVIEWER og høyere; kontrollkjøring `claims:analyze`; ingen API-nøkkelscope | `rbac.ts`, rutene |
+| D8 | Flagget på som standard; av = 404, eksisterende OCEAN_DD-krav urørt | registeret og migreringsraden |
+| D9 | CSV tolkes bare i nettleseren | nett, rutene |
+| D10 | Malene er konstanter i koden med opphav; tariff-PDF-er legges ikke inn | `presets.ts` |
+| D11 | Tak på 200 tariffer og 200 kalendere per tenant, ingen sletting av dem; 2 000 fakturaer (rettingsrunde 1) | konstanter, service |
+
+Åpne spørsmål til eieren: **OQ1** en ikke-juridisk merknad om «samsvar for fakturert part» i stedet for 541.4
+(standard: ingen); **OQ2** et datert unntak i CLAUDE.md regel 4 for publiserte tariffsatser; **OQ3** om flagget
+skal være på som standard før en advokat har gått gjennom formuleringene; **OQ4** om ny tariffberegning skal
+forbli bekreftet eller bare gå til gjennomgang.
+
+## Utsatt (steg 8)
+
+Uttrekk av D&D-fakturaer fra PDF; import av hendelsesdatoer fra DCSA Track & Trace, Terminal49 eller Vizion;
+API-nøkkelscope for D&D-rutene; sletting av tariffer og kalendere; filter og kolonne for `kind` i kravlister og
+CSV-eksport; kontrollen av fakturert part etter 541.4; NVOCC-forlengelsen i 541.7(c); per diem-, chassis- og
+timegebyrer; andre valutaer enn USD; innebygde helligdagslister; all automatisk sending.
+
+## Grensesnitt for senere steg (etter steg 8)
+
+- `packet_findings.rule_id` kan nå også være en av `DD_RULE_IDS`, versjonert med `DD_RULES_VERSION`
+  `dd-rules-v1`; regelverksteksten med `DD_REGULATION_VERSION` `ecfr-2026-10-07`. En endring i regelverket krever
+  en ny versjon og en ny låst tekst, aldri endring på stedet.
+- Alle `ClaimSummary` har nå `kind`; nye steder som lager krav, må sette den. Kode som analyserer eller kobler
+  krav, må fortsatt filtrere på `kind = 'FREIGHT'`.
+- Import av sporingsdata vil fylle `evidence.clockStart`, `clockStop`, `cargoAvailableDate` og
+  `emptyReturnRefusedDates`; motoren bruker dem allerede.
+
+## Merknader (steg 8)
+
+- Hva som ble kjørt (lokalt, Windows, Node 22.23.3, **ikke GitHub CI**; modus for lite minne, så tunge
+  testsett ble ikke kjørt):
+  - Byggeren (M1-S1): `prisma validate`, `prisma generate`, `prisma migrate diff` fra skjemaet ved `ce107d0`
+    (ingen database; alle fremmednøkler `ON DELETE RESTRICT`), lint og typecheck av byggerens kode rene,
+    utvalgte enhetstester besto (shared ocean-dd og låsinger, api `ocean-dd-units`, `tenant-scope`,
+    `architecture`, `four-eyes-units`, nett `ocean-dd` og de berørte kravfixturene).
+  - Testeren, nivå L ved `afadac3` (før rettingsrunde 1): hele akseptanseprosjektet for shared **389/389**
+    (23 filer, med 3 000 tilfeldige tilfeller mot et uavhengig orakel), statiske api-tester **10/10**; eslint
+    rent; tsc 0 feil for shared, api og web. En første kjøring hadde 5 feil med én årsak (rekkefølgen på
+    kontrollene per container), rettet i M3 uten å endre noen test.
+  - Sikkerhetsgjennomgang av `ce107d0..afadac3` (statisk): ingen Critical eller High. S1 (Medium), S2-S4 (Low)
+    og S5 (Info) ble rettet i `1ca8eb5`; S6 (testhull) gikk til testeren; S7 (en kommentar i migreringen)
+    krever ingen handling.
+  - Byggeren ved `1ca8eb5` (rettingsrunde 1): lint og typecheck rene; enhetstester shared ocean-dd 32, api 55
+    (ocean-dd-units, architecture, four-eyes-units, claims-logic, app-http), nett ocean-dd 10, alle bestått.
+    Testerens kjøring på nivå L er eldre enn denne commiten.
+  - Planleggeren: del C endret for rettingsrunde 1 (likt i spec og test-spec), med nye akseptansetilfeller for
+    sidestørrelsen, taket på fakturaer, grensen for forespørselskropp, firøyeregelen for fakturaredaktører,
+    filstørrelsen for CSV og de to hullene fra S6 (en REVIEWER eller MANAGER som kjørte kontrollen, får 403;
+    referanser på tvers av tenanter med en annen tenants reelle id-er).
+  - Byggeren ved `22e4a73` (rettingsrunde 2): meldingen for `dd_limit_reached` og `DD_TEXT.limit` nevner nå
+    tariffer, kalendere eller fakturaer; ny `DD_TEXT.csvTooLarge` («The file is too large to import.») og den
+    eksporterte `DD_CSV_MAX_FILE_BYTES`; grensene bruker de eksporterte konstantene. Lint og typecheck rene;
+    enhetstester shared 32, api 36, nett 10 besto.
+  - Gjennomgåeren: FAIL (STOP) på F1 (kontrollkjøringen overskrev `updated_by_id`, så siste redaktør kunne
+    godkjenne); F2-F7 er merknader. Byggeren ved `10f8941` (rettingsrunde 3): firøyeprinsippet fra
+    revisjonskjeden (F1, F2), kontrollkjøringen beholder `updated_by_id`, tekster for funn med bare
+    unøyaktigheter med klausul 541.6(b)/(d) (F3), ordrett ordlyd fra 545.5(c)(2)(ii) og 541.8(b) (F4);
+    enhetstester shared ocean-dd 34, api 43 besto; lint og typecheck rene. Det nye integrasjonstilfellet (tre
+    redaktører, også en tidligere, hver avvist ved godkjenning og avvisning; en manager som ikke har endret
+    fakturaen, godkjenner) er skrevet, ikke kjørt. Ny gjennomgang av rettingen venter.
+- **Skrevet, men ikke kjørt (nivå H, venter på eierens klarsignal):** `api/test/integration/ocean-dd.int.test.ts`
+  (RLS, FORCE, policyer, tilganger, avvisning på tvers av tenanter for alle tre tabeller, triggerne, rutene,
+  roller, flagg av, kontrollkjøringen, firøyeprinsippet med S3-tilfellene, grensene for forespørselskropp fra
+  S4, liste- og taktilfellene fra S1/S2) og testerens filer på nivå H `dd-db`, `dd-api`, `dd-audit` og
+  `dd-ui`; paritetstestene; `npm run build`; `verify-ci-locally`. Isolasjonen på databasenivå og triggerne er
+  derfor så langt kontrollert med kodegjennomgang og enhetstester alene.
+- Gjennomgangens vurdering: FAIL (STOP) på F1 ved `22e4a73`; rettet i `10f8941`; ny gjennomgang venter.
+- Ikke verifisert: GitHub CI, container-images, compose-stacken, Playwright, enhver AWS-utrulling.
+
+# Nettplattform: herdingskjøringen
+
+> Skrevet av scriber for kjøringen `REQ-20261012-hardening` 2026-10-12. Grenen `feat/hardening` fra `bcc23bb`
+> (toppen av steg 8). Byggecommits `cd596c3`..`c4f703b`; rettingsrunde 1 `f8d37f0`, `b603b14`; rettingsrunde 2
+> `c3f131b`, `ce536c5`, `8ac4360`, `76458e4`. **Før produkt, bare syntetiske data, aldri utrullet.** Trusselradene
+> T75-T85, status for hver tidligere restrisiko og de åpne punktene HR-1..HR-13 står i
+> [technical/web-platform-security.md, del 13](technical/web-platform-security.md#13-hardening-run) (engelsk).
+> Beskrivelse for brukere:
+> [README.no.md, herding](README.no.md#herding-forbedringer-av-eksisterende-funksjoner). Mermaid-diagrammene er
+> de samme som i den engelske originalen ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-hardening-run)).
+
+## Oversikt (herding)
+
+Eieren ba om ingen nye funksjoner: forbedre de eksisterende og ta hånd om sikkerheten. Planleggeren sorterte
+alle restrisikoer fra steg 4-8 etter kundeverdi, sikkerhetsrisiko, innsats og risiko for regresjon. I tillegg
+kom en sikkerhetsrevisjon av hele plattformen (P1-P5) og en sikkerhetsgjennomgang av denne kjøringens endringer
+(H-1..H-5). Kjøringen leverer:
+
+- **Dypere firøyeprinsipp.** Et tredje avvisningsgrunnlag `label_author` (restrisiko SC-1), og sperrer i
+  databasen bak regelen for D&D-fakturaredigerere (DD-6) og for pakkebeslutninger (FE-S2, bare UPDATE).
+- **Ærlige feil.** Mislykkede analyser får en grunnkode, en revisjonshendelse og en merknad på kravarket (SA-8).
+  Masseanalyser sier hvorfor de stoppet (SA-2, SA-3), prøver mislykkede krav sist (SA-1, SA-8) og registrerer
+  `documentCount` (SA-4).
+- **Ærlige tekster.** Firøyetekster per grunnlag (SA-11), konfidens vist som en fast regelinnstilling,
+  verifisering av D&D-maler i ord (DD-3), priskildens type (FO-1), teksten om taket for drivstofftabeller
+  (FO-10), listen over påvirkende teametiketter i fanen Charges (SC-1), 409 ved konflikt i nytt forsøk på
+  etikettlagring (SC-8) og tilgjengelige tabellnavn.
+- **Plattformsikkerhet.** Sperre ved passordbytte (P1), klientadressen bak CloudFront (P2, F-03), tilbakekalling
+  av økter ved forfremmelse til en MFA-rolle (P3), likt svar på invitasjoner (P4), et unntak fra sperren for kjente
+  enheter (P5), kanoniske UUID-er med små bokstaver (H-1), flagget for avkortning ved mer enn 50 etiketter (H-4)
+  og vakter i Terraform (H-2, H-3).
+
+**Invarianter.** `schema.prisma`, `package-lock.json`, `src/freight_recovery/**`, `webapp/**` og de frosne
+motormappene `packages/shared/src/{analysis,charge-intel,fuel,outlook,ocean-dd}` er byte-identiske med `bcc23bb`.
+Regelresultater, funntekster, brev, pakkehasher og paritet er derfor uendret. Det finnes ingen ny rute,
+tillatelse, scope for API-nøkler, flagg, tenanttabell, kolonne, indeks, grant, policy eller enum-verdi. De eneste
+nye miljøvariablene er `CLIENT_IP_HEADER` og `ORIGIN_VERIFY_SECRET`. Det er to nye migreringsmapper.
+`20261018000000_hardening` er uendret siden den ble committet. `20261019000000_hardening_fr2` inneholder bare
+`CREATE OR REPLACE FUNCTION` og `REVOKE`.
+
+## Modulstruktur (herding)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src"]
+        APR["ApprovalsPage"]
+        CSH["ClaimSheet + Analyze"]
+        BLK["BulkAnalyzeDialog"]
+        CHG["ChargeLinesPanel"]
+        PGS["Outlook, Fuel, Tariffs"]
+        CLI["api/client details"]
+    end
+    subgraph Shared["packages/shared/src"]
+        TCP["transparency-copy"]
+        AFR["analysis-failure"]
+        FEB["four-eyes bases"]
+        DTO["DTOs (additive)"]
+        ACT["audit-actions"]
+    end
+    subgraph API["api/src"]
+        RTE["http/route canonical ids"]
+        CIP["http/client-ip"]
+        DBG["http/db-guard"]
+        SVC["claims/service"]
+        ANA["claims/analysis"]
+        LAU["audit/label-authors"]
+        LIN["audit/label-influence"]
+        AFS["audit/analysis-failures"]
+        CND["db/analysis-candidates"]
+        CHS["intelligence/charges"]
+        AUT["auth service + session"]
+        USR["auth/users-routes"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        M18["20261018 hardening"]
+        M19["20261019 hardening_fr2"]
+        GAP["approvals ext guard"]
+        GPK["packet decision guard"]
+        CHK["awaiting amounts CHECK"]
+    end
+    subgraph Infra["infra (Terraform)"]
+        CFR["CloudFront + WAF"]
+        ALB["ALB 403 + rule"]
+        SMS["origin-verify secret"]
+    end
+
+    APR --> TCP
+    CSH --> TCP
+    BLK --> TCP
+    CHG --> TCP
+    PGS --> TCP
+    CSH --> CLI
+    TCP --> AFR
+    TCP --> FEB
+    APR -. "HTTP" .-> SVC
+    CSH -. "HTTP" .-> ANA
+    CHG -. "HTTP" .-> CHS
+    RTE --> SVC
+    RTE --> ANA
+    SVC --> LAU
+    SVC --> AFS
+    ANA --> CND
+    ANA --> AFS
+    CHS --> LIN
+    SVC --> DBG
+    AUT --> CIP
+    USR --> AUT
+    SVC --> GAP
+    SVC --> GPK
+    ANA --> CHK
+    M18 --> GAP
+    M18 --> GPK
+    M18 --> CHK
+    M19 --> GAP
+    CFR --> ALB
+    SMS --> ALB
+    SMS --> CIP
+    ALB -. "x-origin-verify" .-> CIP
+    DTO --> ACT
+
+    style APR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CSH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BLK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PGS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TCP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AFR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FEB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ACT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RTE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CIP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DBG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SVC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ANA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LAU fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LIN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AFS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CND fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style USR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style M18 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style M19 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GAP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GPK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CFR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ALB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SMS fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Modul/funksjon | Formål | Viktige avhengigheter | Endret i denne kjøringen |
+| --- | --- | --- | --- |
+| `api/prisma/migrations/20261018000000_hardening/` | `fr_approval_four_eyes_ext_guard` + `approvals_four_eyes_ext_guard` (D&D-redigerere, etikettforfattere); `fr_packet_decision_guard` + den utsatte constraint-triggeren `evidence_packets_decision_guard`; CHECK `claims_awaiting_amounts_zero` | `approvals`, `dd_invoices`, `audit_events`, `charge_labels`, `evidence_packets`, `claims` | ny |
+| `api/prisma/migrations/20261019000000_hardening_fr2/` | `CREATE OR REPLACE` av `fr_approval_four_eyes_ext_guard` med grenen for avkortet liste (alle etikettforfattere i tenanten); `REVOKE` | 20261018 | ny |
+| `api/src/http/route.ts` | `canonicalizeParams`: gjør alle UUID-stiparametre om til små bokstaver etter skjemavalidering i `defineRoute` | Zod | endret |
+| `api/src/http/client-ip.ts` | `deriveClientIp`, `parseViewerAddress`, `secretEquals` (konstant tid), `registerClientIp` (request-getter `clientIp`, første `onRequest`-krok) | `config.ts` | ny |
+| `api/src/http/db-guard.ts`, `http/errors.ts`, `app.ts` | `isPacketDecisionDbError` -> 409 `invalid_state` (logg `packet_decision_db_guard`); `AnalysisFailure` 422 med `details`; `claim.analysis_failed` lagt til i egen transaksjon; ratebegrensernes nøkler bruker `clientIp` | Fastify | endret |
+| `api/src/claims/service.ts` | `transition()`: grunnlagene `revision_author`, `dd_invoice_editor`, `label_author`, slått opp med kravets id fra databasen; `selfAuthoredBasis` i godkjenningskøen; `getClaim().analysisFailure` | `audit/dd-editors`, `audit/label-authors`, `audit/analysis-failures` | endret |
+| `api/src/audit/label-authors.ts` | `labelAuthorsByClaim`: én spørring; etikettforfattere før `claim.analyzed`; hele tenanten når `learnedLabelIdsTruncated` | rå SQL i tenanttransaksjonen, `fr_current_tenant()` | ny |
+| `api/src/audit/label-influence.ts` | `learnedLabelIdsOfClaim`: de lagrede `learnedLabelIds` (bare UUID-er, høyst 50, lagret rekkefølge) | rå SQL i tenanttransaksjonen | ny |
+| `api/src/audit/analysis-failures.ts` | `analysisFailureOf`: siste `claim.analysis_failed` + antall | rå SQL i tenanttransaksjonen | ny |
+| `api/src/db/analysis-candidates.ts` | `analysisCandidates`: kandidater for masseanalyse, aldri mislykkede først, deretter eldste; `take` 1..100 | rå SQL i tenanttransaksjonen | ny |
+| `api/src/claims/analysis.ts` | `NotStorableError`, `isAnalysisRefusal`, `classifyAnalysisFailure`, `appendAnalysisFailure`, `bulkStopReason`, `learnedLabelIdsTruncated`; `analyzeAwaiting` med `stoppedBy` og sammendrag også ved feil | frossen motor (uendret) | endret |
+| `api/src/intelligence/charges.ts` | `classifierFromRows`, `influenceView`; `chargeLines` leser etikettene én gang i transaksjonen og klassifiserer etterpå; SC-8 409 | `audit/label-influence` | endret |
+| `api/src/auth/service.ts`, `session.ts`, `routes.ts`, `users-routes.ts` | sperre ved passordbytte (`lockedForSeconds` før argon2, `recordFailure`, fjernes ved suksess, rategruppe `auth`); `isKnownDevice`; tilbakekalling ved forfremmelse via `revokeUserSessionsTx(..., 'role_requires_mfa')`; likt svar på invitasjoner + plattformhendelse | lockout-lager, økt | endret |
+| `api/src/audit/chain.ts`, `config.ts`, `logging.ts` | tillatte nøkler `stoppedBy`, `documentCount`, `knownDevice`, `learnedLabelIdsTruncated`; tolking av `CLIENT_IP_HEADER` og `ORIGIN_VERIFY_SECRET`; sladding av `x-origin-verify` | - | endret |
+| `packages/shared/src/transparency-copy.ts` | faste tekster (C6), frosne objekter | `analysis-failure`, `four-eyes` | ny |
+| `packages/shared/src/analysis-failure.ts`, `four-eyes.ts`, `dto.ts`, `analysis-dto.ts`, `charge-intel-dto.ts`, `outlook-dto.ts`, `audit-actions.ts` | `ANALYSIS_FAILURE_REASONS`, `FOUR_EYES_CLAIM_BASES`, `BULK_STOP_REASONS`, `PRICE_SOURCE_KINDS`; DTO-felt lagt til; tre nye revisjonshandlinger til slutt i listen | - | ny / endret |
+| `web/src` (Approvals, ClaimSheet, AnalyzeClaimSection, BulkAnalyzeDialog, ChargeLinesPanel, FuelTablesPage, TariffsTab, OutlookPage, ClaimsPage, FieldsTable, ReviewQueuePage, `api/client.ts`) | viser C6-tekstene som tekstnoder; `ApiError.details`; `aria-label` på fem tabeller | shared | endret |
+| `infra/` (`versions.tf`, `locals.tf`, `secrets.tf`, `cloudfront.tf`, `alb.tf`, `ecs.tf`, `iam.tf`, `waf.tf`, `README.md`) | origin-verify-header og -hemmelighet, ALB med 403 som standard + regel på header og host (opprettet som 403), postcondition og `check`-blokk for originene, ACM-precondition, WAF med CLOUDFRONT-scope, miljø og hemmelighet i ECS | - | endret |
+
+## Funksjonskall (herding)
+
+Hovedløp (firøyeprinsippet og analyse):
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    DR["defineRoute"] --> CP["canonicalizeParams"]
+    CP --> AP["POST packet/approve"]
+    CP --> AZ["POST claims/:id/analyze"]
+    CP --> BK["POST analyze-awaiting"]
+    AP --> TR["transition()"]
+    TR --> DE["ddInvoiceEditorsByClaim"]
+    TR --> LA["labelAuthorsByClaim"]
+    TR --> IA["insert approvals row"]
+    IA --> XG["ext guard trigger"]
+    TR --> PS["update packet status"]
+    PS --> DG["decision guard at COMMIT"]
+    AZ --> AC["analyzeClaim"]
+    AC --> LT["learnedLabelIdsTruncated"]
+    AC --> CF["classifyAnalysisFailure"]
+    CF --> AF["appendAnalysisFailure"]
+    BK --> AW["analyzeAwaiting"]
+    AW --> CA["analysisCandidates"]
+    AW --> AC
+    AW --> BS["bulkStopReason"]
+
+    style CP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style XG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AW fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BS fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Detaljer (forespørselsgrensen, autentisering, Charges):
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    OR["onRequest (first hook)"] --> RC["registerClientIp"]
+    RC --> DC["deriveClientIp"]
+    DC --> SE["secretEquals"]
+    DC --> PV["parseViewerAddress"]
+    DC --> LK["limiter keys, audit ip"]
+    PW["POST change-password"] --> CH["changePassword"]
+    CH --> LF["lockedForSeconds"]
+    CH --> RF["recordFailure"]
+    LG["POST login, mfa/verify"] --> KD["isKnownDevice"]
+    RL["PATCH users/:id/role"] --> RV["revokeUserSessionsTx"]
+    CL["GET charge-lines"] --> CLN["chargeLines"]
+    CLN --> LI["learnedLabelIdsOfClaim"]
+    CLN --> CR["classifierFromRows"]
+    CLN --> IV["influenceView"]
+
+    style RC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style KD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IV fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalles av | Formål |
+| --- | --- | --- | --- |
+| `canonicalizeParams(params)` | `api/src/http/route.ts` | `defineRoute` (alle ruter) | små bokstaver i stiparametre som ser ut som UUID-er; andre verdier uendret |
+| `transition(...)` | `api/src/claims/service.ts` | rutene for approve, reject, edit og send | under kravlåsen: revisjonsforfatter, så D&D-redigerer, så etikettforfatter (bare approve/reject); avvisningen registreres i revisjonssporet |
+| `labelAuthorsByClaim(tx, claimIds)` | `api/src/audit/label-authors.ts` | `transition`, godkjenningskøen | bruker-id-er som utelukkes av grunnlaget `label_author`, per krav (én spørring) |
+| `learnedLabelIdsTruncated(...)` | `api/src/claims/analysis.ts` | `analyzeClaim` | forsiktig øvre grense: kan motorens liste på 50 id-er mangle etiketter? |
+| `classifyAnalysisFailure(err, buildWithoutFuel)` | `api/src/claims/analysis.ts` | analyse-rutene | `fuel_check`, `amount_out_of_range` eller `input_values` |
+| `appendAnalysisFailure(...)` | `api/src/claims/analysis.ts` | feilgrenen i `app.ts`, `analyzeAwaiting` | `claim.analysis_failed` i egen transaksjon (feiler lukket) |
+| `analysisCandidates(tx, take)` | `api/src/db/analysis-candidates.ts` | `analyzeAwaiting` | aldri mislykkede først, deretter eldste `createdAt`, deretter id |
+| `bulkStopReason(budgetRefused, analyzed, limit)` | `api/src/claims/analysis.ts` | `analyzeAwaiting` | `budget`, `limit` eller `candidates` |
+| `analysisFailureOf(tx, claimId)` | `api/src/audit/analysis-failures.ts` | `getClaim` | `analysisFailure` for et krav som venter på analyse |
+| `deriveClientIp(req, cfg)` | `api/src/http/client-ip.ts` | getteren fra `registerClientIp` | viewer-adressen når bryteren, hemmeligheten og den strenge tolkingen alle stemmer; ellers `TRUST_PROXY`-adressen |
+| `changePassword(...)` | `api/src/auth/service.ts` | `POST /auth/change-password` | sperrekontroll før argon2, telling og revisjonsspor for feil, sperren fjernes ved suksess |
+| `isKnownDevice(deps, tx, presented, userId, now)` | `api/src/auth/session.ts` | `login`, MFA-verifisering | gjeldende, ikke tilbakekalt og ikke utløpt token i en levende familie for samme bruker; bare lesing |
+| `revokeUserSessionsTx(tx, userId, reason)` | `api/src/auth/session.ts` | rolleendring (`role_requires_mfa`), passordbytte, deaktivering, MFA-nullstilling | tilbakekaller alle levende refresh-familier |
+| `chargeLines(db, claimId)` | `api/src/intelligence/charges.ts` | `GET /claims/:id/charge-lines` | én tenanttransaksjon for etiketter og påvirknings-id-er; klassifisering etterpå |
+
+## Dataflyt (godkjenne eller avvise et krav)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["POST packet/approve or reject"] --> B["defineRoute: lower-case id"]
+    B --> C["lock claim, load latest packet"]
+    C --> D{"revision author?"}
+    D -->|no| E{"D&D invoice editor?"}
+    D -->|yes| R["audit four_eyes_denied, 403"]
+    E -->|no| F{"label author?"}
+    E -->|yes| R
+    F -->|yes| R
+    F -->|no| G["insert approvals row"]
+    G --> H{"ext guard trigger refuses?"}
+    H -->|yes| S["403, log four_eyes_db_guard"]
+    H -->|no| I["update packet status"]
+    I --> J{"decision row at COMMIT?"}
+    J -->|no| T["409 invalid_state"]
+    J -->|yes| K["200, audit claim decision"]
+
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+    style J fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Triggeren og kontrollen ved commit er sperrer bak tjenesten. Gjennom dagens ruter avviser tjenestekontrollen
+først, og beslutningsraden skrives alltid i samme transaksjon, så `S` og `T` nås ikke via API-et i dag.
+Integrasjonstestene når dem ved å skrive direkte til databasen.
+
+## Dataflyt (klientadresse)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["request reaches the API"] --> B{"CLIENT_IP_HEADER set?"}
+    B -->|no| Z["TRUST_PROXY address"]
+    B -->|yes| C{"x-origin-verify equals secret?"}
+    C -->|no| Z
+    C -->|yes| D{"CloudFront-Viewer-Address parses?"}
+    D -->|no| Z
+    D -->|yes| V["viewer ip"]
+    V --> L["rate limits, lockout, audit ip, logs"]
+    Z --> L
+
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style C fill:#1e90ff,stroke:#1565c0,color:#fff
+    style D fill:#1e90ff,stroke:#1565c0,color:#fff
+    style V fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Reserveløsningen får aldri en forespørsel til å feile. I AWS avviser ALB-en allerede (403) en forespørsel uten
+riktig origin-verify-verdi, så en forespørsel uten den når bare API-et fra innsiden av VPC-en eller i et
+rotasjonsvindu (HR-6).
+
+## Databasevakter (herding)
+
+| Vakt | Type | Utløses ved | Avviser | Feil i API-et |
+| --- | --- | --- | --- | --- |
+| `approvals_four_eyes_ext_guard` | radtrigger `BEFORE INSERT`, `SECURITY DEFINER` | APPROVE/REJECT-rader | (a) D&D-fakturaredigerere for kravet; (b) etikettforfattere for kravet (C1), hele tenanten ved avkortet liste (migrering 20261019) | 403 `four_eyes_required` (logg `four_eyes_db_guard`, ikke i revisjonssporet) |
+| `evidence_packets_decision_guard` | `CONSTRAINT TRIGGER ... DEFERRABLE INITIALLY DEFERRED` | `UPDATE OF status` til APPROVED, REJECTED, SEND_READY | ingen `approvals`-rad med samme pakke, tenant, `to_status` og handling (hvilken som helst slik rad, se HR-2) | 409 `invalid_state` (logg `packet_decision_db_guard`) |
+| `claims_awaiting_amounts_zero` | CHECK, validert ved migrering | INSERT og UPDATE i `claims` | et krav med `AWAITING_ANALYSIS` og et krevd, gjenvinnbart eller ventende beløp ulikt null | 500 (ingen rute kan bryte den) |
+
+Begge funksjonene låser `search_path = public, pg_temp`, matcher `tenant_id` eksplisitt (en manglende eller
+fremmed `app.tenant_id` kan ikke skjule rader) og har `EXECUTE` trukket tilbake fra `PUBLIC`. Eksisterende rader
+valideres ikke på nytt. CHECK-en gjelder også med `session_replication_role = replica`. De to triggerne gjør det
+ikke, så testdata som slår av triggere, går utenom dem.
+
+## Standardvalg (herding)
+
+| ID | Standard | Hvor det kan endres |
+| --- | --- | --- |
+| H-D1 | Etikettforfattere = de som skrev **før** analysen pluss etikettens nåværende oppretter; senere skrivere og de som sletter, teller ikke | `label-authors.ts` + migrering (krever ny migrering) |
+| H-D2 | Når listen på 50 id-er kan være ufullstendig, utelukkes alle etikettforfattere i tenanten før analysen (feiler lukket; OQ-H1) | samme |
+| H-D3 | Unntaket for kjente enheter gjelder bare innlogging og MFA-verifisering, aldri passordbytte; tokenet som vises, må være det gjeldende (ubrukte) | `auth/service.ts`, `session.ts` |
+| H-D4 | Invitasjon til en e-postadresse i en annen tenant: invitasjonen opprettes og e-posten forsøkes som vanlig; godtakelse avvises | `users-routes.ts` |
+| H-D5 | `CLIENT_IP_HEADER` valgfri i produksjon; reserve er `TRUST_PROXY` | `config.ts` (oppfølging for HR-6) |
+| H-D6 | Egendefinert origin request policy i CloudFront beholdt, med host-betingelse og ACM-precondition (HR-10) | `cloudfront.tf`, `alb.tf` |
+| H-D7 | Rekkefølge for feilgrunn: `fuel_check` (når samme analyse uten drivstoffkontrollen kunne lagres), så `amount_out_of_range`, så `input_values` | `classifyAnalysisFailure` |
+
+## Utsatt (herding)
+
+H-5 (kappløp mellom tilbakekalling og rotasjon, HR-1); en strengere vakt for pakkebeslutninger eller
+`COMMENT ON FUNCTION` (HR-2); en beslutningsvakt for INSERT av pakker og for dokumentstatus (HR-3); å godta en
+gjeldende og en forrige origin-verify-verdi, og å kreve `CLIENT_IP_HEADER` bak et flagg (HR-6); å sette
+testverdiene på produksjonens sperreliste (HR-8); en CHECK på små bokstaver i `audit_events.target_id` (HR-12);
+bedre gjenoppretting for krav der dokumentene gjør at analysen feiler (OQ-H2); tilbakekalling av API-nøkler når
+en bruker deaktiveres (OQ-H3); en menneskelig godkjenner for automatisk godtatte dokumenter (FE-S1, OQ-H4).
+
+## Grensesnitt for senere arbeid (etter herding)
+
+- De nye handlingene `claim.analysis_failed` og `auth.password.change_failed` (tenantkjeden) og
+  `invite.existing_account` (plattformkjeden) er lagt til sist i den delte handlingslisten. Nye tillatte nøkler:
+  `stoppedBy`, `documentCount`, `knownDevice` og `learnedLabelIdsTruncated`.
+- DTO-felt lagt til: `ApprovalItem.selfAuthoredBasis`, `ClaimDetail.analysisFailure`,
+  `BulkAnalyzeResponse.stoppedBy`, `failed[].reasonCode`, `ChargeLinesResponse.influence`,
+  `OutlookSeries.provenance.sourceKind` og `details` i 422-svaret fra analyse.
+- Kode må lese klientadressen fra `req.clientIp`, aldri fra `req.ip` (arkitekturtest). `targetId` i
+  revisjonssporet må komme fra en lastet rad (arkitekturtest).
+- Et nytt firøyegrunnlag krever tjenestekontrollen, triggeren (ny migrering), en tekst i `transparency-copy.ts`
+  og en plass i rekkefølgen i `FOUR_EYES_CLAIM_BASES`.
+
+## Merknader (herding)
+
+- Hva som ble kjørt (lokalt, Windows, Node 22.23.3, `CI=true`, én worker, **ikke GitHub CI**): byggerens Tier L
+  (typecheck, eslint, enhetstester shared 279, api 460, web 119). Testerens Tier L (shared-akseptanse 405/405, api
+  statisk 41 + 1 erklært hopp, full lint og typecheck). Tier H på nye PostgreSQL 16.15- og MinIO-klynger: begge
+  migreringene kjørt (11 totalt); alle byggerens integrasjonsfiler grønne, med `hardening.int` 11/11 to ganger
+  på `76458e4`; alle api-akseptansesuiter (inkludert de 15 nye `hardening-*`-filene), nett-akseptanse (23 filer),
+  nett-enhetstester og begge paritetssuitene grønne. Detaljer:
+  [sikkerhetsdokumentet, del 13.7](technical/web-platform-security.md#137-what-was-run) (engelsk).
+- Feilene underveis var alle testdesign, hver påvist med en forsterket reproduksjon: begrunnelser for
+  godkjenning og en AUDITED-testrad mot eksisterende CHECK-er, en ulovlig pakkeovergang, en CSRF-klient som ikke
+  var initialisert, og en oppdatering av `feature_flags` uten versjonsøkning. To akseptansetestdata ble også
+  rettet. Ingen forventning ble slakket.
+- Gjennomgang: APPROVE WITH NOTES. Vilkår for sammenslåing: testeren committer `*/test-acceptance/**` (gjort i
+  `4c61607`); CI `terraform fmt -check` og `validate` er grønne (ikke kjørt lokalt, ingen binærfil); denne
+  dokumentasjonen.
+- Ikke verifisert: GitHub CI, Terraform fmt/validate, containerimages, compose-stakken, Playwright, noen
+  utrulling i AWS (F-03 forblir «rettet i kode og IaC, ikke verifisert i AWS»).

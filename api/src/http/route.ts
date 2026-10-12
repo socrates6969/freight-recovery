@@ -4,7 +4,7 @@
  * in the global onRequest security pipeline (before body parsing); request validation runs afterwards
  * in preHandler, so a caller lacking permission gets 403 even for an invalid body.
  */
-import type { Role } from '@fr/shared';
+import { DD_INVOICE_BODY_LIMIT, type Role } from '@fr/shared';
 import type { FastifyInstance, FastifyReply, FastifyRequest, HTTPMethods, RouteOptions } from 'fastify';
 import { type z } from 'zod';
 
@@ -32,9 +32,17 @@ export interface RouteDef<B extends AnySchema | undefined, Q extends AnySchema |
   url: string;
   access: RouteAccess;
   rateGroup?: RateGroup;
+  /**
+   * Fix round 1 (S4): per-route request body limit in bytes, above the global BODY_LIMIT_BYTES. At most
+   * ROUTE_BODY_LIMIT_MAX (asserted at registration); allow-listed routes only (architecture test).
+   */
+  bodyLimit?: number;
   schema?: RouteSchemas<B, Q, P>;
   handler: (req: FastifyRequest, reply: FastifyReply, input: RouteInput<Out<B>, Out<Q>, Out<P>>) => Promise<unknown>;
 }
+
+/** Largest per-route body limit (bytes); equals the dd_invoices.data size CHECK. */
+export const ROUTE_BODY_LIMIT_MAX = DD_INVOICE_BODY_LIMIT;
 
 export function zodDetails(error: z.ZodError): ErrorDetail[] {
   return error.issues.map((i) => ({ path: i.path.map(String).join('.'), code: i.code }));
@@ -48,20 +56,41 @@ function parseOrThrow(schema: AnySchema | undefined, value: unknown, emptyAsObje
   return r.data;
 }
 
+const UUID_ANY_CASE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+
+/**
+ * Fix round 2 (C-FR2.1, H-1): canonicalise path parameters at the request boundary. Every string value that is a
+ * UUID in any letter case becomes lower case, so lookups, responses and audit rows only ever see the database's
+ * canonical `uuid::text` form (audit `target_id` is TEXT and is compared with that form by the four-eyes readers
+ * and triggers). Non-UUID values (flag keys, malformed ids answered as 404) are returned unchanged.
+ */
+export function canonicalizeParams(params: unknown): unknown {
+  if (params === null || typeof params !== 'object' || Array.isArray(params)) return params;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(params as Record<string, unknown>)) {
+    out[k] = typeof v === 'string' && UUID_ANY_CASE.test(v) ? v.toLowerCase() : v;
+  }
+  return out;
+}
+
 export function defineRoute<
   B extends AnySchema | undefined = undefined,
   Q extends AnySchema | undefined = undefined,
   P extends AnySchema | undefined = undefined,
 >(app: FastifyInstance, def: RouteDef<B, Q, P>): void {
   const schema = def.schema ?? {};
+  if (def.bodyLimit !== undefined && (!Number.isSafeInteger(def.bodyLimit) || def.bodyLimit < 1 || def.bodyLimit > ROUTE_BODY_LIMIT_MAX)) {
+    throw new Error(`route ${def.method} ${def.url}: bodyLimit must be 1..${ROUTE_BODY_LIMIT_MAX}`);
+  }
   const options: RouteOptions = {
     method: def.method,
     url: def.url,
+    ...(def.bodyLimit !== undefined ? { bodyLimit: def.bodyLimit } : {}),
     config: { access: def.access, ...(def.rateGroup ? { rateGroup: def.rateGroup } : {}) },
     preHandler: async (req) => {
       const body = parseOrThrow(schema.body, req.body, true);
       const query = parseOrThrow(schema.query, req.query, true);
-      const params = parseOrThrow(schema.params, req.params, true);
+      const params = canonicalizeParams(parseOrThrow(schema.params, req.params, true));
       (req as FastifyRequest & { frInput?: unknown }).frInput = { body, query, params };
     },
     handler: async (req, reply) => {

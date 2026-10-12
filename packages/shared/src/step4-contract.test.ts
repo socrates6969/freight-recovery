@@ -15,9 +15,22 @@ import { FlagChangeBody, LogsQuery, PipelineHealth, PipelineQuery, Telemetry } f
 import { can } from './rbac.js';
 
 describe('feature flag registry (Q4)', () => {
-  it('contains exactly the three intelligence flags, ordered by key, default on, tenant-visible', () => {
-    expect(FEATURE_FLAG_KEYS).toEqual(['intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+  it('contains exactly the seven intelligence flags, ordered by key, default on, tenant-visible', () => {
+    // Step 7 (REQ-20261011-fuel-outlook) adds cost_outlook and fuel_check; step 8 (REQ-20261011-ocean-dd) ocean_dd.
+    expect(FEATURE_FLAG_KEYS).toEqual([
+      'intelligence.charge_suggestions',
+      'intelligence.cost_outlook',
+      'intelligence.fuel_check',
+      'intelligence.ocean_dd',
+      'intelligence.provenance',
+      'intelligence.similar_claims',
+      'intelligence.worklist',
+    ]);
     expect(FEATURE_FLAGS.map((f) => f.description)).toEqual([
+      'Charge-line suggestions and team labels',
+      'Cost outlook from public price data',
+      'Fuel tables and fuel-surcharge check',
+      'Ocean demurrage and detention invoice audit',
       'Provenance summary on the claim sheet',
       'Similar past claims on the claim sheet',
       'Prioritised worklist page',

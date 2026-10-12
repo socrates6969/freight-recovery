@@ -65,11 +65,13 @@ function value(doc: DocInfo | undefined, key: string): string | null {
   return f ? effectiveValue(f) : null;
 }
 
-export async function commitBatch(tx: TenantTx, tenantId: string, batchId: string, perspective: Perspective, actor: Actor): Promise<CommitResultDto> {
-  if (!isUuid(batchId)) throw errors.notFound();
-  await lockImportBatch(tx, batchId);
-  const batch = await tx.importBatch.findFirst({ where: { id: batchId }, select: { id: true } });
+export async function commitBatch(tx: TenantTx, tenantId: string, batchIdParam: string, perspective: Perspective, actor: Actor): Promise<CommitResultDto> {
+  if (!isUuid(batchIdParam)) throw errors.notFound();
+  await lockImportBatch(tx, batchIdParam);
+  const batch = await tx.importBatch.findFirst({ where: { id: batchIdParam }, select: { id: true } });
   if (!batch) throw errors.notFound();
+  // Fix round 2 (C-FR2.1): the canonical id of the loaded row, never the request parameter.
+  const batchId = batch.id;
 
   const docs = await tx.importDocument.findMany({
     where: { batchId },

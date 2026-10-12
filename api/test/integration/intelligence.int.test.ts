@@ -58,11 +58,14 @@ const fixture: FixtureClaim[] = [];
 const slug = `intel-builder-${Date.now().toString(36)}`;
 
 async function insertClaim(c: FixtureClaim): Promise<void> {
+  // Hardening (CHECK claims_awaiting_amounts_zero): an AWAITING_ANALYSIS claim carries no amounts. The fixture's
+  // rec/pend of such claims are never used by the ranked/similar expectations (they have no packet).
+  const awaiting = c.status === 'AWAITING_ANALYSIS';
   await admin.query(
     `INSERT INTO claims (id, tenant_id, claim_number, carrier_name, shipper_name, perspective, status, amount_claimed_cents, recoverable_cents,
        pending_review_cents, created_at, updated_at)
      VALUES ($1, $2, $3, $4, 'Shipper', $5, $6::"ClaimStatus", $7, $8, $9, $10, $10)`,
-    [c.id, tenantId, `IB-${c.id.slice(0, 8)}`, c.carrier, c.perspective, c.status, c.rec + c.pend, c.rec, c.pend, c.updatedAt],
+    [c.id, tenantId, `IB-${c.id.slice(0, 8)}`, c.carrier, c.perspective, c.status, awaiting ? 0 : c.rec + c.pend, awaiting ? 0 : c.rec, awaiting ? 0 : c.pend, c.updatedAt],
   );
   for (let rev = 1; rev <= c.packets; rev += 1) {
     const pid = randomUUID();
@@ -312,7 +315,16 @@ describe.skipIf(!canRunDb)('Recovery Intelligence (PostgreSQL)', () => {
 
     it('features, worklist, similar, provenance for a tenant user; platform users 403; unauthenticated 401', async () => {
       expect((await c.get('/api/v1/features', viewer)).json()).toEqual({
-        flags: { 'intelligence.provenance': true, 'intelligence.similar_claims': true, 'intelligence.worklist': true },
+        // Steps 7 and 8 add cost_outlook, fuel_check (REQ-20261011-fuel-outlook) and ocean_dd (REQ-20261011-ocean-dd).
+        flags: {
+          'intelligence.charge_suggestions': true,
+          'intelligence.cost_outlook': true,
+          'intelligence.fuel_check': true,
+          'intelligence.ocean_dd': true,
+          'intelligence.provenance': true,
+          'intelligence.similar_claims': true,
+          'intelligence.worklist': true,
+        },
       });
       const wl = await c.get('/api/v1/intelligence/worklist?pageSize=5', viewer);
       expect(wl.statusCode, wl.body).toBe(200);
@@ -362,7 +374,15 @@ describe.skipIf(!canRunDb)('Recovery Intelligence (PostgreSQL)', () => {
         expect(offSim.json()).toMatchObject({ error: { code: 'not_found' } });
         expect(unknown.statusCode).toBe(404);
         expect((await c.get('/api/v1/features', viewer)).json()).toEqual({
-          flags: { 'intelligence.provenance': false, 'intelligence.similar_claims': false, 'intelligence.worklist': false },
+          flags: {
+            'intelligence.charge_suggestions': true,
+            'intelligence.cost_outlook': true,
+            'intelligence.fuel_check': true,
+            'intelligence.ocean_dd': true,
+            'intelligence.provenance': false,
+            'intelligence.similar_claims': false,
+            'intelligence.worklist': false,
+          },
         });
       } finally {
         await admin.query('BEGIN');

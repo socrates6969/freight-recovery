@@ -172,6 +172,86 @@ const METADATA_KEYS = new Set([
   'scopes',
   'expiresAt',
   'viaApiKey',
+  // Four-eyes (REQ-20261009-four-eyes): fixed refusal basis code (revision_author | uploader | field_editor;
+  // step 8 fix round 1: dd_invoice_editor).
+  'basis',
+  // Step 5 (REQ-20261010-step5-analysis): analysis counts, cents totals, rules version and bulk summary.
+  // Never names, file names, extracted values or letter text.
+  'findingsCount',
+  'pendingFindingsCount',
+  'ignoredFindingsCount',
+  'recoverableCents',
+  'pendingReviewCents',
+  'rulesVersion',
+  'bulk',
+  'examined',
+  'analyzed',
+  'failed',
+  'remaining',
+  // Step 6 (REQ-20261011-charge-intelligence): label ids, categories and outcomes, classifier/seed versions
+  // and learned-layer counts. Never charge descriptions or normalized texts.
+  'labelId',
+  'category',
+  'previousCategory',
+  'outcome',
+  'classifierVersion',
+  'seedVersion',
+  'tenantLabelCount',
+  'learnedFindingsCount',
+  'reviewFlagsCount',
+  // Step 6 fix round 1: influencing label ids (S3, <= 50) and the sha256 of a label's normalized text (S4).
+  'learnedLabelIds',
+  'normalizedTextSha256',
+  // Step 7 (REQ-20261011-fuel-outlook): fuel-table ids/versions and fixed enumerations, fuel-input values
+  // (ship date, miles), fuel-check status and price provenance (series key, import id, dates, pinned URL).
+  // Never table names or invoice text. Already listed: version, kind, outcome, status, claimId, rowCount,
+  // sha256.
+  'fscTableId',
+  'previousVersion',
+  'unit',
+  'priceSeries',
+  'effectiveOffsetDays',
+  'changedFields',
+  'shipDate',
+  'miles',
+  'fuelCheckStatus',
+  'fscTableVersion',
+  'priceImportId',
+  'priceDate',
+  'fuelFindingsCount',
+  'seriesKey',
+  'importId',
+  'firstDate',
+  'lastDate',
+  'sourceKind',
+  'sourceUrl',
+  'retrievedAt',
+  // Step 7 fix round 1: changed values of a re-import (L1) and the sha256 of a fuel table's canonical params (L2).
+  'revisedValues',
+  'paramsSha256',
+  // Step 8 (REQ-20261011-ocean-dd, C15): D&D ids, versions, fixed enumerations, counts and sha256 of the
+  // normalized data / audit snapshot. Never names, invoice numbers or other invoice text. Already listed:
+  // version, claimId, claimNumber, packetId, revision, contentHash, rulesVersion, findingsCount,
+  // pendingFindingsCount, recoverableCents, pendingReviewCents.
+  'tariffId',
+  'calendarId',
+  'invoiceId',
+  'chargeType',
+  'direction',
+  'tierCount',
+  'closedCount',
+  'shutoutCount',
+  'containerCount',
+  'dataSha256',
+  'snapshotSha256',
+  // Hardening (REQ-20261012-hardening, C9): why a bulk run stopped (limit | budget | candidates | error) and the
+  // number of source documents of an analysis. Fixed codes and counts only.
+  'stoppedBy',
+  'documentCount',
+  // Fix round 1 (C14, C15): a login served to a known device during a lockout (boolean only).
+  'knownDevice',
+  // Fix round 2 (C-FR2.2): the analysis' learnedLabelIds list (capped at 50) may omit an influencing label.
+  'learnedLabelIdsTruncated',
 ]);
 const MAX_STRING = 2000;
 

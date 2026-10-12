@@ -70,7 +70,7 @@ describe('P1 isolation', () => {
   }, 180000);
 });
 
-interface Model { status: string; rev: number; pending: boolean }
+interface Model { status: string; rev: number; pending: boolean; mAuthor: boolean }
 describe('P2 state machine / P3 immutability / P4 money / P5 audit', () => {
   it(`200 random workflow operations obey the model (seed ${SEED + 2})`, async () => {
     reseed();
@@ -86,7 +86,7 @@ describe('P2 state machine / P3 immutability / P4 money / P5 audit', () => {
       const id = await claimId(m, n);
       ids.set(n, id);
       const p = (await m.get(`/claims/${id}/packet`)).body;
-      model.set(n, { status: p.status, rev: p.revision, pending: p.findings.some((f: any) => f.needsHumanReview) });
+      model.set(n, { status: p.status, rev: p.revision, pending: p.findings.some((f: any) => f.needsHumanReview), mAuthor: false });
     }
     const maxSeq = async () => (await owner.get('/audit/events?limit=1')).body.items[0]?.seq ?? 0;
     const tag = (i: number) => `seed ${SEED + 2} op#${i}`;
@@ -101,6 +101,9 @@ describe('P2 state machine / P3 immutability / P4 money / P5 audit', () => {
       let res: any;
       let expectStatus: number[] = [];
       let ok = false;
+      let fourEyes = false;
+      // four-eyes: m edits; approve/reject alternate between m (refused once m authored a revision) and OWNER (never an author)
+      const actor = action === 'approve' || action === 'reject' ? (i % 2 === 0 ? m : owner) : m;
       if (action === 'edit') {
         res = await m.post(`/claims/${id}/packet/revisions`, { baseRevision: rev, demandLetter: `random letter ${uniq()}`, reason: 'property based edit reason' });
         if (useStale) expectStatus = [409];
@@ -110,15 +113,18 @@ describe('P2 state machine / P3 immutability / P4 money / P5 audit', () => {
         const path = action;
         const body: any = { packetRevision: rev, reason: 'property based action reason' };
         if (action === 'approve' && st.pending) body.acknowledgePendingFindings = true;
-        res = await m.post(`/claims/${id}/packet/${path}`, body);
+        res = await actor.post(`/claims/${id}/packet/${path}`, body);
         const okState = action === 'send' ? st.status === 'APPROVED' : st.status === 'PENDING_REVIEW';
-        if (useStale || !okState) { expectStatus = [409]; } else { expectStatus = [200]; ok = true; }
+        if (useStale || !okState) { expectStatus = [409]; }
+        else if (action !== 'send' && actor === m && st.mAuthor) { expectStatus = [403]; fourEyes = true; }
+        else { expectStatus = [200]; ok = true; }
       }
       expect(expectStatus, `${tag(i)} ${action} on ${n} (model ${JSON.stringify(st)} stale=${useStale}) got ${res.status} ${res.text}`).toContain(res.status);
       const after = await maxSeq();
-      expect(after - before, `${tag(i)} P5 audit delta for ${action} status ${res.status}`).toBe(ok ? 1 : 0);
+      expect(after - before, `${tag(i)} P5 audit delta for ${action} status ${res.status}`).toBe(ok || fourEyes ? 1 : 0);
+      if (fourEyes) expect(res.body?.error?.code, `${tag(i)} four-eyes code`).toBe('four_eyes_required');
       if (ok) {
-        if (action === 'edit') { st.rev += 1; st.status = 'PENDING_REVIEW'; }
+        if (action === 'edit') { st.rev += 1; st.status = 'PENDING_REVIEW'; st.mAuthor = true; }
         else st.status = action === 'approve' ? 'APPROVED' : action === 'reject' ? 'REJECTED' : 'SEND_READY';
       }
       // invariants over the whole claim

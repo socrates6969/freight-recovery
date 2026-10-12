@@ -72,7 +72,7 @@ export function registerPlatformRoutes(app: FastifyInstance, base: BaseClient): 
       const { reason, ...filters } = query;
       return crossTenantRead(
         base,
-        { userId: ctx.user.id, role: userRole(ctx), ip: req.ip, requestId: req.frRequestId },
+        { userId: ctx.user.id, role: userRole(ctx), ip: req.clientIp, requestId: req.frRequestId },
         params.tenantId,
         reason,
         {

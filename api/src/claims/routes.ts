@@ -3,8 +3,10 @@
  * "send" only marks a demand send-ready (asserted by api/test/send-no-egress.test.ts).
  */
 import {
+  AnalyzeBody,
   ApproveBody,
   ApprovalsQuery,
+  BulkAnalyzeBody,
   AssignBody,
   ClaimsQuery,
   IdParams,
@@ -16,13 +18,16 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { defineRoute, requireTenant, userRole } from '../http/route.js';
 
+import { dieselSeriesOrNull } from '../platform/price-store.js';
+
+import { analyzeAwaiting, analyzeClaim, type AnalysisFuelOptions } from './analysis.js';
 import { assignClaim, createRevision, getClaim, getPacket, listApprovalQueue, listClaims, transition, type Actor } from './service.js';
 
 const P = '/api/v1';
 
 function actorOf(req: FastifyRequest): Actor {
   const ctx = requireTenant(req);
-  return { userId: ctx.user.id, role: userRole(ctx), ip: req.ip, requestId: req.frRequestId };
+  return { userId: ctx.user.id, role: userRole(ctx), ip: req.clientIp, requestId: req.frRequestId };
 }
 
 export function registerClaimRoutes(app: FastifyInstance): void {
@@ -98,11 +103,59 @@ export function registerClaimRoutes(app: FastifyInstance): void {
       requireTenant(req).db.tx((tx) => transition(tx, 'send', params.id, body, actorOf(req))),
   });
 
+  // Step 5 (REQ-20261010-step5-analysis): AWAITING_ANALYSIS -> PENDING_REVIEW. No API-key scope (P4);
+  // per-user `analysis` bucket (P11). Bulk runs each claim in its own tenant transaction.
+  defineRoute(app, {
+    method: 'POST',
+    url: `${P}/claims/analyze-awaiting`,
+    access: { kind: 'permission', permission: 'claims:analyze' },
+    rateGroup: 'analysis',
+    schema: { body: BulkAnalyzeBody },
+    handler: async (req, _reply, { body }) => {
+      // S5-1: the request's own token covers the first candidate; every further candidate costs one more
+      // token of the same per-user bucket, so bulk never exceeds the single route's analysis budget.
+      const limiter = app.analysisLimiter;
+      const charge = limiter ? async () => (await limiter(req)).allowed : async () => true;
+      // Step 6: the charge-suggestions flag is read once per request, before any transaction.
+      const learning = await app.flags.isEnabled('intelligence.charge_suggestions');
+      // Step 7: the fuel-check flag and the active diesel import, read once per request (never a 500).
+      const fuel = await analysisFuel(app);
+      return analyzeAwaiting(requireTenant(req).db, actorOf(req), body.limit, charge, learning, fuel, req.log);
+    },
+  });
+
+  defineRoute(app, {
+    method: 'POST',
+    url: `${P}/claims/:id/analyze`,
+    access: { kind: 'permission', permission: 'claims:analyze' },
+    rateGroup: 'analysis',
+    schema: { params: IdParams, body: AnalyzeBody },
+    handler: async (req, reply, { params }) => {
+      const learning = await app.flags.isEnabled('intelligence.charge_suggestions');
+      const fuel = await analysisFuel(app);
+      const r = await requireTenant(req).db.tx((tx) => analyzeClaim(tx, params.id, actorOf(req), { bulk: false, learning, fuel }));
+      return reply.code(201).send(r);
+    },
+  });
+
   defineRoute(app, {
     method: 'GET',
     url: `${P}/approvals`,
     access: { kind: 'permission', permission: 'claims:read' },
     schema: { query: ApprovalsQuery },
-    handler: async (req, _reply, { query }) => requireTenant(req).db.tx((tx) => listApprovalQueue(tx, query)),
+    handler: async (req, _reply, { query }) => {
+      const ctx = requireTenant(req);
+      return ctx.db.tx((tx) => listApprovalQueue(tx, query, ctx.user.id));
+    },
   });
+}
+
+/**
+ * Step 7 (REQ-20261011-fuel-outlook): the fuel-check flag and, when it is on, the active diesel import
+ * (cached per import). The fuel tables are diesel_us only; a store error gives `series: null`
+ * (`price_unavailable`), never a 500.
+ */
+async function analysisFuel(app: FastifyInstance): Promise<AnalysisFuelOptions> {
+  const enabled = await app.flags.isEnabled('intelligence.fuel_check');
+  return { enabled, series: enabled ? await dieselSeriesOrNull(app.prices) : null };
 }

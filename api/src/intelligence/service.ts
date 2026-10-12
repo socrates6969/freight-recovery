@@ -173,13 +173,13 @@ export async function findSimilar(
 
 export async function provenanceFor(db: TenantDb, claimId: string): Promise<ProvenanceDto> {
   if (!isUuid(claimId)) throw errors.notFound();
-  const rows = await db.tx(async (tx) => {
+  const found = await db.tx(async (tx) => {
     const claim = await tx.claim.findFirst({ where: { id: claimId }, select: { id: true } });
     if (!claim) return null;
-    return provenanceRows(tx, claimId);
+    return { claimId: claim.id, rows: await provenanceRows(tx, claim.id) };
   });
-  if (!rows) throw errors.notFound();
-  const documents = rows.map((r) => ({
+  if (!found) throw errors.notFound();
+  const documents = found.rows.map((r) => ({
     documentId: r.documentId,
     displayName: r.displayName,
     docType: r.docType as ProvenanceDto['documents'][number]['docType'],
@@ -192,7 +192,8 @@ export async function provenanceFor(db: TenantDb, claimId: string): Promise<Prov
   }));
   const sum = (f: (d: (typeof documents)[number]) => number) => documents.reduce((a, d) => a + f(d), 0);
   return {
-    claimId,
+    // Fix round 2 (C-FR2.1): the canonical id of the loaded row, never the request parameter.
+    claimId: found.claimId,
     basis: 'rule_based_parse_score',
     label: PROVENANCE_NOTE,
     documents,

@@ -48,7 +48,7 @@ const P = '/api/v1';
 
 export function actorOf(req: FastifyRequest): Actor {
   const ctx = requireTenant(req);
-  return { userId: ctx.user.id, role: ctx.role, ip: req.ip, requestId: req.frRequestId };
+  return { userId: ctx.user.id, role: ctx.role, ip: req.clientIp, requestId: req.frRequestId };
 }
 
 declare module 'fastify' {
@@ -104,7 +104,7 @@ export function registerImportRoutes(app: FastifyInstance, deps: ImportDeps): vo
     handler: async (req, _reply, { params }) => {
       const ctx = requireTenant(req);
       await reapStale(deps, ctx.db, params.batchId, actorOf(req));
-      return ctx.db.tx((tx) => documentDetail(tx, params.batchId, params.docId, deps.cfg.imports.reviewConfidenceThreshold));
+      return ctx.db.tx((tx) => documentDetail(tx, params.batchId, params.docId, deps.cfg.imports.reviewConfidenceThreshold, ctx.user.id));
     },
   });
 
@@ -218,7 +218,11 @@ export function registerImportRoutes(app: FastifyInstance, deps: ImportDeps): vo
   });
 }
 
-async function uploadHandler(deps: ImportDeps, req: FastifyRequest, reply: FastifyReply, batchId: string, filename: string) {
+/**
+ * R43 upload. Uploads are attributed to the signed-in user; for API-key requests, to the key creator
+ * (four-eyes: that user cannot accept the document). Always ingests as `kind: 'user'`, never `system`.
+ */
+async function uploadHandler(deps: ImportDeps, req: FastifyRequest, reply: FastifyReply, batchIdParam: string, filename: string) {
   const ctx = requireTenant(req);
   const actor = actorOf(req);
   const cfg = deps.cfg.imports;
@@ -227,7 +231,8 @@ async function uploadHandler(deps: ImportDeps, req: FastifyRequest, reply: Fasti
   const stream = req.body as Readable | undefined;
   if (!stream || typeof (stream as { on?: unknown }).on !== 'function') throw errors.uploadMediaType();
 
-  await assertBatchAcceptsUploads(ctx.db, batchId, cfg.maxFilesPerBatch);
+  // Fix round 2 (C-FR2.1): from here on the canonical batch id of the loaded row, never the parameter.
+  const batchId = await assertBatchAcceptsUploads(ctx.db, batchIdParam, cfg.maxFilesPerBatch);
   const release = deps.uploadGate.tryEnter(ctx.tenantId);
   if (!release) throw errors.rateLimited(5);
   try {

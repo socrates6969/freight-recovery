@@ -176,7 +176,7 @@ The software foundation above is necessary, not sufficient. Still required:
 > [technical/web-platform-security.md](technical/web-platform-security.md). Architecture:
 > [ARCHITECTURE.md, "Web platform"](ARCHITECTURE.md#web-platform-typescript-steps-1-2).
 
-A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 to 4
+A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 to 8
 are done:
 
 - **Step 1:** email + password login (argon2id), a short-lived access token plus a rotating refresh
@@ -195,11 +195,49 @@ are done:
   provenance summary, all computed by fixed, documented rules over the tenant's own data), **tenant API
   keys** for machine access to nine routes, and a command-line **evaluation tool** (pass^k on synthetic
   fixtures). See [Dev dashboard, Recovery intelligence and API keys (step 4)](#dev-dashboard-recovery-intelligence-and-api-keys-step-4).
+- **Four-eyes (after step 4):** the person who edited a revision cannot approve or reject it; the person
+  who uploaded, corrected or added fields to a document cannot accept it. See
+  [Four-eyes (separation of duties)](#four-eyes-separation-of-duties).
+- **Step 5:** **claim analysis**. The Python rules and the draft demand letter are ported to TypeScript
+  (string-identical output to the Python reference on a parity corpus, apart from six registered
+  divergences). An **Analyze** action turns an imported claim that is awaiting analysis into evidence
+  packet revision 1 for human review; a bulk action analyzes up to 10 at a time. See
+  [Claim analysis (step 5)](#claim-analysis-step-5).
+- **Step 6:** **charge suggestions and team labels**. A Charges tab suggests a category for each invoice
+  charge line by comparing it with labelled examples (175 charge names from six public carrier tariffs,
+  plus your team's labels); reviewers confirm or correct it, and later analyses use the labels. The
+  analysis can add review-only findings for possible unauthorized accessorials, and moves detention
+  findings to review when a line looks like detention under another name. Suggestions are not verified
+  and never confirm an amount. See [Charge suggestions and team labels (step 6)](#charge-suggestions-and-team-labels-step-6).
+- **Step 7:** **fuel check and cost outlook**. Organizations store their carriers' fuel-surcharge tables;
+  for a claim with a ship date and miles, the analysis recomputes the surcharge from the public weekly U.S.
+  diesel price and adds a review-only finding when the bill differs. Public price history (U.S. EIA diesel
+  and BLS truckload index via FRED) lives in global, append-only tables that only an owner-run importer
+  writes. An Outlook page shows diesel and truckload index forecasts only at horizons where a model beat
+  "no change" in a walk-forward backtest, with 80% ranges; backtested on public data, not a guarantee. See
+  [Fuel check and cost outlook (step 7)](#fuel-check-and-cost-outlook-step-7).
+- **Step 8:** **ocean demurrage and detention audit**. An Ocean D&D page where an organization enters (or
+  imports by CSV) US container demurrage and detention invoices, attaches a tariff (four public carrier
+  tariffs are offered as starting points) and a terminal calendar, and records evidence dates. Fixed rules
+  check the invoice arithmetic, recompute the charge from the tariff with exact calendar and working-day
+  free time, and flag possible issues under 46 CFR Part 541 (required content, 30-day issuance) and 46 CFR
+  545.5 for review. Running the audit creates a D&D claim with an evidence packet and a draft dispute letter
+  for four-eyes review. **Not legal advice.** See
+  [Ocean demurrage and detention audit (step 8)](#ocean-demurrage-and-detention-audit-step-8).
+- **Hardening (after step 8):** no new features. Existing ones are clearer and harder to misuse: database
+  backstops for the four-eyes rules, a new four-eyes rule for team charge labels, visible reasons for failed
+  analyses and stopped bulk runs, plainer wording, and fixes to sign-in, invites and the client address behind
+  CloudFront. See [Hardening: improvements to existing features](#hardening-improvements-to-existing-features).
 
 "Send" only marks a demand send-ready and audits it. No email is sent and no money moves. The seeded claims and
 packets are synthetic and are transcribed from the Python CLI output on `tests/fixtures/`. Claims created
-by import have no amounts or packet yet. OCR, email-forward ingestion, any learned model or LLM call, and
-the TS port of the Python rules (build step 5, which will analyse imported claims) are later steps.
+by import have no amounts or packet until someone runs the analysis (step 5). Findings are rule outputs on
+extracted fields and are drafts that need human review. Step 6 charge suggestions compare names with
+labelled examples; there is no trained model. Step 7 fuel findings are recomputations from tables and
+inputs that people enter, and the cost outlook is backtested on public data, not a guarantee. Step 8 D&D
+findings compare the invoice data people enter with the regulation text and the attached tariff; they are
+drafts for human review and not legal advice (have counsel review them). OCR,
+email-forward ingestion and any LLM call are later steps.
 
 **The Python service and the `webapp/` pilot dashboard are unchanged and remain.** The web platform has
 its own compose file (`compose.web.yml`), CI workflow (`.github/workflows/web-ci.yml`) and Terraform
@@ -335,12 +373,14 @@ The UI only hides the controls.
 - A reviewer (`import:review`) confirms, corrects or rejects each flagged field. For images the reviewer
   can also set the document type and type fields in by hand. The reviewer then accepts or rejects the
   whole document. Every decision needs a reason of at least 10 characters and is recorded in an
-  append-only table and in the audit trail. Accepted documents cannot be changed.
+  append-only table and in the audit trail. Accepted documents cannot be changed. The person who
+  uploaded a document, or corrected or added any of its fields, cannot accept it; another reviewer must
+  ([four-eyes](#four-eyes-separation-of-duties)).
 - **Create claims from accepted documents** (on the Import page; you choose Shipper or Carrier) groups
   the accepted documents by load number. It creates a new claim with status **Awaiting analysis**, or
-  links the documents to an existing claim. A new claim has no amounts and no evidence packet until the
-  analysis step (build step 5) exists. A claim that already has a packet only gets the documents linked;
-  its packet does not change.
+  links the documents to an existing claim. A new claim has no amounts and no evidence packet until
+  someone analyzes it ([Claim analysis (step 5)](#claim-analysis-step-5)). A claim that already has a
+  packet only gets the documents linked; its packet does not change.
 
 **Confidence is a rule-based parse score, not an accuracy measure.** It says how the value was read (for
 example 0.95 for an explicit `Key: value` line in a text or CSV file, 0.85 for a PDF, lower for a
@@ -463,6 +503,14 @@ every number says what it is based on. There is **no learned model, no neural ne
 LLM or other "AI" call, and no accuracy or speed-up figure** anywhere. The brief's "Hebbian router",
 "neural mesh" and "solved-problems cache (~250x)" are **not implemented**; what ships instead is listed in
 [ARCHITECTURE.md, "Brief terms vs what is built"](ARCHITECTURE.md#brief-terms-vs-what-is-built).
+This rule covers the step 4 screens. Step 6 later added charge-line suggestions on the claim sheet: a
+nearest-example comparison with labelled charge names, with no trained model and no LLM call (see
+[Charge suggestions and team labels (step 6)](#charge-suggestions-and-team-labels-step-6)). Step 7 added an
+Outlook page: a small autoregressive model on public price indexes, refitted from the stored history and
+shown only where its walk-forward backtest beat "no change", with the backtest figures next to every number
+(see [Fuel check and cost outlook (step 7)](#fuel-check-and-cost-outlook-step-7)). Step 8 added the Ocean
+D&D page: fixed rules over the invoice data, the regulation text and an attached tariff, with no model and no
+LLM call (see [Ocean demurrage and detention audit (step 8)](#ocean-demurrage-and-detention-audit-step-8)).
 
 ### Who can see what
 
@@ -542,8 +590,8 @@ lists why it is where it is ("Confirmed recoverable $1,000.00 (counted at 100%)"
 $400.00 (counted at 25%)", how many findings still need review, and "Waiting 3 days (not part of the
 score)") and a next action (Resolve findings, Review and approve, Mark send-ready). The page states:
 "This is a work-order aid, not a forecast of what will be recovered." Claims still `AWAITING_ANALYSIS`
-are not ranked; the page counts them ("Not ranked: n claims awaiting analysis"). Until build step 5
-analyses imported claims, a real tenant's worklist is empty; only the seeded demo claims rank.
+are not ranked; the page counts them ("Not ranked: n claims awaiting analysis"). An imported claim
+enters the worklist once it has been analyzed ([Claim analysis (step 5)](#claim-analysis-step-5)).
 
 **Similar past claims (`similar-v1`).** The open claim is compared with the 500 most recently updated
 claims of the same tenant (`SIMILAR_CANDIDATE_LIMIT`) that the team has already decided (`APPROVED`,
@@ -597,7 +645,8 @@ an accuracy measure."
 
 - **Same rules as a user.** A key request runs through the same tenant isolation, permission checks,
   rate limits, flags and audit as a user of that tenant. Audit events show the actor role `API_KEY` and
-  `viaApiKey: <key id>`; ownership columns get the creator's id. The **creator's current role** is checked
+  `viaApiKey: <key id>`; ownership columns get the creator's id (so the creator counts as the uploader
+  of a key upload and cannot accept that document). The **creator's current role** is checked
   on every request: if the creator is disabled or no longer holds the scope's permission, or the tenant
   is suspended, the key gets 401.
 - **Failures.** Unknown key, wrong secret, malformed, revoked or expired: an identical 401 (nothing tells
@@ -659,6 +708,769 @@ All knobs are read once at start-up and range-checked; production limits apply o
 | `RATE_LIMIT_API_KEY_MAX` | 300 | requests per key per 60 seconds |
 | `RATE_LIMIT_API_KEY_FAIL_MAX` | 30 | failed key authentications per client address per 10 minutes |
 
+## Four-eyes (separation of duties)
+
+Run `REQ-20261009-four-eyes` makes two decisions need a second person. The server enforces it; the
+screens only hide the button.
+
+- **Claims.** Whoever created any revision of a claim's evidence packet (the current one or an older one)
+  cannot approve or reject the claim. Another user with approval rights must do it. A seeded revision 1
+  has no recorded creator and excludes nobody. Since step 5, the person who runs the analysis is recorded
+  as the creator of revision 1 (see [Claim analysis (step 5)](#claim-analysis-step-5)). Marking an approved revision send-ready is
+  unchanged: the approver may do it, and so may an author once someone else has approved.
+- **Imported documents.** Whoever uploaded a document, or corrected or added any of its fields, cannot
+  accept it. Another reviewer must. Confirming a field, rejecting a field, changing the document type
+  and rejecting the document do not count and stay open to everyone with review rights. A document
+  uploaded with an API key counts as uploaded by the key's creator.
+- **What you see.** On `/approvals` the row shows why you cannot decide instead of Approve/Reject (since the
+  hardening run one text per reason, for example "You created a revision of this claim (by editing, analyzing
+  or running the D&D audit). Another approver must approve it."; see
+  [Hardening](#four-eyes-who-may-not-approve-and-why)). In the review dialog, "You uploaded or edited this document.
+  Another reviewer must accept it." replaces Accept document. If you try anyway (an old screen or a
+  second tab), the API answers 403 `four_eyes_required` ("A different person must make this decision."),
+  changes nothing, and records the attempt in the audit trail as `authz.four_eyes_denied`. API callers
+  get exactly the same answer.
+- **Where it is enforced.** A check in the API service, under the same row lock as the decision, plus
+  database triggers from migration `20261011000000_four_eyes` that refuse such a decision row even if the
+  service check were skipped.
+- **Not covered (accepted for now).** A document with no review reasons is accepted automatically, so it
+  has no human acceptor. Feature-flag changes are single-person. The full list of residual risks and the
+  policy defaults is in [technical/web-platform-security.md, section 8](technical/web-platform-security.md#8-four-eyes-separation-of-duties).
+
+## Claim analysis (step 5)
+
+Run `REQ-20261010-step5-analysis` closes the loop from import to review: import -> review -> create claims
+-> **analyze** -> evidence packet revision 1 -> approval by a second person. Architecture:
+[ARCHITECTURE.md, claim analysis](ARCHITECTURE.md#web-platform-claim-analysis-step-5). Threat model and
+residual risks: [technical/web-platform-security.md, section 9](technical/web-platform-security.md#9-step-5-claim-analysis).
+
+**What the analysis is, and what it is not.** It runs the fixed rules of the Python reference service
+(duplicate charge lines, linehaul and fuel above the rate confirmation, accessorials not listed as
+authorized, invoice total above the sum of its lines, detention earned versus billed) on the field values
+of the claim's accepted documents, and writes a draft demand letter. Findings are **deterministic rule
+outputs on extracted fields. They are drafts that need human review, not verified results.** The
+confidence shown on a finding is a fixed number per rule, not a measured probability, and nothing here
+claims accuracy. The evaluation gate (step 4) runs on synthetic fixtures and is not an accuracy measure.
+
+### Who can analyze
+
+| Role | Analyze one claim, analyze awaiting claims |
+| --- | --- |
+| OWNER, ADMIN, MANAGER, REVIEWER, ANALYST | yes |
+| VIEWER, PLATFORM_DEV, SUPER_ADMIN | no |
+
+The permission is `claims:analyze` in `packages/shared/src/rbac.ts`. API keys cannot call either route
+(403 `forbidden`), whatever their scopes.
+
+### Analyze one claim
+
+1. Open a claim with status **Awaiting analysis** (`AWAITING_ANALYSIS`). It needs at least one linked
+   document with status Accepted.
+2. On the **Summary** or the **Evidence** tab, select **Analyze claim**. The section says: "Runs fixed
+   rules on the accepted document fields. Findings are drafts for human review, not verified results."
+   and "You will be recorded as the author of revision 1, so another approver must approve it."
+3. On success the toast reads "Analysis complete. Revision 1 is ready for review." and the Evidence tab
+   shows revision 1: sources, findings with citations back to the document lines, a timeline and the draft
+   letter. The claim is now **Pending review** (`PENDING_REVIEW`) with its amounts, and it appears in `/approvals` and in the
+   intelligence worklist.
+
+If the analysis is refused, the section shows a fixed message: 409 "This claim is no longer awaiting
+analysis or has no accepted documents. Reload to continue.", 422 one of three reason texts (since the
+hardening run; see [Failed analyses](#failed-analyses)), 403 "You do not have permission to analyze claims.", 429 "Too many requests.
+Try again later.", anything else "Analysis failed. Try again." A refused analysis changes nothing.
+
+A 422 means the rules refused the input (for example a malformed amount or date) or the result cannot be
+stored (a negative amount, or more than 2,147,483,647 cents). The claim stays Awaiting analysis. Accepted
+documents cannot be edited, so such a claim needs a new import of corrected documents (see the residual
+risks). Since the hardening run the claim sheet keeps a note with the date, the number of failed attempts and
+the reason, visible to everyone who can read the claim.
+
+### Analyze awaiting claims (bulk)
+
+On the claims page, **Analyze awaiting claims** opens a dialog ("Analyzes up to 10 claims awaiting
+analysis, oldest first. Claims whose analysis failed before are tried after the others."). **Analyze** sends one request with `{ "limit": 10 }` and shows a summary such
+as "Analyzed 8. Skipped 1. Could not analyze 1. 4 still awaiting analysis.", plus the claim numbers that
+could not be analyzed.
+
+- The API accepts `limit` 1..25 (default 10) and looks at no more than `min(4 x limit, 100)` candidates:
+  claims awaiting analysis with at least one accepted document. Claims without an earlier failed analysis
+  come first, then the ones that failed before; within each group oldest first.
+- Each claim is analyzed in its own transaction, exactly like the single action. A claim someone else
+  analyzed in the meantime is **skipped**; a claim that gets 422 is **could not analyze**. Claims already
+  analyzed stay analyzed if a later one fails.
+- **Rate budget.** Both routes share your per-user `analysis` budget (`RATE_LIMIT_ANALYSIS_MAX`, default
+  30 per 10 minutes). A bulk request uses one unit for the first claim it tries and one more unit for every
+  further claim it tries, including claims that are skipped or could not be analyzed. When the budget runs
+  out, the run stops early and still answers normally: the claims it did not try stay Awaiting analysis
+  and are counted in "still awaiting analysis". Since the hardening run the dialog then says "Stopped early:
+  your analysis budget is used up for now. Try again later."; wait for the window to pass and run it again. When the budget is already empty, the request gets 429.
+- A claim that keeps failing with 422 stays a candidate until it is re-imported. Since the hardening run it is
+  tried after the claims that have not failed, so it no longer holds back newer claims. When it is tried, it
+  is still charged.
+
+### Four-eyes after analysis
+
+The person who runs the analysis (single or bulk) is recorded as the author of revision 1. Four-eyes then
+refuses their approve or reject of that claim, and `/approvals` shows them "You created a revision of this
+claim (by editing, analyzing or running the D&D audit). Another approver must approve it." (since the
+hardening run). Another approver must decide. The people
+who uploaded or edited the claim's documents are **not** counted as claim authors; document four-eyes
+already required a second person to accept those documents, except for documents accepted automatically
+at upload.
+
+### API
+
+| Route | Body | Success |
+| --- | --- | --- |
+| `POST /api/v1/claims/:id/analyze` | `{}` (or no body) | 201: `claim` (status and amounts in cents), `packet` (id, revision 1, content hash), `analysis` (`rulesVersion: "rules-v1"`, findings counts) |
+| `POST /api/v1/claims/analyze-awaiting` | `{ "limit": 1..25 }` (optional, default 10) | 200: `limit`, `examined`, `analyzed[]`, `skipped[]`, `failed[]` (each with `reasonCode` since the hardening run), `remaining`, `stoppedBy` |
+
+Both routes need a signed-in user (API keys are refused) and go through the same Origin and CSRF checks as
+every other mutating route. Each successful
+analysis is recorded in the tenant audit chain as `claim.analyzed`; each bulk request also writes one
+`claim.bulk_analyzed` summary (counts only).
+
+### Configuration (step 5)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `RATE_LIMIT_ANALYSIS_MAX` | 30 | analyses per user per 10 minutes, shared by the single and the bulk route (1..100000; off only with `RATE_LIMIT_ENABLED=false`, which production refuses) |
+
+The rule settings are fixed in this step: 15-minute detention increments, a tolerance of $0.01 and a
+90-day dispute window (the Python defaults). They are not configurable.
+
+### Not covered (accepted for now)
+
+Analysis does not run automatically when claims are created; the bulk action is the automation. A
+document linked to a claim after its analysis is not cited by revision 1. Documents accepted
+automatically at upload feed the analysis like reviewed ones. The full list of residual risks is in
+[technical/web-platform-security.md, section 9.5](technical/web-platform-security.md#95-accepted-residuals-step-5).
+
+## Charge suggestions and team labels (step 6)
+
+Run `REQ-20261011-charge-intelligence` adds suggestions for the category of invoice charge lines, a label
+memory for your team, and review-only findings in the analysis. Architecture:
+[ARCHITECTURE.md, charge intelligence](ARCHITECTURE.md#web-platform-charge-intelligence-step-6). Threat
+model and residual risks:
+[technical/web-platform-security.md, section 10](technical/web-platform-security.md#10-step-6-charge-intelligence).
+
+**Why.** The fixed rules recognise a charge line by keywords. On 175 charge names from six public carrier
+tariffs, they recognised 19 of the 159 accessorial names. A line the rules do not recognise is never
+checked against the rate confirmation's authorized accessorials.
+
+**What a suggestion is, and what it is not.** The classifier compares a charge name with labelled examples
+(character and word overlap, nearest example) and suggests that example's category when the similarity
+is at least 0.30. Below that it shows "No suggestion". The examples are 175 charge names from six public
+carrier tariffs (names only, with attribution) and your team's labels. There is no trained model, no LLM
+call and no network call. A suggestion is not verified. It can only add an item for human review and
+never confirms an amount. The evaluation in CI is a regression check on the public tariff names, not an
+accuracy measure on invoices.
+
+**Data provenance.** The 175 names are copied from public rules tariffs of XPO, Estes, Dohrn, Magnum,
+Gardewine and States Logistics; the sources and URLs are in `packages/shared/src/charge-intel/seed-v1.ts`.
+No rates, customers, shipments or invoices are stored. Using these real public names is an owner decision
+of 2026-10-10/11. The rule "synthetic data only" in `CLAUDE.md` has not been changed; adding a dated
+exception there is an open question for the owner (OQ1).
+
+### Who can do what
+
+| Role | See the Charges tab and labels | Confirm or correct a category (team label) |
+| --- | --- | --- |
+| OWNER, ADMIN, MANAGER, REVIEWER | yes | yes |
+| ANALYST, VIEWER | yes | no |
+| PLATFORM_DEV, SUPER_ADMIN | no | no |
+
+The permission is `charge_labels:manage`. Reading needs `claims:read`. API keys cannot call the charge
+routes (403). ANALYST cannot label because a label changes later analyses for the whole organization.
+
+### The Charges tab
+
+Open a claim and select **Charges**. The tab lists every invoice charge line of the claim's accepted
+documents, in any claim status. It starts with: "Suggestions compare each charge name with labelled
+examples: public carrier tariff charge names and your team's labels. They are not verified. A suggestion
+only adds items for human review; it never confirms an amount." Per line you see:
+
+- the description and the amount;
+- `Rules: <category>`: what the fixed rules call the line;
+- `Suggested: <category> (0.xxx)` with the similarity, or `No suggestion`;
+- `Nearest example: '<name>' (<source>)`: the public tariff or "Your team's label";
+- `Team label: <category>` when your team has labelled this wording.
+
+With `charge_labels:manage` you also get **Confirm <category>** (when there is a suggestion that differs
+from the team label) and a **Category** list with **Save label**. On success: "Label saved. It applies to
+future analyses." Errors show a fixed text: "You do not have permission to label charges." (403), "This
+organization has reached the maximum number of charge labels." (409), "Too many requests. Try again
+later." (429), otherwise "Could not save the label. Try again." The controls are disabled for a
+description the server would refuse (over 200 characters, control or bidirectional characters, or nothing
+left after normalization).
+
+**How a label works.** A label is stored per organization for the normalized wording (lower case,
+punctuation removed): one label per wording, the latest one wins. It is used immediately by the Charges
+tab and by every later analysis, for that exact wording and, through similarity, for similar wordings.
+Packets already created do not change. A label never changes what the fixed rules decide: it only matters
+for lines the rules call `other`. An organization can hold at most 2,000 labels. Each change is recorded in
+the audit trail (`charge_label.set`, `charge_label.deleted`) with the label id, the category and a SHA-256
+of the wording, never the wording itself.
+
+### What changes in the analysis
+
+Only for invoice lines that the fixed rules call `other`:
+
+- **Possible unauthorized accessorial.** If the nearest example is an accessorial, the claim has a rate
+  confirmation, the line is not listed there as authorized, and its amount is not the contracted linehaul
+  or fuel amount, the analysis adds the finding `LRN-ACCESSORIAL-REVIEW` ("Possible unauthorized
+  accessorial (suggestion)"). It always needs human review, has a fixed confidence of 0.5 (not a
+  probability), counts only in the pending-review total, and never appears in the draft letter. Its text
+  names the nearest example and ends with "Suggestion only - verify before disputing."
+- **Detention under another name.** If the nearest example is detention, the analysis creates no new
+  amount. Instead, the detention findings "unbilled" and "under-billed" (`DET-UNBILLED`, `DET-UNDERBILLED`)
+  are switched to needs-human-review, with a step "Possible detention billed under another name: ...
+  Confirm before claiming." Their amount moves from the recoverable total to the pending-review total and
+  out of the draft letter until a reviewer confirms.
+
+Everything else is exactly as in step 5. The analysis response adds `classifierVersion`,
+`learnedFindingsCount` and `reviewFlagsCount`; `claim.analyzed` also records which team labels influenced
+the result (`learnedLabelIds`).
+
+### API
+
+| Route | Permission | Success |
+| --- | --- | --- |
+| `GET /api/v1/claims/:id/charge-lines` | `claims:read` | 200: lines with rule category, suggestion and team label |
+| `GET /api/v1/charge-labels?page=1&pageSize=25` | `claims:read` | 200: the organization's labels (`pageSize` 1..100) |
+| `PUT /api/v1/charge-labels` | `charge_labels:manage` | 200: `{ "label": ..., "outcome": "created" \| "changed" \| "unchanged" }`; body `{ "description": "...", "category": "accessorial" }` |
+| `DELETE /api/v1/charge-labels/:id` | `charge_labels:manage` | 204 |
+
+All four use the per-user `intelligence` rate limit (`RATE_LIMIT_INTELLIGENCE_MAX`, default 120). The PUT
+and DELETE go through the same Origin and CSRF checks as every other mutating route. 409
+`label_limit_reached` when the organization already has 2,000 labels (changing an existing label is always
+allowed).
+
+### Switching it off
+
+Platform staff can switch off the flag **`intelligence.charge_suggestions`** ("Charge-line suggestions and
+team labels", on by default) on the Dev dashboard's Flags tab. Off: the analysis is exactly step 5, the
+four routes answer 404 and the Charges tab disappears. Labels stay stored and are used again when the flag
+is switched back on.
+
+### Evaluation (seed-set regression check)
+
+```bash
+npm run build
+npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1
+```
+
+It classifies each of the 175 public tariff names using only the other five carriers' names (no
+database, no network, nothing recorded). Today: nearest example right for 173 of 175; at the 0.30
+threshold 161 suggested (160 right, 1 wrong) and 14 without a suggestion; accessorial names recognised 145
+of 159, against 19 of 159 for the keyword rules. CI runs exactly this command; the bounds equal today's
+numbers, so a change that lowers them fails the build. `--json` prints the full report. These numbers are
+about tariff names, not invoices: they are a regression check on this seed set, not an accuracy measure.
+
+### Detention by tariff terms (not used yet)
+
+`computeTariffDetention` in `@fr/shared` computes detention the way carrier tariffs state it: free time,
+billing increments rounded up ("or fraction thereof") or down, a rate per increment, and a minimum and
+maximum charge. Example (XPO tariff terms: 60 minutes free, $72.25 per 15 minutes or fraction, minimum
+$95.50): 08:00 to 09:20 is 2 increments, $144.50. **The analysis does not use it yet**: reading these terms
+from rate confirmations is a later step, so detention is still computed with the step 5 rules.
+
+### Not covered (accepted for now)
+
+Generic linehaul wordings such as "Freight charges" are close to accessorial names in the seed until your
+team labels them; only the contracted-amount check and human review stop a wrong finding. Labels are per
+organization, not per carrier or customer. The seed has few linehaul (1) and fuel (3) names. A reviewer
+who can label can, by labelling a line as detention, move detention findings of later analyses to review
+(it is audited and attributable, and it never creates money). The full list is in
+[technical/web-platform-security.md, section 10.5](technical/web-platform-security.md#105-accepted-residuals-step-6).
+
+## Fuel check and cost outlook (step 7)
+
+Run `REQ-20261011-fuel-outlook` adds a fuel-surcharge check to the analysis, a store of public price data,
+and a cost outlook. Architecture:
+[ARCHITECTURE.md, step 7](ARCHITECTURE.md#web-platform-fuel-check-public-price-data-and-cost-outlook-step-7).
+Threat model and residual risks:
+[technical/web-platform-security.md, section 11](technical/web-platform-security.md#11-step-7-fuel-check-public-price-data-and-cost-outlook).
+
+**What it is, and what it is not.**
+
+- **Fuel check.** Your organization stores its carriers' fuel-surcharge (FSC) tables. For a claim, a
+  reviewer enters the ship date, the miles and the table. The analysis then takes the public weekly U.S.
+  average diesel price that applies to the ship date, recomputes the surcharge exactly and compares it with
+  the billed fuel lines. A difference becomes a finding **for review** ("Fuel surcharge differs from the
+  fuel table (review)") that shows the price week, the table row and every step of the arithmetic, and says
+  so when the bill matches a neighbouring week's price. It never confirms an amount and never appears in the
+  draft letter.
+- **Cost outlook.** A page with diesel at 1, 4, 8 and 13 weeks and the long-distance truckload producer
+  price index at 1 month, each with an 80% range. A model forecast is shown only where it beat "no change"
+  in a walk-forward backtest on the public history; elsewhere the page shows "no change" with a range. It
+  is **backtested on public data 2011-2026 (diesel) and 2009-2026 (truckload index); not a guarantee.** It
+  forecasts national indexes, not your lane rates: on lane-level rates "no change" was not beaten in our
+  tests, so no lane forecast is offered.
+
+**Data provenance.** The price history comes from FRED (Federal Reserve Bank of St. Louis): U.S. Energy
+Information Administration weekly diesel (`GASDESW`) and U.S. Bureau of Labor Statistics PPI
+`PCU4841214841212`, both marked "Public Domain: Citation Requested" on FRED. The bundled copy is in
+`api/data/public-prices/` with sha256 values and citations. It contains no customer, carrier or shipment
+data. Committing this real public data is an owner decision of 2026-10-11; the rule "synthetic data only" in
+`CLAUDE.md` has not been changed, and adding a dated exception there is an open question for the owner
+(OQ1).
+
+### Who can do what
+
+| Role | See fuel tables, the Fuel tab and the Outlook | Add, edit, archive fuel tables | Enter or clear fuel inputs on a claim |
+| --- | --- | --- | --- |
+| OWNER, ADMIN | yes | yes | yes |
+| MANAGER, REVIEWER, ANALYST | yes | no | yes |
+| VIEWER | yes | no | no |
+| PLATFORM_DEV, SUPER_ADMIN | no | no | no |
+
+The permissions are the existing ones: `settings:manage` for tables, `claims:analyze` for inputs,
+`claims:read` for reading. API keys cannot call any of these routes (403).
+
+### Add a fuel table
+
+Open **Fuel tables** (`/settings/fuel-tables`). The page starts with "Fuel tables are your carriers'
+surcharge schedules. The fuel check applies them to the public weekly U.S. diesel price." With
+`settings:manage`, **Add fuel table** and choose:
+
+| Kind | Fill in | Rate |
+| --- | --- | --- |
+| Step, above base | base price, step size, rate per step | one step for each step size or part of it above the base (the classic "1 cent per mile for every 6 cents above $1.20") |
+| Step, from base | base price, step size, rate per step | the first step starts at the base price (tables like "from $1.12, +1 cent per 5 cents") |
+| MPG | base price, miles per gallon, 2-4 decimals | (price - base) / mpg, rounded half up; per mile only |
+| Rows | one `atLeast,rate` pair per line (up to 200) | the rate of the last row whose price is at or below the diesel price |
+
+The unit is **per mile** or **percent** (of the contract linehaul from the rate confirmation, otherwise of
+the invoice's linehaul lines). **Week rule:** by default the Monday price applies Wednesday to Tuesday (the
+GSA rule); a table can shift this by 0 to 6 days (0 = Monday to Sunday). Names must be unique in your
+organization. An organization can create at most 50 tables, archived ones included. A table in use is
+archived, not deleted; editing it raises its version, and the analysis records the version and a sha256 of
+the parameters it used.
+
+### Enter fuel inputs on a claim
+
+Open a claim that is **awaiting analysis** and select **Fuel**. Enter the **Ship date**, the **Miles** (one
+decimal, 0.1 to 10,000; not needed for a percent table) and the **Fuel table**, then **Save fuel inputs**
+("Fuel inputs saved. They apply when the claim is analysed."). **Clear fuel inputs** removes them. After
+analysis the inputs are locked ("Fuel inputs can only change before the claim is analysed."). The tab shows
+the check at any time as a preview: the status, the posted date and price, expected, billed, difference and
+the calculation. It never changes a stored packet. Then run **Analyze** as usual.
+
+What the statuses mean:
+
+| Status | Meaning |
+| --- | --- |
+| No fuel inputs yet | nothing entered; the analysis is exactly as without step 7 |
+| The selected fuel table is archived | choose another table |
+| The rate confirmation states a fixed fuel surcharge; that amount is checked instead | the existing fixed-amount rule applies; no FSC check |
+| No fuel surcharge line on the invoice | nothing to compare |
+| No public diesel price is available for this ship date | no posting covers the date (for example, newer than the imported data) |
+| Miles are required for a per-mile fuel table | enter miles |
+| No linehaul amount to apply a percent table to | no contract linehaul and no linehaul line |
+| The billed fuel surcharge matches the fuel table | within the analysis tolerance |
+| The billed fuel surcharge differs from the fuel table. Review the finding. | one review-only finding `FSC-INDEX-MISMATCH` |
+
+**Example** (a table with base $1.20, step $0.06 and $0.01 per mile per step; ship date 2026-10-07, so the
+2026-10-05 posting of $6.199 applies): 84 steps, $0.84 per mile, expected $420.00 for 500.0 miles. A billed
+$435.00 gives a finding for review of $15.00, which notes that $435.00 equals the table result for the
+2026-09-28 price ($6.382), one week earlier than the applicable posting. Check the table, the miles and the
+ship date before disputing.
+
+### The Outlook page
+
+Open **Outlook** (`/outlook`). It starts with: 'Forecasts are shown only at horizons where a model beat "no
+change" in a walk-forward backtest on public data; other horizons show "no change" with a range. Not a
+guarantee.' For each series it shows the latest value, "Backtested on public data <from>-<to>; not a
+guarantee.", one row per horizon with the target date, the method ("Trend model", "Average of trend model and
+no change" or "No change"), the reason, the point, the range, "80% range. In the backtest, <n>% of outcomes
+fell inside ranges built this way." and the backtest ratio and DM statistic, and the data source line with
+the file's sha256. If you can see fuel tables, a **Fuel table** select adds your surcharge rate at each
+diesel horizon.
+
+On the bundled history (latest diesel 2026-10-05, latest index 2026-08-01) the page shows:
+
+| Horizon | Method | Point | 80% range | Backtest: MASE vs no change, DM | Range coverage in backtest |
+| --- | --- | --- | --- | --- | --- |
+| Diesel 1 week | Trend model | 6.124 | 5.903 - 6.392 | 0.85, 5.64 | 78% |
+| Diesel 4 weeks | Average of trend model and no change | 6.136 | 5.301 - 7.175 | 0.96, 2.75 | 79% |
+| Diesel 8 weeks | No change | 6.199 | 4.777 - 8.189 | by design | 78% |
+| Diesel 13 weeks | No change | 6.199 | 4.384 - 9.395 | by design | 77% |
+| Truckload index 1 month | Trend model | 218.0 | 210.9 - 225.9 | 0.87, 2.33 | 74% |
+
+A model is used only if, over at least 100 walk-forward origins, its error is below that of "no change"
+(MASE < 1) and the difference is statistically significant (Diebold-Mariano >= 1.96). If a later import
+makes a model fail, that horizon switches to "no change" automatically. Not shown: the truckload index at 3
+months (edge not significant, and the range coverage was too far from 80%), deep-sea freight rates and
+lane-level truck rates (no reliable edge over "no change" in our backtests).
+
+### Import or update price data (operators)
+
+Prices are global (shared by all organizations) and can only be written with the **owner database
+connection**; the running API can only read them. The seed already imports the bundled history.
+
+```bash
+npm run build
+export MIGRATE_DATABASE_URL=...           # owner connection; never printed
+npm run prices:import -- --list           # active import per series: id, sha256, rows, dates, source kind
+npm run prices:import -- --bundled        # the files in api/data/public-prices (sha256 checked)
+npm run prices:import -- --series diesel_us --fetch      # download the pinned FRED CSV (CLI only)
+npm run prices:import -- --series ppi_tl --file ./PCU4841214841212.csv \
+  --source-url "https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCU4841214841212" --retrieved-at 2026-10-11
+```
+
+- An import is all or nothing and always a full history. The newest import becomes active; older ones are
+  kept and can never be changed or deleted.
+- Same file again: `unchanged`. A file that covers less history than the active one: refused
+  (`would_remove_history`). A file that changes values already imported (for example revised preliminary
+  index months): refused with the number of changed values (`revisions_refused`); add `--accept-revisions`
+  to import it on purpose.
+- Exit codes: 0 imported or unchanged, 2 usage, validation or refusal (nothing written), 3 database or
+  network failure (nothing written). Each import is recorded in the platform audit trail
+  (`price_data.imported`).
+- `--fetch` contacts only the pinned FRED address (no redirects, 20 s timeout, 1 MiB cap). The API itself
+  never downloads anything.
+
+### Backtest gate
+
+```bash
+npm run build
+npm run eval:outlook -- --min-coverage 0.70 --max-coverage 0.90 --require-model diesel_us:1,diesel_us:4,ppi_tl:1
+```
+
+It replays the backtest on the bundled files (no database, no network, nothing written; `--json` prints the
+full report). CI runs exactly this command; it fails if a range coverage leaves 70-90% or if one of the
+three model horizons no longer beats "no change". It is a regression check of the forecast and range rules,
+not a guarantee about future prices.
+
+### API
+
+| Route | Permission | Success |
+| --- | --- | --- |
+| `GET /api/v1/fuel-tables?includeArchived=false` | `claims:read` | 200: `{ "items": [...] }` |
+| `POST /api/v1/fuel-tables` | `settings:manage` | 201: the table. Body e.g. `{ "name": "Carrier A 2026", "kind": "step", "unit": "per_mile", "priceSeries": "diesel_us", "params": { "basePrice": "1.20", "stepSize": "0.06", "ratePerStep": "0.01", "bracket": "above_base" } }` |
+| `PUT /api/v1/fuel-tables/:id` | `settings:manage` | 200: the same body plus `"expectedVersion"` |
+| `DELETE /api/v1/fuel-tables/:id` | `settings:manage` | 204 (archives) |
+| `GET /api/v1/claims/:id/fuel-check` | `claims:read` | 200: inputs, table and the computed result |
+| `PUT /api/v1/claims/:id/fuel-inputs` | `claims:analyze` | 200: `{ "inputs": ..., "outcome": "created" \| "changed" \| "unchanged" }`; body `{ "shipDate": "2026-10-07", "miles": "500.0", "fscTableId": "<uuid>" }` |
+| `DELETE /api/v1/claims/:id/fuel-inputs` | `claims:analyze` | 204 |
+| `GET /api/v1/outlook?fscTableId=<uuid>` | `claims:read` | 200: the outlook (`fscTableId` optional) |
+
+All use the per-user `intelligence` rate limit. New errors: 409 `fuel_table_limit_reached`, 422
+`fuel_table_unavailable`, 422 `miles_required`; 503 `service_unavailable` when the price data cannot be read.
+The analysis response adds `fuelCheckStatus` and `fuelFindingsCount`.
+
+### Switching it off and configuration
+
+Platform staff can switch off **`intelligence.fuel_check`** ("Fuel tables and fuel-surcharge check") and
+**`intelligence.cost_outlook`** ("Cost outlook from public price data") on the Dev dashboard's Flags tab
+(both on by default). With the fuel check off, the analysis is exactly step 6 and the fuel routes, tab and
+page disappear; tables and inputs stay stored. `PRICE_CACHE_TTL_MS` (default 60000) sets how long the API
+caches which import is active.
+
+### Not covered (accepted for now)
+
+Only the U.S. national average diesel price (no regional prices); miles and ship date are typed in, not read
+from documents; packets analysed before inputs were entered are not re-checked; USD only. The outlook models
+were chosen on the same public history the CI gate replays. The full list is in
+[technical/web-platform-security.md, section 11.5](technical/web-platform-security.md#115-accepted-residuals-step-7).
+
+## Ocean demurrage and detention audit (step 8)
+
+Run `REQ-20261011-ocean-dd` adds a check of US ocean container demurrage and detention (D&D) invoices.
+Architecture:
+[ARCHITECTURE.md, step 8](ARCHITECTURE.md#web-platform-ocean-demurrage-and-detention-audit-step-8).
+Threat model and residual risks:
+[technical/web-platform-security.md, section 12](technical/web-platform-security.md#12-step-8-ocean-demurrage-and-detention-audit).
+
+> **Not legal advice.** The audit compares the invoice data you enter with the text of 46 CFR Part 541,
+> 46 CFR 545.5 and the tariff you attach. Its findings are drafts for human review, not a legal opinion.
+> Whether an invoice is in fact not payable, or a charge unreasonable, is a legal question: have counsel review
+> the findings before you rely on them or send anything.
+
+**What it checks.** Since 28 May 2024 the Federal Maritime Commission's rule 46 CFR Part 541 lists the
+information a US demurrage or detention invoice must contain (541.6), says that missing information removes
+the obligation to pay (541.5), requires the invoice within 30 calendar days of the date the charge was last
+incurred (541.7; for an NVOCC, 30 days from the invoice it received) and sets dispute windows (541.8). 46 CFR
+545.5 says, among other things, that detention charged when an empty container cannot be returned is likely
+to be unreasonable. The regulation text in the product was checked against the eCFR (title 46 up to date as of
+2026-10-07) and is quoted verbatim. 46 CFR 541.4 (who may be billed) is **not** checked: the D.C. Circuit set
+it aside on 2025-09-23 and the FMC removed it effective 2025-12-29.
+
+| Rule | What it looks for | Kind of finding |
+| --- | --- | --- |
+| `DD-TOTAL-MISMATCH` | the total due is more than the sum of the charge lines | confirmed arithmetic |
+| `DD-PERIOD-ARITH` | a charge line is more than days x its stated rate | confirmed arithmetic |
+| `DD-TARIFF-OVERCHARGE` | a container is charged more than the tariff you attached gives | confirmed arithmetic (against your tariff) |
+| `DD-545-RETURN-REFUSED` | detention charged on days when you recorded that the empty return was refused | for review (46 CFR 545.5) |
+| `DD-545-AVAILABILITY` | import demurrage free time started before the date you recorded the cargo as available | for review (46 CFR 545.5) |
+| `DD-541-7-LATE` | the invoice was issued more than 30 calendar days after the charge was last incurred | for review ("may not be payable under 46 CFR 541.7 - review") |
+| `DD-541-6-CONTENT` | required information is missing or inconsistent (for example free time that differs from the tariff, or a dispute window shorter than 30 days) | for review: when something is missing, "... 46 CFR 541.5 ... - review whether this applies"; when items are only inaccurate, "Required invoice information inaccurate (46 CFR 541.6)" citing 541.6(b) or (d) |
+
+"Confirmed" means the arithmetic is certain for the data you entered; those amounts are the confirmed total.
+Everything that depends on the regulation is "for review" and counts only in the review total. Each amount is
+counted once: the rules take money in the order of the table, and a later rule only gets what earlier rules
+left, so the findings never add up to more than the invoice. Each finding shows every step of its
+calculation and cites the invoice field, the tariff or the regulation text it relies on.
+
+**Free time and tariffs.** A tariff states the free days, whether they are calendar or working days, whether
+the start day counts as day 1 or free time starts the day after (for example Hapag-Lloyd's "day of
+interchange plus 4 working days"), whether charges run per calendar or working day, the working weekdays, and
+tiered daily rates per container size. A calendar lists the terminal's closed dates (holidays: not free days
+on a working-day basis, but charged on a calendar basis) and shutout dates (unplanned closures: never free and
+never charged). There is no built-in holiday list.
+
+Four public tariffs are offered as **starting points** ("Start from a public tariff"). They hold the figures as
+published on 2026-10-11; your service contract or a newer tariff may differ, so check before use:
+
+| Preset | Free time and rates (dry containers) | Source and verification |
+| --- | --- | --- |
+| Maersk US import detention (2026) | 4 working days (Mon-Sat); $210 for chargeable days 1-4, $260 for 5-8, then $290 | Maersk tariff effective 01 Jan 2026; read through a search engine's extract of the PDF (the direct download failed) |
+| MSC US import demurrage (all ports except Baltimore) | 4 working days; 20DV $65 for 5 days then $120; 40DV/40HC/45HC $80 for 5 days then $150 | MSC PDF, sha256 recorded |
+| Hapag-Lloyd US import detention, merchant haulage (excl. California) | day of interchange plus 4 working days; $200 x 3 days, $250 x 3 days, then $300 | Hapag-Lloyd PDF effective 1 Oct 2025, sha256 recorded |
+| CMA CGM US import demurrage, standard US ports (40 ft dry) | 4 working days; $295 x 5 days, $355 x 5 days, then $395 | **secondary source only** (a trade publication citing CMA CGM); verify against the CMA CGM tariff |
+
+Each preset shows its document, retrieval date, verification level and the assumptions made where the tariff
+is silent.
+
+**Worked examples** (pinned in the tests; the invoices around them are synthetic): Maersk 40DV out on Monday
+2026-03-02 and back 2026-03-20: free time ends 2026-03-05, 15 chargeable days, **$3,910.00**; with the terminal
+closed on Memorial Day (2026-05-22 to 2026-06-02): **$1,360.00**. Hapag-Lloyd 40HC interchanged Thursday
+2026-07-02, closed 2026-07-03, shutout 2026-07-14, returned 2026-07-20: **$2,550.00** (**$2,850.00** without the
+shutout). MSC 40DV available Monday 2026-09-07 (Labor Day, closed) and out 2026-09-22: **$1,300.00** (20DV
+**$1,045.00**); counted from 2026-09-04 instead it would be **$1,450.00**, and the $150.00 difference is what
+the availability rule reports for review. CMA CGM 40DV 2026-02-02 to 2026-02-20: **$5,225.00** (secondary-source
+rates).
+
+### Who can do what
+
+| Role | See D&D invoices, tariffs and calendars | Enter, edit, delete draft invoices; import CSV | Create and edit tariffs and calendars | Run the audit |
+| --- | --- | --- | --- | --- |
+| OWNER, ADMIN, MANAGER, REVIEWER | yes | yes | yes | yes |
+| ANALYST | yes | yes | no | yes |
+| VIEWER | yes | no | no | no |
+| PLATFORM_DEV, SUPER_ADMIN | no | no | no | no |
+
+The permissions are `dd_invoices:manage`, `dd_tariffs:manage` (new), `claims:analyze` for the audit and
+`claims:read` for reading. API keys cannot call any D&D route (403).
+
+### Enter an invoice
+
+Open **Ocean D&D** (`/ocean`) and select **New invoice**. Enter the invoice header (number, billing party and
+its type: ocean carrier, marine terminal operator or NVOCC; billed party; import or export; invoice, due and,
+for an NVOCC, upstream invoice dates; B/L numbers; port of discharge; liability basis; total; tariff rule;
+dispute contact, link and timeframes; the two certifications), then each container (number, size type such as
+`40DV`, demurrage or detention, the stated free days, free-time start and end, availability or earliest return
+date) with its charge periods (from, to, rate, amount) and your **evidence**: clock start and stop, the date the
+cargo was available, and the dates an empty return was refused. Attach a tariff and a calendar if you have
+them. The **preview** under the form runs the same checks in your browser as you type. **Save** stores a
+draft; drafts can be edited or deleted.
+
+Limits: 50 containers per invoice, 20 periods per container, at most 2,000 invoices per organization (drafts
+and audited), 200 tariffs and 200 calendars. Dates must be between 2000-01-01 and 2099-12-31.
+
+### Import invoices from CSV
+
+**Import CSV** reads a UTF-8 file in your browser (at most 4 MB on disk, 1,000,000 characters, 2,000 rows and
+50 invoices); nothing is uploaded until you import. Row 1 must be exactly these 35 columns:
+
+```
+invoice_number, billing_party, billing_party_type, billed_party, direction, invoice_date, due_date,
+upstream_invoice_date, bl_numbers, port_of_discharge, liability_basis, total_due, rule_reference,
+dispute_contact, dispute_digital_means, dispute_request_days, dispute_resolution_days, certifies_fmc_rules,
+certifies_performance, container_number, size_type, charge_type, free_days, free_time_start, free_time_end,
+availability_date, earliest_return_date, period_from, period_to, rate, amount, clock_start, clock_stop,
+cargo_available_date, return_refused_dates
+```
+
+Rows with the same billing party and invoice number form one invoice; rows with the same container number and
+charge type form one container; each row with a period adds one charge period. `bl_numbers` and
+`return_refused_dates` are `;`-separated lists; money may have a leading `$` and thousands commas; dates are
+`YYYY-MM-DD`; yes/no columns accept `yes`, `no`, `true`, `false`, `y`, `n`, `1`, `0`. The preview lists every
+invoice and every row error; an invoice with an error is left out ("Rows with errors were not imported."). The
+import then creates the other invoices as drafts, one by one, and shows each result.
+
+### Run the audit
+
+Open a draft and select **Run audit** (needs `claims:analyze`). "Creates a claim with revision 1 for review. You
+will be recorded as its author, so another approver must approve it." The audit:
+
+- creates a claim marked **D&D** in the claims list, with an evidence packet revision 1 for review;
+- stores a frozen snapshot of the invoice, the tariff and the calendar with their sha256 values, so later
+  edits of the tariff or calendar never change it; the invoice can no longer be edited or deleted;
+- attaches the regulation text it cites, a timeline (invoice date, last charge date, 30-day issuance limit)
+  and a **draft dispute letter** that starts with "DRAFT - FOR HUMAN REVIEW. NOT SENT. NOT LEGAL ADVICE.",
+  lists the findings and reminds you of the 30-day request window of 46 CFR 541.8(a). Nothing is emailed.
+
+The claim then goes through the normal approval with four-eyes: the person who ran the audit, and also the
+person who created or edited the D&D invoice data at any time (taken from the audit trail), cannot approve or
+reject it. Approving with review findings
+still requires acknowledging them.
+
+### API
+
+| Route | Permission | Success |
+| --- | --- | --- |
+| `GET /api/v1/dd/tariffs`, `GET /api/v1/dd/calendars` (`?page&pageSize`, pageSize up to 100) | `claims:read` | 200 list |
+| `POST /api/v1/dd/tariffs`, `PUT /api/v1/dd/tariffs/:id` (`{ "version", "data" }`) | `dd_tariffs:manage` | 201 / 200 |
+| `POST /api/v1/dd/calendars`, `PUT /api/v1/dd/calendars/:id` | `dd_tariffs:manage` | 201 / 200 |
+| `GET /api/v1/dd/invoices?page&pageSize&status` (pageSize up to 50) | `claims:read` | 200 list |
+| `POST /api/v1/dd/invoices`, `PUT /api/v1/dd/invoices/:id` (`{ "version", "invoice" }`; body up to 256 KiB) | `dd_invoices:manage` | 201 / 200, with the preview |
+| `GET /api/v1/dd/invoices/:id` | `claims:read` | 200, with the preview |
+| `DELETE /api/v1/dd/invoices/:id` | `dd_invoices:manage` | 204 (drafts only) |
+| `POST /api/v1/dd/invoices/:id/audit` | `claims:analyze` | 201: the new claim, packet and counts |
+
+All routes use the per-user `intelligence` rate limit except the audit, which uses the `analysis` limit. New
+error: 409 `dd_limit_reached` when an organization reaches a cap. Others: 400 for a tariff or calendar that is
+not yours, 409 for a duplicate name or invoice number, a stale version or an audited invoice, 413 for a body
+that is too large, 422 when amounts are too large to store. `POST /api/v1/claims/:id/analyze` on a D&D claim
+returns 409: D&D claims are never analysed by the freight rules.
+
+### Switching it off
+
+Platform staff can switch off **`intelligence.ocean_dd`** ("Ocean demurrage and detention invoice audit") on the
+Dev dashboard's Flags tab (on by default). Off: the page and its routes disappear (404); existing D&D claims
+stay and can still be approved, rejected, edited and marked send-ready. No new environment variables.
+
+### Not covered (accepted for now)
+
+No PDF reading of D&D invoices (enter or import as CSV); no tracking-data import (clock, availability and
+refused-return dates are typed in); no check of who was billed (541.4 was removed); the NVOCC dispute extension
+of 541.7(c), per diem, chassis and hourly charges, and currencies other than USD are not handled; presets may
+be out of date and the CMA CGM preset is from a secondary source. The full list is in
+[technical/web-platform-security.md, section 12.5](technical/web-platform-security.md#125-accepted-residuals-step-8).
+
+## Hardening: improvements to existing features
+
+Run `REQ-20261012-hardening` adds **no new feature, route, permission or user setting**. It makes existing
+features clearer and harder to misuse, and it fixes the findings of a security audit of the whole platform.
+Pre-product, synthetic data only, never deployed. The threat model, the status of each earlier residual risk and
+what is still open are in [technical/web-platform-security.md, section 13](technical/web-platform-security.md#13-hardening-run).
+Architecture: [ARCHITECTURE.md, hardening run](ARCHITECTURE.md#web-platform-hardening-run).
+
+### Four-eyes: who may not approve, and why
+
+Approve and reject of a claim are refused for any of three reasons, checked in this order. The API answers 403
+`four_eyes_required`, nothing changes, and the attempt is audited. `/approvals` shows the text for the first
+reason that applies instead of Approve/Reject:
+
+| Reason | Text on `/approvals` |
+| --- | --- |
+| You created any revision of the claim (edit, analysis or D&D audit) | "You created a revision of this claim (by editing, analyzing or running the D&D audit). Another approver must approve it." |
+| You entered or edited the claim's D&D invoice | "You entered or edited the D&D invoice of this claim. Another approver must approve it." |
+| **New:** you set a team charge label that influenced the claim's analysis | "You set a team charge label that influenced this analysis. Another approver must approve it." |
+
+- **Label authors.** You are a label author of a claim if, before the analysis ran, you created or changed one
+  of the team labels that the analysis recorded as influencing it. Changing a label after the analysis does not
+  count, and neither does deleting one. Claims that were never analysed (seeded or D&D claims) have no label
+  authors.
+- **More than 50 influencing labels.** The analysis records at most 50 labels. When more may have influenced a
+  claim, the analysis notes that the list is incomplete. **Everyone** in the organization who set a team label
+  before the analysis is then excluded from approving that claim. In a small team this can mean that nobody in
+  the organization can approve it (accepted for now).
+- **Database backstop.** A database trigger now also enforces the D&D-invoice and label rules, as one already
+  did for the revision rule. Separately, a direct database update can no longer mark an evidence packet
+  approved, rejected or send-ready without a matching decision record.
+- **Upper-case ids.** Claim, invoice and other ids in URLs are treated case-insensitively and stored in lower
+  case. Before this run, an upper-case id in the URL could hide an edit from the four-eyes check.
+
+### Failed analyses
+
+When an analysis cannot be stored (422), the claim sheet now says why:
+
+| Reason code | Text |
+| --- | --- |
+| `input_values` | "The extracted values of this claim cannot be analysed automatically. Accepted documents cannot be changed, so the claim stays awaiting analysis." |
+| `amount_out_of_range` | "The computed amounts are negative or larger than the product can store, so nothing was saved." |
+| `fuel_check` | "The fuel check produced amounts that cannot be stored. Clear the fuel inputs or choose another fuel table, then analyze again." |
+
+As before, a refused analysis writes nothing to the claim, the packet or the documents. Each failure is now
+recorded in the audit trail as `claim.analysis_failed`: claim id and number, reason code, single or bulk, rules
+version and number of documents, but no extracted values. While the claim is awaiting analysis, its sheet shows
+a note to everyone who can read the claim, for example "Last analysis attempt failed on <date> (2 failed
+attempts so far). <reason text>". The analyze response carries
+`details: [{ "path": "analysis", "code": "<reason code>" }]`. `GET /api/v1/claims/:id` carries `analysisFailure`:
+`lastFailedAt`, `reasonCode` and `failedAttempts`, or null.
+
+### Bulk analysis
+
+- The dialog says "Analyzes up to 10 claims awaiting analysis, oldest first. Claims whose analysis failed
+  before are tried after the others."
+- After a run, under the summary line, the dialog says why it stopped: "Stopped after the batch limit.",
+  "Stopped early: your analysis budget is used up for now. Try again later." or "All candidate claims in
+  this run were tried."
+- The response gains `stoppedBy` (`limit`, `budget` or `candidates`) and a `reasonCode` for each failed claim.
+  The `claim.bulk_analyzed` audit event records `stoppedBy` too. If a run ends with an unexpected error, the API
+  still answers 500, but it first records the partial run with `stoppedBy: "error"`.
+
+### Charges tab
+
+- For an analysed claim, a section "Team labels that influenced this analysis" lists each label's description
+  and category ("Deleted label" for a label deleted since then). It ends with "A team label can only move
+  findings to human review or add review items. It never adds confirmed money." If no label influenced the
+  analysis, it says "No team label influenced this analysis." The section is absent for claims that were not
+  analysed. In the API, `GET /api/v1/claims/:id/charge-lines` gains `influence` (null, or the list of labels).
+- In the rare case that a label save collides with a concurrent change of the same wording and the automatic
+  retry collides too, the answer is now 409 `conflict` with "This label was changed at the same time by
+  someone else. Reload and try again." It used to be a generic 500.
+
+### Wording on existing pages
+
+- **Findings** show `<rule id> - rule setting 0.90 (fixed per rule; not a measured probability)` instead of
+  `confidence 90%`. The number is the same fixed per-rule value as before. It is not a probability.
+- **Ocean D&D presets** show the verification level in words, for example "Verification: Read from the
+  carrier's published tariff through a search-engine extract; the document itself was not downloaded. Verify
+  before use."
+- **Fuel tables**: at the cap, the page says "This organization has reached the maximum of 50 fuel tables.
+  Archived tables count toward this limit."
+- **Outlook**: under each series' provenance line, a sentence says where its prices came from: "Downloaded from
+  FRED by the import command.", "From the files bundled with the product, checked against their pinned
+  sha256." or "Imported from a file supplied by the operator; the product did not download it." The API adds
+  `provenance.sourceKind` (`fetch`, `bundled` or `file`).
+- **Accessibility**: the claims list, packet sources, linked documents, extracted fields and review queue
+  tables now have accessible names, so every data table in the web app has one.
+
+### Sign-in, accounts and invites
+
+- **Change password** now counts wrong current passwords toward the same lockout as login (5 failures by
+  default). After that, change password and login for that email answer 429 `account_locked` until the lock
+  expires, even with the right password. A successful change clears the lock. The route also uses the stricter
+  `auth` rate limit. Each wrong attempt is audited as `auth.password.change_failed`.
+- **Locked out, but on your own device.** While an email is locked, a login or MFA step is still processed
+  normally if it comes from a browser that holds a live session cookie of that same user. The password, and
+  MFA where required, are still checked. A wrong password from that browser answers 401, not 429. Without such
+  a session the lock applies as before. The successful login is audited with `knownDevice: true`.
+- **Promotion to Owner or Admin** of a user without MFA ends that user's sessions at once. Their next login asks
+  them to enrol in MFA.
+- **Invites** to an email that already has an account in another organization now get the same `201` as any
+  other invite. Before, they got 409, which revealed that the person uses the platform. Accepting such an
+  invite is refused. Inviting a member of your own organization still gives 409.
+- **Client address behind CloudFront (operators).** Rate limits, lockout attempts and the audit `ip` use the
+  visitor's address from `CloudFront-Viewer-Address`, but only when the request also carries the secret
+  `x-origin-verify` header that CloudFront adds. Otherwise the address from `TRUST_PROXY` is used, as before.
+  The Terraform and the deploy-gate check are in
+  [infra/README.md](infra/README.md#deploy-gate-cloudfront-origin-verification-and-client-address-fix-round-1-f-03).
+  This is fixed in code and in the infrastructure code, but it stays unverified until that check has been
+  recorded in AWS.
+
+### Configuration (hardening)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `CLIENT_IP_HEADER` | unset | `cloudfront-viewer-address` behind CloudFront; leave it unset locally. Production does not require it, but without it the per-address limits key on the CloudFront edge address |
+| `ORIGIN_VERIFY_SECRET` | unset | required when `CLIENT_IP_HEADER` is set; at least 43 random characters, different from every other secret. It lives in Secrets Manager; see [docs/secrets.md](docs/secrets.md) |
+
+### Not covered (accepted for now)
+
+- An analysis that fails because of its documents still needs a re-import of corrected documents.
+- A bulk run still charges one budget unit for each claim it tries.
+- Refusals by the four-eyes database triggers are logged but not audited.
+- A user with no live session on any device can still be locked out by someone who knows the email address.
+- While the origin-verify value is being rotated, the API uses the edge address for a short window.
+
+The full list (HR-1..HR-13) is in
+[technical/web-platform-security.md, section 13.5](technical/web-platform-security.md#135-known-gaps-and-residual-risks-hardening).
+
 ## Tests and checks
 
 ```bash
@@ -670,9 +1482,12 @@ npm run build                # shared + api + web (+ dist check: no inline scrip
                              # builds the parser worker, so run it BEFORE the integration/acceptance suites
 npm run test:integration     # api, against a migrated + seeded test DB (TEST_DATABASE_URL, TEST_ADMIN_DATABASE_URL,
                              # and the same MFA_ENC_KEY the seed used), S3 (MinIO) and Python (PYTHON=...) for the
-                             # parity suite; see the env block in .github/workflows/web-ci.yml
+                             # parity suites (step 3 extraction, step 5 rules); see the env block in .github/workflows/web-ci.yml
 npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
 npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1   # step 4: after npm run build
+npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1   # step 6: after npm run build
+npm run eval:outlook -- --min-coverage 0.70 --max-coverage 0.90 --require-model diesel_us:1,diesel_us:4,ppi_tl:1   # step 7: after npm run build
+npm run prices:import -- --list   # step 7: owner connection (MIGRATE_DATABASE_URL); the seed imports the bundled prices
 npm run audit && npm audit signatures
 terraform -chdir=infra fmt -check -recursive && terraform -chdir=infra init -backend=false && terraform -chdir=infra validate
 ```
@@ -700,3 +1515,67 @@ integration (85 passed, 2 placeholder skips). Independent acceptance run (round 
 138 passed (1 skip), api 651 passed (9 skipped for missing tools or declared skips, 2 todo). Round 1 had
 found six defects (D-1..D-6); all were fixed and re-verified. **Not run:** container images and the
 compose stack, Playwright, terraform in the test run (the builder ran fmt/validate), any AWS deployment.
+
+Four-eyes (2026-10-10, run `REQ-20261009-four-eyes`, Windows, **local run on Node 22.23.3, not GitHub
+CI**, portable PostgreSQL 16, portable MinIO with SSE-KMS, in the `web-ci.yml` step order with its
+environment): lint, typecheck, unit tests (shared 136, api 356, web 67), migrate + seed, `ensure-bucket`,
+build, integration (95 passed, 2 pre-existing skips), acceptance (shared 36, api 690 passed with 9
+skipped and 2 todo, web 150 passed with 1 skip). **Not run:** Node 24, GitHub CI, `npm run audit`,
+container images, Playwright, any AWS deployment. The parity suites used Python 3.14 (CI uses 3.12).
+
+Step 5 (2026-10-10, run `REQ-20261010-step5-analysis`, Windows, **local runs, not GitHub CI**; the
+validation is **not complete**): the builder ran lint, typecheck, unit tests (shared 165, api 370, web 78),
+the rules parity suite (2,132 cases, zero differences on Node 22.23.3 and Node 24) and, on Node 22.23.3,
+migrate + seed (also `--reset`), build and integration (16 files, 107 passed, 3 local-skip placeholders),
+at commit `b12ce2a`. The first independent acceptance run (Node 22.23.3, `CI=true`, same commit) gave
+shared 81/81 and api 754 passed, 4 failed, 10 skipped; the 4 failures were test-design errors, fixed in
+the test files but not yet re-verified because the rerun was stopped by low system memory. The web
+acceptance suite has not run yet. The fix-round commit `5c047fb` (bulk budget) was checked only with lint,
+typecheck and targeted unit tests. **Not run:** acceptance and integration at `5c047fb`, GitHub CI,
+container images, Playwright, any AWS deployment.
+
+Step 6 (2026-10-11, run `REQ-20261011-charge-intelligence`, Windows, Node 22.23.3, **local runs, not GitHub
+CI**; low-memory mode, so the validation is **not complete**): the builder ran lint, typecheck and unit
+tests (at `3a8125d`: shared 190, api 392, all web files; after fix round 1 at `43d7d4c`: shared 195, api
+393, the web charges, analysis and step 4 files with 33 tests) and `npm run eval:charges` with the CI
+bounds (exit 0). The tester's pure shared acceptance tests (Tier L) passed 73 of 73 at `3a8125d`; after fix
+round 1 they found one missing root export, fixed in `a1b1c2a`, where the full shared acceptance suite
+passed 153 of 153. **Written but not run** (waiting for the owner's go-ahead): the integration tests for
+the new table (RLS, grants, cross-tenant refusal), the API, database, CLI and web acceptance tests (Tier H)
+and the parity suites.
+**Not run:** GitHub CI, container images, Playwright, any AWS deployment.
+
+Step 7 (2026-10-11, run `REQ-20261011-fuel-outlook`, Windows, Node 22.23.3, **local runs, not GitHub CI**;
+low-memory mode, so the validation is **not complete**): the builder ran lint and typecheck (clean,
+repo-wide), targeted unit tests (shared fuel and outlook, the api evaluation CLI and fuel units, the web fuel,
+outlook, charges, analysis and ui files with 35 tests), `prisma generate`, `prisma migrate diff` (no
+database) and the `eval:outlook` gate with the CI bounds (exit 0; bad data exit 2, tight bounds exit 1), at
+`cbb340f`. The tester's pure acceptance tests (Tier L) passed: shared 263 of 263, api 13 of 13 (the first
+run found one product defect, the return shape of `checkFuel`, fixed in `d87db5e` without changing a test).
+The security review found no Critical, High or Medium issue; fix round 1 (`1a95245`: refusal of revised
+price values, a parameter hash for fuel tables, an API-key test) was checked with lint, typecheck and 52 api
+unit tests. **Written but not run** (waiting for the owner's go-ahead): `npm run build`, the integration
+tests for the four new tables (RLS, grants, cross-tenant refusal, append-only price tables), the API,
+database, importer and web acceptance tests (Tier H) and the parity suites.
+**Not run:** GitHub CI, container images, Playwright, any AWS deployment.
+
+Step 8 (2026-10-11, run `REQ-20261011-ocean-dd`, Windows, Node 22.23.3, **local runs, not GitHub CI**;
+low-memory mode, so the validation is **not complete**): the builder ran `prisma validate`, `prisma generate`,
+`prisma migrate diff` (no database), lint and typecheck (clean) and targeted unit tests (shared ocean-dd, api
+`ocean-dd-units`, `tenant-scope`, `architecture`, `four-eyes-units`, the web ocean-dd page and the touched claim
+fixtures), at `afadac3`. The tester's pure acceptance tests (Tier L, before fix round 1) passed: shared 389 of
+389 (including 3,000 random cases against an independent oracle and every worked tariff example), api static 10
+of 10 (the first run found one product defect, the order of the per-container checks, fixed without changing a
+test). The security review found no Critical or High issue; fix round 1 (`1ca8eb5`: a lighter invoice list
+with at most 50 rows, a cap of 2,000 invoices, four-eyes also for the D&D invoice's creator or last editor, a
+256 KiB body limit on the two invoice write routes only, a 4 MB file check before the browser reads a CSV) was
+checked with lint, typecheck and unit tests (shared 32, api 55, web 10); fix round 2 (`22e4a73`: the limit
+message also names invoices, a "file is too large" text, the exported CSV file-size constant) with lint,
+typecheck and unit tests (shared 32, api 36, web 10). The review then found that the audit run overwrote the
+last editor (F1); fix round 3 (`10f8941`: four-eyes refuses every user who created or edited the invoice data,
+read from the audit trail; the audit run no longer changes the editor field; a separate title and a 541.6(b)/(d)
+citation for findings that are only inaccuracies; verbatim 545.5(c)(2)(ii) and 541.8(b) wording) passed lint,
+typecheck and unit tests (shared 34, api 43). **Written but not run** (waiting for
+the owner's go-ahead): the integration tests for the three new tables (RLS, grants, cross-tenant refusal,
+triggers), the API, database, audit and web acceptance tests (Tier H) and the parity suites.
+**Not run:** GitHub CI, container images, Playwright, any AWS deployment.

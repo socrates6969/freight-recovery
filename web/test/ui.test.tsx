@@ -116,7 +116,7 @@ describe('AppRoot routing and auth', () => {
   it('gates approval actions on reason length and acknowledgement', async () => {
     const item = {
       id: U(20),
-      claimNumber: 'CLM-0013',
+      kind: 'FREIGHT', claimNumber: 'CLM-0013',
       loadNumber: 'LD-6091',
       invoiceNumber: 'INV-3169',
       carrierName: 'Northwind Haulage Co',
@@ -134,6 +134,8 @@ describe('AppRoot routing and auth', () => {
       packetRevision: 1,
       pendingFindingsCount: 1,
       waitingSince: '2026-10-01T00:00:00.000Z',
+      selfAuthored: false,
+      selfAuthoredBasis: null,
     };
     const approved = { ...item, id: U(21), claimNumber: 'CLM-0015', status: 'APPROVED', pendingFindingsCount: 0 };
     const fetchImpl = async (url: RequestInfo | URL) => {
@@ -233,7 +235,7 @@ describe('fix round 1: fixed error texts, retry, Retry-After', () => {
   it('never renders server error text on 422 in the approval dialog', async () => {
     const item = {
       id: U(20),
-      claimNumber: 'CLM-0013',
+      kind: 'FREIGHT', claimNumber: 'CLM-0013',
       loadNumber: 'LD-1',
       invoiceNumber: 'INV-1',
       carrierName: 'C',
@@ -251,6 +253,8 @@ describe('fix round 1: fixed error texts, retry, Retry-After', () => {
       packetRevision: 1,
       pendingFindingsCount: 0,
       waitingSince: '2026-10-01T00:00:00.000Z',
+      selfAuthored: false,
+      selfAuthoredBasis: null,
     };
     const fetchImpl = authed((u) => {
       if (u.startsWith('/api/v1/approvals')) return json(200, { items: [item], page: 1, pageSize: 25, total: 1 });

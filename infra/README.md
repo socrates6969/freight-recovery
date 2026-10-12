@@ -25,10 +25,11 @@ deliberate human step after review.
   bucket `t/*` prefix + data key only).
 - ECS Fargate: read-only root filesystem, uid 10001, all capabilities dropped, secrets from Secrets Manager.
 - ALB: reachable only from CloudFront origin-facing ranges, HTTP->HTTPS, `ELBSecurityPolicy-TLS13-1-2-2021-06`,
-  `drop_invalid_header_fields`, access logs, WAFv2 (AWS Common/KnownBadInputs/IpReputation, IP rate limit,
-  Content-Length size rule).
+  `drop_invalid_header_fields`, access logs, HTTPS default `403` with one rule that forwards only requests
+  carrying the origin-verify header, regional WAFv2 (AWS Common/KnownBadInputs, Content-Length size rules).
 - CloudFront: SPA from S3 (OAC) with a response-headers policy built from `web/security-headers.json`;
-  `/api/*` and `/healthz` to the ALB with caching disabled.
+  `/api/*` and `/healthz` to the ALB with caching disabled, the `x-origin-verify` origin header and
+  `CloudFront-Viewer-Address` forwarded; CLOUDFRONT-scope WAFv2 (IP rate limit, AWS IpReputation).
 
 ## Order of operations (human)
 
@@ -57,6 +58,69 @@ deliberate human step after review.
    (owner role), then deploy the API service.
 7. Upload `web/dist` to the static bucket: `index.html` with `Cache-Control: no-store`, `assets/*` with
    `Cache-Control: public, max-age=31536000, immutable`.
+
+## Deploy gate: CloudFront origin verification and client address (fix round 1, F-03)
+
+The ALB's HTTPS listener answers `403` by default and forwards to the API only when the request carries the
+header `x-origin-verify` with the current origin-verify value; CloudFront adds that header on the `api`
+origin. The API (`CLIENT_IP_HEADER=cloudfront-viewer-address`, `ORIGIN_VERIFY_SECRET` from the
+`<name>/origin-verify-secret` secret) then takes the client address from `CloudFront-Viewer-Address`. The
+IP-keyed WAF rules (`ip-rate-limit`, `AWSManagedRulesAmazonIpReputationList`) are in the CLOUDFRONT-scope
+web ACL (created in `us-east-1`); the regional ACL on the ALB keeps the size rules and the other managed groups.
+Terraform only writes a non-secret placeholder; the CloudFront origin and the listener rule's conditions and
+action ignore changes after creation, so the real value is managed by this procedure.
+
+Fix round 2 (H-2, H-3, origin request policy):
+
+- **The placeholder is never accepted.** Terraform creates the `api_from_cloudfront` rule with a fixed `403`
+  action, so a request carrying the committed placeholder value gets `403` (the same as the default action).
+  Step 2 below sets the real value and switches the rule to forward. If the rule is ever replaced, it comes back
+  as `403` (outage, never a bypass) until step 2 is repeated.
+- **Origin drift is not hidden.** `ignore_changes = [origin]` stays (it carries the secret header), but a
+  `postcondition` on the distribution fails every plan/apply whose refreshed origins differ from the expected
+  static bucket domain and OAC, the ALB domain, `https-only` and `TLSv1.2`; the `check "cloudfront_origins"`
+  block reports the same. An intended origin change (bucket or ALB renamed or replaced) is a deliberate, reviewed
+  apply: temporarily remove `origin` from `ignore_changes`, apply with the real header value supplied out of
+  band, then restore the ignore and re-run step 4.
+- **Origin request policy: custom policy kept.** The `/api/*` and `/healthz` behaviours keep the custom policy
+  (`allViewerAndWhitelistCloudFront` + `CloudFront-Viewer-Address`), which also forwards the viewer `Host`.
+  The managed `Managed-AllViewerExceptHostHeader` policy was not adopted because this change could not confirm
+  from AWS documentation that it forwards `CloudFront-Viewer-Address`. Because the viewer `Host` reaches the ALB,
+  the forward rule also requires `Host = var.app_domain`, and a precondition requires `alb_certificate_arn` to be
+  the issued ACM certificate for `app_domain` (CloudFront validates the ALB certificate against that host). A
+  wildcard or SAN-only certificate needs that precondition adapted deliberately.
+
+Set the value (first deploy) and rotate it (same steps):
+
+1. Generate a value (`openssl rand -base64 48`; at least 43 characters, different from every other secret) and
+   store it: `aws secretsmanager put-secret-value --secret-id <name>/origin-verify-secret --secret-string <value>`.
+2. ALB rule: set both the old and the new value and keep the host condition (`aws elbv2 modify-rule --rule-arn
+   <api_from_cloudfront arn> --conditions Field=http-header,HttpHeaderConfig={HttpHeaderName=x-origin-verify,Values=[<old>,<new>]}
+   Field=host-header,HostHeaderConfig={Values=[<app_domain>]}`; `modify-rule` replaces every condition). On the first
+   deploy (and after any rule replacement), replace the placeholder with the new value only and switch the action
+   to forward: `--actions Type=forward,TargetGroupArn=<api target group arn>`.
+3. Restart the API service so the tasks read the new `ORIGIN_VERIFY_SECRET`. **Rotation window (residual
+   R-4 / HR-6):** from this restart until step 4 has deployed, CloudFront still sends the old value, so the API
+   does not trust `CloudFront-Viewer-Address` and falls back to the `TRUST_PROXY` address, which is the CloudFront
+   edge address. During that window the per-address limits, `login_attempts.ip` and the audit `ip` key on edge
+   addresses again, as in F-03. Requests do not fail. Keep the window short: run step 4 right after the
+   restart, and rotate at a quiet time. The API accepts only one value at a time; accepting a current and a
+   previous value would close this window (follow-up).
+4. CloudFront: set the `x-origin-verify` origin custom header of the `api` origin to the new value and wait
+   for the distribution to deploy.
+5. Remove the old value from the ALB rule.
+
+Verify with one real request through CloudFront that `login_attempts.ip` and the audit `ip` show the viewer
+address, that a direct request to the ALB without the header gets `403`, and that a direct request to the ALB with
+the placeholder value (`x-origin-verify: placeholder-set-out-of-band-see-infra-readme`) gets `403`. Until that check is recorded,
+F-03 stays open as "fixed in code and IaC, unverified in AWS". During step 3 a task with the old value falls
+back to the TRUST_PROXY address (never fails a request).
+
+Production does not require `CLIENT_IP_HEADER`. If the ECS task runs without it, the API starts normally and
+silently keys every per-address control on the edge address again (with it set, a missing
+`ORIGIN_VERIFY_SECRET` stops the start). Check `CLIENT_IP_HEADER` in the running task definition as part of the
+deploy gate. Residuals, the F-03 history and the
+open follow-ups: [technical/web-platform-security.md, section 13](../technical/web-platform-security.md#13-hardening-run).
 
 ## Known gap
 

@@ -237,6 +237,8 @@ export const ImportDocumentDetail = ImportDocumentSummary.extend({
   providerVersion: z.string(),
   fields: z.array(ExtractedField),
   decisions: z.array(ReviewDecision),
+  /** Four-eyes: true iff the requesting user uploaded the document or recorded a CORRECT/ADD on it. */
+  selfAuthored: z.boolean(),
 });
 export type ImportDocumentDetailDto = z.infer<typeof ImportDocumentDetail>;
 

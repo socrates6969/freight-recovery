@@ -1,4 +1,4 @@
-import { ClaimsPage as ClaimsPageSchema, type ClaimSortField } from '@fr/shared';
+import { ANALYSIS_TEXT, ClaimsPage as ClaimsPageSchema, DD_TEXT, type ClaimSortField } from '@fr/shared';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -8,6 +8,8 @@ import { useApi, useCan } from '../../app-context';
 import { ExportMenu } from '../../components/ui/ExportMenu';
 import { SafeText } from '../../components/ui/SafeText';
 import { formatDateTime, formatUsdCents, STATUS_LABEL } from '../../lib/format';
+
+import { BulkAnalyzeDialog } from './BulkAnalyzeDialog';
 
 const COLUMNS: { label: string; field: ClaimSortField }[] = [
   { label: 'Claim', field: 'claimNumber' },
@@ -51,6 +53,8 @@ export function claimsExportPath(params: URLSearchParams, format: 'csv' | 'xlsx'
 export function ClaimsPage() {
   const api = useApi();
   const canExport = useCan('export:claims');
+  const canAnalyze = useCan('claims:analyze');
+  const [bulkOpen, setBulkOpen] = useState(false);
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get('q') ?? '');
   const apiQuery = claimsApiQuery(params);
@@ -97,6 +101,11 @@ export function ClaimsPage() {
         <h1 className="text-xl font-semibold">Claims</h1>
         <div className="flex items-start gap-3">
           <p className="muted num pt-2 text-sm">{claims.data ? `${total} claims` : ''}</p>
+          {canAnalyze ? (
+            <button type="button" className="btn" onClick={() => setBulkOpen(true)}>
+              {ANALYSIS_TEXT.bulkButton}
+            </button>
+          ) : null}
           {canExport ? <ExportMenu label="Export" fallbackName="freight-recovery-claims" pathFor={(f) => claimsExportPath(params, f)} /> : null}
         </div>
       </div>
@@ -136,7 +145,7 @@ export function ClaimsPage() {
         </div>
       ) : (
         <div className="card max-h-[70vh] overflow-auto">
-          <table className="data-table">
+          <table className="data-table" aria-label="Claims">
             <thead>
               <tr>
                 {COLUMNS.map((c) => {
@@ -171,6 +180,7 @@ export function ClaimsPage() {
                         <Link to={`/claims/${c.id}${listSearch ? `?${listSearch}` : ''}`} data-claim-id={c.id} className="num font-medium text-[var(--color-accent)]">
                           <SafeText value={c.claimNumber} />
                         </Link>
+                        {c.kind === 'OCEAN_DD' ? <span className="badge ml-2">{DD_TEXT.kindBadge}</span> : null}
                       </td>
                       <td className="num max-w-40">
                         <SafeText value={c.loadNumber ?? '—'} />
@@ -202,6 +212,7 @@ export function ClaimsPage() {
           Next page
         </button>
       </div>
+      {bulkOpen ? <BulkAnalyzeDialog onClose={() => setBulkOpen(false)} /> : null}
       <Outlet />
     </div>
   );

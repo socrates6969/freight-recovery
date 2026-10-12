@@ -44,7 +44,7 @@ beforeAll(async () => {
   expect((await resolveF(rev, b, rc.id, carrierF.id, { action: 'CONFIRM' })).status).toBe(200);
   const fuelF = rc.fields.find((f: any) => f.key === 'rate_confirmation.fuel_surcharge');
   expect((await resolveF(rev, b, rc.id, fuelF.id, { action: 'REJECT' })).status).toBe(200);
-  const acc = await H.acceptDoc(rev, b, rc.id, true);
+  const acc = await H.acceptDoc(mgr, b, rc.id, true); // four-eyes: rev corrected a field, so another reviewer accepts
   expect(acc.status, acc.text).toBe(200);
   // 3. image document: type set by the reviewer plus one MANUAL field
   const png = await H.putOk(an, b, 'scan.png', H.buildPng());
@@ -52,7 +52,7 @@ beforeAll(async () => {
   const add = await rev.post(`/imports/${b}/documents/${png.id}/fields`, { key: 'bol.load_number', value: load, reason: REASON });
   expect(add.status, add.text).toBe(201);
   expect(add.body.origin).toBe('MANUAL');
-  const acc3 = await H.acceptDoc(rev, b, png.id, true);
+  const acc3 = await H.acceptDoc(mgr, b, png.id, true); // four-eyes: rev added a field, so another reviewer accepts
   expect(acc3.status, acc3.text).toBe(200);
   const cm = await H.commit(mgr, b, 'SHIPPER');
   expect(cm.status, cm.text).toBe(200);

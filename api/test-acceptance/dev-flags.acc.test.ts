@@ -119,7 +119,8 @@ describe('T-FLAG-05 unknown keys', () => {
       expectError(r, 404, 'not_found');
     }
     const n = await withAdmin(async (c) => Number((await c.query(`select count(*)::int n from feature_flags`)).rows[0].n));
-    expect(n).toBe(3);
+    // steps 6-8 added flags (additive): one row per registry key
+    expect(n).toBe(I.FLAG_KEYS.length);
   });
 });
 
@@ -247,7 +248,7 @@ describe('T-FLAG-11 database guarantees', () => {
     const before = await snapshot();
     const a = await appDb();
     try {
-      expect((await a.query(`select * from feature_flags`)).rows.length).toBe(3);
+      expect((await a.query(`select * from feature_flags`)).rows.length).toBe(I.FLAG_KEYS.length); // steps 6-8 added flags (additive)
       const upd = await tryQuery(a, `update feature_flags set enabled = not enabled`);
       expect(upd.ok ? upd.rowCount : 0).toBe(0);
       expect((await tryQuery(a, `insert into feature_flags (key, enabled, version) values ('intelligence.extra', true, 1)`)).ok).toBe(false);

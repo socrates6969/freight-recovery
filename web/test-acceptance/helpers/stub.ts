@@ -34,6 +34,7 @@ export function mkClaim(i: number, over: Record<string, any> = {}) {
   return {
     id: uuid(),
     claimNumber: `CLM-${n}`,
+    kind: 'FREIGHT', // REQ-20261011-ocean-dd C17 (additive): ClaimSummary.kind
     loadNumber: `LD-${5000 + i}`,
     invoiceNumber: `INV-${1000 + i}`,
     carrierName: `Carrier ${n}`,
@@ -114,6 +115,10 @@ export interface StubOpts {
   login?: () => Response;
   /** access tokens that the stub rejects with 401 on protected routes */
   rejectTokens?: Set<string>;
+  /** four-eyes (P3): claim ids for which the signed-in user is a revision author (ApprovalItem.selfAuthored) */
+  selfAuthored?: Set<string>;
+  /** REQ-20261012-hardening C1: basis per self-authored claim id (default `revision_author`). */
+  selfAuthoredBasis?: Record<string, 'revision_author' | 'dd_invoice_editor' | 'label_author'>;
 }
 
 export function createStub(o: StubOpts = {}) {
@@ -124,12 +129,14 @@ export function createStub(o: StubOpts = {}) {
   const handlers: Array<{ m: string; re: RegExp; fn: Handler }> = [];
   let refreshN = 0;
   const reject = o.rejectTokens ?? new Set<string>();
+  const selfAuthored = o.selfAuthored ?? new Set<string>();
   const user = mkUser(role);
   const stub = {
     calls,
     claims,
     packets,
     user,
+    selfAuthored,
     on(m: string, re: RegExp, fn: Handler) {
       handlers.unshift({ m, re, fn });
       return stub;
@@ -177,11 +184,12 @@ export function createStub(o: StubOpts = {}) {
         return json(200, { items: items.slice((page - 1) * pageSize, page * pageSize), page, pageSize, total: items.length });
       }
       let m = /^\/claims\/([^/]+)$/.exec(p);
-      if (m && method === 'GET') { const c = claims.find((x) => x.id === m![1]); return c ? json(200, c) : json(404, { error: { code: 'not_found', message: 'Not found.', requestId: 'r' } }); }
+      // REQ-20261012-hardening C4.3 (additive): ClaimDetail requires analysisFailure (null unless the fixture sets it).
+      if (m && method === 'GET') { const c = claims.find((x) => x.id === m![1]); return c ? json(200, { analysisFailure: null, ...c }) : json(404, { error: { code: 'not_found', message: 'Not found.', requestId: 'r' } }); }
       m = /^\/claims\/([^/]+)\/packet$/.exec(p);
       if (m && method === 'GET') { const c = claims.find((x) => x.id === m![1]); if (!c) return json(404, { error: { code: 'not_found', message: 'Not found.', requestId: 'r' } }); return json(200, packets[c.id] ?? (packets[c.id] = mkPacket(c))); }
       if (method === 'GET' && p === '/approvals') {
-        const items = claims.filter((c) => ['PENDING_REVIEW', 'APPROVED'].includes(c.status)).map((c) => ({ ...c, packetRevision: 1, pendingFindingsCount: c.pendingReviewCents > 0 ? 1 : 0, waitingSince: c.updatedAt }));
+        const items = claims.filter((c) => ['PENDING_REVIEW', 'APPROVED'].includes(c.status)).map((c) => ({ ...c, packetRevision: 1, pendingFindingsCount: c.pendingReviewCents > 0 ? 1 : 0, waitingSince: c.updatedAt, selfAuthored: selfAuthored.has(c.id), selfAuthoredBasis: selfAuthored.has(c.id) ? (o.selfAuthoredBasis?.[c.id] ?? 'revision_author') : null })); // basis: hardening C1 (additive)
         return json(200, { items, page: 1, pageSize: 25, total: items.length });
       }
       m = /^\/claims\/([^/]+)\/packet\/(approve|reject|send|revisions)$/.exec(p);

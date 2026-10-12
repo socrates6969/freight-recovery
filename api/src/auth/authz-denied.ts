@@ -20,7 +20,7 @@ export function makeOnForbidden(base: BaseClient) {
       actorId: ctx.user.id,
       actorRole: ctx.role,
       metadata,
-      ip: req.ip,
+      ip: req.clientIp,
       requestId: req.frRequestId,
     };
     if (ctx.db && ctx.tenantId) {

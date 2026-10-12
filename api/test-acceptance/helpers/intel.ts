@@ -138,7 +138,11 @@ export const rowCounts = async (c: PgClient, tables: string[]) => {
   for (const t of tables) out[t] = Number((await c.query(`select count(*)::int n from "${t}"`)).rows[0].n);
   return out;
 };
-export const NON_AUDIT_TABLES = ['tenants', 'users', 'memberships', 'invites', 'claims', 'evidence_packets', 'packet_sources', 'packet_findings', 'approvals', 'import_batches', 'import_documents', 'extracted_fields', 'claim_documents', 'feature_flags', 'eval_runs', 'eval_case_results'];
+export const NON_AUDIT_TABLES = ['tenants', 'users', 'memberships', 'invites', 'claims', 'evidence_packets', 'packet_sources', 'packet_findings', 'approvals', 'import_batches', 'import_documents', 'extracted_fields', 'claim_documents', 'feature_flags', 'eval_runs', 'eval_case_results', 'charge_labels',
+  // REQ-20261011-fuel-outlook F14 (additive)
+  'fsc_tables', 'claim_fuel_inputs', 'price_imports', 'price_observations',
+  // REQ-20261011-ocean-dd C11 (additive)
+  'dd_tariffs', 'dd_calendars', 'dd_invoices'];
 
 // ---------------------------------------------------------------------------------------------
 // Log capture
@@ -268,7 +272,12 @@ export async function insertClaims(tenantId: string, actorId: string, specs: Cla
   for (const s of specs) {
     const id = s.id ?? randomUUID();
     const upd = now - s.ageMs;
-    claimsV.push(`(${lit(id)},${lit(tenantId)},${lit(s.num)},${lit(s.carrier ?? 'Fixture Carrier')},'Fixture Shipper','${s.perspective}','${s.status}',${Math.min(s.rec + s.pend, 2147483647)},${s.rec},${s.pend},'USD',0,${ts(upd)},${ts(upd)})`);
+    // REQ-20261012-hardening C2.3 (test-design fix): an AWAITING_ANALYSIS claim carries no amounts (CHECK
+    // claims_awaiting_amounts_zero). Random generators may still draw amounts for such specs (their draws are kept so
+    // the rng sequence is unchanged); the stored row uses 0. Oracles read the rows back (loadOClaims).
+    const zero = s.status === 'AWAITING_ANALYSIS';
+    const rec = zero ? 0 : s.rec, pend = zero ? 0 : s.pend;
+    claimsV.push(`(${lit(id)},${lit(tenantId)},${lit(s.num)},${lit(s.carrier ?? 'Fixture Carrier')},'Fixture Shipper','${s.perspective}','${s.status}',${Math.min(rec + pend, 2147483647)},${rec},${pend},'USD',0,${ts(upd)},${ts(upd)})`);
     const packets: PktSpec[] = s.packets === null ? [] : s.packets ?? [{ findings: Array.from({ length: s.review ?? 0 }, (_, i) => ({ rule: `FILL-${i}`, review: true })) }];
     const pids: string[] = [];
     packets.forEach((p, pi) => {
@@ -377,8 +386,15 @@ export async function loadOClaims(tenantId: string): Promise<OClaim[]> {
 // ---------------------------------------------------------------------------------------------
 // Flags
 // ---------------------------------------------------------------------------------------------
-export const FLAG_KEYS = ['intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist'] as const;
+// REQ-20261011-charge-intelligence C10: intelligence.charge_suggestions added (registry is ordered by key).
+// REQ-20261011-fuel-outlook F14 (additive): intelligence.cost_outlook and intelligence.fuel_check added.
+// REQ-20261011-ocean-dd C16 (additive): intelligence.ocean_dd added.
+export const FLAG_KEYS = ['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist'] as const;
 export const FLAG_DESCRIPTIONS: Record<string, string> = {
+  'intelligence.charge_suggestions': 'Charge-line suggestions and team labels',
+  'intelligence.cost_outlook': 'Cost outlook from public price data',
+  'intelligence.fuel_check': 'Fuel tables and fuel-surcharge check',
+  'intelligence.ocean_dd': 'Ocean demurrage and detention invoice audit',
   'intelligence.provenance': 'Provenance summary on the claim sheet',
   'intelligence.similar_claims': 'Similar past claims on the claim sheet',
   'intelligence.worklist': 'Prioritised worklist page',

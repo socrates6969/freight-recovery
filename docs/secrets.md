@@ -26,6 +26,12 @@ enforced there when the API starts: the API refuses to start and names the varia
   placeholder, and must differ from `JWT_SECRET`, `CSRF_SECRET`, `REFRESH_PEPPER` and `MFA_ENC_KEY`. A
   value that is set but empty or whitespace only is refused everywhere. If it is **unset** outside
   production, the API uses the public dev value listed in section 4.
+- `CLIENT_IP_HEADER` (hardening run, not a secret): empty/unset, or exactly `cloudfront-viewer-address`; any
+  other value is refused. When it is set, `ORIGIN_VERIFY_SECRET` is required.
+- `ORIGIN_VERIFY_SECRET` (hardening run): optional. If it is **set**, it must be at least 43 characters, must not
+  look like a placeholder, and must differ from `JWT_SECRET`, `CSRF_SECRET`, `REFRESH_PEPPER`, `MFA_ENC_KEY` and
+  `API_KEY_PEPPER`. A value that is set but empty or whitespace only is refused everywhere. There is no dev
+  default: leave both variables unset outside AWS.
 
 **In production only (`NODE_ENV=production`, which is also the default when `NODE_ENV` is unset)**
 
@@ -50,6 +56,11 @@ enforced there when the API starts: the API refuses to start and names the varia
      and made a randomized unit test flaky; see fix round 2 of run `REQ-20261009-step4-intelligence`.)
 - `API_KEY_PEPPER` must also carry at least 256 estimated bits: at least 64 hex characters, or at least
   43 base64 symbols.
+- `ORIGIN_VERIFY_SECRET`, when set, gets the same production checks as `API_KEY_PEPPER`: not a value in
+  `DOCUMENTED_DEV_SECRETS`, the entropy check `secretEntropyProblem` and at least 256 estimated bits.
+  Production does **not** require `CLIENT_IP_HEADER` or `ORIGIN_VERIFY_SECRET`. Without them the API keys every
+  per-address control on the `TRUST_PROXY` address, which behind CloudFront is the edge address (residual HR-6
+  in [technical/web-platform-security.md, section 13.5](../technical/web-platform-security.md#135-known-gaps-and-residual-risks-hardening)).
 - `MFA_ENC_KEY` gets no entropy estimate (it is raw key material). It must come from a CSPRNG.
 - `DATABASE_URL` must contain `sslmode=require` or `sslmode=verify-full` (`infra/` uses `verify-full`).
 - `S3_SSE` must be `aws:kms` and `S3_KMS_KEY_ID` must be set.
@@ -84,9 +95,11 @@ role read them.
 | `MFA_ENC_KEY` | AES-256-GCM key for stored TOTP secrets (AAD = user id) | `api/src/auth/service.ts`, `security/crypto.ts`, `api/scripts/seed.ts` | `…/mfa-enc-key` | `bG9jYWwtZGV2LW1mYS1rZXktbm90LWZvci1wcm9kISE=` | `Y2ktb25seS1tZmEta2V5LW5vdC1mb3ItcHJvZHVjdCE=` |
 | `API_KEY_PEPPER` | HMAC-SHA-256 key for stored tenant API key hashes (step 4) | `api/src/apikeys/key-material.ts` (via `apikeys/service.ts`, `auth/api-key-auth.ts`) | `…/api-key-pepper` | `local-dev-api-key-pepper-not-for-production-0123456789abcdef` (also used when the variable is unset outside production) | `ci-only-api-key-pepper-not-for-production-0123456789abcdef` |
 | `DATABASE_URL` | Runtime connection as `freight_app` (not owner, `NOBYPASSRLS`, `NOINHERIT`); contains that role's password. Also used by `npm run eval -- --record` | `api/src/config.ts` → `db/client.ts`; `api/src/eval/cli.ts` | `…/database-url`, `postgresql://freight_app:<pw>@<rds>:5432/freight_web?sslmode=verify-full` | `postgresql://freight_app:local-dev-only@127.0.0.1:5433/freight_web` | `postgresql://freight_app:local-dev-only@127.0.0.1:5433/freight_web_test` |
-| `MIGRATE_DATABASE_URL` | Migrations and seed as `freight_owner` (schema owner, `BYPASSRLS`). Never used by the running API | `api/prisma.config.ts`, `api/scripts/seed.ts` | **No container in `infra/`** (gap): the operator supplies it to the one-off migrate task (`infra/README.md` step 6) | `postgresql://freight_owner:local-dev-only@127.0.0.1:5433/freight_web` | `postgresql://freight_owner:local-dev-only@127.0.0.1:5433/freight_web_test` |
+| `MIGRATE_DATABASE_URL` | Migrations, seed and the public price importer (`npm run prices:import`) as `freight_owner` (schema owner, `BYPASSRLS`). Never used by the running API | `api/prisma.config.ts`, `api/scripts/seed.ts`, `api/src/platform/prices-cli.ts` | **No container in `infra/`** (gap): the operator supplies it to the one-off migrate task (`infra/README.md` step 6) | `postgresql://freight_owner:local-dev-only@127.0.0.1:5433/freight_web` | `postgresql://freight_owner:local-dev-only@127.0.0.1:5433/freight_web_test` |
 | `REDIS_URL` | Rate-limit store (all limiters, including the API key limiters). Contains the Redis AUTH token | `api/src/app.ts` | `…/redis-url`, `rediss://:<token>@<primary endpoint>:6379` | `redis://redis:6379` (compose, no auth) | not set (in-memory limiter store) |
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Static object-store credentials, **MinIO only** | `api/src/storage/s3.ts`, `api/scripts/ensure-bucket.ts` | **Not used in AWS**: the ECS task role grants S3 access, so no static AWS key exists | `localdev` / `localdev-minio-password` | `ci-only-minio` / `ci-only-minio-secret-not-for-production` |
+| `ORIGIN_VERIFY_SECRET` | Shared value that proves a request came through this CloudFront distribution. CloudFront sends it as the `x-origin-verify` origin header, and the ALB forwards to the API only when it matches. The API trusts `CloudFront-Viewer-Address` as the client address only when it matches (constant-time comparison). Redacted in logs; never in responses, audit metadata or errors | `api/src/http/client-ip.ts` (via `config.ts`, `app.ts`) | `…/origin-verify-secret`: its own container (`aws_secretsmanager_secret.origin_verify` in `infra/secrets.tf`), injected with `valueFrom`. The same value is also held in the CloudFront origin custom header and the ALB listener rule, set out of band ([infra/README.md](../infra/README.md#deploy-gate-cloudfront-origin-verification-and-client-address-fix-round-1-f-03)); Terraform writes only a non-secret placeholder there and ignores later changes | not set (no dev default) | not set |
+| `CLIENT_IP_HEADER` | Not a secret: switches on the CloudFront client-address derivation. The only accepted value is `cloudfront-viewer-address` | `api/src/config.ts`, `api/src/http/client-ip.ts` | plain env var in `infra/ecs.tf` (`cloudfront-viewer-address`) | not set | not set |
 | `S3_KMS_KEY_ID` | Which KMS key encrypts stored documents (an identifier, not a secret) | `api/src/storage/s3.ts` | plain env var: ARN of the data CMK (`infra/kms.tf`) | `fr-dev-key` (MinIO key name) | `fr-ci-key` |
 
 ## 3. Inventory: infrastructure and test credentials (the API does not read these)
@@ -121,7 +134,9 @@ four `local-dev-…` and four `ci-only-…` values for `JWT_SECRET`, `CSRF_SECRE
 production does not test for them by name: the database and MinIO passwords above, the MinIO KMS keys,
 the seed password and TOTP secret, and every literal in `api/test/**` and `*/test-acceptance/**`
 (some unit tests use realistic-looking "prod-like" values to exercise the production checks; they are
-public because they are committed).
+public because they are committed). This includes the test values for `ORIGIN_VERIFY_SECRET` in `api/test/`
+and `api/test-acceptance/`: they are **not** in `DOCUMENTED_DEV_SECRETS`, so production would not refuse one
+by name (residual HR-8). Never copy a value from a test.
 
 ## 5. Rotation procedures and their impact
 
@@ -142,6 +157,7 @@ task picks it up. During a rolling deployment, old and new tasks run side by sid
 | Redis AUTH token | `aws elasticache modify-replication-group --replication-group-id <name>-redis --auth-token <new> --auth-token-update-strategy ROTATE --apply-immediately` (old and new both accepted), update `…/redis-auth-token` and `…/redis-url`, redeploy, then repeat with `--auth-token-update-strategy SET` to drop the old token | No outage when done in this order. Rate-limit counters may reset. |
 | MinIO / S3 static keys | Dev and CI only. In AWS there are no static keys to rotate (task role) | n/a |
 | KMS CMKs | Automatic yearly key-material rotation is on; old material stays available for decryption | None. |
+| `ORIGIN_VERIFY_SECRET` | Generate a new value (`openssl rand -base64 48`), then follow the five steps in [infra/README.md](../infra/README.md#deploy-gate-cloudfront-origin-verification-and-client-address-fix-round-1-f-03) in order: Secrets Manager, ALB rule with old and new value, API redeploy, CloudFront origin header, remove the old value from the rule | No failed requests. Between the API redeploy and the CloudFront update the API does not trust the viewer header and keys per-address controls on the edge address (residual HR-6), so keep that window short. Wrong order (CloudFront before the ALB rule) makes the ALB answer 403 to every API request until the rule is updated |
 | A tenant API key | OWNER/ADMIN creates a new key, switches the client, then revokes the old key with a reason (Settings > API keys) | None if done in that order. |
 
 ## 6. Buyer handover checklist

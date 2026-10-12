@@ -42,6 +42,9 @@ export const SENSITIVE_KEYS: ReadonlySet<string> = new Set([
   'cookie',
   'set-cookie',
   'x-csrf-token',
+  // Fix round 1 (C11): the CDN origin-verify secret header and the raw viewer-address header.
+  'x-origin-verify',
+  'cloudfront-viewer-address',
   // Step 4: API key material (the plaintext secret only ever exists in the R80 response).
   'apikey',
   'secrethash',
@@ -84,6 +87,8 @@ export const REDACT_PATHS: string[] = [
   'req.headers.authorization',
   'req.headers.cookie',
   'req.headers["x-csrf-token"]',
+  'req.headers["x-origin-verify"]',
+  'req.headers["cloudfront-viewer-address"]',
   'res.headers["set-cookie"]',
   ...SENSITIVE_FIELDS,
   ...SENSITIVE_FIELDS.map((f) => `*.${f}`),
@@ -118,7 +123,8 @@ interface ReqLike {
   id?: unknown;
   method?: unknown;
   url?: unknown;
-  ip?: unknown;
+  /** Fix round 1 (C11): the derived client address (http/client-ip.ts). */
+  clientIp?: unknown;
   routeOptions?: { url?: unknown };
   socket?: { remoteAddress?: unknown };
 }
@@ -137,7 +143,7 @@ export function serializeReq(req: ReqLike): Record<string, unknown> {
     method: req.method,
     path: pathOf(req.url),
     ...(typeof route === 'string' ? { route } : {}),
-    remoteAddress: req.ip ?? req.socket?.remoteAddress,
+    remoteAddress: req.clientIp ?? req.socket?.remoteAddress,
   };
 }
 

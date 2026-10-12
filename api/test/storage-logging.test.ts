@@ -41,7 +41,7 @@ describe('logging redaction', () => {
   });
 
   it('logs requests without query strings', () => {
-    expect(serializeReq({ id: 'r1', method: 'GET', url: '/api/v1/claims?q=secret', ip: '1.2.3.4' })).toEqual({
+    expect(serializeReq({ id: 'r1', method: 'GET', url: '/api/v1/claims?q=secret', clientIp: '1.2.3.4' })).toEqual({
       requestId: 'r1',
       method: 'GET',
       path: '/api/v1/claims',

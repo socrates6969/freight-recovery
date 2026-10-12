@@ -52,6 +52,7 @@ describe.skipIf(!canRun)('review, commit and AWAITING_ANALYSIS (PostgreSQL + S3 
   let admin: pg.Client;
   let analyst = '';
   let reviewer = '';
+  let manager = '';
   let acmeId = '';
   const batches: string[] = [];
   const createdClaims: string[] = [];
@@ -64,6 +65,8 @@ describe.skipIf(!canRun)('review, commit and AWAITING_ANALYSIS (PostgreSQL + S3 
     await s.init();
     analyst = await s.login('analyst@acme.test');
     reviewer = await s.login('reviewer@acme.test');
+    // Four-eyes: the reviewer edits fields, so a different person (manager) accepts.
+    manager = await s.login('manager@acme.test');
     admin = new pg.Client({ connectionString: adminUrl });
     await admin.connect();
     acmeId = (await admin.query<{ id: string }>(`SELECT id FROM tenants WHERE slug = 'acme'`)).rows[0]?.id ?? '';
@@ -110,7 +113,10 @@ describe.skipIf(!canRun)('review, commit and AWAITING_ANALYSIS (PostgreSQL + S3 
     expect((await post(`${base}/fields/${carrier?.id}/resolve`, { action: 'REJECT', reason: REASON })).json()).toMatchObject({ status: 'REJECTED', effectiveValue: null });
     expect((await post(`${base}/fields/${loadField?.id}/resolve`, { action: 'CONFIRM', reason: 'short' })).statusCode).toBe(400);
 
-    const accepted = await post(`${base}/accept`, { reason: REASON, confirmRemaining: true });
+    // Four-eyes: the reviewer recorded a CORRECT, so the reviewer may not accept (nothing changes).
+    const self = await post(`${base}/accept`, { reason: REASON, confirmRemaining: true });
+    expect([self.statusCode, (self.json() as { error: { code: string } }).error.code]).toEqual([403, 'four_eyes_required']);
+    const accepted = await post(`${base}/accept`, { reason: REASON, confirmRemaining: true }, manager);
     expect(accepted.statusCode, accepted.body).toBe(200);
     const acc = accepted.json() as Detail & { loadNumber: string };
     expect(acc).toMatchObject({ status: 'ACCEPTED', loadNumber: load });
@@ -142,7 +148,10 @@ describe.skipIf(!canRun)('review, commit and AWAITING_ANALYSIS (PostgreSQL + S3 
     const c1 = (await post(`${base}/fields`, { key: 'invoice.charge.description', value: 'Detention', reason: REASON })).json() as { groupIndex: number };
     const c2 = (await post(`${base}/fields`, { key: 'invoice.charge.amount', value: '(150.00)', reason: REASON })).json() as { groupIndex: number; value: string };
     expect([c1.groupIndex, c2.groupIndex, c2.value]).toEqual([0, 0, '-150.00']);
-    const accepted = await post(`${base}/accept`, { reason: REASON });
+    // Four-eyes: the reviewer added the fields (ADD), so a different person accepts.
+    const self = await post(`${base}/accept`, { reason: REASON });
+    expect([self.statusCode, (self.json() as { error: { code: string } }).error.code]).toEqual([403, 'four_eyes_required']);
+    const accepted = await post(`${base}/accept`, { reason: REASON }, manager);
     expect(accepted.statusCode, accepted.body).toBe(200);
     expect((accepted.json() as Detail).status).toBe('ACCEPTED');
 

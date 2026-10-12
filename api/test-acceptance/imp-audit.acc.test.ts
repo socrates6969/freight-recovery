@@ -36,7 +36,7 @@ describe('T-AUD-IMP every N10 action has its event; metadata whitelist; chain ve
     const pdf = await H.putOk(an, b, 'rc.pdf', H.buildPdf(['DOCUMENT: RATE CONFIRMATION', `Load Number: ${load}`, `Carrier: ${CV}`]));
     const f = pdf.fields.find((x: any) => x.key === 'rate_confirmation.carrier').id;
     await rev.post(`/imports/${b}/documents/${pdf.id}/fields/${f}/resolve`, { action: 'CORRECT', correctedValue: CC, reason: 'canary correction reason' });
-    await H.acceptDoc(rev, b, pdf.id);
+    await H.acceptDoc(owner, b, pdf.id); // four-eyes: rev corrected a field, so another reviewer accepts
     const rej = await H.putOk(an, b, 'rc2.pdf', H.buildPdf(['DOCUMENT: RATE CONFIRMATION', `Load Number: ${H.uniqLoad('AU')}`]));
     await rev.post(`/imports/${b}/documents/${rej.id}/reject`, { reason: 'canary reject reason' });
     const img = await H.putOk(an, b, 'scan.png', H.buildPng());

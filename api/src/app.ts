@@ -19,6 +19,7 @@ import { ZodError } from 'zod';
 
 import { registerApiKeyRoutes } from './apikeys/routes.js';
 import { registerApiKeyRequest, releaseApiKeyRequest } from './audit/attribution.js';
+import { appendAudit } from './audit/audit.js';
 import { registerAuditRoutes } from './audit/routes.js';
 import { ApiKeyAuthenticator } from './auth/api-key-auth.js';
 import { makeOnForbidden } from './auth/authz-denied.js';
@@ -28,6 +29,7 @@ import { OutboxMailer, SesMailer } from './auth/mailer.js';
 import { registerAuthRoutes } from './auth/routes.js';
 import { authenticateAccessToken } from './auth/session.js';
 import { registerUserRoutes } from './auth/users-routes.js';
+import { appendAnalysisFailure } from './claims/analysis.js';
 import { registerClaimRoutes } from './claims/routes.js';
 import { loadConfig, type AppConfig } from './config.js';
 import { createDb } from './db/client.js';
@@ -37,15 +39,22 @@ import { registerImportRoutes } from './imports/routes.js';
 import { ChildProcessExecutor, type ParseExecutor } from './imports/sandbox/executor.js';
 import { KeyedGate } from './imports/sandbox/semaphore.js';
 import { TenantScopeError } from './db/errors.js';
-import { ERROR_MESSAGES, HttpError, errors } from './http/errors.js';
-import { enforceRouteAccess, zodDetails } from './http/route.js';
+import { isAnalysisDbError, isDdDbError, isFourEyesDbError, isPacketDecisionDbError } from './http/db-guard.js';
+import { AnalysisFailure, ERROR_MESSAGES, FourEyesRefusal, HttpError, errors } from './http/errors.js';
+import { registerClientIp } from './http/client-ip.js';
+import { enforceRouteAccess, requireTenant, zodDetails } from './http/route.js';
 import { registerSecurityHeaders, registerSecurityPipeline, type Limiter } from './http/security.js';
+import { registerChargeRoutes } from './intelligence/charge-routes.js';
+import { registerFuelRoutes } from './intelligence/fuel-routes.js';
+import { registerOutlookRoutes } from './intelligence/outlook-routes.js';
+import { registerOceanDdRoutes } from './ocean-dd/routes.js';
 import { registerIntelligenceRoutes } from './intelligence/routes.js';
 import { createLogger } from './logging.js';
 import { MetricsRegistry, UNMATCHED_ROUTE, ZERO_PARSER_COUNTERS } from './observability/metrics.js';
 import { LogRingBuffer } from './observability/ring-buffer.js';
 import { registerPlatformDashboardRoutes } from './platform/dashboard-routes.js';
 import { FlagService } from './platform/flags.js';
+import { PriceStore, dbPriceReader } from './platform/price-store.js';
 import { registerHealthRoutes, registerPlatformRoutes } from './platform/routes.js';
 import { emailHash } from './security/crypto.js';
 import { JwtService } from './security/jwt.js';
@@ -82,10 +91,34 @@ function sendError(reply: FastifyReply, req: FastifyRequest, err: HttpError): vo
   void reply.code(err.statusCode).type('application/json; charset=utf-8').send(body);
 }
 
+/** Four-eyes / analysis trigger matchers live in http/db-guard.ts (re-exported for existing callers). */
+export { isAnalysisDbError, isFourEyesDbError, isPacketDecisionDbError };
+
+/** Marker for the error handler: an analysis DB guard refused a write (logged as analysis_db_guard). */
+const ANALYSIS_GUARD_ERRORS = new WeakSet<HttpError>();
+/** Hardening (C2.2): the deferred packet decision guard refused a COMMIT (logged as packet_decision_db_guard). */
+const PACKET_DECISION_GUARD_ERRORS = new WeakSet<HttpError>();
+
 /** Map any thrown value to a fixed-shape HttpError (never forwards unknown messages). */
 export function toHttpError(err: unknown): HttpError {
   if (err instanceof HttpError) return err;
   if (err instanceof ZodError) return errors.validation(zodDetails(err));
+  // Four-eyes DB guard reached the API: a service check was bypassed. Plain 403 (no audit context).
+  if (isFourEyesDbError(err)) return new HttpError(403, 'four_eyes_required');
+  // Step-5 analysis DB guard reached the API: a service check was bypassed. Plain 409 invalid_state.
+  if (isAnalysisDbError(err)) {
+    const mapped = errors.invalidState();
+    ANALYSIS_GUARD_ERRORS.add(mapped);
+    return mapped;
+  }
+  // Step 8 D&D guards (AUDITED invoice immutable, claim kind fixed): plain 409 invalid_state.
+  if (isDdDbError(err)) return errors.invalidState();
+  // Hardening (C2.2): a packet decision without a decision row reached COMMIT. Plain 409 invalid_state.
+  if (isPacketDecisionDbError(err)) {
+    const mapped = errors.invalidState();
+    PACKET_DECISION_GUARD_ERRORS.add(mapped);
+    return mapped;
+  }
   const fe = err as Partial<FastifyError> & { code?: string; statusCode?: number };
   switch (fe.code) {
     case 'FST_ERR_CTP_BODY_TOO_LARGE':
@@ -115,6 +148,10 @@ declare module 'fastify' {
     logRing: LogRingBuffer;
     startedAt: Date;
     flags: FlagService;
+    /** Step 7: read side of the public price store (cached per active import; never fetches). */
+    prices: PriceStore;
+    /** Step 5 (S5-1): the per-user `analysis` bucket, charged per extra bulk candidate; null when rate limiting is off. */
+    analysisLimiter: Limiter | null;
   }
 }
 
@@ -145,6 +182,8 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     return503OnClosing: true,
   });
   app.server.headersTimeout = 10_000;
+  // Fix round 1 (C11): the derived client address; the FIRST onRequest hook (before access, limits, telemetry).
+  registerClientIp(app, cfg);
   app.removeContentTypeParser('text/plain');
   enforceRouteAccess(app);
   app.decorate('metrics', metrics);
@@ -195,13 +234,13 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   const createRateLimit = (app as unknown as { createRateLimit: (o: Record<string, unknown>) => RateLimitFn }).createRateLimit;
   const minute = 60_000;
   const globalLimiter = wrapLimiter(
-    createRateLimit({ max: cfg.rateLimitGlobalMax, timeWindow: minute, keyGenerator: (req: FastifyRequest) => `g:${req.ip}` }),
+    createRateLimit({ max: cfg.rateLimitGlobalMax, timeWindow: minute, keyGenerator: (req: FastifyRequest) => `g:${req.clientIp}` }),
   );
   const authLimiter = wrapLimiter(
     createRateLimit({
       max: cfg.rateLimitAuthMax,
       timeWindow: cfg.rateLimitAuthWindowSeconds * 1000,
-      keyGenerator: (req: FastifyRequest) => `a:${req.ip}`,
+      keyGenerator: (req: FastifyRequest) => `a:${req.clientIp}`,
     }),
   );
   const forgotLimiter = wrapLimiter(
@@ -211,24 +250,26 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
       keyGenerator: (req: FastifyRequest) => {
         const body = req.body as { email?: unknown } | undefined;
         const email = typeof body?.email === 'string' ? body.email : '';
-        return `f:${req.ip}:${emailHash(cfg.refreshPepper, email)}`;
+        return `f:${req.clientIp}:${emailHash(cfg.refreshPepper, email)}`;
       },
     }),
   );
 
   const tenMinutes = 600_000;
-  const userKey = (prefix: string) => (req: FastifyRequest) => `${prefix}:${req.ctx?.user.id ?? req.ip}`;
+  const userKey = (prefix: string) => (req: FastifyRequest) => `${prefix}:${req.ctx?.user.id ?? req.clientIp}`;
   const uploadLimiter = wrapLimiter(createRateLimit({ max: cfg.imports.rateLimitUploadMax, timeWindow: tenMinutes, keyGenerator: userKey('u') }));
   const exportLimiter = wrapLimiter(createRateLimit({ max: cfg.imports.rateLimitExportMax, timeWindow: tenMinutes, keyGenerator: userKey('e') }));
   const platformLimiter = wrapLimiter(createRateLimit({ max: cfg.rateLimitPlatformMax, timeWindow: tenMinutes, keyGenerator: userKey('p') }));
   // Step 4 (Q13): per key (60 s) and per client address for FAILED key authentications (600 s).
   const apiKeyLimiter = wrapLimiter(
-    createRateLimit({ max: cfg.apiKeys.rateLimitMax, timeWindow: minute, keyGenerator: (req: FastifyRequest) => `k:${req.frApiKeyId ?? req.ip}` }),
+    createRateLimit({ max: cfg.apiKeys.rateLimitMax, timeWindow: minute, keyGenerator: (req: FastifyRequest) => `k:${req.frApiKeyId ?? req.clientIp}` }),
   );
   const apiKeyFailLimiter = wrapLimiter(
-    createRateLimit({ max: cfg.apiKeys.rateLimitFailMax, timeWindow: tenMinutes, keyGenerator: (req: FastifyRequest) => `kf:${req.ip}` }),
+    createRateLimit({ max: cfg.apiKeys.rateLimitFailMax, timeWindow: tenMinutes, keyGenerator: (req: FastifyRequest) => `kf:${req.clientIp}` }),
   );
   const intelligenceLimiter = wrapLimiter(createRateLimit({ max: cfg.rateLimitIntelligenceMax, timeWindow: tenMinutes, keyGenerator: userKey('i') }));
+  // Step 5 (P11): both analyze routes share one per-user bucket.
+  const analysisLimiter = wrapLimiter(createRateLimit({ max: cfg.rateLimitAnalysisMax, timeWindow: tenMinutes, keyGenerator: userKey('a') }));
 
   const deps: AuthDeps = {
     cfg,
@@ -253,6 +294,9 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   app.addHook('onResponse', async (req) => releaseApiKeyRequest(req.frRequestId));
   app.addHook('onRequestAbort', async (req) => releaseApiKeyRequest(req.frRequestId));
   app.decorate('flags', flags);
+  const prices = new PriceStore(dbPriceReader(base), cfg.priceCacheTtlMs);
+  app.decorate('prices', prices);
+  app.decorate('analysisLimiter', cfg.rateLimitEnabled ? analysisLimiter : null);
 
   registerSecurityPipeline(app, {
     cfg,
@@ -263,6 +307,7 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
       export: exportLimiter,
       platform: platformLimiter,
       intelligence: intelligenceLimiter,
+      analysis: analysisLimiter,
     },
     authenticate: (token, meta) => authenticateAccessToken(deps, token, meta),
     authenticateApiKey: (req, presented, access) => apiKeyAuth.authenticate(req, presented, access),
@@ -273,13 +318,54 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   });
   registerSecurityHeaders(app, cfg);
 
-  app.setErrorHandler((err: unknown, req, reply) => {
-    const httpErr = toHttpError(err);
-    if (httpErr.statusCode >= 500) {
+  app.setErrorHandler(async (err: unknown, req, reply) => {
+    let httpErr = toHttpError(err);
+    if (err instanceof FourEyesRefusal) {
+      // Four-eyes refusal (P4): the route's business transaction has already rolled back, so the
+      // `authz.four_eyes_denied` event is appended in its own tenant transaction. Fail closed (500) if the
+      // audit cannot be written, like authz.denied. No authz.denied event for this error.
+      try {
+        const ctx = requireTenant(req);
+        await ctx.db.tx((tx) =>
+          appendAudit(tx, {
+            tenantId: err.audit.tenantId,
+            action: 'authz.four_eyes_denied',
+            actorId: ctx.user.id,
+            actorRole: ctx.role,
+            targetType: err.audit.targetType,
+            targetId: err.audit.targetId,
+            metadata: err.audit.metadata,
+            ip: req.clientIp,
+            requestId: req.frRequestId,
+          }),
+        );
+      } catch {
+        req.log.error({ errorKind: 'four_eyes_audit_failed' }, 'request failed');
+        httpErr = new HttpError(500, 'internal_error');
+      }
+    } else if (err instanceof AnalysisFailure) {
+      // Hardening (C4.2): the analysis transaction has rolled back; `claim.analysis_failed` is appended in its
+      // own tenant transaction. Fail closed (500) if it cannot be written.
+      try {
+        const ctx = requireTenant(req);
+        await appendAnalysisFailure(ctx.db, err.audit, { userId: ctx.user.id, role: ctx.role, ip: req.clientIp, requestId: req.frRequestId });
+      } catch {
+        req.log.error({ errorKind: 'analysis_failure_audit_failed' }, 'request failed');
+        httpErr = new HttpError(500, 'internal_error');
+      }
+    } else if (httpErr.code === 'four_eyes_required') {
+      req.log.error({ errorKind: 'four_eyes_db_guard' }, 'four-eyes database guard refused a write');
+    } else if (ANALYSIS_GUARD_ERRORS.has(httpErr)) {
+      req.log.error({ errorKind: 'analysis_db_guard' }, 'analysis database guard refused a write');
+    } else if (PACKET_DECISION_GUARD_ERRORS.has(httpErr)) {
+      req.log.error({ errorKind: 'packet_decision_db_guard' }, 'packet decision database guard refused a commit');
+    }
+    if (httpErr.statusCode >= 500 && !(err instanceof FourEyesRefusal) && !(err instanceof AnalysisFailure)) {
       const kind = err instanceof TenantScopeError ? 'tenant_scope_violation' : (err as Error | undefined)?.name ?? 'unknown';
       req.log.error({ errorKind: kind, code: (err as { code?: unknown } | undefined)?.code }, 'request failed');
     }
     sendError(reply, req, httpErr);
+    return reply;
   });
   app.setNotFoundHandler((req, reply) => sendError(reply, req, errors.notFound()));
 
@@ -344,6 +430,13 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     now,
     toHttpError,
   });
+  // Step 6 (REQ-20261011-charge-intelligence): charge lines and tenant charge labels (flag-gated).
+  registerChargeRoutes(app, { flags });
+  // Step 7 (REQ-20261011-fuel-outlook): fuel tables, claim fuel inputs, fuel-check view and the cost outlook.
+  registerFuelRoutes(app, { flags, prices });
+  registerOutlookRoutes(app, { flags, prices });
+  // Step 8 (REQ-20261011-ocean-dd): ocean D&D tariffs, calendars, invoices and the audit run (flag-gated).
+  registerOceanDdRoutes(app, { flags });
 
   app.addHook('onClose', async () => {
     await base.$disconnect();

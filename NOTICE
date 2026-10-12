@@ -5,3 +5,10 @@ This software and all accompanying documentation in this repository were created
 Proprietary and confidential. Not licensed for use, copying, or distribution without the owner's written permission.
 
 Built with AI assistance (see commit history).
+
+Third-party public data bundled in api/data/public-prices/ (see its README.md for exact citations):
+- U.S. Energy Information Administration (EIA), Diesel Sales Price, weekly (FRED series GASDESW), retrieved from FRED,
+  Federal Reserve Bank of St. Louis. Public Domain: Citation Requested.
+- U.S. Bureau of Labor Statistics (BLS), Producer Price Index by Industry: General Freight Trucking, Long-Distance,
+  Truckload (FRED series PCU4841214841212), retrieved from FRED, Federal Reserve Bank of St. Louis. Public Domain:
+  Citation Requested.

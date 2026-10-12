@@ -7,6 +7,14 @@ export interface Features {
   worklist: boolean;
   similar: boolean;
   provenance: boolean;
+  /** Step 6: charge suggestions and team labels. */
+  charges: boolean;
+  /** Step 7: fuel tables and the fuel-surcharge check. */
+  fuel: boolean;
+  /** Step 7: cost outlook page. */
+  outlook: boolean;
+  /** Step 8: ocean D&D invoice audit page. */
+  oceanDd: boolean;
 }
 
 /** Tenant feature flags, loaded once per session; any failure hides every intelligence feature (fail closed). */
@@ -29,5 +37,9 @@ export function useFeatures(): Features {
     worklist: flags['intelligence.worklist'] === true,
     similar: flags['intelligence.similar_claims'] === true,
     provenance: flags['intelligence.provenance'] === true,
+    charges: flags['intelligence.charge_suggestions'] === true,
+    fuel: flags['intelligence.fuel_check'] === true,
+    outlook: flags['intelligence.cost_outlook'] === true,
+    oceanDd: flags['intelligence.ocean_dd'] === true,
   };
 }

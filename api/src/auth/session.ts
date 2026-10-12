@@ -142,6 +142,24 @@ export async function revokeUserSessionsTx(tx: SystemTx, userId: string, reason:
   return r.count;
 }
 
+/** Upper bound of a presented refresh token (as rotation and logout accept). */
+const REFRESH_TOKEN_MAX_LENGTH = 256;
+
+/**
+ * Fix round 1 (C14, P5): true iff `presented` is the current token of a live refresh family of `userId`:
+ * found by its peppered hash (as rotation does), not used, not revoked, not expired, family within its maximum
+ * age. Read-only: never rotates, revokes or updates anything.
+ */
+export async function isKnownDevice(deps: AuthDeps, tx: SystemTx, presented: string, userId: string, now: Date): Promise<boolean> {
+  if (presented.length === 0 || presented.length > REFRESH_TOKEN_MAX_LENGTH) return false;
+  const row = await tx.refreshToken.findUnique({
+    where: { tokenHash: refreshTokenHash(deps, presented) },
+    select: { userId: true, usedAt: true, revokedAt: true, expiresAt: true, familyExpiresAt: true },
+  });
+  if (!row) return false;
+  return row.userId === userId && row.usedAt === null && row.revokedAt === null && row.expiresAt > now && row.familyExpiresAt > now;
+}
+
 export type RefreshOutcome =
   | { kind: 'ok'; user: AuthUser; refreshToken: string; familyId: string }
   | { kind: 'reuse' }

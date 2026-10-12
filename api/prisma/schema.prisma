@@ -40,6 +40,12 @@ enum TenantStatus {
   SUSPENDED
 }
 
+// Step 8 (REQ-20261011-ocean-dd): OCEAN_DD claims come from the D&D invoice audit; fixed at creation (trigger).
+enum ClaimKind {
+  FREIGHT
+  OCEAN_DD
+}
+
 enum Perspective {
   SHIPPER
   CARRIER
@@ -193,6 +199,12 @@ model Tenant {
   reviewDecisions ImportReviewDecision[]
   claimDocuments  ClaimDocument[]
   apiKeys         ApiKey[]
+  chargeLabels    ChargeLabel[]
+  fscTables       FscTable[]
+  claimFuelInputs ClaimFuelInput[]
+  ddTariffs       DdTariff[]
+  ddCalendars     DdCalendar[]
+  ddInvoices      DdInvoice[]
 
   @@map("tenants")
 }
@@ -209,23 +221,35 @@ model User {
   createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt         DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  membership     Membership?
-  refreshTokens  RefreshToken[]
-  mfaSecret      MfaSecret?
-  recoveryCodes  MfaRecoveryCode[]
-  passwordResets PasswordReset[]
-  invitesSent    Invite[]               @relation("InvitedBy")
-  assignedClaims Claim[]                @relation("ClaimAssignee")
-  packetsCreated EvidencePacket[]       @relation("PacketCreatedBy")
-  approvals      Approval[]             @relation("ApprovalActor")
-  importBatches  ImportBatch[]          @relation("ImportBatchCreatedBy")
-  importUploads  ImportDocument[]       @relation("ImportDocumentUploadedBy")
-  fieldsResolved ExtractedField[]       @relation("ExtractedFieldResolvedBy")
-  reviewActions  ImportReviewDecision[] @relation("ReviewDecisionActor")
-  documentLinks  ClaimDocument[]        @relation("ClaimDocumentLinkedBy")
-  flagChanges    FeatureFlag[]          @relation("FeatureFlagUpdatedBy")
-  apiKeysCreated ApiKey[]               @relation("ApiKeyCreatedBy")
-  apiKeysRevoked ApiKey[]               @relation("ApiKeyRevokedBy")
+  membership          Membership?
+  refreshTokens       RefreshToken[]
+  mfaSecret           MfaSecret?
+  recoveryCodes       MfaRecoveryCode[]
+  passwordResets      PasswordReset[]
+  invitesSent         Invite[]               @relation("InvitedBy")
+  assignedClaims      Claim[]                @relation("ClaimAssignee")
+  packetsCreated      EvidencePacket[]       @relation("PacketCreatedBy")
+  approvals           Approval[]             @relation("ApprovalActor")
+  importBatches       ImportBatch[]          @relation("ImportBatchCreatedBy")
+  importUploads       ImportDocument[]       @relation("ImportDocumentUploadedBy")
+  fieldsResolved      ExtractedField[]       @relation("ExtractedFieldResolvedBy")
+  reviewActions       ImportReviewDecision[] @relation("ReviewDecisionActor")
+  documentLinks       ClaimDocument[]        @relation("ClaimDocumentLinkedBy")
+  flagChanges         FeatureFlag[]          @relation("FeatureFlagUpdatedBy")
+  apiKeysCreated      ApiKey[]               @relation("ApiKeyCreatedBy")
+  apiKeysRevoked      ApiKey[]               @relation("ApiKeyRevokedBy")
+  chargeLabelsCreated ChargeLabel[]          @relation("ChargeLabelCreatedBy")
+  chargeLabelsUpdated ChargeLabel[]          @relation("ChargeLabelUpdatedBy")
+  fscTablesCreated    FscTable[]             @relation("FscTableCreatedBy")
+  fscTablesUpdated    FscTable[]             @relation("FscTableUpdatedBy")
+  fuelInputsCreated   ClaimFuelInput[]       @relation("ClaimFuelInputCreatedBy")
+  fuelInputsUpdated   ClaimFuelInput[]       @relation("ClaimFuelInputUpdatedBy")
+  ddTariffsCreated    DdTariff[]             @relation("DdTariffCreatedBy")
+  ddTariffsUpdated    DdTariff[]             @relation("DdTariffUpdatedBy")
+  ddCalendarsCreated  DdCalendar[]           @relation("DdCalendarCreatedBy")
+  ddCalendarsUpdated  DdCalendar[]           @relation("DdCalendarUpdatedBy")
+  ddInvoicesCreated   DdInvoice[]            @relation("DdInvoiceCreatedBy")
+  ddInvoicesUpdated   DdInvoice[]            @relation("DdInvoiceUpdatedBy")
 
   @@map("users")
 }
@@ -368,6 +392,7 @@ model Claim {
   id                 String      @id @default(uuid()) @db.Uuid
   tenantId           String      @map("tenant_id") @db.Uuid
   claimNumber        String      @map("claim_number")
+  kind               ClaimKind   @default(FREIGHT)
   loadNumber         String?     @map("load_number")
   invoiceNumber      String?     @map("invoice_number")
   invoiceDate        DateTime?   @map("invoice_date") @db.Timestamptz(3)
@@ -384,11 +409,13 @@ model Claim {
   createdAt          DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  tenant    Tenant           @relation(fields: [tenantId], references: [id])
-  assignee  User?            @relation("ClaimAssignee", fields: [assigneeId], references: [id])
-  packets   EvidencePacket[]
-  approvals Approval[]
-  documents ClaimDocument[]
+  tenant     Tenant           @relation(fields: [tenantId], references: [id])
+  assignee   User?            @relation("ClaimAssignee", fields: [assigneeId], references: [id])
+  packets    EvidencePacket[]
+  approvals  Approval[]
+  documents  ClaimDocument[]
+  fuelInputs ClaimFuelInput[]
+  ddInvoice  DdInvoice?
 
   @@unique([tenantId, claimNumber])
   @@unique([id, tenantId])
@@ -679,6 +706,8 @@ model AuditEvent {
 
   @@unique([chainKey, seq])
   @@index([tenantId, seq])
+  // Step 8 fix round 4 (re-review R2): D&D invoice editor lookups by target (migration 20261017000000).
+  @@index([tenantId, targetType, targetId])
   @@map("audit_events")
 }
 
@@ -774,4 +803,200 @@ model ApiKey {
   @@unique([id, tenantId])
   @@index([tenantId, createdAt(sort: Desc)])
   @@map("api_keys")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 6 (REQ-20261011-charge-intelligence): tenant charge-line labels (reviewer memory consulted by the
+// charge classifier). Tenant-scoped: RLS FORCE, policy, column grants and CHECKs in the migration.
+// ---------------------------------------------------------------------------------------------
+
+model ChargeLabel {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  normalizedText String   @map("normalized_text")
+  description    String
+  category       String
+  createdById    String   @map("created_by_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedById    String   @map("updated_by_id") @db.Uuid
+  updatedAt      DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  version        Int      @default(1)
+
+  tenant    Tenant @relation(fields: [tenantId], references: [id])
+  createdBy User   @relation("ChargeLabelCreatedBy", fields: [createdById], references: [id])
+  updatedBy User   @relation("ChargeLabelUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([tenantId, normalizedText])
+  @@unique([id, tenantId])
+  @@map("charge_labels")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 7 (REQ-20261011-fuel-outlook): tenant fuel tables and claim fuel inputs (tenant-scoped, RLS FORCE),
+// and the global public price store (NOT tenant-scoped; append-only, SELECT-only for the runtime role;
+// written only by the owner-connection importer). See migration 20261014000000_fuel_outlook.
+// ---------------------------------------------------------------------------------------------
+
+model FscTable {
+  id                  String    @id @default(uuid()) @db.Uuid
+  tenantId            String    @map("tenant_id") @db.Uuid
+  name                String
+  kind                String
+  unit                String
+  priceSeries         String    @map("price_series")
+  effectiveOffsetDays Int       @default(2) @map("effective_offset_days")
+  params              Json      @db.JsonB
+  version             Int       @default(1)
+  archivedAt          DateTime? @map("archived_at") @db.Timestamptz(3)
+  createdById         String    @map("created_by_id") @db.Uuid
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedById         String    @map("updated_by_id") @db.Uuid
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant     Tenant           @relation(fields: [tenantId], references: [id])
+  createdBy  User             @relation("FscTableCreatedBy", fields: [createdById], references: [id])
+  updatedBy  User             @relation("FscTableUpdatedBy", fields: [updatedById], references: [id])
+  fuelInputs ClaimFuelInput[]
+
+  @@unique([tenantId, name])
+  @@unique([id, tenantId])
+  @@map("fsc_tables")
+}
+
+model ClaimFuelInput {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  claimId     String   @map("claim_id") @db.Uuid
+  shipDate    DateTime @map("ship_date") @db.Date
+  miles       Decimal? @db.Decimal(6, 1)
+  fscTableId  String   @map("fsc_table_id") @db.Uuid
+  version     Int      @default(1)
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedById String   @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  claim     Claim    @relation(fields: [claimId, tenantId], references: [id, tenantId])
+  fscTable  FscTable @relation(fields: [fscTableId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  createdBy User     @relation("ClaimFuelInputCreatedBy", fields: [createdById], references: [id])
+  updatedBy User     @relation("ClaimFuelInputUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([tenantId, claimId])
+  @@index([tenantId, fscTableId])
+  @@map("claim_fuel_inputs")
+}
+
+model PriceImport {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  seriesKey   String   @map("series_key")
+  sourceKind  String   @map("source_kind")
+  sourceUrl   String   @map("source_url")
+  retrievedAt DateTime @map("retrieved_at") @db.Date
+  sha256      String   @db.Char(64)
+  rowCount    Int      @map("row_count")
+  firstDate   DateTime @map("first_date") @db.Date
+  lastDate    DateTime @map("last_date") @db.Date
+  importedAt  DateTime @default(now()) @map("imported_at") @db.Timestamptz(3)
+
+  observations PriceObservation[]
+
+  @@index([seriesKey, importedAt(sort: Desc), id(sort: Desc)])
+  @@map("price_imports")
+}
+
+model PriceObservation {
+  importId   String   @map("import_id") @db.Uuid
+  periodDate DateTime @map("period_date") @db.Date
+  value      Decimal  @db.Decimal(10, 3)
+
+  priceImport PriceImport @relation(fields: [importId], references: [id])
+
+  @@id([importId, periodDate])
+  @@map("price_observations")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 8 (REQ-20261011-ocean-dd): ocean demurrage and detention invoices, tariffs and terminal calendars.
+// Tenant tables (RLS FORCE, tenant policy, column grants); AUDITED invoices are immutable (trigger).
+// ---------------------------------------------------------------------------------------------
+
+model DdTariff {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  carrier     String
+  chargeType  String   @map("charge_type")
+  direction   String
+  data        Json
+  version     Int      @default(1)
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedById String   @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  createdBy User        @relation("DdTariffCreatedBy", fields: [createdById], references: [id])
+  updatedBy User        @relation("DdTariffUpdatedBy", fields: [updatedById], references: [id])
+  invoices  DdInvoice[]
+
+  @@unique([tenantId, name])
+  @@unique([id, tenantId])
+  @@map("dd_tariffs")
+}
+
+model DdCalendar {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  name        String
+  data        Json
+  version     Int      @default(1)
+  createdById String   @map("created_by_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedById String   @map("updated_by_id") @db.Uuid
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  createdBy User        @relation("DdCalendarCreatedBy", fields: [createdById], references: [id])
+  updatedBy User        @relation("DdCalendarUpdatedBy", fields: [updatedById], references: [id])
+  invoices  DdInvoice[]
+
+  @@unique([tenantId, name])
+  @@unique([id, tenantId])
+  @@map("dd_calendars")
+}
+
+model DdInvoice {
+  id               String    @id @default(uuid()) @db.Uuid
+  tenantId         String    @map("tenant_id") @db.Uuid
+  status           String    @default("DRAFT")
+  invoiceNumber    String    @map("invoice_number")
+  billingPartyName String    @map("billing_party_name")
+  invoiceDate      DateTime? @map("invoice_date") @db.Date
+  totalDueCents    Int?      @map("total_due_cents")
+  data             Json
+  tariffId         String?   @map("tariff_id") @db.Uuid
+  calendarId       String?   @map("calendar_id") @db.Uuid
+  claimId          String?   @unique @map("claim_id") @db.Uuid
+  auditedAt        DateTime? @map("audited_at") @db.Timestamptz(3)
+  auditSnapshot    Json?     @map("audit_snapshot")
+  version          Int       @default(1)
+  createdById      String    @map("created_by_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedById      String    @map("updated_by_id") @db.Uuid
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  tenant    Tenant      @relation(fields: [tenantId], references: [id])
+  tariff    DdTariff?   @relation(fields: [tariffId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  calendar  DdCalendar? @relation(fields: [calendarId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  claim     Claim?      @relation(fields: [claimId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  createdBy User        @relation("DdInvoiceCreatedBy", fields: [createdById], references: [id])
+  updatedBy User        @relation("DdInvoiceUpdatedBy", fields: [updatedById], references: [id])
+
+  @@unique([tenantId, billingPartyName, invoiceNumber])
+  @@unique([id, tenantId])
+  // Required by the one-to-one composite relation to claims (claim_id is also unique on its own).
+  @@unique([claimId, tenantId])
+  @@index([tenantId, updatedAt])
+  @@map("dd_invoices")
 }

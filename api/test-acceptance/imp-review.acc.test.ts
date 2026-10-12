@@ -149,7 +149,8 @@ describe('REV-03 accept gates', () => {
     expectError(await rev.post(`${p}/accept`, { reason: REASON, confirmRemaining: false }), 409, 'unresolved_fields');
     const lh = fidOf(doc, 'rate_confirmation.linehaul_rate');
     await resolve(rev, batchId, doc.id, lh, { action: 'CORRECT', correctedValue: '1401.00', reason: REASON });
-    const a = await rev.post(`${p}/accept`, { reason: REASON, confirmRemaining: true });
+    expectError(await rev.post(`${p}/accept`, { reason: REASON, confirmRemaining: true }), 403, 'four_eyes_required'); // the corrector cannot accept
+    const a = await mgr.post(`${p}/accept`, { reason: REASON, confirmRemaining: true });
     expect(a.status, a.text).toBe(200);
     expect(a.body.status).toBe('ACCEPTED');
     expect(a.body.unresolvedFlaggedCount).toBe(0);
@@ -196,7 +197,8 @@ describe('REV-04 document-level reasons', () => {
     expect(add.status, add.text).toBe(201);
     expect(add.body).toMatchObject({ origin: 'MANUAL', confidence: 1, source: null, status: 'CONFIRMED', needsReview: false });
     expectError(await rev.post(`${p}/fields`, { key: 'invoice.load_number', value: 'LD-OTHER', reason: REASON }), 409, 'invalid_state');
-    const a = await rev.post(`${p}/accept`, { reason: REASON, confirmRemaining: true });
+    expectError(await rev.post(`${p}/accept`, { reason: REASON, confirmRemaining: true }), 403, 'four_eyes_required'); // the adder cannot accept
+    const a = await mgr.post(`${p}/accept`, { reason: REASON, confirmRemaining: true });
     expect(a.status, a.text).toBe(200);
     expect(a.body.status).toBe('ACCEPTED');
   });
@@ -206,7 +208,7 @@ describe('REV-04 document-level reasons', () => {
     const p = `/imports/${b}/documents/${d.id}`;
     expect((await rev.patch(p, { docType: 'RATE_CONFIRMATION' })).status).toBe(200);
     expect((await rev.post(`${p}/fields`, { key: 'rate_confirmation.load_number', value: H.uniqLoad('D2'), reason: REASON })).status).toBe(201);
-    const a = await rev.post(`${p}/accept`, { reason: REASON });
+    const a = await mgr.post(`${p}/accept`, { reason: REASON }); // four-eyes: rev added the field
     expect(a.status, a.text).toBe(200);
     expect(a.body.status).toBe('ACCEPTED');
     expect(a.body.loadNumber).toMatch(/^LD-TD2/);
@@ -220,7 +222,7 @@ describe('REV-04 document-level reasons', () => {
     const p = `/imports/${b}/documents/${d.id}`;
     expectError(await rev.post(`${p}/accept`, { reason: REASON, confirmRemaining: true }), 409, 'unresolved_fields');
     expect((await rev.post(`${p}/fields`, { key: 'rate_confirmation.load_number', value: H.uniqLoad('D3'), reason: REASON })).status).toBe(201);
-    expect((await rev.post(`${p}/accept`, { reason: REASON, confirmRemaining: true })).status).toBe(200);
+    expect((await mgr.post(`${p}/accept`, { reason: REASON, confirmRemaining: true })).status).toBe(200); // four-eyes: rev added the field
   });
 });
 

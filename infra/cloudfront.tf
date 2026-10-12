@@ -17,8 +17,30 @@ data "aws_cloudfront_cache_policy" "disabled" {
   name = "Managed-CachingDisabled"
 }
 
-data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
-  name = "Managed-AllViewerExceptHostHeader"
+# Fix round 1 (C11.1): API behaviours forward the viewer headers plus CloudFront-Viewer-Address (the API derives
+# the client address from it when the origin-verify header matches), all cookies and all query strings.
+# Fix round 2 (C-FR2.3c): kept as a custom policy. Whether the managed Managed-AllViewerExceptHostHeader policy also
+# forwards CloudFront-Viewer-Address was not confirmed from AWS documentation in this change, so per the contract the
+# viewer Host stays forwarded and the ALB rule requires Host = var.app_domain plus a certificate precondition (alb.tf).
+resource "aws_cloudfront_origin_request_policy" "api" {
+  name    = "${local.name}-api"
+  comment = "Viewer headers plus CloudFront-Viewer-Address, all cookies and query strings"
+
+  cookies_config {
+    cookie_behavior = "all"
+  }
+
+  headers_config {
+    header_behavior = "allViewerAndWhitelistCloudFront"
+
+    headers {
+      items = ["CloudFront-Viewer-Address"]
+    }
+  }
+
+  query_strings_config {
+    query_string_behavior = "all"
+  }
 }
 
 resource "aws_cloudfront_response_headers_policy" "web" {
@@ -92,6 +114,7 @@ resource "aws_cloudfront_distribution" "main" {
   default_root_object = "index.html"
   price_class         = "PriceClass_100"
   http_version        = "http2and3"
+  web_acl_id          = aws_wafv2_web_acl.cloudfront.arn
 
   origin {
     origin_id                = "static"
@@ -102,6 +125,12 @@ resource "aws_cloudfront_distribution" "main" {
   origin {
     origin_id   = "api"
     domain_name = aws_lb.main.dns_name
+
+    # Fix round 1 (C11.1): proves to the ALB rule and the API that the request came through CloudFront.
+    custom_header {
+      name  = "x-origin-verify"
+      value = local.origin_verify_placeholder
+    }
 
     custom_origin_config {
       http_port              = 80
@@ -134,7 +163,7 @@ resource "aws_cloudfront_distribution" "main" {
     cached_methods           = ["GET", "HEAD"]
     compress                 = true
     cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    origin_request_policy_id = aws_cloudfront_origin_request_policy.api.id
   }
 
   ordered_cache_behavior {
@@ -144,7 +173,7 @@ resource "aws_cloudfront_distribution" "main" {
     allowed_methods          = ["GET", "HEAD"]
     cached_methods           = ["GET", "HEAD"]
     cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    origin_request_policy_id = aws_cloudfront_origin_request_policy.api.id
   }
 
   restrictions {
@@ -157,5 +186,48 @@ resource "aws_cloudfront_distribution" "main" {
     acm_certificate_arn      = var.cloudfront_certificate_arn
     ssl_support_method       = "sni-only"
     minimum_protocol_version = "TLSv1.2_2021"
+  }
+
+  # Fix round 1 (C11.3): the origin-verify header value is managed by the rotation procedure (README.md), not by
+  # Terraform. Terraform cannot ignore one nested header, so origin changes need a deliberate review.
+  # Fix round 2 (C-FR2.3b, H-3): the ignore hides origin drift from `plan`, so the postcondition below fails every
+  # plan/apply whose (refreshed) origins differ from the expected domains, OAC and protocol settings; the check
+  # block reports the same. An intended origin change is a targeted, reviewed apply (README.md).
+  lifecycle {
+    ignore_changes = [origin]
+
+    postcondition {
+      condition = alltrue([
+        one([for o in self.origin : o.domain_name if o.origin_id == "static"]) == local.cloudfront_expected_origins.static_domain,
+        one([for o in self.origin : o.origin_access_control_id if o.origin_id == "static"]) == local.cloudfront_expected_origins.static_oac,
+        one([for o in self.origin : o.domain_name if o.origin_id == "api"]) == local.cloudfront_expected_origins.api_domain,
+        one([for o in self.origin : try(o.custom_origin_config[0].origin_protocol_policy, null) if o.origin_id == "api"]) == local.cloudfront_expected_origins.api_protocol_policy,
+        one([for o in self.origin : try(toset(o.custom_origin_config[0].origin_ssl_protocols), null) if o.origin_id == "api"]) == toset(local.cloudfront_expected_origins.api_ssl_protocols),
+      ])
+      error_message = "CloudFront origin drift: an origin domain, OAC or protocol differs from the configuration (hidden by ignore_changes = [origin]). See infra/README.md."
+    }
+  }
+}
+
+# Fix round 2 (C-FR2.3b, H-3): the expected origin settings (the origin blocks above use the same values).
+locals {
+  cloudfront_expected_origins = {
+    static_domain       = aws_s3_bucket.static.bucket_regional_domain_name
+    static_oac          = aws_cloudfront_origin_access_control.static.id
+    api_domain          = aws_lb.main.dns_name
+    api_protocol_policy = "https-only"
+    api_ssl_protocols   = ["TLSv1.2"]
+  }
+}
+
+check "cloudfront_origins" {
+  assert {
+    condition = alltrue([
+      one([for o in aws_cloudfront_distribution.main.origin : o.domain_name if o.origin_id == "static"]) == local.cloudfront_expected_origins.static_domain,
+      one([for o in aws_cloudfront_distribution.main.origin : o.origin_access_control_id if o.origin_id == "static"]) == local.cloudfront_expected_origins.static_oac,
+      one([for o in aws_cloudfront_distribution.main.origin : o.domain_name if o.origin_id == "api"]) == local.cloudfront_expected_origins.api_domain,
+      one([for o in aws_cloudfront_distribution.main.origin : try(o.custom_origin_config[0].origin_protocol_policy, null) if o.origin_id == "api"]) == local.cloudfront_expected_origins.api_protocol_policy,
+    ])
+    error_message = "CloudFront origin drift: an origin domain, OAC or protocol policy differs from the configuration (ignore_changes = [origin])."
   }
 }

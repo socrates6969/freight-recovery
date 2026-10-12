@@ -35,7 +35,8 @@ export interface IntelligenceDeps {
   toHttpError: (e: unknown) => HttpError;
 }
 
-async function auditViewed(req: FastifyRequest, metadata: Record<string, unknown>, target: { type: string; id: string | null }): Promise<void> {
+/** Append `intelligence.viewed` to the tenant chain in its own tenant transaction (also used by step 6). */
+export async function auditViewed(req: FastifyRequest, metadata: Record<string, unknown>, target: { type: string; id: string | null }): Promise<void> {
   const ctx = requireTenant(req);
   await ctx.db.tx((tx) =>
     appendAudit(tx, {
@@ -46,7 +47,7 @@ async function auditViewed(req: FastifyRequest, metadata: Record<string, unknown
       targetType: target.type,
       targetId: target.id,
       metadata,
-      ip: req.ip,
+      ip: req.clientIp,
       requestId: req.frRequestId,
     }),
   );
@@ -112,7 +113,7 @@ export function registerIntelligenceRoutes(app: FastifyInstance, deps: Intellige
       const target = await similarTarget(ctx.db, params.id);
       return measured(app, deps, 'similar-v1', async () => {
         const body = strictBody(SimilarResponse, await findSimilar(ctx.db, target, query.limit, deps.policy));
-        await auditViewed(req, { kind: 'similar', claimId: params.id, returned: body.items.length }, { type: 'claim', id: params.id });
+        await auditViewed(req, { kind: 'similar', claimId: target.id, returned: body.items.length }, { type: 'claim', id: target.id });
         return { body, candidates: body.candidatesConsidered };
       });
     },
@@ -129,7 +130,7 @@ export function registerIntelligenceRoutes(app: FastifyInstance, deps: Intellige
       const ctx = requireTenant(req);
       if (!(await deps.flags.isEnabled('intelligence.provenance'))) throw errors.notFound();
       const body = strictBody(Provenance, await provenanceFor(ctx.db, params.id));
-      await auditViewed(req, { kind: 'provenance', claimId: params.id, returned: body.documents.length }, { type: 'claim', id: params.id });
+      await auditViewed(req, { kind: 'provenance', claimId: body.claimId, returned: body.documents.length }, { type: 'claim', id: body.claimId });
       return body;
     },
   });

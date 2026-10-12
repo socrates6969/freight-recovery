@@ -32,6 +32,16 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'ClaimDocument',
   // Step 4: tenant API keys.
   'ApiKey',
+  // Step 6 (REQ-20261011-charge-intelligence): tenant charge-line labels.
+  'ChargeLabel',
+  // Step 7 (REQ-20261011-fuel-outlook): tenant fuel tables and claim fuel inputs. The global price tables
+  // (PriceImport, PriceObservation) stay out: the tenant client cannot reach them.
+  'FscTable',
+  'ClaimFuelInput',
+  // Step 8 (REQ-20261011-ocean-dd): tenant D&D tariffs, terminal calendars and D&D invoices.
+  'DdTariff',
+  'DdCalendar',
+  'DdInvoice',
 ]);
 
 const TENANT_READ_OPS: ReadonlySet<string> = new Set(['findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow']);
@@ -151,6 +161,12 @@ export type TenantTx = Pick<
   | 'importReviewDecision'
   | 'claimDocument'
   | 'apiKey'
+  | 'chargeLabel'
+  | 'fscTable'
+  | 'claimFuelInput'
+  | 'ddTariff'
+  | 'ddCalendar'
+  | 'ddInvoice'
 >;
 
 const RAW = Symbol('fr.rawTx');

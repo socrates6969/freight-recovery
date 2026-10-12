@@ -33,12 +33,39 @@ import { z } from 'zod';
 
 import type { SessionStore } from '../auth/session-store';
 
+/** One machine-readable error detail (never shown to the user; components map codes to fixed texts). */
+export interface ApiErrorDetail {
+  readonly path: string;
+  readonly code: string;
+}
+
+/** Hardening (REQ-20261012-hardening): at most this many error details are kept. */
+export const MAX_ERROR_DETAILS = 10;
+
+/** Defensive parse of `error.details` from an error body: only {path, code} string pairs, at most 10. */
+export function parseErrorDetails(json: unknown): readonly ApiErrorDetail[] {
+  if (typeof json !== 'object' || json === null) return [];
+  const error = (json as { error?: unknown }).error;
+  if (typeof error !== 'object' || error === null) return [];
+  const details = (error as { details?: unknown }).details;
+  if (!Array.isArray(details)) return [];
+  const out: ApiErrorDetail[] = [];
+  for (const d of details) {
+    if (out.length >= MAX_ERROR_DETAILS) break;
+    if (typeof d !== 'object' || d === null) continue;
+    const { path, code } = d as { path?: unknown; code?: unknown };
+    if (typeof path === 'string' && typeof code === 'string') out.push(Object.freeze({ path, code }));
+  }
+  return Object.freeze(out);
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
     message: string,
     readonly retryAfterSeconds: number | null = null,
+    readonly details: readonly ApiErrorDetail[] = [],
   ) {
     super(message);
     this.name = 'ApiError';
@@ -122,8 +149,9 @@ export class ApiClient {
   private static async toError(res: Response): Promise<ApiError> {
     const retry = res.headers.get('retry-after');
     const retryAfter = retry && /^\d+$/u.test(retry) ? Number(retry) : null;
-    const parsed = ErrorBody.safeParse(await res.json().catch(() => null));
-    if (parsed.success) return new ApiError(res.status, parsed.data.error.code, parsed.data.error.message, retryAfter);
+    const json: unknown = await res.json().catch(() => null);
+    const parsed = ErrorBody.safeParse(json);
+    if (parsed.success) return new ApiError(res.status, parsed.data.error.code, parsed.data.error.message, retryAfter, parseErrorDetails(json));
     return new ApiError(res.status, 'http_error', GENERIC, retryAfter);
   }
 
@@ -163,6 +191,16 @@ export class ApiClient {
 
   post<S extends z.ZodType | undefined = undefined>(path: string, body: unknown, schema?: S, auth = true): Promise<Result<S>> {
     return this.request('POST', path, { body, ...(schema ? { schema } : {}), auth } as RequestOptions<S>);
+  }
+
+  /** DELETE with the same CSRF and auth handling as `post` (step 7 fuel inputs and tables; 204 expected). */
+  delete(path: string): Promise<void> {
+    return this.request('DELETE', path, {}) as Promise<void>;
+  }
+
+  /** PUT with the same CSRF and auth handling as `post` (step 6 charge labels). */
+  put<S extends z.ZodType | undefined = undefined>(path: string, body: unknown, schema?: S): Promise<Result<S>> {
+    return this.request('PUT', path, { body, ...(schema ? { schema } : {}) } as RequestOptions<S>);
   }
 
   // ---------------------------------------------------------------------------------------------
@@ -247,7 +285,7 @@ export class ApiClient {
       json = null;
     }
     const parsed = ErrorBody.safeParse(json);
-    if (parsed.success) return new ApiError(status, parsed.data.error.code, parsed.data.error.message, retry);
+    if (parsed.success) return new ApiError(status, parsed.data.error.code, parsed.data.error.message, retry, parseErrorDetails(json));
     return new ApiError(status, 'http_error', GENERIC, retry);
   }
 

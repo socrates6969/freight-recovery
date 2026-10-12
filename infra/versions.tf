@@ -29,3 +29,13 @@ provider "aws" {
     tags = local.tags
   }
 }
+
+# Fix round 1 (C11.4): CloudFront-scope WAF web ACLs must be created in us-east-1.
+provider "aws" {
+  alias  = "us_east_1"
+  region = "us-east-1"
+
+  default_tags {
+    tags = local.tags
+  }
+}

@@ -87,6 +87,12 @@ describe('T-KEY-05 scope enforcement matrix', () => {
       ['R70', 'GET', '/features'], ['R71', 'GET', '/intelligence/worklist'], ['R72', 'GET', `/claims/${claim}/similar`], ['R73', 'GET', `/claims/${claim}/provenance`],
       ['R80', 'POST', '/api-keys', { name: 'x', scopes: ['claims.read'] }], ['R81', 'GET', '/api-keys'], ['R82', 'POST', `/api-keys/${kRead.key.id}/revoke`, { reason: 'matrix probe reason' }],
       ['R15', 'GET', '/me'], ['R14', 'POST', '/auth/change-password', { currentPassword: 'x', newPassword: 'y' }],
+      // REQ-20261010-step5-analysis (P4): no API-key scope grants claims:analyze ([S] bulk route skipped when cut)
+      ['AN analyze', 'POST', `/claims/${claim}/analyze`, {}],
+      ...(process.env.ACC_SKIP_BULK === '1' ? [] : [['AN analyze-awaiting', 'POST', '/claims/analyze-awaiting', { limit: 1 }] as any]),
+      // REQ-20261011-charge-intelligence (C8, CI-R03): no API-key scope grants any charge-intelligence route
+      ['CI charge-lines', 'GET', `/claims/${claim}/charge-lines`], ['CI charge-labels list', 'GET', '/charge-labels'],
+      ['CI charge-labels put', 'PUT', '/charge-labels', { description: 'Key probe label', category: 'other' }], ['CI charge-labels delete', 'DELETE', `/charge-labels/${u}`],
     ];
     for (const [id, m, p, b] of other) {
       const res = await K.keyReq(app, kAll.secret, m, p, b === undefined ? {} : { body: b });

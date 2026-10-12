@@ -14,7 +14,9 @@ import { fileURLToPath } from 'node:url';
 import { appendAudit } from '../src/audit/audit.js';
 import { packetContentHash, type HashPacket } from '../src/claims/content-hash.js';
 import { createDb, type BaseClient } from '../src/db/client.js';
+import { insertImport, readActiveImport } from '../src/db/prices.js';
 import { scopeSystemTxToTenant, withSystemTx, type SystemTx } from '../src/db/system.js';
+import { main as pricesImportMain } from '../src/platform/prices-cli.js';
 import { sealAesGcm } from '../src/security/crypto.js';
 import { PasswordHasher } from '../src/security/password.js';
 
@@ -177,9 +179,18 @@ async function resetSeedData(base: BaseClient): Promise<void> {
     await tx.$executeRaw`DELETE FROM packet_timeline_events WHERE tenant_id = ANY(${ids}::uuid[])`;
     await tx.$executeRaw`DELETE FROM packet_sources WHERE tenant_id = ANY(${ids}::uuid[])`;
     await tx.$executeRaw`DELETE FROM evidence_packets WHERE tenant_id = ANY(${ids}::uuid[])`;
+    // Step 8 (REQ-20261011-ocean-dd): D&D invoices reference claims, tariffs and calendars (seed creates none).
+    await tx.$executeRaw`DELETE FROM dd_invoices WHERE tenant_id = ANY(${ids}::uuid[]) OR created_by_id = ANY(${userIds}::uuid[]) OR updated_by_id = ANY(${userIds}::uuid[])`;
+    await tx.$executeRaw`DELETE FROM dd_calendars WHERE tenant_id = ANY(${ids}::uuid[]) OR created_by_id = ANY(${userIds}::uuid[]) OR updated_by_id = ANY(${userIds}::uuid[])`;
+    await tx.$executeRaw`DELETE FROM dd_tariffs WHERE tenant_id = ANY(${ids}::uuid[]) OR created_by_id = ANY(${userIds}::uuid[]) OR updated_by_id = ANY(${userIds}::uuid[])`;
     await tx.$executeRaw`DELETE FROM claims WHERE tenant_id = ANY(${ids}::uuid[])`;
     // Step 4: tenant API keys of the seed tenants/users; flags back to their registry defaults (version 1).
     await tx.$executeRaw`DELETE FROM api_keys WHERE tenant_id = ANY(${ids}::uuid[]) OR created_by_id = ANY(${userIds}::uuid[]) OR revoked_by_id = ANY(${userIds}::uuid[])`;
+    // Step 6: charge labels of the seed tenants and labels created/updated by seed users (seed creates none).
+    await tx.$executeRaw`DELETE FROM charge_labels WHERE tenant_id = ANY(${ids}::uuid[]) OR created_by_id = ANY(${userIds}::uuid[]) OR updated_by_id = ANY(${userIds}::uuid[])`;
+    // Step 7: claim fuel inputs, then fuel tables (FK order). The global price tables are never touched.
+    await tx.$executeRaw`DELETE FROM claim_fuel_inputs WHERE tenant_id = ANY(${ids}::uuid[]) OR created_by_id = ANY(${userIds}::uuid[]) OR updated_by_id = ANY(${userIds}::uuid[])`;
+    await tx.$executeRaw`DELETE FROM fsc_tables WHERE tenant_id = ANY(${ids}::uuid[]) OR created_by_id = ANY(${userIds}::uuid[]) OR updated_by_id = ANY(${userIds}::uuid[])`;
     await tx.$executeRaw`UPDATE feature_flags SET enabled = true, version = 1, updated_by_id = NULL, updated_at = NULL, last_reason = NULL`;
     await tx.$executeRaw`DELETE FROM invites WHERE tenant_id = ANY(${ids}::uuid[]) OR invited_by_id = ANY(${userIds}::uuid[])`;
     await tx.$executeRaw`DELETE FROM memberships WHERE tenant_id = ANY(${ids}::uuid[]) OR user_id = ANY(${userIds}::uuid[])`;
@@ -407,6 +418,26 @@ async function seedClaim(tx: SystemTx, tenantId: string, c: SeedClaim, actors: A
   return true;
 }
 
+/**
+ * Step 7 (REQ-20261011-fuel-outlook): import the bundled public price history with the seed's owner
+ * connection, through the importer CLI logic (manifest + sha256 + strict parser). Idempotent: a second seed
+ * reports `unchanged`. A refusal (`would_remove_history`, e.g. after a newer `--fetch`) is logged, not fatal.
+ */
+async function importBundledPrices(base: BaseClient, log: (m: string) => void): Promise<void> {
+  const lines: string[] = [];
+  const code = await pricesImportMain(
+    ['--bundled'],
+    (s) => lines.push(s.trimEnd()),
+    (s) => lines.push(s.trimEnd()),
+    {
+      env: { MIGRATE_DATABASE_URL: 'owner-connection-of-the-seed' },
+      openDb: () => ({ insertImport: (a) => insertImport(base, a), readActiveImport: (k) => readActiveImport(base, k), close: async () => undefined }),
+    },
+  );
+  for (const l of lines) log(`seed: prices ${l}`);
+  if (code === 3) throw new Error('bundled price import failed');
+}
+
 export async function runSeed(opts: { reset: boolean; log?: (m: string) => void }): Promise<void> {
   guard();
   const log = opts.log ?? ((m: string) => process.stdout.write(`${m}\n`));
@@ -471,6 +502,7 @@ export async function runSeed(opts: { reset: boolean; log?: (m: string) => void 
       }
     }
     log(`seed: done (${created} claims created)`);
+    await importBundledPrices(base, log);
   } finally {
     await base.$disconnect();
   }

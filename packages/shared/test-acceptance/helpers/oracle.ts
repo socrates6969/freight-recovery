@@ -1,12 +1,14 @@
 // Test-owned oracle for the permission matrix (C2) and canonical DTO examples (C3/C4).
+// REQ-20261011-charge-intelligence C8: charge_labels:manage added for OWNER, ADMIN, MANAGER, REVIEWER (additive).
+// REQ-20261011-ocean-dd C14 (additive): dd_invoices:manage for OWNER, ADMIN, MANAGER, REVIEWER, ANALYST; dd_tariffs:manage for OWNER, ADMIN, MANAGER, REVIEWER.
 export const ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER', 'ANALYST', 'VIEWER', 'PLATFORM_DEV', 'SUPER_ADMIN'] as const;
 export type Role = (typeof ROLES)[number];
 export const EXPECTED: Record<Role, string[]> = {
-  OWNER: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'admins:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'billing:manage', 'tenant:delete', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage'],
-  ADMIN: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage'],
-  MANAGER: ['claims:read', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes'],
-  REVIEWER: ['claims:read', 'packets:edit', 'packets:approve', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes'],
-  ANALYST: ['claims:read', 'import:run', 'export:claims'],
+  OWNER: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'admins:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'billing:manage', 'tenant:delete', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage', 'charge_labels:manage', 'dd_invoices:manage', 'dd_tariffs:manage'],
+  ADMIN: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage', 'charge_labels:manage', 'dd_invoices:manage', 'dd_tariffs:manage'],
+  MANAGER: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'charge_labels:manage', 'dd_invoices:manage', 'dd_tariffs:manage'],
+  REVIEWER: ['claims:read', 'claims:analyze', 'packets:edit', 'packets:approve', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'charge_labels:manage', 'dd_invoices:manage', 'dd_tariffs:manage'],
+  ANALYST: ['claims:read', 'claims:analyze', 'import:run', 'export:claims', 'dd_invoices:manage'],
   VIEWER: ['claims:read'],
   PLATFORM_DEV: ['platform:health', 'platform:flags', 'platform:logs', 'platform:eval'],
   SUPER_ADMIN: ['platform:health', 'platform:tenants:list', 'platform:cross_tenant_read', 'platform:audit'],
@@ -16,7 +18,7 @@ export const RANK: Record<string, number> = { OWNER: 6, ADMIN: 5, MANAGER: 4, RE
 
 const U = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 export const claimSummary = () => ({
-  id: U(1), claimNumber: 'CLM-0001', loadNumber: 'LD-5001', invoiceNumber: 'INV-1001', carrierName: 'Acme Freight LLC', shipperName: 'Widget Co',
+  id: U(1), claimNumber: 'CLM-0001', kind: 'FREIGHT' /* REQ-20261011-ocean-dd C17 (additive) */, loadNumber: 'LD-5001', invoiceNumber: 'INV-1001', carrierName: 'Acme Freight LLC', shipperName: 'Widget Co',
   perspective: 'SHIPPER', status: 'PENDING_REVIEW', amountClaimedCents: 47500, recoverableCents: 32500, pendingReviewCents: 15000, currency: 'USD',
   assignee: { id: U(2), name: 'Rita Reviewer' }, latestPacket: { revision: 1, status: 'PENDING_REVIEW' },
   createdAt: '2026-10-01T10:00:00.000Z', updatedAt: '2026-10-02T10:00:00.000Z',

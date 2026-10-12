@@ -4,6 +4,8 @@
  */
 import { z } from 'zod';
 
+import { ANALYSIS_FAILURE_REASONS } from './analysis-failure.js';
+import { FOUR_EYES_CLAIM_BASES } from './four-eyes.js';
 import { PLATFORM_ROLES, ROLES, TENANT_ROLES } from './rbac.js';
 import { hasUnsafeChars, stripUnsafeMultiline } from './text.js';
 
@@ -19,6 +21,9 @@ export const APPROVAL_ACTIONS = ['EDIT', 'APPROVE', 'REJECT', 'SEND_READY'] as c
 export const DOC_TYPES = ['INVOICE', 'RATE_CONFIRMATION', 'BILL_OF_LADING', 'OTHER'] as const;
 export const TIMELINE_KINDS = ['APPOINTMENT', 'ARRIVAL', 'DEPARTURE', 'INVOICE', 'RATE_CONFIRMATION', 'NOTE'] as const;
 export const DIRECTIONS = ['OVERCHARGE', 'UNDERBILLED'] as const;
+/** Step 8 (REQ-20261011-ocean-dd): claim kinds; OCEAN_DD claims come from the D&D invoice audit. */
+export const CLAIM_KINDS = ['FREIGHT', 'OCEAN_DD'] as const;
+export type ClaimKind = (typeof CLAIM_KINDS)[number];
 export const VERIFIER_STATUSES = ['NOT_RUN', 'PASSED', 'FAILED', 'NEEDS_REVIEW'] as const;
 export const CLAIM_SORT_FIELDS = [
   'createdAt',
@@ -272,6 +277,8 @@ export const InviteInspectResponse = z.object({ email: z.string(), tenantName: z
 export const ClaimSummary = z.object({
   id: uuid,
   claimNumber: z.string(),
+  // Step 8 (REQ-20261011-ocean-dd, C17).
+  kind: z.enum(CLAIM_KINDS),
   loadNumber: z.string().nullable(),
   invoiceNumber: z.string().nullable(),
   carrierName: z.string(),
@@ -288,7 +295,17 @@ export const ClaimSummary = z.object({
   updatedAt: isoDate,
 });
 export type ClaimSummaryDto = z.infer<typeof ClaimSummary>;
-export const ClaimDetail = ClaimSummary.extend({ invoiceDate: isoDate.nullable() });
+/**
+ * Hardening (REQ-20261012-hardening, C4.3): the latest failed analysis of an AWAITING_ANALYSIS claim (null
+ * otherwise). `reasonCode` and `lastFailedAt` come from the latest `claim.analysis_failed` event.
+ */
+export const AnalysisFailureInfo = z.object({
+  lastFailedAt: isoDate,
+  reasonCode: z.enum(ANALYSIS_FAILURE_REASONS),
+  failedAttempts: z.int().min(1),
+});
+export type AnalysisFailureInfoDto = z.infer<typeof AnalysisFailureInfo>;
+export const ClaimDetail = ClaimSummary.extend({ invoiceDate: isoDate.nullable(), analysisFailure: AnalysisFailureInfo.nullable() });
 export type ClaimDetailDto = z.infer<typeof ClaimDetail>;
 
 export function paged<T extends z.ZodType>(item: T) {
@@ -299,6 +316,10 @@ export const ApprovalItem = ClaimSummary.extend({
   packetRevision: z.int(),
   pendingFindingsCount: z.int(),
   waitingSince: isoDate,
+  /** Four-eyes: true iff any refusal basis applies to the requesting user (see selfAuthoredBasis). */
+  selfAuthored: z.boolean(),
+  /** Hardening (C1): the first basis that applies (revision_author, dd_invoice_editor, label_author), null iff selfAuthored is false. */
+  selfAuthoredBasis: z.enum(FOUR_EYES_CLAIM_BASES).nullable(),
 });
 export type ApprovalItemDto = z.infer<typeof ApprovalItem>;
 export const ApprovalsPage = paged(ApprovalItem);

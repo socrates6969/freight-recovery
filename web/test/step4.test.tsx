@@ -364,7 +364,7 @@ describe('Recovery intelligence', () => {
 describe('claim sheet Similar and Provenance tabs', () => {
   const claim = {
     id: U(500),
-    claimNumber: 'CLM-0500',
+    kind: 'FREIGHT', claimNumber: 'CLM-0500',
     loadNumber: null,
     invoiceNumber: null,
     carrierName: 'Carrier',
@@ -380,6 +380,7 @@ describe('claim sheet Similar and Provenance tabs', () => {
     createdAt: '2026-10-01T00:00:00.000Z',
     updatedAt: '2026-10-01T00:00:00.000Z',
     invoiceDate: null,
+    analysisFailure: null,
   };
   const handler: Handler = (u) => {
     if (u.startsWith('/api/v1/claims?')) return json(200, { items: [claim], page: 1, pageSize: 25, total: 1 });

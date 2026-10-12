@@ -37,10 +37,10 @@ export interface RequestCtx {
 }
 
 /** Route groups with their own rate-limit bucket (on top of the global one). */
-export type RateGroup = 'auth' | 'forgot' | 'upload' | 'export' | 'platform' | 'intelligence';
+export type RateGroup = 'auth' | 'forgot' | 'upload' | 'export' | 'platform' | 'intelligence' | 'analysis';
 
 /** Groups whose bucket is per authenticated user (second stage, after authentication). */
-export type UserRateGroup = 'upload' | 'export' | 'platform' | 'intelligence';
+export type UserRateGroup = 'upload' | 'export' | 'platform' | 'intelligence' | 'analysis';
 
 declare module 'fastify' {
   interface FastifyRequest {

@@ -52,6 +52,7 @@ export function doc(overrides: Partial<ImportDocumentDetailDto> = {}): ImportDoc
     providerVersion: '1',
     fields: [field()],
     decisions: [],
+    selfAuthored: false,
     ...overrides,
   };
 }

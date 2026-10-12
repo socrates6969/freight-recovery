@@ -10,6 +10,7 @@ import {
   RoleChangeBody,
   canAssignRole,
   canManageUserWithRole,
+  roleRequiresMfa,
   type Role,
 } from '@fr/shared';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -26,11 +27,13 @@ import { MailDeliveryError, deliverMail } from './mailer.js';
 import { revokeUserSessionsTx } from './session.js';
 
 const P = '/api/v1';
+/** A uuid no user has (the nil uuid): keeps the membership lookup of an unknown email identical in shape. */
+const NO_USER_ID = '00000000-0000-0000-0000-000000000000';
 
 type TenantCtx = ReturnType<typeof requireTenant>;
 
 function auditBase(ctx: TenantCtx, req: FastifyRequest) {
-  return { tenantId: ctx.tenantId, actorId: ctx.user.id, actorRole: ctx.role, ip: req.ip, requestId: req.frRequestId };
+  return { tenantId: ctx.tenantId, actorId: ctx.user.id, actorRole: ctx.role, ip: req.clientIp, requestId: req.frRequestId };
 }
 
 /** Load the subject's membership in the actor's tenant (404 for unknown ids and other tenants alike). */
@@ -119,8 +122,15 @@ export function registerUserRoutes(app: FastifyInstance, deps: AuthDeps): void {
       const token = randomOpaqueToken();
       const now = new Date();
       const invite = await sys(ctx.tenantId, async (tx) => {
+        // Fix round 1 (C13, P4): only a member of THIS tenant is a conflict. An account of another tenant is
+        // handled exactly like an unknown email (same queries, same invite, same mail, same tenant audit); only a
+        // platform-chain `invite.existing_account` event is added. The membership query runs in both cases.
         const existingUser = await tx.user.findUnique({ where: { email }, select: { id: true } });
-        if (existingUser) throw errors.conflict();
+        const member = await tx.membership.findFirst({
+          where: { tenantId: ctx.tenantId, userId: existingUser?.id ?? NO_USER_ID },
+          select: { id: true },
+        });
+        if (member) throw errors.conflict();
         const pending = await tx.invite.findFirst({
           where: { tenantId: ctx.tenantId, email, acceptedAt: null, revokedAt: null, expiresAt: { gt: now } },
           select: { id: true },
@@ -150,6 +160,19 @@ export function registerUserRoutes(app: FastifyInstance, deps: AuthDeps): void {
           targetId: created.id,
           metadata: { inviteId: created.id, role: body.role },
         });
+        if (existingUser) {
+          await appendAudit(tx, {
+            tenantId: null,
+            action: 'invite.existing_account',
+            actorId: ctx.user.id,
+            actorRole: ctx.role,
+            targetType: 'invite',
+            targetId: created.id,
+            metadata: { inviteId: created.id },
+            ip: req.clientIp,
+            requestId: req.frRequestId,
+          });
+        }
         return created;
       }).catch((e: unknown) => {
         if (!(e instanceof MailDeliveryError)) throw e;
@@ -226,12 +249,19 @@ export function registerUserRoutes(app: FastifyInstance, deps: AuthDeps): void {
         }
         if (subject.role !== body.role) {
           await tx.membership.updateMany({ where: { id: subject.id, tenantId: ctx.tenantId }, data: { role: body.role } });
+          // Fix round 1 (C12, P3): a promotion to a role that requires MFA ends every password-only session of a
+          // subject without verified MFA (the next login then requires enrolment).
+          let revoked = 0;
+          if (roleRequiresMfa(body.role)) {
+            const mfa = await tx.mfaSecret.findUnique({ where: { userId: subject.userId }, select: { verifiedAt: true } });
+            if (!mfa?.verifiedAt) revoked = await revokeUserSessionsTx(tx, subject.userId, 'role_requires_mfa');
+          }
           await appendAudit(tx, {
             ...auditBase(ctx, req),
             action: 'user.role_changed',
             targetType: 'user',
             targetId: subject.userId,
-            metadata: { fromRole: subject.role, toRole: body.role, reason: body.reason },
+            metadata: { fromRole: subject.role, toRole: body.role, reason: body.reason, sessionsRevoked: revoked },
           });
         }
         return { id: subject.userId, role: body.role };

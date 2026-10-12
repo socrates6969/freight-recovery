@@ -158,7 +158,7 @@ export async function revokeApiKey(db: TenantDb, actor: KeyActor, id: string, re
       actorId: actor.userId,
       actorRole: actor.role,
       targetType: 'api_key',
-      targetId: id,
+      targetId: current.id,
       metadata: { keyId: current.keyId, reason },
       ip: actor.ip,
       requestId: actor.requestId,

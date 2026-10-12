@@ -96,8 +96,67 @@ resource "aws_lb_listener" "https" {
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = var.alb_certificate_arn
 
+  # Fix round 1 (C11.2): nothing is served without the CloudFront origin-verify header.
   default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.api.arn
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
   }
+}
+
+# Fix round 1 (C11.2): forward to the API only when x-origin-verify matches (up to two values during rotation) and
+# the Host is the app domain.
+# Fix round 2 (C-FR2.3a, H-2): the committed placeholder must never reach the API. Terraform creates this rule with
+# a fixed 403 action, so a request carrying the placeholder value gets the same 403 as the default action; the
+# rotation procedure (README.md) sets the real value(s) and switches the action to forward to the API target group.
+# A replaced rule therefore fails closed (403) until the procedure is run again.
+# Fix round 2 (C-FR2.3c): the API origin request policy forwards the viewer Host (CloudFront validates the ALB
+# certificate against it), so the rule also requires Host = var.app_domain and the listener certificate is checked.
+resource "aws_lb_listener_rule" "api_from_cloudfront" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 10
+
+  action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
+  }
+
+  condition {
+    http_header {
+      http_header_name = "x-origin-verify"
+      values           = [local.origin_verify_placeholder]
+    }
+  }
+
+  condition {
+    host_header {
+      values = [var.app_domain]
+    }
+  }
+
+  # The real header values and the forward action are set out of band by the rotation procedure (README.md).
+  lifecycle {
+    ignore_changes = [condition, action]
+
+    precondition {
+      condition     = data.aws_acm_certificate.alb_app_domain.arn == var.alb_certificate_arn
+      error_message = "alb_certificate_arn must be the issued ACM certificate for app_domain (CloudFront forwards the viewer Host and validates the ALB certificate against it)."
+    }
+  }
+}
+
+# Fix round 2 (C-FR2.3c): the issued certificate whose domain is var.app_domain (read at plan time, never by validate).
+data "aws_acm_certificate" "alb_app_domain" {
+  domain      = var.app_domain
+  statuses    = ["ISSUED"]
+  most_recent = true
 }

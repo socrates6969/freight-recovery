@@ -54,6 +54,37 @@ export const AUDIT_ACTIONS = [
   'apikey.created',
   'apikey.revoked',
   'apikey.use_denied',
+  // Four-eyes (REQ-20261009-four-eyes): refused approve/reject/accept attempts.
+  'authz.four_eyes_denied',
+  // Step 5 (REQ-20261010-step5-analysis): claim analysis (single, and one summary per bulk request).
+  'claim.analyzed',
+  'claim.bulk_analyzed',
+  // Step 6 (REQ-20261011-charge-intelligence): tenant charge-label changes.
+  'charge_label.set',
+  'charge_label.deleted',
+  // Step 7 (REQ-20261011-fuel-outlook): fuel tables, claim fuel inputs (tenant chain) and price imports
+  // (platform chain, actor null).
+  'fsc_table.created',
+  'fsc_table.updated',
+  'fsc_table.archived',
+  'claim.fuel_inputs_set',
+  'claim.fuel_inputs_cleared',
+  'price_data.imported',
+  // Step 8 (REQ-20261011-ocean-dd): D&D tariffs, calendars and invoices (tenant chain), in C15 order.
+  'dd_tariff.created',
+  'dd_tariff.updated',
+  'dd_calendar.created',
+  'dd_calendar.updated',
+  'dd_invoice.created',
+  'dd_invoice.updated',
+  'dd_invoice.deleted',
+  'dd_invoice.audited',
+  // Hardening (REQ-20261012-hardening, C4.2): a refused analysis (single or bulk), appended at the end.
+  'claim.analysis_failed',
+  // Fix round 1 (C15): wrong current password on change-password (tenant chain) and an invite for an email of
+  // another tenant's account (platform chain).
+  'auth.password.change_failed',
+  'invite.existing_account',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

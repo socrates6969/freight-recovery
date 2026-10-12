@@ -53,6 +53,16 @@ const ALLOW = [
   /^https:\/\/app\.invalid$/, // dummy base used to parse relative redirect targets (never fetched)
   /^http:\/\/\[\$\{/, // template literal inside a bundled library
 ];
+// Inert provenance strings shown as text (never fetched by the SPA), each allowed only as the EXACT whole URL:
+// step 7 price-series sourceUrl (fuel-outlook test-spec) and step 8 C9 tariff preset sources (ocean-dd Part C).
+const ALLOW_EXACT = new Set([
+  'https://fred.stlouisfed.org/graph/fredgraph.csv?id=GASDESW',
+  'https://fred.stlouisfed.org/graph/fredgraph.csv?id=PCU4841214841212',
+  'https://www.maersk.com/~/media_sc9/maersk/local-information/files/north-america/united-states-of-america/import/us-import-detention-tariff-effective-01-jan-2026.pdf',
+  'https://www.msc.com/-/media/files/msc-cargo/local-information/america/united-states/detention-demurrage-and-per-diem-charges.pdf',
+  'https://www.hapag-lloyd.com/content/dam/website/downloads/detention_demurrage/USA_Detention_Effective_October_01_2025.pdf',
+  'https://blogs.tradlinx.com/same-box-same-delay-80-vs-360-a-day-how-us-demurrage-tiers-vary-by-carrier/',
+]);
 
 describe('T-HDR-03 built output hygiene', () => {
   it('index.html has no inline script/style/handlers/javascript:/base and only relative same-origin refs', () => {
@@ -73,7 +83,7 @@ describe('T-HDR-03 built output hygiene', () => {
     const bad: string[] = [];
     for (const f of files(DIST)) {
       if (!/\.(html|js|mjs|css|json|svg|txt|webmanifest|map)$/.test(f) || f.endsWith('.map')) continue;
-      for (const m of text(f).matchAll(/https?:\/\/[^\s"'`)<>\\]+/g)) if (!ALLOW.some((re) => re.test(m[0]))) bad.push(`${f.slice(DIST.length)}: ${m[0].slice(0, 80)}`);
+      for (const m of text(f).matchAll(/https?:\/\/[^\s"'`)<>\\]+/g)) if (!ALLOW_EXACT.has(m[0]) && !ALLOW.some((re) => re.test(m[0]))) bad.push(`${f.slice(DIST.length)}: ${m[0].slice(0, 80)}`);
     }
     expect(bad, `un-allowed URLs (allow-list: ${ALLOW.map(String).join(', ')})`).toEqual([]);
   });

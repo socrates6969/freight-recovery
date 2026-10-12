@@ -52,7 +52,7 @@ function platformActor(req: FastifyRequest) {
   const ctx = requireCtx(req);
   // Defense in depth: these routes are reachable only by platform roles (no tenant context).
   if (ctx.tenantId !== null || ctx.db !== null) throw errors.forbidden();
-  return { userId: ctx.user.id, role: ctx.role, ip: req.ip, requestId: req.frRequestId };
+  return { userId: ctx.user.id, role: ctx.role, ip: req.clientIp, requestId: req.frRequestId };
 }
 
 async function auditPlatform(base: BaseClient, req: FastifyRequest, action: AuditAction, metadata: Record<string, unknown>, target?: { type: string; id: string }): Promise<void> {

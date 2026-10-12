@@ -185,8 +185,8 @@ describe('architecture', () => {
   it('platform dashboard modules never touch tenant models or tables (only fr_platform_pipeline_stats)', () => {
     const platformFiles = files.filter((f) => ['src/platform/pipeline.ts', 'src/platform/flags.ts', 'src/platform/eval-read.ts', 'src/platform/dashboard-routes.ts'].includes(f.path));
     expect(platformFiles).toHaveLength(4);
-    const tenantModels = /\.(claim|evidencePacket|packetFinding|packetSource|packetTimelineEvent|approval|importDocument|importBatch|extractedField|importReviewDecision|claimDocument|membership|invite|apiKey|tenant)\s*\.(find|count|aggregate|group|create|update|delete|upsert)/u;
-    const tenantTables = /\b(FROM|JOIN|INTO|UPDATE)\s+"?(claims|evidence_packets|packet_findings|packet_sources|approvals|import_documents|import_batches|extracted_fields|claim_documents|memberships|invites|api_keys)\b/iu;
+    const tenantModels = /\.(claim|evidencePacket|packetFinding|packetSource|packetTimelineEvent|approval|importDocument|importBatch|extractedField|importReviewDecision|claimDocument|membership|invite|apiKey|chargeLabel|ddTariff|ddCalendar|ddInvoice|tenant)\s*\.(find|count|aggregate|group|create|update|delete|upsert)/u;
+    const tenantTables = /\b(FROM|JOIN|INTO|UPDATE)\s+"?(claims|evidence_packets|packet_findings|packet_sources|approvals|import_documents|import_batches|extracted_fields|claim_documents|memberships|invites|api_keys|charge_labels|dd_tariffs|dd_calendars|dd_invoices)\b/iu;
     for (const f of platformFiles) {
       expect([f.path, tenantModels.test(f.text)]).toEqual([f.path, false]);
       expect([f.path, tenantTables.test(f.text)]).toEqual([f.path, false]);
@@ -203,6 +203,28 @@ describe('architecture', () => {
         expect([f.path, spec, /db\/(system|client)(\.js)?$/u.test(target) || /generated\/prisma|@prisma\//u.test(spec)]).toEqual([f.path, spec, false]);
       }
       expect([f.path, /\b(PrismaClient|BaseClient|withSystemTx|withTenantTx\s*\()\b/u.test(f.text)]).toEqual([f.path, false]);
+    }
+  });
+
+  it('per-route bodyLimit is used only on POST and PUT /api/v1/dd/invoices (step 8 fix round 1, S4)', () => {
+    const uses = files.filter((f) => f.path.startsWith('src/') && /\bbodyLimit\s*:/u.test(f.text) && f.path !== 'src/app.ts' && f.path !== 'src/http/route.ts');
+    expect(uses.map((f) => f.path)).toEqual(['src/ocean-dd/routes.ts']);
+    const text = uses[0]?.text ?? '';
+    const blocks = text.split('defineRoute(app, {').slice(1);
+    const limited = blocks.filter((b) => /\bbodyLimit\s*:/u.test(b)).map((b) => `${/method: '([A-Z]+)'/u.exec(b)?.[1] ?? ''} ${/url: `([^`]+)`/u.exec(b)?.[1] ?? ''}`);
+    expect(limited).toEqual(['POST ${P}/invoices', 'PUT ${P}/invoices/:id']);
+    expect(text).toContain('bodyLimit: DD_INVOICE_BODY_LIMIT');
+  });
+
+  it('ocean D&D code reads only through the tenant transaction (step 8, REQ-20261011-ocean-dd)', () => {
+    const dd = files.filter((f) => f.path.startsWith('src/ocean-dd/'));
+    expect(dd.length).toBeGreaterThanOrEqual(3);
+    for (const f of dd) {
+      for (const spec of imports(f.text)) {
+        const target = resolves(f.path, spec);
+        expect([f.path, spec, /db\/(system|client)(\.js)?$/u.test(target) || /generated\/prisma|@prisma\//u.test(spec)]).toEqual([f.path, spec, false]);
+      }
+      expect([f.path, /\b(PrismaClient|BaseClient|withSystemTx|withTenantTx\s*\(|\$queryRaw|\$executeRaw|unwrapRawTx)\b/u.test(f.text)]).toEqual([f.path, false]);
     }
   });
 
@@ -256,5 +278,43 @@ describe('architecture', () => {
       ].sort(),
     );
     for (const r of found) expect([r, /\/(platform|auth|users|api-keys|audit|flags)\b|approve|send|reject/u.test(r)]).toEqual([r, false]);
+  });
+
+  it('hardening (H10): only an explicit allow-list of modules reads finding explanation/calculation text', () => {
+    // Finding text carries raw invoice-line descriptions (residuals SA-5/SC-7): a new reader (renderer, export,
+    // mail) must be added here deliberately after checking that it escapes or neutralises the text.
+    const FINDING_TEXT_READERS = ['src/claims/analysis.ts', 'src/claims/content-hash.ts', 'src/claims/service.ts', 'src/exports/rows.ts', 'src/ocean-dd/audit-run.ts'];
+    const found = files.filter((f) => /\.(explanation|calculation)\b|\b(explanation|calculation)\s*:/u.test(f.text)).map((f) => f.path);
+    expect(found.sort()).toEqual([...FINDING_TEXT_READERS].sort());
+  });
+
+  it('hardening (H10): the raw-SQL helpers of this run live in src/audit or src/db', () => {
+    const helpers = ['src/audit/label-authors.ts', 'src/audit/label-influence.ts', 'src/audit/analysis-failures.ts', 'src/db/analysis-candidates.ts'];
+    for (const h of helpers) {
+      const f = files.find((x) => x.path === h);
+      expect([h, f !== undefined && /\.\$queryRaw\s*[(<`]/u.test(f.text)]).toEqual([h, true]);
+    }
+  });
+
+  it('fix round 2 (C-FR2.1, H-1): audit target ids never come from request parameters', () => {
+    // Path parameters are canonicalised once, in defineRoute; nothing else reads req.params.
+    const route = files.find((f) => f.path === 'src/http/route.ts');
+    expect(route?.text).toMatch(/canonicalizeParams\(parseOrThrow\(schema\.params, req\.params, true\)\)/u);
+    for (const f of files) {
+      if (f.path !== 'src/http/route.ts') expect([f.path, /\b(req|request)\.params\b/u.test(f.text)]).toEqual([f.path, false]);
+      // targetId (audit rows, four-eyes refusals) and the `{ type, id }` targets of intelligence.viewed use the id
+      // of a loaded database row: never `params.x`, and never a raw service argument named `...Param`.
+      expect([f.path, /\btargetId\s*:\s*[^,\n}]*\bparams\b/u.test(f.text)]).toEqual([f.path, false]);
+      expect([f.path, /\btargetId\s*:\s*\w*Param\b/u.test(f.text)]).toEqual([f.path, false]);
+      expect([f.path, /\{\s*type:\s*'[^']+',\s*id:\s*params\./u.test(f.text)]).toEqual([f.path, false]);
+      expect([f.path, /\bclaimId:\s*params\./u.test(f.text)]).toEqual([f.path, false]);
+    }
+  });
+
+  it('fix round 1 (C11): no Fastify request `.ip` read outside src/http/client-ip.ts', () => {
+    for (const f of files) {
+      if (f.path === 'src/http/client-ip.ts') continue;
+      expect([f.path, /\b(req|request)\.ip\b/u.test(f.text)]).toEqual([f.path, false]);
+    }
   });
 });
