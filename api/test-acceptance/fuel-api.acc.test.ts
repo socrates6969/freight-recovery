@@ -304,7 +304,11 @@ describe('T10 fuel inputs, fuel-check view and analysis (F5, F6, F10, F13)', () 
     const ev = (await I.eventsSince(tid, seq, 'claim.analyzed')).filter((e) => e.target_id === c1.claimId);
     expect(ev).toHaveLength(1);
     expect(ev[0]?.metadata).toMatchObject({ fuelCheckStatus: 'finding', fscTableId: t1, fscTableVersion: 1, priceDate: '2026-10-05', fuelFindingsCount: 1, paramsSha256: H_T1 });
-    expect(ev[0]?.metadata.priceImportId, 'F13 (amended): always null in step 7').toBeNull();
+    // F13 (re-amended 2026-10-12, leader decision): the uuid of the active price import used by the fuel check
+    // (fuel inputs exist, flag on). Active = newest diesel_us import (imported_at desc, id desc); here the bundled one.
+    const active = await withAdmin(async (c) => (await c.query("select id, sha256 from price_imports where series_key = 'diesel_us' order by imported_at desc, id desc limit 1")).rows[0] as { id: string; sha256: string });
+    expect(active.sha256).toBe(SHA_DIESEL);
+    expect(ev[0]?.metadata.priceImportId, 'F13: active diesel import id').toBe(active.id);
     expect(I.keysOf(ev[0]?.metadata)).toEqual([...A.P7_ANALYZED_KEYS].sort());
     noNamesIn(ev);
   });

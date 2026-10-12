@@ -10,6 +10,9 @@ import { PERMS, createStub, deferred, json, mkClaim, mkPacket, type RoleName } f
 
 const SKIP_BULK = process.env.ACC_SKIP_BULK === '1';
 const WAIT = { timeout: 5000 };
+// The analyze response grew in step 6 (C6: classifierVersion, learnedFindingsCount, reviewFlagsCount) and step 7
+// (F10: fuelCheckStatus, fuelFindingsCount); the web parses it strictly. Values for both flags off (test design).
+const LATER_STEP_ANALYSIS = { classifierVersion: null, learnedFindingsCount: 0, reviewFlagsCount: 0, fuelCheckStatus: 'off', fuelFindingsCount: 0 };
 const NOTE = 'Runs fixed rules on the accepted document fields. Findings are drafts for human review, not verified results.';
 const AUTHOR = 'You will be recorded as the author of revision 1, so another approver must approve it.';
 const NO_PACKET = 'No evidence packet yet. Analysis has not run for this claim.';
@@ -102,7 +105,7 @@ describe('AN-W04/W05 analyze from the claim sheet', () => {
       await gate.promise;
       Object.assign(c, { status: 'PENDING_REVIEW', latestPacket: { revision: 1, status: 'PENDING_REVIEW' }, recoverableCents: 32500, pendingReviewCents: 15000, amountClaimedCents: 47500 });
       stub.packets[c.id] = mkPacket(c, { revision: 1, status: 'PENDING_REVIEW' });
-      return json(201, { claim: { id: c.id, status: 'PENDING_REVIEW', recoverableCents: 32500, pendingReviewCents: 15000, amountClaimedCents: 47500 }, packet: { id: stub.packets[c.id].id, revision: 1, status: 'PENDING_REVIEW', contentHash: 'c'.repeat(64) }, analysis: { rulesVersion: 'rules-v1', findingsCount: 1, pendingFindingsCount: 0, ignoredFindingsCount: 0 } });
+      return json(201, { claim: { id: c.id, status: 'PENDING_REVIEW', recoverableCents: 32500, pendingReviewCents: 15000, amountClaimedCents: 47500 }, packet: { id: stub.packets[c.id].id, revision: 1, status: 'PENDING_REVIEW', contentHash: 'c'.repeat(64) }, analysis: { rulesVersion: 'rules-v1', findingsCount: 1, pendingFindingsCount: 0, ignoredFindingsCount: 0, ...LATER_STEP_ANALYSIS } });
     });
     const { dlg, user } = await openSheet(stub);
     const claimGets = () => stub.count('GET', new RegExp(`/claims/${c.id}$`));
