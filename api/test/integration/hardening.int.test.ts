@@ -343,10 +343,10 @@ describe.skipIf(!canRunDb)('hardening: database guards and label-author four-eye
   });
 
   it('charge-lines influence: null without claim.analyzed; recorded ids in order with current values or null when deleted', async () => {
-    await admin.query(`UPDATE feature_flags SET enabled = true, version = version + 1 WHERE key = 'intelligence.charge_suggestions'`);
+    await admin.query(`UPDATE feature_flags SET enabled = true, version = version + 1 WHERE key = 'intelligence.charge_suggestions' AND enabled = false`);
     const { id } = await fixtureClaim('AWAITING_ANALYSIS');
     const none = await c.get(`/api/v1/claims/${id}/charge-lines`, tok.reviewer);
-    // The flag was just enabled (the feature_flags guard requires the version bump): a 404 here is a failure.
+    // The flag is on (seeded on; switched on above only if it was off, so shared-DB state stays as seeded): a 404 here is a failure.
     expect(none.statusCode, none.body).toBe(200);
     expect((none.json() as { influence: unknown }).influence).toBeNull();
     const labelId = await labelInfluence(id, uid.reviewer);
@@ -479,7 +479,7 @@ describe.skipIf(!canRun)('hardening: failed analysis and bulk transparency (Post
   });
 
   it('fix round 2 (C-FR2.1, H-1): an analysis through an UPPER-CASE claim id still excludes the label author (403 label_author)', async () => {
-    await admin.query(`UPDATE feature_flags SET enabled = true, version = version + 1 WHERE key = 'intelligence.charge_suggestions'`);
+    await admin.query(`UPDATE feature_flags SET enabled = true, version = version + 1 WHERE key = 'intelligence.charge_suggestions' AND enabled = false`);
     // Letters a-f and q only: never contains a fixed-rule accessorial word, so the line stays 'other'.
     const tag = unique().replace(/[^a-f]/gu, 'q');
     const line = `Zz Wrapfix ${tag} Restow`;
