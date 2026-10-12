@@ -248,6 +248,8 @@ const METADATA_KEYS = new Set([
   // number of source documents of an analysis. Fixed codes and counts only.
   'stoppedBy',
   'documentCount',
+  // Fix round 1 (C14, C15): a login served to a known device during a lockout (boolean only).
+  'knownDevice',
 ]);
 const MAX_STRING = 2000;
 

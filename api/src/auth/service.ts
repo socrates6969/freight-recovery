@@ -25,6 +25,7 @@ import { lockedForSeconds, recordFailure } from './lockout-store.js';
 import {
   AUTH_USER_SELECT,
   createSessionTx,
+  isKnownDevice,
   isUsable,
   mintAccessToken,
   revokeUserSessionsTx,
@@ -65,21 +66,36 @@ async function finishSession(deps: AuthDeps, user: AuthUser, refreshToken: strin
 // Login (R4)
 // ---------------------------------------------------------------------------------------------
 
-export async function login(deps: AuthDeps, emailInput: string, password: string, meta: RequestMeta): Promise<LoginResult> {
+/**
+ * Login. Fix round 1 (C14, P5): when the email hash is locked, a request that carries the `fr_rt` refresh
+ * cookie of a live refresh family of THIS user (known device) is still processed; failures still count and
+ * answer 401; a success audits `knownDevice: true`. The cookie is only checked, never rotated or revoked.
+ */
+export async function login(
+  deps: AuthDeps,
+  emailInput: string,
+  password: string,
+  meta: RequestMeta,
+  presentedRefreshToken = '',
+): Promise<LoginResult> {
   const email = normalizeEmail(emailInput);
   const eh = emailHash(deps.cfg.refreshPepper, email);
   const now = new Date();
 
   const pre = await withSystemTx(deps.base, async (tx) => {
     const locked = await lockedForSeconds(tx, eh, now);
+    const user = (await tx.user.findUnique({ where: { email }, select: AUTH_USER_SELECT })) as AuthUser | null;
     if (locked !== null) {
+      if (user !== null && (await isKnownDevice(deps, tx, presentedRefreshToken, user.id, now))) {
+        return { locked: null, user, knownDevice: true };
+      }
       await tx.loginAttempt.create({ data: { emailHash: eh, ip: meta.ip, outcome: 'LOCKED' } });
       return { locked };
     }
-    const user = (await tx.user.findUnique({ where: { email }, select: AUTH_USER_SELECT })) as AuthUser | null;
-    return { locked: null, user };
+    return { locked: null, user, knownDevice: false };
   });
   if (pre.locked !== null) throw errors.accountLocked(pre.locked);
+  const knownDeviceMeta = pre.knownDevice === true ? { knownDevice: true } : {};
 
   const user = pre.user ?? null;
   const usable = user !== null && isUsable(user);
@@ -129,7 +145,7 @@ export async function login(deps: AuthDeps, emailInput: string, password: string
       expiresIn: deps.cfg.mfaTokenTtlSeconds,
     };
   }
-  const session = await withSystemTx(deps.base, (tx) => createSessionTx(deps, tx, user, meta, { method2fa: 'none' }));
+  const session = await withSystemTx(deps.base, (tx) => createSessionTx(deps, tx, user, meta, { method2fa: 'none', ...knownDeviceMeta }));
   return { status: 'ok', ...(await finishSession(deps, user, session.refreshToken, session.familyId)) };
 }
 
@@ -174,12 +190,20 @@ export async function mfaVerify(
   deps: AuthDeps,
   input: { mfaToken: string; code?: string | undefined; recoveryCode?: string | undefined },
   meta: RequestMeta,
+  presentedRefreshToken = '',
 ): Promise<SessionResult> {
   const user = await loadTokenUser(deps, 'mfa', input.mfaToken);
   const eh = emailHash(deps.cfg.refreshPepper, user.email);
   const now = new Date();
-  const locked = await withSystemTx(deps.base, (tx) => lockedForSeconds(tx, eh, now));
-  if (locked !== null) throw errors.accountLocked(locked);
+  // Fix round 1 (C14): a locked email is still served to a known device of the token's user.
+  const gate = await withSystemTx(deps.base, async (tx) => {
+    const locked = await lockedForSeconds(tx, eh, now);
+    if (locked === null) return { locked: null, knownDevice: false };
+    if (await isKnownDevice(deps, tx, presentedRefreshToken, user.id, now)) return { locked: null, knownDevice: true };
+    return { locked, knownDevice: false };
+  });
+  if (gate.locked !== null) throw errors.accountLocked(gate.locked);
+  const knownDeviceMeta = gate.knownDevice ? { knownDevice: true } : {};
 
   const secret = await withSystemTx(deps.base, (tx) => tx.mfaSecret.findUnique({ where: { userId: user.id } }));
   if (!secret?.verifiedAt) throw errors.invalidToken401();
@@ -193,7 +217,7 @@ export async function mfaVerify(
         data: { lastUsedStep: BigInt(step) },
       });
       if (consumed.count !== 1) return null; // replayed or older step
-      return createSessionTx(deps, tx, user, meta, { method2fa: 'totp' });
+      return createSessionTx(deps, tx, user, meta, { method2fa: 'totp', ...knownDeviceMeta });
     });
     if (!session) return failMfa(deps, user, eh, meta);
     return finishSession(deps, user, session.refreshToken, session.familyId);
@@ -228,7 +252,7 @@ export async function mfaVerify(
       ip: meta.ip,
       requestId: meta.requestId,
     });
-    return createSessionTx(deps, tx, user, meta, { method2fa: 'recovery_code' });
+    return createSessionTx(deps, tx, user, meta, { method2fa: 'recovery_code', ...knownDeviceMeta });
   });
   if (!session) return failMfa(deps, user, eh, meta);
   return finishSession(deps, user, session.refreshToken, session.familyId);
@@ -421,12 +445,35 @@ export async function changePassword(
     tx.user.findUnique({ where: { id: actor.userId }, select: AUTH_USER_SELECT }),
   )) as AuthUser | null;
   if (!user || !isUsable(user)) throw errors.unauthenticated();
-  if (!(await deps.hasher.verify(user.passwordHash, currentPassword))) throw errors.invalidCredentials();
+  // Fix round 1 (C10, P1): the same lockout record as login and MFA verify, checked BEFORE any password work
+  // (no known-device exception on this route).
+  const eh = emailHash(deps.cfg.refreshPepper, normalizeEmail(user.email));
+  const locked = await withSystemTx(deps.base, (tx) => lockedForSeconds(tx, eh, new Date()));
+  if (locked !== null) throw errors.accountLocked(locked);
+  if (!(await deps.hasher.verify(user.passwordHash, currentPassword))) {
+    await withSystemTx(deps.base, async (tx) => {
+      await appendAudit(tx, {
+        tenantId: tenantIdOf(user),
+        action: 'auth.password.change_failed',
+        actorId: user.id,
+        actorRole: roleOf(user),
+        targetType: 'user',
+        targetId: user.id,
+        metadata: {},
+        ip: meta.ip,
+        requestId: meta.requestId,
+      });
+      await recordFailure(deps, tx, eh, user, meta);
+    });
+    throw errors.invalidCredentials();
+  }
   if (!checkPasswordPolicy(newPassword, user.email).ok) throw errors.weakPassword();
   const newHash = await deps.hasher.hash(newPassword);
   await withSystemTx(deps.base, async (tx) => {
     await tx.user.update({ where: { id: user.id }, data: { passwordHash: newHash, passwordChangedAt: new Date() } });
     const revoked = await revokeUserSessionsTx(tx, user.id, 'password_changed', actor.sessionId);
+    // Fix round 1 (C10.5): a successful change clears the lockout record (as a completed reset does).
+    await tx.loginLockout.deleteMany({ where: { emailHash: eh } });
     await appendAudit(tx, {
       tenantId: tenantIdOf(user),
       action: 'auth.password.changed',

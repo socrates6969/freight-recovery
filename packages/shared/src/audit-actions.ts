@@ -81,6 +81,10 @@ export const AUDIT_ACTIONS = [
   'dd_invoice.audited',
   // Hardening (REQ-20261012-hardening, C4.2): a refused analysis (single or bulk), appended at the end.
   'claim.analysis_failed',
+  // Fix round 1 (C15): wrong current password on change-password (tenant chain) and an invite for an email of
+  // another tenant's account (platform chain).
+  'auth.password.change_failed',
+  'invite.existing_account',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
