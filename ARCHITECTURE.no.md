@@ -3739,3 +3739,392 @@ timegebyrer; andre valutaer enn USD; innebygde helligdagslister; all automatisk 
   derfor så langt kontrollert med kodegjennomgang og enhetstester alene.
 - Gjennomgangens vurdering: FAIL (STOP) på F1 ved `22e4a73`; rettet i `10f8941`; ny gjennomgang venter.
 - Ikke verifisert: GitHub CI, container-images, compose-stacken, Playwright, enhver AWS-utrulling.
+
+# Nettplattform: herdingskjøringen
+
+> Skrevet av scriber for kjøringen `REQ-20261012-hardening` 2026-10-12. Grenen `feat/hardening` fra `bcc23bb`
+> (toppen av steg 8). Byggecommits `cd596c3`..`c4f703b`; rettingsrunde 1 `f8d37f0`, `b603b14`; rettingsrunde 2
+> `c3f131b`, `ce536c5`, `8ac4360`, `76458e4`. **Før produkt, bare syntetiske data, aldri utrullet.** Trusselradene
+> T75-T85, status for hver tidligere restrisiko og de åpne punktene HR-1..HR-13 står i
+> [technical/web-platform-security.md, del 13](technical/web-platform-security.md#13-hardening-run) (engelsk).
+> Beskrivelse for brukere:
+> [README.no.md, herding](README.no.md#herding-forbedringer-av-eksisterende-funksjoner). Mermaid-diagrammene er
+> de samme som i den engelske originalen ([ARCHITECTURE.md](ARCHITECTURE.md#web-platform-hardening-run)).
+
+## Oversikt (herding)
+
+Eieren ba om ingen nye funksjoner: forbedre de eksisterende og ta hånd om sikkerheten. Planleggeren sorterte
+alle restrisikoer fra steg 4-8 etter kundeverdi, sikkerhetsrisiko, innsats og risiko for regresjon. I tillegg
+kom en sikkerhetsrevisjon av hele plattformen (P1-P5) og en sikkerhetsgjennomgang av denne kjøringens endringer
+(H-1..H-5). Kjøringen leverer:
+
+- **Dypere firøyeprinsipp.** Et tredje avvisningsgrunnlag `label_author` (restrisiko SC-1), og sperrer i
+  databasen bak regelen for D&D-fakturaredigerere (DD-6) og for pakkebeslutninger (FE-S2, bare UPDATE).
+- **Ærlige feil.** Mislykkede analyser får en grunnkode, en revisjonshendelse og en merknad på kravarket (SA-8).
+  Masseanalyser sier hvorfor de stoppet (SA-2, SA-3), prøver mislykkede krav sist (SA-1, SA-8) og registrerer
+  `documentCount` (SA-4).
+- **Ærlige tekster.** Firøyetekster per grunnlag (SA-11), konfidens vist som en fast regelinnstilling,
+  verifisering av D&D-maler i ord (DD-3), priskildens type (FO-1), teksten om taket for drivstofftabeller
+  (FO-10), listen over påvirkende teametiketter i fanen Charges (SC-1), 409 ved konflikt i nytt forsøk på
+  etikettlagring (SC-8) og tilgjengelige tabellnavn.
+- **Plattformsikkerhet.** Sperre ved passordbytte (P1), klientadressen bak CloudFront (P2, F-03), tilbakekalling
+  av økter ved forfremmelse til en MFA-rolle (P3), likt svar på invitasjoner (P4), et unntak fra sperren for kjente
+  enheter (P5), kanoniske UUID-er med små bokstaver (H-1), flagget for avkortning ved mer enn 50 etiketter (H-4)
+  og vakter i Terraform (H-2, H-3).
+
+**Invarianter.** `schema.prisma`, `package-lock.json`, `src/freight_recovery/**`, `webapp/**` og de frosne
+motormappene `packages/shared/src/{analysis,charge-intel,fuel,outlook,ocean-dd}` er byte-identiske med `bcc23bb`.
+Regelresultater, funntekster, brev, pakkehasher og paritet er derfor uendret. Det finnes ingen ny rute,
+tillatelse, scope for API-nøkler, flagg, tenanttabell, kolonne, indeks, grant, policy eller enum-verdi. De eneste
+nye miljøvariablene er `CLIENT_IP_HEADER` og `ORIGIN_VERIFY_SECRET`. Det er to nye migreringsmapper.
+`20261018000000_hardening` er uendret siden den ble committet. `20261019000000_hardening_fr2` inneholder bare
+`CREATE OR REPLACE FUNCTION` og `REVOKE`.
+
+## Modulstruktur (herding)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src"]
+        APR["ApprovalsPage"]
+        CSH["ClaimSheet + Analyze"]
+        BLK["BulkAnalyzeDialog"]
+        CHG["ChargeLinesPanel"]
+        PGS["Outlook, Fuel, Tariffs"]
+        CLI["api/client details"]
+    end
+    subgraph Shared["packages/shared/src"]
+        TCP["transparency-copy"]
+        AFR["analysis-failure"]
+        FEB["four-eyes bases"]
+        DTO["DTOs (additive)"]
+        ACT["audit-actions"]
+    end
+    subgraph API["api/src"]
+        RTE["http/route canonical ids"]
+        CIP["http/client-ip"]
+        DBG["http/db-guard"]
+        SVC["claims/service"]
+        ANA["claims/analysis"]
+        LAU["audit/label-authors"]
+        LIN["audit/label-influence"]
+        AFS["audit/analysis-failures"]
+        CND["db/analysis-candidates"]
+        CHS["intelligence/charges"]
+        AUT["auth service + session"]
+        USR["auth/users-routes"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        M18["20261018 hardening"]
+        M19["20261019 hardening_fr2"]
+        GAP["approvals ext guard"]
+        GPK["packet decision guard"]
+        CHK["awaiting amounts CHECK"]
+    end
+    subgraph Infra["infra (Terraform)"]
+        CFR["CloudFront + WAF"]
+        ALB["ALB 403 + rule"]
+        SMS["origin-verify secret"]
+    end
+
+    APR --> TCP
+    CSH --> TCP
+    BLK --> TCP
+    CHG --> TCP
+    PGS --> TCP
+    CSH --> CLI
+    TCP --> AFR
+    TCP --> FEB
+    APR -. "HTTP" .-> SVC
+    CSH -. "HTTP" .-> ANA
+    CHG -. "HTTP" .-> CHS
+    RTE --> SVC
+    RTE --> ANA
+    SVC --> LAU
+    SVC --> AFS
+    ANA --> CND
+    ANA --> AFS
+    CHS --> LIN
+    SVC --> DBG
+    AUT --> CIP
+    USR --> AUT
+    SVC --> GAP
+    SVC --> GPK
+    ANA --> CHK
+    M18 --> GAP
+    M18 --> GPK
+    M18 --> CHK
+    M19 --> GAP
+    CFR --> ALB
+    SMS --> ALB
+    SMS --> CIP
+    ALB -. "x-origin-verify" .-> CIP
+    DTO --> ACT
+
+    style APR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CSH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BLK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PGS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TCP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AFR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FEB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ACT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RTE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CIP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DBG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SVC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ANA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LAU fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LIN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AFS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CND fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style USR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style M18 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style M19 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GAP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GPK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CFR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ALB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SMS fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Modul/funksjon | Formål | Viktige avhengigheter | Endret i denne kjøringen |
+| --- | --- | --- | --- |
+| `api/prisma/migrations/20261018000000_hardening/` | `fr_approval_four_eyes_ext_guard` + `approvals_four_eyes_ext_guard` (D&D-redigerere, etikettforfattere); `fr_packet_decision_guard` + den utsatte constraint-triggeren `evidence_packets_decision_guard`; CHECK `claims_awaiting_amounts_zero` | `approvals`, `dd_invoices`, `audit_events`, `charge_labels`, `evidence_packets`, `claims` | ny |
+| `api/prisma/migrations/20261019000000_hardening_fr2/` | `CREATE OR REPLACE` av `fr_approval_four_eyes_ext_guard` med grenen for avkortet liste (alle etikettforfattere i tenanten); `REVOKE` | 20261018 | ny |
+| `api/src/http/route.ts` | `canonicalizeParams`: gjør alle UUID-stiparametre om til små bokstaver etter skjemavalidering i `defineRoute` | Zod | endret |
+| `api/src/http/client-ip.ts` | `deriveClientIp`, `parseViewerAddress`, `secretEquals` (konstant tid), `registerClientIp` (request-getter `clientIp`, første `onRequest`-krok) | `config.ts` | ny |
+| `api/src/http/db-guard.ts`, `http/errors.ts`, `app.ts` | `isPacketDecisionDbError` -> 409 `invalid_state` (logg `packet_decision_db_guard`); `AnalysisFailure` 422 med `details`; `claim.analysis_failed` lagt til i egen transaksjon; ratebegrensernes nøkler bruker `clientIp` | Fastify | endret |
+| `api/src/claims/service.ts` | `transition()`: grunnlagene `revision_author`, `dd_invoice_editor`, `label_author`, slått opp med kravets id fra databasen; `selfAuthoredBasis` i godkjenningskøen; `getClaim().analysisFailure` | `audit/dd-editors`, `audit/label-authors`, `audit/analysis-failures` | endret |
+| `api/src/audit/label-authors.ts` | `labelAuthorsByClaim`: én spørring; etikettforfattere før `claim.analyzed`; hele tenanten når `learnedLabelIdsTruncated` | rå SQL i tenanttransaksjonen, `fr_current_tenant()` | ny |
+| `api/src/audit/label-influence.ts` | `learnedLabelIdsOfClaim`: de lagrede `learnedLabelIds` (bare UUID-er, høyst 50, lagret rekkefølge) | rå SQL i tenanttransaksjonen | ny |
+| `api/src/audit/analysis-failures.ts` | `analysisFailureOf`: siste `claim.analysis_failed` + antall | rå SQL i tenanttransaksjonen | ny |
+| `api/src/db/analysis-candidates.ts` | `analysisCandidates`: kandidater for masseanalyse, aldri mislykkede først, deretter eldste; `take` 1..100 | rå SQL i tenanttransaksjonen | ny |
+| `api/src/claims/analysis.ts` | `NotStorableError`, `isAnalysisRefusal`, `classifyAnalysisFailure`, `appendAnalysisFailure`, `bulkStopReason`, `learnedLabelIdsTruncated`; `analyzeAwaiting` med `stoppedBy` og sammendrag også ved feil | frossen motor (uendret) | endret |
+| `api/src/intelligence/charges.ts` | `classifierFromRows`, `influenceView`; `chargeLines` leser etikettene én gang i transaksjonen og klassifiserer etterpå; SC-8 409 | `audit/label-influence` | endret |
+| `api/src/auth/service.ts`, `session.ts`, `routes.ts`, `users-routes.ts` | sperre ved passordbytte (`lockedForSeconds` før argon2, `recordFailure`, fjernes ved suksess, rategruppe `auth`); `isKnownDevice`; tilbakekalling ved forfremmelse via `revokeUserSessionsTx(..., 'role_requires_mfa')`; likt svar på invitasjoner + plattformhendelse | lockout-lager, økt | endret |
+| `api/src/audit/chain.ts`, `config.ts`, `logging.ts` | tillatte nøkler `stoppedBy`, `documentCount`, `knownDevice`, `learnedLabelIdsTruncated`; tolking av `CLIENT_IP_HEADER` og `ORIGIN_VERIFY_SECRET`; sladding av `x-origin-verify` | - | endret |
+| `packages/shared/src/transparency-copy.ts` | faste tekster (C6), frosne objekter | `analysis-failure`, `four-eyes` | ny |
+| `packages/shared/src/analysis-failure.ts`, `four-eyes.ts`, `dto.ts`, `analysis-dto.ts`, `charge-intel-dto.ts`, `outlook-dto.ts`, `audit-actions.ts` | `ANALYSIS_FAILURE_REASONS`, `FOUR_EYES_CLAIM_BASES`, `BULK_STOP_REASONS`, `PRICE_SOURCE_KINDS`; DTO-felt lagt til; tre nye revisjonshandlinger til slutt i listen | - | ny / endret |
+| `web/src` (Approvals, ClaimSheet, AnalyzeClaimSection, BulkAnalyzeDialog, ChargeLinesPanel, FuelTablesPage, TariffsTab, OutlookPage, ClaimsPage, FieldsTable, ReviewQueuePage, `api/client.ts`) | viser C6-tekstene som tekstnoder; `ApiError.details`; `aria-label` på fem tabeller | shared | endret |
+| `infra/` (`versions.tf`, `locals.tf`, `secrets.tf`, `cloudfront.tf`, `alb.tf`, `ecs.tf`, `iam.tf`, `waf.tf`, `README.md`) | origin-verify-header og -hemmelighet, ALB med 403 som standard + regel på header og host (opprettet som 403), postcondition og `check`-blokk for originene, ACM-precondition, WAF med CLOUDFRONT-scope, miljø og hemmelighet i ECS | - | endret |
+
+## Funksjonskall (herding)
+
+Hovedløp (firøyeprinsippet og analyse):
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    DR["defineRoute"] --> CP["canonicalizeParams"]
+    CP --> AP["POST packet/approve"]
+    CP --> AZ["POST claims/:id/analyze"]
+    CP --> BK["POST analyze-awaiting"]
+    AP --> TR["transition()"]
+    TR --> DE["ddInvoiceEditorsByClaim"]
+    TR --> LA["labelAuthorsByClaim"]
+    TR --> IA["insert approvals row"]
+    IA --> XG["ext guard trigger"]
+    TR --> PS["update packet status"]
+    PS --> DG["decision guard at COMMIT"]
+    AZ --> AC["analyzeClaim"]
+    AC --> LT["learnedLabelIdsTruncated"]
+    AC --> CF["classifyAnalysisFailure"]
+    CF --> AF["appendAnalysisFailure"]
+    BK --> AW["analyzeAwaiting"]
+    AW --> CA["analysisCandidates"]
+    AW --> AC
+    AW --> BS["bulkStopReason"]
+
+    style CP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style XG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AW fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BS fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Detaljer (forespørselsgrensen, autentisering, Charges):
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    OR["onRequest (first hook)"] --> RC["registerClientIp"]
+    RC --> DC["deriveClientIp"]
+    DC --> SE["secretEquals"]
+    DC --> PV["parseViewerAddress"]
+    DC --> LK["limiter keys, audit ip"]
+    PW["POST change-password"] --> CH["changePassword"]
+    CH --> LF["lockedForSeconds"]
+    CH --> RF["recordFailure"]
+    LG["POST login, mfa/verify"] --> KD["isKnownDevice"]
+    RL["PATCH users/:id/role"] --> RV["revokeUserSessionsTx"]
+    CL["GET charge-lines"] --> CLN["chargeLines"]
+    CLN --> LI["learnedLabelIdsOfClaim"]
+    CLN --> CR["classifierFromRows"]
+    CLN --> IV["influenceView"]
+
+    style RC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style KD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IV fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Funksjon | Definert i | Kalles av | Formål |
+| --- | --- | --- | --- |
+| `canonicalizeParams(params)` | `api/src/http/route.ts` | `defineRoute` (alle ruter) | små bokstaver i stiparametre som ser ut som UUID-er; andre verdier uendret |
+| `transition(...)` | `api/src/claims/service.ts` | rutene for approve, reject, edit og send | under kravlåsen: revisjonsforfatter, så D&D-redigerer, så etikettforfatter (bare approve/reject); avvisningen registreres i revisjonssporet |
+| `labelAuthorsByClaim(tx, claimIds)` | `api/src/audit/label-authors.ts` | `transition`, godkjenningskøen | bruker-id-er som utelukkes av grunnlaget `label_author`, per krav (én spørring) |
+| `learnedLabelIdsTruncated(...)` | `api/src/claims/analysis.ts` | `analyzeClaim` | forsiktig øvre grense: kan motorens liste på 50 id-er mangle etiketter? |
+| `classifyAnalysisFailure(err, buildWithoutFuel)` | `api/src/claims/analysis.ts` | analyse-rutene | `fuel_check`, `amount_out_of_range` eller `input_values` |
+| `appendAnalysisFailure(...)` | `api/src/claims/analysis.ts` | feilgrenen i `app.ts`, `analyzeAwaiting` | `claim.analysis_failed` i egen transaksjon (feiler lukket) |
+| `analysisCandidates(tx, take)` | `api/src/db/analysis-candidates.ts` | `analyzeAwaiting` | aldri mislykkede først, deretter eldste `createdAt`, deretter id |
+| `bulkStopReason(budgetRefused, analyzed, limit)` | `api/src/claims/analysis.ts` | `analyzeAwaiting` | `budget`, `limit` eller `candidates` |
+| `analysisFailureOf(tx, claimId)` | `api/src/audit/analysis-failures.ts` | `getClaim` | `analysisFailure` for et krav som venter på analyse |
+| `deriveClientIp(req, cfg)` | `api/src/http/client-ip.ts` | getteren fra `registerClientIp` | viewer-adressen når bryteren, hemmeligheten og den strenge tolkingen alle stemmer; ellers `TRUST_PROXY`-adressen |
+| `changePassword(...)` | `api/src/auth/service.ts` | `POST /auth/change-password` | sperrekontroll før argon2, telling og revisjonsspor for feil, sperren fjernes ved suksess |
+| `isKnownDevice(deps, tx, presented, userId, now)` | `api/src/auth/session.ts` | `login`, MFA-verifisering | gjeldende, ikke tilbakekalt og ikke utløpt token i en levende familie for samme bruker; bare lesing |
+| `revokeUserSessionsTx(tx, userId, reason)` | `api/src/auth/session.ts` | rolleendring (`role_requires_mfa`), passordbytte, deaktivering, MFA-nullstilling | tilbakekaller alle levende refresh-familier |
+| `chargeLines(db, claimId)` | `api/src/intelligence/charges.ts` | `GET /claims/:id/charge-lines` | én tenanttransaksjon for etiketter og påvirknings-id-er; klassifisering etterpå |
+
+## Dataflyt (godkjenne eller avvise et krav)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["POST packet/approve or reject"] --> B["defineRoute: lower-case id"]
+    B --> C["lock claim, load latest packet"]
+    C --> D{"revision author?"}
+    D -->|no| E{"D&D invoice editor?"}
+    D -->|yes| R["audit four_eyes_denied, 403"]
+    E -->|no| F{"label author?"}
+    E -->|yes| R
+    F -->|yes| R
+    F -->|no| G["insert approvals row"]
+    G --> H{"ext guard trigger refuses?"}
+    H -->|yes| S["403, log four_eyes_db_guard"]
+    H -->|no| I["update packet status"]
+    I --> J{"decision row at COMMIT?"}
+    J -->|no| T["409 invalid_state"]
+    J -->|yes| K["200, audit claim decision"]
+
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+    style J fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Triggeren og kontrollen ved commit er sperrer bak tjenesten. Gjennom dagens ruter avviser tjenestekontrollen
+først, og beslutningsraden skrives alltid i samme transaksjon, så `S` og `T` nås ikke via API-et i dag.
+Integrasjonstestene når dem ved å skrive direkte til databasen.
+
+## Dataflyt (klientadresse)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["request reaches the API"] --> B{"CLIENT_IP_HEADER set?"}
+    B -->|no| Z["TRUST_PROXY address"]
+    B -->|yes| C{"x-origin-verify equals secret?"}
+    C -->|no| Z
+    C -->|yes| D{"CloudFront-Viewer-Address parses?"}
+    D -->|no| Z
+    D -->|yes| V["viewer ip"]
+    V --> L["rate limits, lockout, audit ip, logs"]
+    Z --> L
+
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style C fill:#1e90ff,stroke:#1565c0,color:#fff
+    style D fill:#1e90ff,stroke:#1565c0,color:#fff
+    style V fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Reserveløsningen får aldri en forespørsel til å feile. I AWS avviser ALB-en allerede (403) en forespørsel uten
+riktig origin-verify-verdi, så en forespørsel uten den når bare API-et fra innsiden av VPC-en eller i et
+rotasjonsvindu (HR-6).
+
+## Databasevakter (herding)
+
+| Vakt | Type | Utløses ved | Avviser | Feil i API-et |
+| --- | --- | --- | --- | --- |
+| `approvals_four_eyes_ext_guard` | radtrigger `BEFORE INSERT`, `SECURITY DEFINER` | APPROVE/REJECT-rader | (a) D&D-fakturaredigerere for kravet; (b) etikettforfattere for kravet (C1), hele tenanten ved avkortet liste (migrering 20261019) | 403 `four_eyes_required` (logg `four_eyes_db_guard`, ikke i revisjonssporet) |
+| `evidence_packets_decision_guard` | `CONSTRAINT TRIGGER ... DEFERRABLE INITIALLY DEFERRED` | `UPDATE OF status` til APPROVED, REJECTED, SEND_READY | ingen `approvals`-rad med samme pakke, tenant, `to_status` og handling (hvilken som helst slik rad, se HR-2) | 409 `invalid_state` (logg `packet_decision_db_guard`) |
+| `claims_awaiting_amounts_zero` | CHECK, validert ved migrering | INSERT og UPDATE i `claims` | et krav med `AWAITING_ANALYSIS` og et krevd, gjenvinnbart eller ventende beløp ulikt null | 500 (ingen rute kan bryte den) |
+
+Begge funksjonene låser `search_path = public, pg_temp`, matcher `tenant_id` eksplisitt (en manglende eller
+fremmed `app.tenant_id` kan ikke skjule rader) og har `EXECUTE` trukket tilbake fra `PUBLIC`. Eksisterende rader
+valideres ikke på nytt. CHECK-en gjelder også med `session_replication_role = replica`. De to triggerne gjør det
+ikke, så testdata som slår av triggere, går utenom dem.
+
+## Standardvalg (herding)
+
+| ID | Standard | Hvor det kan endres |
+| --- | --- | --- |
+| H-D1 | Etikettforfattere = de som skrev **før** analysen pluss etikettens nåværende oppretter; senere skrivere og de som sletter, teller ikke | `label-authors.ts` + migrering (krever ny migrering) |
+| H-D2 | Når listen på 50 id-er kan være ufullstendig, utelukkes alle etikettforfattere i tenanten før analysen (feiler lukket; OQ-H1) | samme |
+| H-D3 | Unntaket for kjente enheter gjelder bare innlogging og MFA-verifisering, aldri passordbytte; tokenet som vises, må være det gjeldende (ubrukte) | `auth/service.ts`, `session.ts` |
+| H-D4 | Invitasjon til en e-postadresse i en annen tenant: invitasjonen opprettes og e-posten forsøkes som vanlig; godtakelse avvises | `users-routes.ts` |
+| H-D5 | `CLIENT_IP_HEADER` valgfri i produksjon; reserve er `TRUST_PROXY` | `config.ts` (oppfølging for HR-6) |
+| H-D6 | Egendefinert origin request policy i CloudFront beholdt, med host-betingelse og ACM-precondition (HR-10) | `cloudfront.tf`, `alb.tf` |
+| H-D7 | Rekkefølge for feilgrunn: `fuel_check` (når samme analyse uten drivstoffkontrollen kunne lagres), så `amount_out_of_range`, så `input_values` | `classifyAnalysisFailure` |
+
+## Utsatt (herding)
+
+H-5 (kappløp mellom tilbakekalling og rotasjon, HR-1); en strengere vakt for pakkebeslutninger eller
+`COMMENT ON FUNCTION` (HR-2); en beslutningsvakt for INSERT av pakker og for dokumentstatus (HR-3); å godta en
+gjeldende og en forrige origin-verify-verdi, og å kreve `CLIENT_IP_HEADER` bak et flagg (HR-6); å sette
+testverdiene på produksjonens sperreliste (HR-8); en CHECK på små bokstaver i `audit_events.target_id` (HR-12);
+bedre gjenoppretting for krav der dokumentene gjør at analysen feiler (OQ-H2); tilbakekalling av API-nøkler når
+en bruker deaktiveres (OQ-H3); en menneskelig godkjenner for automatisk godtatte dokumenter (FE-S1, OQ-H4).
+
+## Grensesnitt for senere arbeid (etter herding)
+
+- De nye handlingene `claim.analysis_failed` og `auth.password.change_failed` (tenantkjeden) og
+  `invite.existing_account` (plattformkjeden) er lagt til sist i den delte handlingslisten. Nye tillatte nøkler:
+  `stoppedBy`, `documentCount`, `knownDevice` og `learnedLabelIdsTruncated`.
+- DTO-felt lagt til: `ApprovalItem.selfAuthoredBasis`, `ClaimDetail.analysisFailure`,
+  `BulkAnalyzeResponse.stoppedBy`, `failed[].reasonCode`, `ChargeLinesResponse.influence`,
+  `OutlookSeries.provenance.sourceKind` og `details` i 422-svaret fra analyse.
+- Kode må lese klientadressen fra `req.clientIp`, aldri fra `req.ip` (arkitekturtest). `targetId` i
+  revisjonssporet må komme fra en lastet rad (arkitekturtest).
+- Et nytt firøyegrunnlag krever tjenestekontrollen, triggeren (ny migrering), en tekst i `transparency-copy.ts`
+  og en plass i rekkefølgen i `FOUR_EYES_CLAIM_BASES`.
+
+## Merknader (herding)
+
+- Hva som ble kjørt (lokalt, Windows, Node 22.23.3, `CI=true`, én worker, **ikke GitHub CI**): byggerens Tier L
+  (typecheck, eslint, enhetstester shared 279, api 460, web 119). Testerens Tier L (shared-akseptanse 405/405, api
+  statisk 41 + 1 erklært hopp, full lint og typecheck). Tier H på nye PostgreSQL 16.15- og MinIO-klynger: begge
+  migreringene kjørt (11 totalt); alle byggerens integrasjonsfiler grønne, med `hardening.int` 11/11 to ganger
+  på `76458e4`; alle api-akseptansesuiter (inkludert de 15 nye `hardening-*`-filene), nett-akseptanse (23 filer),
+  nett-enhetstester og begge paritetssuitene grønne. Detaljer:
+  [sikkerhetsdokumentet, del 13.7](technical/web-platform-security.md#137-what-was-run) (engelsk).
+- Feilene underveis var alle testdesign, hver påvist med en forsterket reproduksjon: begrunnelser for
+  godkjenning og en AUDITED-testrad mot eksisterende CHECK-er, en ulovlig pakkeovergang, en CSRF-klient som ikke
+  var initialisert, og en oppdatering av `feature_flags` uten versjonsøkning. To akseptansetestdata ble også
+  rettet. Ingen forventning ble slakket.
+- Gjennomgang: APPROVE WITH NOTES. Vilkår for sammenslåing: testeren committer `*/test-acceptance/**` (gjort i
+  `4c61607`); CI `terraform fmt -check` og `validate` er grønne (ikke kjørt lokalt, ingen binærfil); denne
+  dokumentasjonen.
+- Ikke verifisert: GitHub CI, Terraform fmt/validate, containerimages, compose-stakken, Playwright, noen
+  utrulling i AWS (F-03 forblir «rettet i kode og IaC, ikke verifisert i AWS»).

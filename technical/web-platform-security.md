@@ -22,7 +22,9 @@ tables and their owner-only importer, and the cost outlook with its backtest gat
 [section 11](#11-step-7-fuel-check-public-price-data-and-cost-outlook). Step 8 (the ocean demurrage and
 detention invoice audit against 46 CFR Part 541 and 545.5, its three tenant tables, the `OCEAN_DD` claim kind and
 the four-eyes rule for the invoice's editors) is covered in
-[section 12](#12-step-8-ocean-demurrage-and-detention-audit). Every secret, its rotation and
+[section 12](#12-step-8-ocean-demurrage-and-detention-audit). The hardening run (database backstops for four-eyes,
+the label-author rule, failure transparency, the CloudFront client address and the authentication fixes of the
+platform audit) is covered in [section 13](#13-hardening-run). Every secret, its rotation and
 the buyer handover checklist are in [docs/secrets.md](../docs/secrets.md). The structure is in [ARCHITECTURE.md](../ARCHITECTURE.md#web-platform-typescript-steps-1-2). The
 infrastructure is in [infra/README.md](../infra/README.md).
 
@@ -52,7 +54,7 @@ The exceptions are noted in section 3.
 
 | # | Threat | Mitigation (where) | Verified by | Residual risk |
 | --- | --- | --- | --- | --- |
-| T1 | Password guessing, credential stuffing | argon2id (19 MiB, t=2) with a constant-work dummy verify for unknown or disabled accounts (`security/password.ts`). Lockout is keyed by the normalized-email hash, so unknown emails behave the same way. The lock lasts `min(30 s * 2^(f-5), 900 s)` once there are 5 failures, and locked attempts do not extend it (`auth/lockout-store.ts`). Rate limits: auth 20 per 60 s per IP, forgot-password 5 per 15 min, global 600 per minute (`app.ts`). | T-AUTH, T-LOCK-01..05, T-RATE-01/02 | Distributed low-and-slow attacks across many IPs are only slowed down. The WAF IP rate rule helps in AWS. |
+| T1 | Password guessing, credential stuffing | argon2id (19 MiB, t=2) with a constant-work dummy verify for unknown or disabled accounts (`security/password.ts`). Lockout is keyed by the normalized-email hash, so unknown emails behave the same way. The lock lasts `min(30 s * 2^(f-5), 900 s)` once there are 5 failures, and locked attempts do not extend it (`auth/lockout-store.ts`). Rate limits: auth 20 per 60 s per client address, forgot-password 5 per 15 min, global 600 per minute (`app.ts`); since the hardening run the client address is the CloudFront viewer address when the origin-verify header matches (section 13), and change-password is in the auth group and counts toward the lockout. | T-AUTH, T-LOCK-01..05, T-RATE-01/02 | Distributed low-and-slow attacks across many IPs are only slowed down. The WAF IP rate rule helps in AWS. |
 | T2 | Session theft through XSS | The access token lives only in JS memory (default 10 min). The refresh token is in an `HttpOnly; Secure; SameSite=Strict; Path=/api/v1/auth` cookie, and nothing is ever stored in localStorage. The CSP is strict (`default-src 'none'`, scripts and styles from `'self'` only, `frame-ancestors 'none'`). React renders text nodes only, and `displayText()` strips bidi controls. The build checker rejects inline script and style. | T-COOKIE-01/02, T-HDR-02/03, T-UI-09/14/15 (hostile strings) | A same-origin script compromise could still call the API while the tab is open. |
 | T3 | Refresh-token replay | Every use rotates the token within its family. Presenting a used or revoked token revokes the whole family. The DB stores `HMAC-SHA256(token, REFRESH_PEPPER)` only. A family lives at most 30 days (`auth/session.ts`). | T-REF-01..07 | Two tabs racing a refresh can sign the user out. This is accepted, and the client single-flights refreshes. |
 | T4 | CSRF | `SameSite=Strict` cookies. A double-submit `fr_csrf` cookie must equal the `X-CSRF-Token` header, which must be `nonce.HMAC(CSRF_SECRET, nonce)`. On unsafe methods, an `Origin` header must equal `APP_ORIGIN`, or `Sec-Fetch-Site` must not be `cross-site` (`http/security.ts`, `security/csrf.ts`). | T-CSRF-01..03 (21 unsafe routes x 4 bad-token modes) | None known. |
@@ -111,6 +113,10 @@ Other residual risks and limits:
 - Step 5 claim analysis has its own accepted residuals SA-1..SA-11 (section 9.5).
 - Step 6 charge intelligence has its own accepted residuals SC-1..SC-11 (section 10.5). Its database-level
   tenant-isolation tests for `charge_labels` are written but have not run yet (section 10.6).
+- The hardening run (section 13) narrowed or closed SC-1, SC-2, SC-8, DD-3, DD-6, FE-S2, SA-1..SA-6, SA-8, SA-11,
+  FO-1 and FO-10, and fixed platform findings P1-P5. Its own open items are HR-1..HR-13 (section 13.5).
+- **F-03 (per-address controls keyed on the CloudFront edge address)** is fixed in code and IaC but
+  **unverified in AWS** until the deploy-gate check in `infra/README.md` is recorded (section 13.6).
 - Chain heads are not anchored externally (T10).
 - `infra/` has passed `terraform fmt` and `validate` only. It has never been planned or applied, and it
   has no ECR repository or CI deploy path yet.
@@ -440,7 +446,7 @@ this run, with no Critical, High or Medium findings.
    force `NEEDS_REVIEW` for every document, or stop the uploader from committing a document that no
    human accepted. Since step 5, such documents also feed the analysis (SA-9, section 9.5); the
    resulting packet still needs a second person to approve it.
-2. **FE-S2 (Low): a status change is not tied to a decision row.** The triggers guard inserts into
+2. **FE-S2 (Low): a status change is not tied to a decision row.** *Narrowed by the hardening run (packets, UPDATE only; section 13.4).* The triggers guard inserts into
    `approvals` and `import_review_decisions` only. `freight_app` holds `UPDATE (status)` on the packet and
    document tables, so SQL that sets `APPROVED` or `ACCEPTED` without inserting a decision row is outside
    the new triggers. The existing state-machine triggers still apply, and the service always writes both
@@ -454,7 +460,7 @@ this run, with no Critical, High or Medium findings.
    tenant's audit advisory lock. The decision routes have only the global rate limit. This is the same
    exposure as `authz.denied` and has no cross-tenant effect. Possible hardening: a per-user rate group
    for decision routes, or coalescing repeated refusals.
-5. **FE-N1 (Info): a trigger refusal is logged but not audited.** If a service check were bypassed and
+5. **FE-N1 (Info): a trigger refusal is logged but not audited.** *Unchanged by the hardening run, which adds a third such trigger (section 13.4).* If a service check were bypassed and
    the trigger refused the insert, the API answers 403 and logs `four_eyes_db_guard`, but writes no tenant
    audit event. This path is not reachable through the current routes. Option: audit it with
    `basis: db_guard`.
@@ -580,28 +586,28 @@ These are open. Do not read any of them as done. The security review of this run
 Medium issue; its one Low finding (S5-1, the 25x bulk amplification) was fixed in fix round 1. The items
 below are the remaining Low/Info notes, the reviewer's residuals and the planner's observations.
 
-1. **SA-1 (Low; review 9a): skipped and failed bulk candidates consume budget.** One `analysis` token is
+1. **SA-1 (Low; review 9a): skipped and failed bulk candidates consume budget.** *Narrowed by the hardening run (section 13.4).* One `analysis` token is
    charged per candidate attempted, not per claim analyzed. This is the conservative choice (it never
    allows more than per-analyzed charging), but a run over many stale or failing candidates can spend the
    user's budget without analyzing anything.
-2. **SA-2 (Info; S5-2, review 9b): no bulk summary event after an unexpected error.** Any error other than
+2. **SA-2 (Info; S5-2, review 9b): no bulk summary event after an unexpected error.** *Closed by the hardening run (section 13.4).* Any error other than
    404/409/422 ends the bulk request with 500. This includes the limiter itself failing mid-run (for
    example the Redis store unreachable). Analyses already committed keep their `claim.analyzed` events, so
    the chain stays intact, but no `claim.bulk_analyzed` records the partial run. Writing the summary in a
    `finally` would need a new allow-listed key (`aborted`), which changes the audit contract; not done.
-3. **SA-3 (Low; review 9c): the dialog does not say the budget stopped the run.** A budget stop returns 200
+3. **SA-3 (Low; review 9c): the dialog does not say the budget stopped the run.** *Closed by the hardening run (section 13.4).* A budget stop returns 200
    with the normal summary. The summary stays true ("n still awaiting analysis"), but the user is not
    told why fewer claims were analyzed. Option: a `stoppedBy` field in the response and a dialog line.
-4. **SA-4 (Info; S5-3): `documentIds` capped at 50 in audit metadata.** The metadata sanitizer slices
+4. **SA-4 (Info; S5-3): `documentIds` capped at 50 in audit metadata.** *Closed by the hardening run (`documentCount`; section 13.4).* The metadata sanitizer slices
    arrays to 50 entries, so `claim.analyzed` would list an incomplete source set for a claim with more than
    50 linked accepted documents (not confirmed reachable). The `packet_sources` rows remain complete.
    Option: add `documentCount`, or cap links per claim at commit time.
-5. **SA-5 (Info; S5-5): raw invoice line description in stored finding text.** Only the letter applies
+5. **SA-5 (Info; S5-5): raw invoice line description in stored finding text.** *Guarded by an architecture test since the hardening run (section 13.4).* Only the letter applies
    `plain()`. `packet_findings.explanation` and `calculation` contain the raw (ingest-validated,
    single-line, length-capped) invoice line description, because sanitizing it there would break Python
    parity. This is safe in today's consumers (React text nodes, formula-neutralized CSV/XLSX). **Any future
    HTML, Markdown or PDF renderer or export of findings must sanitize these fields.**
-6. **SA-6 (Info; S5-6): the amount columns of an `AWAITING_ANALYSIS` claim are not DB-guarded.** The status
+6. **SA-6 (Info; S5-6): the amount columns of an `AWAITING_ANALYSIS` claim are not DB-guarded.** *Narrowed by the hardening run (CHECK on the amounts; section 13.4).* The status
    guard fires on `UPDATE OF status` only, so `recoverable_cents`, `pending_review_cents`,
    `amount_claimed_cents` and `version` of an awaiting claim can be changed by SQL as `freight_app` without
    a trigger refusing it. Only `analysis.ts` writes them, so this is not reachable through the API. If
@@ -610,7 +616,7 @@ below are the remaining Low/Info notes, the reviewer's residuals and the planner
    that a concurrent or later commit links to the claim is linked, but it is not a source of revision 1
    and is not cited. This is the same as the existing "claim already has a packet" behaviour. A reviewer
    who needs it must edit the packet (new revision).
-8. **SA-8 (Low; planner): a failed analysis leaves the claim `AWAITING_ANALYSIS`.** A 422 writes nothing.
+8. **SA-8 (Low; planner): a failed analysis leaves the claim `AWAITING_ANALYSIS`.** *Narrowed by the hardening run (section 13.4).* A 422 writes nothing.
    Accepted documents cannot be edited, so the claim needs a new import with corrected documents. Until
    then it stays a bulk candidate; because bulk takes the oldest claims first, it is attempted and charged
    on every bulk run (with SA-1), and enough such claims (`4 x limit` or more) can keep a bulk run from
@@ -622,7 +628,7 @@ below are the remaining Low/Info notes, the reviewer's residuals and the planner
     a field editor of a claim's documents may approve a claim that someone else analyzed. Document
     four-eyes already required a second person to accept those inputs (except SA-9), so two people are
     still involved. This is a policy choice, not a bypass.
-11. **SA-11 (Info; planner A14): four-eyes wording for analyzers.** The analyzer sees the existing text
+11. **SA-11 (Info; planner A14): four-eyes wording for analyzers.** *Closed by the hardening run (section 13.4).* The analyzer sees the existing text
     "You edited this revision. Another approver must approve it." in `/approvals`, which is loose for an
     analysis. The analyze controls state beforehand that the analyzer becomes the author. The four-eyes
     copy was left unchanged on purpose.
@@ -732,14 +738,14 @@ D1, D6 and D7 await the owner's confirmation (OQ3). The full list D1-D10 is in A
 These are open. The security review of `51ea826..3a8125d` found no Critical or High issue. Its Medium
 finding S1 and the Low/Info findings S2, S3, S4 and S7 were fixed in `43d7d4c`; S5 and S6 were accepted.
 
-1. **SC-1 (Low; S3 residual): a labeller can move detention money to review.** Any user with
+1. **SC-1 (Low; S3 residual): a labeller can move detention money to review.** *Narrowed by the hardening run (label authors cannot approve; section 13.4).* Any user with
    `charge_labels:manage` (REVIEWER and above) can label a wording as detention. Every later analysis of a
    claim with a keyword-`other` line whose nearest example is that label then switches all `DET-UNBILLED`
    and `DET-UNDERBILLED` findings to needs-human-review: their amounts leave the recoverable total and the
    draft letter until a reviewer confirms them. The labeller may also be the approver. Labels never create
    confirmed money and never bypass four-eyes, and since fix round 1 the influence is attributable
    (`learnedLabelIds` in `claim.analyzed`, `normalizedTextSha256` in the label events).
-2. **SC-2 (Low; S1 residual): classification is still synchronous.** At the caps it costs about 0.47 s of
+2. **SC-2 (Low; S1 residual): classification is still synchronous.** *Narrowed by the hardening run (section 13.4).* At the caps it costs about 0.47 s of
    CPU per request on the shared event loop (Node 22 measurement), and the charge-lines view classifies
    every line inside an open tenant transaction. A per-request time or line budget was suggested by the
    review and not built.
@@ -757,7 +763,7 @@ finding S1 and the Low/Info findings S2, S3, S4 and S7 were fixed in `43d7d4c`; 
 7. **SC-7 (Info; planner): raw description in LRN text.** LRN finding explanations and calculations
    contain the raw invoice line description, as step 5 findings do (SA-5). Any future HTML, Markdown or PDF
    renderer of findings must sanitize them.
-8. **SC-8 (Info; S5, accepted): retry conflict gives 500.** A second unique-key violation on a label PUT
+8. **SC-8 (Info; S5, accepted): retry conflict gives 500.** *Closed by the hardening run (409; section 13.4).* A second unique-key violation on a label PUT
    (only on delete-and-recreate races) becomes 500 `internal_error` with a generic message; a 409 would be
    friendlier.
 9. **SC-9 (Info; S6, accepted): a flag read error means off.** The spec asked for a 500; the existing
@@ -884,7 +890,7 @@ in production is OQ3. The full list D1-D13 is in ARCHITECTURE.
 These are open. The security review of `5f7eb7e..cbb340f` found no Critical, High or Medium issue. L1, L2 and
 I1 were fixed in `1a95245`; I2, I3 and I4 were accepted.
 
-1. **FO-1 (Low; L1 residual): `--file` provenance is asserted by the operator.** In `--file` mode the import
+1. **FO-1 (Low; L1 residual): `--file` provenance is asserted by the operator.** *Narrowed by the hardening run (source kind shown; section 13.4).* In `--file` mode the import
    records the pinned FRED URL as `source_url`, but the bytes did not necessarily come from it. The row
    stores `source_kind = 'file'`, and `--list` and the audit event show it; the Outlook page and the FSC
    finding show the citation, retrieval date and sha256 but not the source kind. The operator holds the
@@ -910,7 +916,7 @@ I1 were fixed in `1a95245`; I2, I3 and I4 were accepted.
 9. **FO-9 (Info; I3, accepted): extreme table parameters.** Valid but extreme params (step size 0.0001, a
    percent rate of 100 per step) give very large rates; analysis of a claim using such a table returns 422
    `analysis_input_invalid` (handled, no 500).
-10. **FO-10 (Info; I2, accepted): the cap counts archived tables.** Archived tables are never deleted, so a
+10. **FO-10 (Info; I2, accepted): the cap counts archived tables.** *Narrowed by the hardening run (copy; section 13.4).* Archived tables are never deleted, so a
     tenant can create at most 50 tables in total. Only `settings:manage` can reach that ceiling.
 11. **FO-11 (Info): preliminary data.** The latest PPI months are preliminary; the outlook and the gate follow
     whatever import is active.
@@ -1042,7 +1048,7 @@ The security review of `ce107d0..afadac3` found no Critical or High issue. S1 (M
    returns are typed in; nothing compares them with tracking data or documents yet. A wrong entry gives a wrong
    finding; regulatory findings stay review-only, but a confirmed tariff overcharge rests on the tariff the user
    attached (OQ4).
-3. **DD-3 (Low): presets may be outdated or wrong.** Presets are starting points with assumptions where the
+3. **DD-3 (Low): presets may be outdated or wrong.** *Narrowed by the hardening run (copy; section 13.4).* Presets are starting points with assumptions where the
    tariff is silent (start day, chargeable-day basis, working weekdays, tier mapping). Maersk was read through a
    search extract (no hash); **the CMA CGM preset is secondary-source only** and must be verified before use.
 4. **DD-4 (Info): legal interpretation.** "Last incurred" is the latest charged date on the invoice; 541.8 windows
@@ -1051,7 +1057,7 @@ The security review of `ce107d0..afadac3` found no Critical or High issue. S1 (M
    interpretation").
 5. **DD-5 (Info): confidence values are labels.** 0.9, 0.7 and 0.5 are fixed per rule, not measured
    probabilities.
-6. **DD-6 (Low; S3, F1/F2 residual): the invoice-editor rule is a service check.** Since fix round 3 it
+6. **DD-6 (Low; S3, F1/F2 residual): the invoice-editor rule is a service check.** *Closed by the hardening run (database backstop; section 13.4).* Since fix round 3 it
    refuses every user who created or edited the invoice data, taken from the `dd_invoice.created` and
    `dd_invoice.updated` audit events (earlier editors included; the audit run no longer overwrites
    `updated_by_id`). It is still enforced in `transition()` only, with no database trigger backstop, so code that
@@ -1102,3 +1108,226 @@ three tables, the two triggers, routes, RBAC, flag off, audit run, four-eyes inc
 API key 403); the tester's Tier H files `dd-db`, `dd-api`, `dd-audit`, `dd-ui`; `npm run build`; the parity
 suites; `verify-ci-locally`. The tester's Tier L run predates fix round 1. Not run at all: GitHub CI, container
 images, the compose stack, Playwright, any AWS deployment.
+
+## 13. Hardening run
+
+Run `REQ-20261012-hardening` (branch `feat/hardening` from `bcc23bb`, the step 8 head; build commits
+`cd596c3`..`c4f703b`; fix round 1 `f8d37f0`, `b603b14`; fix round 2 `c3f131b`, `ce536c5`, `8ac4360`, `76458e4`)
+improves existing features only. It adds **no** new route, permission, API-key scope, feature flag, tenant table,
+column, index, grant, RLS policy or enum value. `schema.prisma` and the frozen engine directories
+(`packages/shared/src/{analysis,charge-intel,fuel,outlook,ocean-dd}`) are byte-identical, so rule outputs, finding
+texts, letters, packet content hashes and the parity results are unchanged. The structure is in
+[ARCHITECTURE.md, hardening run](../ARCHITECTURE.md#web-platform-hardening-run). The user view is in
+[README, hardening](../README.md#hardening-improvements-to-existing-features).
+
+Inputs: the residual registers in sections 8-12; a whole-platform security audit of the step 8 head (no Critical
+or High; two Medium findings, P1 change-password and P2 = the carried-over F-03; three Low, P3-P5); and a security
+review of this run's own diff (H-1 Medium, H-2..H-5 Low). P1-P5 and H-1..H-4 are fixed in this run. H-5 is
+deferred (13.5).
+
+### 13.1 What changed (assets and boundaries)
+
+| Item | Detail |
+| --- | --- |
+| Migrations | `20261018000000_hardening`: two trigger functions, one deferred constraint trigger and one CHECK. `20261019000000_hardening_fr2`: only `CREATE OR REPLACE FUNCTION fr_approval_four_eyes_ext_guard()` (adds the truncated branch) plus `REVOKE ALL ... FROM PUBLIC`. No `CREATE TABLE`, column, index, grant, policy, enum or `DROP`. Both functions are `SECURITY DEFINER`, `SET search_path = public, pg_temp`, match `tenant_id` explicitly and have `EXECUTE` revoked from `PUBLIC`. The earlier migration folders are unchanged. |
+| Database guards | `approvals_four_eyes_ext_guard` (`BEFORE INSERT ON approvals`, APPROVE/REJECT rows): refuses D&D invoice editors and label authors of the claim (P0001 `four_eyes_required`). `evidence_packets_decision_guard` (`CONSTRAINT TRIGGER ... AFTER UPDATE OF status ... DEFERRABLE INITIALLY DEFERRED`): an UPDATE to `APPROVED`, `REJECTED` or `SEND_READY` needs a matching `approvals` row at commit (P0001 `packet_decision_unrecorded`, mapped to 409 `invalid_state`, never 500). CHECK `claims_awaiting_amounts_zero`: an `AWAITING_ANALYSIS` claim has zero `amount_claimed_cents`, `recoverable_cents` and `pending_review_cents`. |
+| Four-eyes | New refusal basis `label_author` (service check and trigger) after `revision_author` and `dd_invoice_editor`. The approval queue item gains `selfAuthoredBasis`. The `authz.four_eyes_denied` metadata stays `{ claimId, packetId, packetRevision, action, basis }`, with no label id, label text or other user id. |
+| Client address | `api/src/http/client-ip.ts` derives one client address per request (first `onRequest` hook). No code outside that file reads `req.ip` (architecture test). New env vars `CLIENT_IP_HEADER` and `ORIGIN_VERIFY_SECRET` ([docs/secrets.md](../docs/secrets.md)). Terraform: an origin-verify header on the CloudFront `api` origin, the ALB default 403 plus one header- and host-conditioned forward rule, a CLOUDFRONT-scope WAF for the IP-keyed rules, a new Secrets Manager container `<name>/origin-verify-secret` ([infra/README.md](../infra/README.md#deploy-gate-cloudfront-origin-verification-and-client-address-fix-round-1-f-03)). |
+| Authentication | Change-password lockout and `auth` rate group; MFA-role promotion revokes sessions; invite parity for other tenants' emails; known-device login during a lockout. New audit actions `auth.password.change_failed` (tenant chain) and `invite.existing_account` (platform chain); new metadata key `knownDevice`; new revoke reason `role_requires_mfa`. |
+| Identifiers | Every UUID path parameter is lower-cased in `defineRoute` (`canonicalizeParams`). Audit `targetId`, packet and approval `claimId` come from the loaded row, never from a parameter (architecture test). |
+| Failure transparency | 422 analyze carries `details: [{ path: 'analysis', code }]`; new tenant audit action `claim.analysis_failed`; `ClaimDetail.analysisFailure`; bulk `stoppedBy`, `failed[].reasonCode`, failed-last candidate order and a summary event on the error path; `documentCount` and `learnedLabelIdsTruncated` in `claim.analyzed`. New allow-listed keys `stoppedBy`, `documentCount`, `knownDevice`, `learnedLabelIdsTruncated`. |
+| Fixed copy | `packages/shared/src/transparency-copy.ts`, rendered verbatim as text nodes. No string contains "accura", "guarantee", "AI-powered", "verified result" or a recovery rate (acceptance scan HD-S06). |
+
+### 13.2 Threats and mitigations (hardening)
+
+"Verified by" names the tester's acceptance IDs (`HD-*`, `HP-*`, `FR2-*` in `api/test-acceptance/hardening-*.acc.test.ts`
+and the web and shared suites) and the builder's tests. Local runs only, not GitHub CI (13.7).
+
+| # | Threat | Mitigation (where) | Verified by | Residual risk |
+| --- | --- | --- | --- | --- |
+| T75 | A D&D invoice editor approves the claim through a path that skips the service check (DD-6) | Trigger part (a): refuses an APPROVE/REJECT row whose actor is the invoice's `created_by_id`/`updated_by_id` or the actor of any `dd_invoice.created`/`updated` event for it | HD-D02, HD-D03, FR2-C01; `hardening.int.test.ts` | FE-N1: a trigger refusal is logged (`four_eyes_db_guard`), not audited |
+| T76 | Label poisoning plus self-approval: a user labels a wording, the label influences an analysis, and the same user approves the claim (SC-1) | Basis `label_author` in `transition()` (`api/src/audit/label-authors.ts`, one query) and trigger part (b). Label authors = actors of `charge_label.set` events for the labels in `claim.analyzed.learnedLabelIds` written **before** the analysis, plus the current creators of those labels. When `learnedLabelIdsTruncated` is true, every tenant label author before the analysis is excluded (13.3) | HD-F01..F12, HD-D01, HD-D04, FR2-L01..L04 | HR-7 (availability in small tenants); a labeller can still move detention money to review (SC-1 narrowed, 13.4) |
+| T77 | A packet becomes `APPROVED`/`REJECTED`/`SEND_READY` by an UPDATE without a decision row (FE-S2) | Deferred constraint trigger `evidence_packets_decision_guard`; the API maps its refusal to 409 `invalid_state` and logs `packet_decision_db_guard` | HD-D05..D07, HD-D10; `hardening.int.test.ts` (409 mapping) | HR-2 (any historic matching row is accepted), HR-3 (INSERTs not checked; document status not covered) |
+| T78 | An awaiting claim carries amounts written by SQL (SA-6) | CHECK `claims_awaiting_amounts_zero` (also enforced with `session_replication_role = replica`, since CHECKs are not triggers) | HD-D08 | `version` of an awaiting claim is still not DB-guarded |
+| T79 | Four-eyes bypass through an upper-case UUID (H-1): the audit row stores the raw parameter, so the case-sensitive text comparison in the service and the trigger misses it | `canonicalizeParams` in `defineRoute` lower-cases every UUID path parameter after schema parsing; every audit `targetId` and packet `claimId` is taken from the loaded row; the D&D-editor and label-author maps are looked up with the database claim id; architecture test rejects `targetId` or `claimId` from params | FR2-C01..C04; `ocean-dd.int.test.ts` and `hardening.int.test.ts` upper-case cases | HR-12 (no database CHECK on `target_id` case; chain rows written before this run keep their stored case) |
+| T80 | Change-password as a password oracle and argon2 load lever (P1) | Rate group `auth` (per client address); the lockout record of the user's email hash is read **before** any password hash is computed (`429 account_locked`); a wrong current password calls `recordFailure` and appends `auth.password.change_failed`; success clears the lock. No known-device exception on this route | HP-P01..P04; `auth-hardening.int.test.ts` | HR-5 (burst TOCTOU) |
+| T81 | Per-IP controls and WAF rules keyed on the CloudFront edge address (P2 = F-03): one attacker locks out everyone behind a POP | The viewer address is trusted only when `CLIENT_IP_HEADER = cloudfront-viewer-address` and `x-origin-verify` equals `ORIGIN_VERIFY_SECRET` (constant-time) and `CloudFront-Viewer-Address` parses strictly; otherwise the `TRUST_PROXY` address (fail-safe, never an error). Both headers are redacted in logs. Terraform: ALB answers 403 unless the origin-verify value (and `Host = app_domain`) matches; the IP-keyed WAF rules moved to a CLOUDFRONT-scope ACL | HP-C01..C07, FR2-I01..I06 (static), builder `deriveClientIp`/`parseViewerAddress` unit tables | 13.6 (unverified in AWS); HR-6, HR-8, HR-11 |
+| T82 | An MFA-required role gained inside a password-only session (P3) | When a role change makes MFA required and the subject has no verified MFA secret, every live refresh family is revoked in the same transaction (`role_requires_mfa`); `user.role_changed` records `sessionsRevoked` | HP-M01, HP-M02 | HR-1 (H-5 race) |
+| T83 | Invite creation reveals accounts of other tenants (P4) | For an email of another tenant the request takes the normal path (invite row, mail attempt, same `invite.created`, same `201`); one platform-chain `invite.existing_account { inviteId }` is added. Acceptance of such an invite is refused by the existing check (409) | HP-I01..I04 | The extra insert is a small timing difference; synchronous mail delivery probably dominates it (not measured) |
+| T84 | Targeted lockout of a chosen user (P5) | Known-device rule (13.3): a request carrying a live refresh cookie of that user is still processed during a lock; `auth.login.success` gets `knownDevice: true` | HP-L01..L04 | HR-4 |
+| T85 | Opaque failures and overclaiming copy (SA-2, SA-3, SA-4, SA-8, SA-11, FO-1, FO-10, DD-3, SC-8) | 422 reason code, `claim.analysis_failed` and the claim-sheet note; bulk `stoppedBy`, failed-last order and an error-path summary event; `documentCount`; basis-specific four-eyes texts; confidence shown as a fixed rule setting; price `sourceKind`; D&D preset verification in words; SC-8 retry conflict answers 409 `conflict`; accessible names on five tables | HD-A01..A10, HD-B01..B07, HD-C01..C06, HD-W01..W11, HD-S05, HD-S06, HD-O01 | 13.4 |
+
+### 13.3 How it works
+
+1. **Four-eyes bases.** Approve and reject check, in this order, `revision_author`, `dd_invoice_editor` and
+   `label_author`. The first that applies is the reported basis. Precedence otherwise unchanged. Send-ready and
+   edit are not restricted by these bases. Each refusal appends one `authz.four_eyes_denied` event (fail closed).
+2. **Label authors.** For the claim's `claim.analyzed` event `A` with `learnedLabelIds` `L` (at most 50 ids): every
+   non-null actor of a `charge_label.set` event for a label in `L` with a chain `seq` lower than `A.seq`, plus the
+   `created_by_id` of each label in `L` that still exists. A later write to a label does not make its writer an
+   author, and `charge_label.deleted` does not count. A claim without `claim.analyzed` has no label authors.
+3. **The 50-label cap.** The frozen engine caps `learnedLabelIds` at 50 without saying so. The API now computes
+   `learnedLabelIdsTruncated` from an upper bound: the distinct nearest tenant labels of the candidate lines (rules
+   class `other`, classifier category accessorial or detention). The bound can only be too high, never too low. The key is
+   recorded in `claim.analyzed` only when true. When it is true, the label authors are **every** non-null
+   `charge_label.set` actor of the tenant before `A`, plus the creator of every tenant label created at or before
+   `A`. The service (`label-authors.ts`) and the trigger (migration `20261019000000_hardening_fr2`) apply the same rule.
+   This tenant-wide superset is deliberate. The engine decides whether a label matches a charge line by similarity,
+   and SQL cannot evaluate that.
+4. **Database guards.** See 13.1. Existing rows are not re-validated by the triggers. The decision guard is a
+   constraint trigger, so `session_replication_role = replica` (test fixtures only) disables it; the CHECK stays.
+5. **Client address.** A Fastify request getter `clientIp`, primed by the first `onRequest` hook, so even Fastify's
+   own request log gets the derived value. It feeds the global, `auth` and `forgot` buckets, the API-key failure
+   limiter and its in-memory gate, the per-user buckets' fallback key, `login_attempts.ip`, every audit `ip` and the
+   request logs. Rate-limit maxima and windows are unchanged; only the key source changed.
+6. **Change-password lock.** The route is in rate group `auth`. With threshold N (`LOCKOUT_THRESHOLD`, default 5),
+   wrong attempts 1..N answer 401 (the N-th starts the lock), and attempt N+1, wrong or right, answers 429
+   `account_locked` while the lock lasts. A lock started here also blocks `/auth/login` for that email, subject to
+   the known-device rule.
+7. **MFA-promotion revocation.** Only when the role actually changes to OWNER or ADMIN and the subject has no
+   verified MFA secret. Access tokens stop working on their next request because each request re-checks the
+   session. The next login requires MFA enrolment.
+8. **Invite parity.** A member of the inviting tenant, or a live invite in that tenant, still gives 409 `conflict`.
+   An email of another tenant gives the same response, queries, mail call and tenant audit event as an unknown
+   email.
+9. **Known device.** On `/auth/login` and `/auth/mfa/verify`, a locked email is still processed when the `fr_rt`
+   cookie belongs to the **current** (unused) token of a live family of that same user: not revoked, not expired,
+   family within `REFRESH_FAMILY_MAX_SECONDS`. The cookie is only checked, never rotated. A wrong password on this
+   path still counts as a failure and answers 401. Success clears the lock as usual.
+10. **Canonical ids.** Mixed-case UUIDs keep returning the same resource. Non-UUID values are unchanged and still
+    404 in the handlers.
+11. **Failure transparency.** `claim.analysis_failed` is appended in its own transaction after the analysis
+    transaction rolled back. If that append fails, the single route answers 500 (fail closed). The bulk route then
+    writes `claim.bulk_analyzed` with `stoppedBy: 'error'` and the counts so far before answering 500. If that
+    append also fails, it logs `bulk_summary_audit_failed`. Analyses already committed stay committed.
+
+### 13.4 Status of earlier residuals and findings
+
+| ID | Status after this run | What remains |
+| --- | --- | --- |
+| SC-1 (10.5) | **Narrowed.** A labeller whose label influenced an analysis can no longer approve or reject that claim (service + trigger), and the Charges tab lists the influencing labels | A labeller can still move detention findings to review, and another approver must then decide. Truncated claims exclude every tenant label author (HR-7) |
+| SC-2 (10.5) | **Narrowed.** The charge-lines view reads the labels once in the tenant transaction and classifies after it closes | Classification is still synchronous on the event loop |
+| SC-8 (10.5) | **Closed.** A repeated unique violation on the retry answers 409 `conflict`; the UI shows a fixed reload text | - |
+| DD-3 (12.5) | **Narrowed (copy).** The preset line shows the verification level in plain words, with "Verify before use" for the search-extract and secondary presets | Presets may still be outdated or wrong |
+| DD-6 (12.5) | **Closed.** The invoice-editor rule now has a database backstop (T75), and the upper-case-id bypass is closed (T79) | FE-N1 for trigger refusals |
+| FE-S2 (8.5) | **Narrowed:** evidence packets, UPDATE only | INSERTs are not checked; `import_review_decisions`/document status is not covered; HR-2 |
+| FE-N1 (8.5) | **Unchanged**, now for three triggers | Refusals by `approvals_four_eyes_guard` and `approvals_four_eyes_ext_guard` are logged (`four_eyes_db_guard`), not audited. No current route reaches them |
+| SA-1 (9.5) | **Narrowed.** Previously failed claims are tried last, so they no longer use the budget before newer claims | One budget unit is still charged per candidate attempted, not per claim analyzed |
+| SA-2 (9.5) | **Closed.** An unexpected error writes `claim.bulk_analyzed` with `stoppedBy: 'error'` | If that append also fails, only a log line remains |
+| SA-3 (9.5) | **Closed.** `stoppedBy` in the response and a stop line in the dialog | - |
+| SA-4 (9.5) | **Closed.** `claim.analyzed` records `documentCount` | `documentIds` is still capped at 50 |
+| SA-5 (9.5) | **Guarded by a test.** An architecture test allow-lists the modules that read finding texts | Any new renderer must still sanitize them |
+| SA-6 (9.5) | **Narrowed.** CHECK on the three amount columns | `version` is not DB-guarded |
+| SA-8 (9.5) | **Narrowed.** The reason is shown to every reader of the claim and audited, and failed claims no longer block newer ones in bulk | A failure caused by the documents still needs a re-import of corrected documents (open question OQ-H2) |
+| SA-11 (9.5) | **Closed.** Basis-specific four-eyes texts | - |
+| FO-1 (11.5) | **Narrowed.** The Outlook page shows the source kind (`fetch`, `bundled`, `file`) of each series | `--file` provenance is still asserted by the trusted operator |
+| FO-10 (11.5) | **Narrowed (copy).** The limit message says archived tables count | The cap still counts archived tables |
+| Platform P1-P5 | **Fixed in code** (T80-T84) | HR-1, HR-4, HR-5 |
+| F-03 / P2 | **Fixed in code and IaC, unverified in AWS** (13.6) | HR-6, HR-8, HR-11 |
+| H-1 | **Fixed** (T79) | HR-12 |
+| H-2 | **Fixed in IaC.** The ALB rule is created with a fixed 403 action, so the committed placeholder never forwards; a replaced rule fails closed (outage, not bypass) | Unverified in AWS |
+| H-3 | **Fixed in IaC.** `ignore_changes = [origin]` stays (it carries the secret header), guarded by a `postcondition` and a `check "cloudfront_origins"` block on domains, OAC, `https-only` and TLSv1.2 | An intended origin change needs the documented targeted apply |
+| H-4 | **Fixed** (13.3, item 3) | HR-7, HR-9 |
+| H-5 | **Deferred** | HR-1 |
+
+### 13.5 Known gaps and residual risks (hardening)
+
+These are open. Do not read any of them as done.
+
+1. **HR-1 (Low; H-5, deferred): revoke versus concurrent refresh rotation.** `revokeUserSessionsTx` is a single
+   `updateMany` under READ COMMITTED. A successor token inserted by a rotation running at the same moment can
+   survive the revoke, so a session refreshing in a tight loop while the user is promoted to an MFA role might keep
+   a password-only session. The same race affects password change, disable and MFA reset. Not confirmed by a test.
+   Fix options: serialize per user in both rotation and revoke (`SELECT ... FOR UPDATE` on the users row, or
+   `pg_advisory_xact_lock` on the user id). Alternatively, add a `sessions_valid_after` timestamp on the user,
+   checked in `authenticateAccessToken` and in rotation (needs a new migration).
+2. **HR-2 (Info): the packet-decision guard accepts any historic matching approval row.** The guard requires an
+   `approvals` row with the same packet, tenant, `to_status` and action. It does not require that row to come from
+   the same transaction. The comment in migration `20261018000000_hardening` says "in the same transaction", which
+   is **inaccurate**. Committed migrations are immutable, so the comment stays. The security review found no
+   reachable path that exploits this. Fix options for a later migration: tighten the guard (for example `ap.created_at = now()`), or record the actual semantics with
+   `COMMENT ON FUNCTION`.
+3. **HR-3 (Low; FE-S2 residual): INSERTs and documents are outside the decision guard.** A packet inserted with a
+   decided status, and a document status change without a review-decision row, are not checked by it. The
+   existing packet triggers still refuse a packet that is not a proper revision.
+4. **HR-4 (Low; P5 residual): known-device limits.** A user with no live session on any device can still be
+   locked out by someone who knows the address. The `auth` bucket per client address (now the viewer address)
+   slows that down. Conversely, someone holding a victim's live refresh cookie can guess the password without
+   the lockout, limited only by the per-address `auth` bucket. Optional hardening: cap failed known-device attempts
+   per family.
+5. **HR-5 (Info; P1 residual): change-password burst TOCTOU.** The lock check and the failure write are separate
+   transactions. A burst of parallel requests can all pass the check before their failures are recorded (the same
+   pattern as login). The per-address `auth` bucket bounds the burst.
+6. **HR-6 (Low; review R-4): rotation window and unenforced configuration.** During rotation step 3 in
+   [infra/README.md](../infra/README.md#deploy-gate-cloudfront-origin-verification-and-client-address-fix-round-1-f-03)
+   (API restarted with the new value, CloudFront still sending the old one), tasks fall back to the `TRUST_PROXY`
+   address. For that window the per-address controls key on the edge address again, as in F-03. Requests never
+   fail. Also, production does **not** require `CLIENT_IP_HEADER`: a CloudFront deploy without it in the ECS
+   environment silently keeps F-03. Follow-up options: accept a current and a previous secret, or require both
+   variables behind an explicit "behind CloudFront" flag.
+7. **HR-7 (Info; review R-5, OQ-H1): truncated claims in small tenants.** When `learnedLabelIdsTruncated` is
+   true, every tenant label author before the analysis is excluded. In a tenant where every potential approver
+   had set a label before the analysis, nobody in that tenant can approve or reject the claim. This is a
+   fail-closed availability cost, not a bypass. It needs more than 50 distinct influencing labels.
+8. **HR-8 (Info; review R-6): public test values for `ORIGIN_VERIFY_SECRET` are not on the production
+   denylist.** The committed test literals for it (in `api/test/` and `api/test-acceptance/`) are not in
+   `DOCUMENTED_DEV_SECRETS`, so production would accept one if someone copied it and it passed the entropy checks. Treat every committed literal as public
+   ([docs/secrets.md, section 4](../docs/secrets.md#4-public-values-never-use-them-anywhere-real)). Follow-up:
+   add them to the denylist, or refuse `ci-only-`/test-value patterns.
+9. **HR-9 (Info): the influence list is still capped at 50.** `learnedLabelIds` keeps at most 50 ids. The new
+   flag says when the list may be incomplete, and the four-eyes rule then fails closed (item 7). The Charges
+   tab shows at most those 50 labels.
+10. **HR-10 (Info): origin request policy.** The `/api/*` and `/healthz` behaviours keep a custom origin request
+    policy that also forwards the viewer `Host`. This change could not confirm from AWS documentation that
+    `Managed-AllViewerExceptHostHeader` forwards `CloudFront-Viewer-Address`. The compensating controls are a
+    `Host = app_domain` listener condition and a precondition that `alb_certificate_arn` is the issued ACM
+    certificate for `app_domain`. That precondition blocks `plan` for wildcard or SAN-only certificates until it
+    is adapted. The API reads neither Host nor X-Forwarded-Host. Owner follow-up: confirm the managed policy's
+    header list. If it forwards `CloudFront-Viewer-Address`, switching removes the Host coupling.
+11. **HR-11 (Info): Terraform not formatted or validated locally.** No `terraform` binary was available.
+    `fmt -check` and `validate` run in CI only (merge gate). Nothing in `infra/` has been planned or applied.
+12. **HR-12 (Info): no database CHECK on `audit_events.target_id` case.** Canonicalisation happens at the request
+    boundary. A CHECK was not added because some target ids are not UUIDs (for example flag keys). Rows written
+    before this run keep the case they were stored with.
+13. **HR-13 (Info; review R-1): one acceptance check skips in CI.** HD-S09 compares `.env.example` with the base
+    commit via `git show`. CI's shallow checkout (fetch-depth 1) makes it skip, and the stated fallback pin does
+    not exist. This is a coverage gap, not a loosened expectation (route: tester).
+
+### 13.6 F-03 history
+
+- **Open** since review F-03 of run `REQ-20261008-webapp-foundation`, and carried over in step 3 (F-14). The API
+  trusted only the VPC CIDR, so `req.ip` was the CloudFront edge address. Every per-IP control, the WAF rate rule
+  and the IP-reputation rule keyed on shared edge addresses. One attacker near a POP could lock out everyone
+  behind it, and audit and login-attempt IPs were useless for forensics. It was not recorded in this document
+  until now. The platform audit of this run raised it again as P2 (Medium).
+- **Fixed in code and IaC** in fix round 1 (`b603b14`): the derived client address (13.3, item 5), the
+  origin-verify header and ALB rule, the CLOUDFRONT-scope WAF, the Secrets Manager container and the deploy gate
+  in `infra/README.md`.
+- **Hardened** in fix round 2 (`8ac4360`): the placeholder rule answers 403 until rotation (H-2), the origin drift
+  postcondition and check block (H-3), and the host condition with the certificate precondition (HR-10).
+- **Status now: fixed in code and IaC, unverified in AWS.** It stays that way until the
+  [infra/README.md deploy-gate check](../infra/README.md#deploy-gate-cloudfront-origin-verification-and-client-address-fix-round-1-f-03)
+  is recorded: one real request through CloudFront shows the viewer address in `login_attempts.ip` and the audit
+  `ip`, and a direct ALB request without the header, or with the placeholder value, gets 403. HR-6 and HR-8
+  apply in the meantime.
+
+### 13.7 What was run
+
+Local runs on Windows, Node 22.23.3 (portable, the CI version), `CI=true`, one worker, **not GitHub CI**.
+PostgreSQL 16.15 (fresh cluster per session, `freight_app` without BYPASSRLS confirmed) and MinIO with SSE-KMS.
+
+| Step | Commit | Result |
+| --- | --- | --- |
+| builder: typecheck, eslint on changed files, unit tests | `c4f703b` | clean; shared 279, api 453, web 119 passed |
+| tester Tier H, first run: `migrate deploy` (10 migrations incl. `20261018000000_hardening`), seed, bucket, build | `c4f703b` | all rc 0 |
+| builder integration, first run | `c4f703b` | four-eyes, analysis, charge-labels, ocean-dd, fuel-outlook, intelligence, exports green; `hardening.int` 7 failed and `auth-hardening.int` 1 failed. All were classified as **test design** by amplified repro: an approval reason shorter than the existing CHECK allows, an AUDITED fixture violating `dd_invoices_audit_consistent`, an illegal transition, an uninitialised CSRF client. No product change |
+| tester acceptance (the new hardening files, touched and remaining api suites in batches, analysis and import parity) | `c4f703b` | all green after two test-design fixes in the tester's own files (one assertion moved and one added; two fixture faults); 0 failures |
+| platform and hardening security reviews (static) | `a0cf959`, `bcc23bb..c4f703b` | no Critical/High; P1, P2 and H-1 Medium; the rest Low |
+| fix round 2 builder: unit, typecheck, eslint | `c3f131b`..`8ac4360` | clean; api 460, web 119, shared 279 passed |
+| tester Tier L, fix round 2 | `8ac4360` | api static 41 passed, 1 declared skip (no terraform binary); shared 405/405; root typecheck and full lint rc 0 |
+| tester Tier H, fix round 2: `migrate deploy` (11 migrations incl. `20261019000000_hardening_fr2`) | `8ac4360` | all builder integration files green except `hardening.int` 10/11 (test design: a `feature_flags` UPDATE without the version bump the existing trigger requires); `hardening-id-case` 8/8, `hardening-label-cap` 5/5, all other api acceptance, parity, web acceptance (23 files) and web unit (15 files) green |
+| follow-up re-run | `76458e4` | `hardening.int` 11/11 twice; `hardening-id-case` 8/8; `hardening-label-cap` 5/5 |
+| code review | `76458e4` | APPROVE WITH NOTES; no weakened control or loosened expectation; merge gates: the tester commits `*/test-acceptance/**` (done in `4c61607`), CI `terraform fmt -check`/`validate` green, these docs |
+
+Not run: GitHub CI, `terraform fmt`/`validate` (no binary; CI runs both), `prisma migrate diff` against a shadow
+database (schema unchanged), container images, the compose stack, Playwright, any AWS deployment.

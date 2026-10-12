@@ -27,6 +27,12 @@ der når API-et starter: API-et nekter å starte og navngir variabelen (aldri ve
   være forskjellig fra `JWT_SECRET`, `CSRF_SECRET`, `REFRESH_PEPPER` og `MFA_ENC_KEY`. En verdi som er
   satt, men tom eller bare mellomrom, avvises overalt. Er den **ikke satt** utenfor produksjon, bruker
   API-et den offentlige utviklingsverdien i avsnitt 4.
+- `CLIENT_IP_HEADER` (herdingskjøringen, ikke en hemmelighet): tom/ikke satt, eller nøyaktig
+  `cloudfront-viewer-address`; alle andre verdier avvises. Når den er satt, er `ORIGIN_VERIFY_SECRET` påkrevd.
+- `ORIGIN_VERIFY_SECRET` (herdingskjøringen): valgfri. Hvis den er **satt**, må den være minst 43 tegn, ikke se
+  ut som en plassholder og være forskjellig fra `JWT_SECRET`, `CSRF_SECRET`, `REFRESH_PEPPER`, `MFA_ENC_KEY` og
+  `API_KEY_PEPPER`. En verdi som er satt, men tom eller bare mellomrom, avvises overalt. Det finnes ingen
+  utviklingsstandard: la begge variablene være usatt utenfor AWS.
 
 **Bare i produksjon (`NODE_ENV=production`, som også er standard når `NODE_ENV` ikke er satt)**
 
@@ -51,6 +57,12 @@ der når API-et starter: API-et nekter å starte og navngir variabelen (aldri ve
      ustabil; se rettingsrunde 2 i kjøringen `REQ-20261009-step4-intelligence`.)
 - `API_KEY_PEPPER` må i tillegg ha minst 256 anslåtte bit: minst 64 hex-tegn eller minst 43
   base64-symboler.
+- `ORIGIN_VERIFY_SECRET` får, når den er satt, de samme produksjonskontrollene som `API_KEY_PEPPER`: ingen verdi
+  fra `DOCUMENTED_DEV_SECRETS`, entropikontrollen `secretEntropyProblem` og minst 256 anslåtte bit.
+  Produksjon krever **ikke** `CLIENT_IP_HEADER` eller `ORIGIN_VERIFY_SECRET`. Uten dem knytter API-et alle
+  kontroller per adresse til `TRUST_PROXY`-adressen, som bak CloudFront er kantnodens adresse (restrisiko HR-6
+  i [technical/web-platform-security.md, del 13.5](../technical/web-platform-security.md#135-known-gaps-and-residual-risks-hardening),
+  engelsk).
 - `MFA_ENC_KEY` får ikke noe entropianslag (det er rått nøkkelmateriale). Den må komme fra en CSPRNG.
 - `DATABASE_URL` må inneholde `sslmode=require` eller `sslmode=verify-full` (`infra/` bruker
   `verify-full`).
@@ -88,6 +100,8 @@ med `secrets = [{ name, valueFrom = <ARN> }]`, og `infra/iam.tf` lar bare task-k
 | `MIGRATE_DATABASE_URL` | Migreringer, seed og importøren for offentlige priser (`npm run prices:import`) som `freight_owner` (skjemaeier, `BYPASSRLS`). Brukes aldri av det kjørende API-et | `api/prisma.config.ts`, `api/scripts/seed.ts`, `api/src/platform/prices-cli.ts` | **Ingen beholder i `infra/`** (mangel): operatøren gir den til migreringstasken (`infra/README.md` trinn 6) | `postgresql://freight_owner:local-dev-only@127.0.0.1:5433/freight_web` | `postgresql://freight_owner:local-dev-only@127.0.0.1:5433/freight_web_test` |
 | `REDIS_URL` | Lager for ratebegrensning (alle begrensere, også de for API-nøkler). Inneholder Redis AUTH-tokenet | `api/src/app.ts` | `…/redis-url`, `rediss://:<token>@<primærendepunkt>:6379` | `redis://redis:6379` (compose, uten autentisering) | ikke satt (begrenserlager i minnet) |
 | `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Statisk legitimasjon for objektlageret, **bare MinIO** | `api/src/storage/s3.ts`, `api/scripts/ensure-bucket.ts` | **Brukes ikke i AWS**: ECS-taskrollen gir S3-tilgang, så det finnes ingen statisk AWS-nøkkel | `localdev` / `localdev-minio-password` | `ci-only-minio` / `ci-only-minio-secret-not-for-production` |
+| `ORIGIN_VERIFY_SECRET` | Felles verdi som beviser at en forespørsel kom gjennom denne CloudFront-distribusjonen. CloudFront sender den som origin-headeren `x-origin-verify`, og ALB-en videresender til API-et bare når den stemmer. API-et stoler på `CloudFront-Viewer-Address` som klientadresse bare når den stemmer (sammenligning i konstant tid). Sladdes i logger; aldri i svar, revisjonsmetadata eller feil | `api/src/http/client-ip.ts` (via `config.ts`, `app.ts`) | `…/origin-verify-secret`: en egen beholder (`aws_secretsmanager_secret.origin_verify` i `infra/secrets.tf`), injisert med `valueFrom`. Den samme verdien ligger også i CloudFront-originens egendefinerte header og i ALB-lytterregelen, satt utenom Terraform ([infra/README.md](../infra/README.md#deploy-gate-cloudfront-origin-verification-and-client-address-fix-round-1-f-03), engelsk); Terraform skriver bare en plassholder som ikke er hemmelig, og ignorerer senere endringer | ikke satt (ingen utviklingsstandard) | ikke satt |
+| `CLIENT_IP_HEADER` | Ikke en hemmelighet: slår på utledningen av klientadressen bak CloudFront. Eneste godtatte verdi er `cloudfront-viewer-address` | `api/src/config.ts`, `api/src/http/client-ip.ts` | vanlig miljøvariabel i `infra/ecs.tf` (`cloudfront-viewer-address`) | ikke satt | ikke satt |
 | `S3_KMS_KEY_ID` | Hvilken KMS-nøkkel som krypterer lagrede dokumenter (en identifikator, ikke en hemmelighet) | `api/src/storage/s3.ts` | vanlig miljøvariabel: ARN-en til data-CMK-en (`infra/kms.tf`) | `fr-dev-key` (MinIO-nøkkelnavn) | `fr-ci-key` |
 
 ## 3. Oversikt: infrastruktur- og testlegitimasjon (API-et leser ikke disse)
@@ -122,7 +136,9 @@ fire `local-dev-…`- og fire `ci-only-…`-verdiene for `JWT_SECRET`, `CSRF_SEC
 selv om produksjon ikke sjekker dem ved navn: database- og MinIO-passordene ovenfor, MinIO-KMS-nøklene,
 seed-passordet og TOTP-hemmeligheten, og alle litteraler i `api/test/**` og `*/test-acceptance/**` (noen
 enhetstester bruker realistiske «produksjonslignende» verdier for å teste produksjonskontrollene; de er
-offentlige fordi de er committet).
+offentlige fordi de er committet). Det gjelder også testverdiene for `ORIGIN_VERIFY_SECRET` i `api/test/` og
+`api/test-acceptance/`: de står **ikke** i `DOCUMENTED_DEV_SECRETS`, så produksjon ville ikke avvise en av dem
+ved navn (restrisiko HR-8). Kopier aldri en verdi fra en test.
 
 ## 5. Rotasjon og konsekvenser
 
@@ -144,6 +160,7 @@ stund.
 | Redis AUTH-token | `aws elasticache modify-replication-group --replication-group-id <name>-redis --auth-token <new> --auth-token-update-strategy ROTATE --apply-immediately` (både gammelt og nytt godtas), oppdater `…/redis-auth-token` og `…/redis-url`, rull ut, og gjenta med `--auth-token-update-strategy SET` for å fjerne det gamle | Ingen nedetid i denne rekkefølgen. Tellere for ratebegrensning kan nullstilles. |
 | Statiske MinIO-/S3-nøkler | Bare utvikling og CI. I AWS finnes ingen statiske nøkler å rotere (taskrolle) | i.a. |
 | KMS-CMK-er | Automatisk årlig rotasjon av nøkkelmaterialet er på; gammelt materiale er fortsatt tilgjengelig for dekryptering | Ingen. |
+| `ORIGIN_VERIFY_SECRET` | Lag en ny verdi (`openssl rand -base64 48`), og følg deretter de fem stegene i [infra/README.md](../infra/README.md#deploy-gate-cloudfront-origin-verification-and-client-address-fix-round-1-f-03) (engelsk) i rekkefølge: Secrets Manager, ALB-regelen med gammel og ny verdi, ny utrulling av API-et, CloudFront-originens header, fjern den gamle verdien fra regelen | Ingen feilede forespørsler. Mellom utrullingen av API-et og oppdateringen av CloudFront stoler ikke API-et på viewer-headeren og knytter kontroller per adresse til kantnodens adresse (restrisiko HR-6), så hold det vinduet kort. Feil rekkefølge (CloudFront før ALB-regelen) gjør at ALB-en svarer 403 på alle API-forespørsler til regelen er oppdatert |
 | En tenants API-nøkkel | Eier/administrator lager en ny nøkkel, bytter klienten over og tilbakekaller deretter den gamle med en begrunnelse (Innstillinger > API keys) | Ingen, hvis det gjøres i den rekkefølgen. |
 
 ## 6. Sjekkliste for overlevering til kjøper

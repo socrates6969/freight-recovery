@@ -3714,3 +3714,386 @@ charges; currencies other than USD; built-in holiday lists; any automatic sendin
   tests only so far.
 - Review verdict: FAIL (STOP) on F1 at `22e4a73`; fixed in `10f8941`; re-review pending.
 - Not verified: GitHub CI, container images, the compose stack, Playwright, any AWS deployment.
+
+# Web platform: hardening run
+
+> Written by scriber for run `REQ-20261012-hardening` on 2026-10-12. Branch `feat/hardening` from `bcc23bb` (the
+> step 8 head). Build commits `cd596c3`..`c4f703b`; fix round 1 `f8d37f0`, `b603b14`; fix round 2 `c3f131b`,
+> `ce536c5`, `8ac4360`, `76458e4`. **Pre-product, synthetic data only, never deployed.** Threat rows T75-T85, the
+> status of each earlier residual and the open items HR-1..HR-13 are in
+> [technical/web-platform-security.md, section 13](technical/web-platform-security.md#13-hardening-run). The
+> user-facing description is in [README, hardening](README.md#hardening-improvements-to-existing-features).
+
+## Overview (hardening)
+
+The owner asked for no new features: improve the current ones and take care of security. The planner triaged
+every residual of steps 4-8 by customer value, security risk, effort and regression risk. A whole-platform
+security audit (P1-P5) and a security review of this run's diff (H-1..H-5) were added on top. The run
+delivers:
+
+- **Four-eyes, deeper.** A third refusal basis `label_author` (residual SC-1), and database backstops for the
+  D&D-invoice-editor rule (DD-6) and for packet decisions (FE-S2, UPDATE only).
+- **Honest failure.** Failed analyses get a reason code, an audit event and a claim-sheet note (SA-8). Bulk runs
+  say why they stopped (SA-2, SA-3), try failed claims last (SA-1, SA-8) and record `documentCount` (SA-4).
+- **Honest copy.** Basis-specific four-eyes texts (SA-11), confidence shown as a fixed rule setting, D&D preset
+  verification in words (DD-3), the price source kind (FO-1), the fuel-table cap text (FO-10), the learned-label
+  influence list on the Charges tab (SC-1), a 409 for the label retry conflict (SC-8) and accessible table names.
+- **Platform security.** A change-password lockout (P1), the client address behind CloudFront (P2, F-03),
+  session revocation on promotion to an MFA role (P3), invite parity (P4), a known-device exception to the
+  lockout (P5), canonical lower-case UUIDs (H-1), the >50-label truncation flag (H-4) and Terraform guards
+  (H-2, H-3).
+
+**Invariants.** `schema.prisma`, `package-lock.json`, `src/freight_recovery/**`, `webapp/**` and the frozen engine
+directories `packages/shared/src/{analysis,charge-intel,fuel,outlook,ocean-dd}` are byte-identical to `bcc23bb`,
+so rule outputs, finding texts, letters, packet hashes and parity are unchanged. There is no new route,
+permission, API-key scope, flag, tenant table, column, index, grant, policy or enum value. The only new
+environment variables are `CLIENT_IP_HEADER` and `ORIGIN_VERIFY_SECRET`. There are two new migration folders.
+`20261018000000_hardening` has been unchanged since it was committed. `20261019000000_hardening_fr2` contains
+only `CREATE OR REPLACE FUNCTION` and `REVOKE`.
+
+## Module Structure (hardening)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    subgraph Web["web/src"]
+        APR["ApprovalsPage"]
+        CSH["ClaimSheet + Analyze"]
+        BLK["BulkAnalyzeDialog"]
+        CHG["ChargeLinesPanel"]
+        PGS["Outlook, Fuel, Tariffs"]
+        CLI["api/client details"]
+    end
+    subgraph Shared["packages/shared/src"]
+        TCP["transparency-copy"]
+        AFR["analysis-failure"]
+        FEB["four-eyes bases"]
+        DTO["DTOs (additive)"]
+        ACT["audit-actions"]
+    end
+    subgraph API["api/src"]
+        RTE["http/route canonical ids"]
+        CIP["http/client-ip"]
+        DBG["http/db-guard"]
+        SVC["claims/service"]
+        ANA["claims/analysis"]
+        LAU["audit/label-authors"]
+        LIN["audit/label-influence"]
+        AFS["audit/analysis-failures"]
+        CND["db/analysis-candidates"]
+        CHS["intelligence/charges"]
+        AUT["auth service + session"]
+        USR["auth/users-routes"]
+    end
+    subgraph DB["PostgreSQL 16"]
+        M18["20261018 hardening"]
+        M19["20261019 hardening_fr2"]
+        GAP["approvals ext guard"]
+        GPK["packet decision guard"]
+        CHK["awaiting amounts CHECK"]
+    end
+    subgraph Infra["infra (Terraform)"]
+        CFR["CloudFront + WAF"]
+        ALB["ALB 403 + rule"]
+        SMS["origin-verify secret"]
+    end
+
+    APR --> TCP
+    CSH --> TCP
+    BLK --> TCP
+    CHG --> TCP
+    PGS --> TCP
+    CSH --> CLI
+    TCP --> AFR
+    TCP --> FEB
+    APR -. "HTTP" .-> SVC
+    CSH -. "HTTP" .-> ANA
+    CHG -. "HTTP" .-> CHS
+    RTE --> SVC
+    RTE --> ANA
+    SVC --> LAU
+    SVC --> AFS
+    ANA --> CND
+    ANA --> AFS
+    CHS --> LIN
+    SVC --> DBG
+    AUT --> CIP
+    USR --> AUT
+    SVC --> GAP
+    SVC --> GPK
+    ANA --> CHK
+    M18 --> GAP
+    M18 --> GPK
+    M18 --> CHK
+    M19 --> GAP
+    CFR --> ALB
+    SMS --> ALB
+    SMS --> CIP
+    ALB -. "x-origin-verify" .-> CIP
+    DTO --> ACT
+
+    style APR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CSH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BLK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PGS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TCP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AFR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style FEB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DTO fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ACT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RTE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CIP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DBG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SVC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ANA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LAU fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LIN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AFS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CND fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHS fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AUT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style USR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style M18 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style M19 fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GAP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style GPK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CHK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CFR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style ALB fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SMS fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Module/Function | Purpose | Key Dependencies | Changed in This Run |
+| --- | --- | --- | --- |
+| `api/prisma/migrations/20261018000000_hardening/` | `fr_approval_four_eyes_ext_guard` + `approvals_four_eyes_ext_guard` (D&D editors, label authors); `fr_packet_decision_guard` + deferred constraint trigger `evidence_packets_decision_guard`; CHECK `claims_awaiting_amounts_zero` | `approvals`, `dd_invoices`, `audit_events`, `charge_labels`, `evidence_packets`, `claims` | new |
+| `api/prisma/migrations/20261019000000_hardening_fr2/` | `CREATE OR REPLACE` of `fr_approval_four_eyes_ext_guard` with the truncated (tenant-wide) label-author branch; `REVOKE` | 20261018 | new |
+| `api/src/http/route.ts` | `canonicalizeParams`: lower-cases every UUID path parameter after schema parsing in `defineRoute` | Zod | changed |
+| `api/src/http/client-ip.ts` | `deriveClientIp`, `parseViewerAddress`, `secretEquals` (constant time), `registerClientIp` (request getter `clientIp`, first `onRequest` hook) | `config.ts` | new |
+| `api/src/http/db-guard.ts`, `http/errors.ts`, `app.ts` | `isPacketDecisionDbError` -> 409 `invalid_state` (log `packet_decision_db_guard`); `AnalysisFailure` 422 with `details`; `claim.analysis_failed` append in its own tx; limiter keys on `clientIp` | Fastify | changed |
+| `api/src/claims/service.ts` | `transition()`: bases `revision_author`, `dd_invoice_editor`, `label_author`, looked up by the database claim id; approval queue `selfAuthoredBasis`; `getClaim().analysisFailure` | `audit/dd-editors`, `audit/label-authors`, `audit/analysis-failures` | changed |
+| `api/src/audit/label-authors.ts` | `labelAuthorsByClaim`: one query; label authors before `claim.analyzed`; tenant-wide when `learnedLabelIdsTruncated` | raw SQL in the tenant tx, `fr_current_tenant()` | new |
+| `api/src/audit/label-influence.ts` | `learnedLabelIdsOfClaim`: the stored `learnedLabelIds` (UUIDs only, at most 50, stored order) | raw SQL in the tenant tx | new |
+| `api/src/audit/analysis-failures.ts` | `analysisFailureOf`: latest `claim.analysis_failed` + count | raw SQL in the tenant tx | new |
+| `api/src/db/analysis-candidates.ts` | `analysisCandidates`: bulk candidates, never-failed first, then oldest; `take` 1..100 | raw SQL in the tenant tx | new |
+| `api/src/claims/analysis.ts` | `NotStorableError`, `isAnalysisRefusal`, `classifyAnalysisFailure`, `appendAnalysisFailure`, `bulkStopReason`, `learnedLabelIdsTruncated`; `analyzeAwaiting` with `stoppedBy` and the error-path summary | frozen engine (unchanged) | changed |
+| `api/src/intelligence/charges.ts` | `classifierFromRows`, `influenceView`; `chargeLines` reads labels once in the tx and classifies after it; SC-8 409 | `audit/label-influence` | changed |
+| `api/src/auth/service.ts`, `session.ts`, `routes.ts`, `users-routes.ts` | change-password lock (`lockedForSeconds` before argon2, `recordFailure`, clear on success, rate group `auth`); `isKnownDevice`; promotion revoke via `revokeUserSessionsTx(..., 'role_requires_mfa')`; invite parity + platform event | lockout store, session | changed |
+| `api/src/audit/chain.ts`, `config.ts`, `logging.ts` | allow-listed keys `stoppedBy`, `documentCount`, `knownDevice`, `learnedLabelIdsTruncated`; `CLIENT_IP_HEADER`, `ORIGIN_VERIFY_SECRET` parsing; `x-origin-verify` redaction | - | changed |
+| `packages/shared/src/transparency-copy.ts` | fixed texts (C6), frozen objects | `analysis-failure`, `four-eyes` | new |
+| `packages/shared/src/analysis-failure.ts`, `four-eyes.ts`, `dto.ts`, `analysis-dto.ts`, `charge-intel-dto.ts`, `outlook-dto.ts`, `audit-actions.ts` | `ANALYSIS_FAILURE_REASONS`, `FOUR_EYES_CLAIM_BASES`, `BULK_STOP_REASONS`, `PRICE_SOURCE_KINDS`; additive DTO fields; three appended audit actions | - | new / changed |
+| `web/src` (Approvals, ClaimSheet, AnalyzeClaimSection, BulkAnalyzeDialog, ChargeLinesPanel, FuelTablesPage, TariffsTab, OutlookPage, ClaimsPage, FieldsTable, ReviewQueuePage, `api/client.ts`) | render the C6 texts as text nodes; `ApiError.details`; `aria-label` on five tables | shared | changed |
+| `infra/` (`versions.tf`, `locals.tf`, `secrets.tf`, `cloudfront.tf`, `alb.tf`, `ecs.tf`, `iam.tf`, `waf.tf`, `README.md`) | origin-verify header and secret, ALB default 403 + header/host rule (created as 403), origin postcondition + `check` block, ACM precondition, CLOUDFRONT-scope WAF, ECS env/secret | - | changed |
+
+## Function Call Graph (hardening)
+
+Main pipeline (four-eyes and analysis):
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    DR["defineRoute"] --> CP["canonicalizeParams"]
+    CP --> AP["POST packet/approve"]
+    CP --> AZ["POST claims/:id/analyze"]
+    CP --> BK["POST analyze-awaiting"]
+    AP --> TR["transition()"]
+    TR --> DE["ddInvoiceEditorsByClaim"]
+    TR --> LA["labelAuthorsByClaim"]
+    TR --> IA["insert approvals row"]
+    IA --> XG["ext guard trigger"]
+    TR --> PS["update packet status"]
+    PS --> DG["decision guard at COMMIT"]
+    AZ --> AC["analyzeClaim"]
+    AC --> LT["learnedLabelIdsTruncated"]
+    AC --> CF["classifyAnalysisFailure"]
+    CF --> AF["appendAnalysisFailure"]
+    BK --> AW["analyzeAwaiting"]
+    AW --> CA["analysisCandidates"]
+    AW --> AC
+    AW --> BS["bulkStopReason"]
+
+    style CP fill:#1e90ff,stroke:#1565c0,color:#fff
+    style TR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style XG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DG fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LT fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AF fill:#1e90ff,stroke:#1565c0,color:#fff
+    style AW fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CA fill:#1e90ff,stroke:#1565c0,color:#fff
+    style BS fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+Detail (request boundary, authentication, Charges):
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    OR["onRequest (first hook)"] --> RC["registerClientIp"]
+    RC --> DC["deriveClientIp"]
+    DC --> SE["secretEquals"]
+    DC --> PV["parseViewerAddress"]
+    DC --> LK["limiter keys, audit ip"]
+    PW["POST change-password"] --> CH["changePassword"]
+    CH --> LF["lockedForSeconds"]
+    CH --> RF["recordFailure"]
+    LG["POST login, mfa/verify"] --> KD["isKnownDevice"]
+    RL["PATCH users/:id/role"] --> RV["revokeUserSessionsTx"]
+    CL["GET charge-lines"] --> CLN["chargeLines"]
+    CLN --> LI["learnedLabelIdsOfClaim"]
+    CLN --> CR["classifierFromRows"]
+    CLN --> IV["influenceView"]
+
+    style RC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style DC fill:#1e90ff,stroke:#1565c0,color:#fff
+    style SE fill:#1e90ff,stroke:#1565c0,color:#fff
+    style PV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LK fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CH fill:#1e90ff,stroke:#1565c0,color:#fff
+    style KD fill:#1e90ff,stroke:#1565c0,color:#fff
+    style RV fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CLN fill:#1e90ff,stroke:#1565c0,color:#fff
+    style LI fill:#1e90ff,stroke:#1565c0,color:#fff
+    style CR fill:#1e90ff,stroke:#1565c0,color:#fff
+    style IV fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+| Function | Defined In | Called By | Purpose |
+| --- | --- | --- | --- |
+| `canonicalizeParams(params)` | `api/src/http/route.ts` | `defineRoute` (every route) | lower-case UUID-shaped path parameters; other values unchanged |
+| `transition(...)` | `api/src/claims/service.ts` | approve, reject, edit, send routes | under the claim lock: revision author, then D&D editor, then label author (approve/reject only); audit the refusal |
+| `labelAuthorsByClaim(tx, claimIds)` | `api/src/audit/label-authors.ts` | `transition`, approval queue | user ids excluded by the `label_author` basis, per claim (one query) |
+| `learnedLabelIdsTruncated(...)` | `api/src/claims/analysis.ts` | `analyzeClaim` | conservative upper bound: may the engine's 50-id list omit labels? |
+| `classifyAnalysisFailure(err, buildWithoutFuel)` | `api/src/claims/analysis.ts` | analyze routes | `fuel_check`, `amount_out_of_range` or `input_values` |
+| `appendAnalysisFailure(...)` | `api/src/claims/analysis.ts` | `app.ts` error branch, `analyzeAwaiting` | `claim.analysis_failed` in its own transaction (fail closed) |
+| `analysisCandidates(tx, take)` | `api/src/db/analysis-candidates.ts` | `analyzeAwaiting` | never-failed first, then oldest `createdAt`, then id |
+| `bulkStopReason(budgetRefused, analyzed, limit)` | `api/src/claims/analysis.ts` | `analyzeAwaiting` | `budget`, `limit` or `candidates` |
+| `analysisFailureOf(tx, claimId)` | `api/src/audit/analysis-failures.ts` | `getClaim` | `analysisFailure` for an awaiting claim |
+| `deriveClientIp(req, cfg)` | `api/src/http/client-ip.ts` | `registerClientIp` getter | viewer address if the header switch, secret and strict parse all hold; otherwise the `TRUST_PROXY` address |
+| `changePassword(...)` | `api/src/auth/service.ts` | `POST /auth/change-password` | lock check before argon2, failure counting and audit, lock cleared on success |
+| `isKnownDevice(deps, tx, presented, userId, now)` | `api/src/auth/session.ts` | `login`, MFA verify | current, unrevoked, unexpired token of a live family of the same user; read only |
+| `revokeUserSessionsTx(tx, userId, reason)` | `api/src/auth/session.ts` | role change (`role_requires_mfa`), password change, disable, MFA reset | revoke every live refresh family |
+| `chargeLines(db, claimId)` | `api/src/intelligence/charges.ts` | `GET /claims/:id/charge-lines` | one tenant transaction for labels and influence ids; classification after it |
+
+## Data Flow (approve or reject a claim)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["POST packet/approve or reject"] --> B["defineRoute: lower-case id"]
+    B --> C["lock claim, load latest packet"]
+    C --> D{"revision author?"}
+    D -->|no| E{"D&D invoice editor?"}
+    D -->|yes| R["audit four_eyes_denied, 403"]
+    E -->|no| F{"label author?"}
+    E -->|yes| R
+    F -->|yes| R
+    F -->|no| G["insert approvals row"]
+    G --> H{"ext guard trigger refuses?"}
+    H -->|yes| S["403, log four_eyes_db_guard"]
+    H -->|no| I["update packet status"]
+    I --> J{"decision row at COMMIT?"}
+    J -->|no| T["409 invalid_state"]
+    J -->|yes| K["200, audit claim decision"]
+
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style F fill:#1e90ff,stroke:#1565c0,color:#fff
+    style H fill:#1e90ff,stroke:#1565c0,color:#fff
+    style J fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+The trigger and the commit-time check are backstops. Through the current routes the service check refuses first
+and the decision row is always written in the same transaction, so `S` and `T` are not reachable via the API
+today. Integration tests reach them by writing to the database directly.
+
+## Data Flow (client address)
+
+```mermaid
+%%{init: {'theme': 'neutral'}}%%
+graph TD
+    A["request reaches the API"] --> B{"CLIENT_IP_HEADER set?"}
+    B -->|no| Z["TRUST_PROXY address"]
+    B -->|yes| C{"x-origin-verify equals secret?"}
+    C -->|no| Z
+    C -->|yes| D{"CloudFront-Viewer-Address parses?"}
+    D -->|no| Z
+    D -->|yes| V["viewer ip"]
+    V --> L["rate limits, lockout, audit ip, logs"]
+    Z --> L
+
+    style B fill:#1e90ff,stroke:#1565c0,color:#fff
+    style C fill:#1e90ff,stroke:#1565c0,color:#fff
+    style D fill:#1e90ff,stroke:#1565c0,color:#fff
+    style V fill:#1e90ff,stroke:#1565c0,color:#fff
+```
+
+The fallback never fails a request. In AWS the ALB already refuses (403) a request without the right
+origin-verify value, so a request reaches the API without it only from inside the VPC or during a rotation
+window (HR-6).
+
+## Database guards (hardening)
+
+| Guard | Kind | Fires on | Refuses | Error at the API |
+| --- | --- | --- | --- | --- |
+| `approvals_four_eyes_ext_guard` | `BEFORE INSERT` row trigger, `SECURITY DEFINER` | APPROVE/REJECT rows | (a) D&D invoice editors of the claim; (b) label authors of the claim (C1), tenant-wide when truncated (migration 20261019) | 403 `four_eyes_required` (log `four_eyes_db_guard`, not audited) |
+| `evidence_packets_decision_guard` | `CONSTRAINT TRIGGER ... DEFERRABLE INITIALLY DEFERRED` | `UPDATE OF status` to APPROVED, REJECTED, SEND_READY | no `approvals` row with the same packet, tenant, `to_status` and action (any such row, see HR-2) | 409 `invalid_state` (log `packet_decision_db_guard`) |
+| `claims_awaiting_amounts_zero` | CHECK, validated at migration | INSERT and UPDATE of `claims` | an `AWAITING_ANALYSIS` claim with a non-zero claimed, recoverable or pending amount | 500 (no route can violate it) |
+
+Both functions pin `search_path = public, pg_temp`, match `tenant_id` explicitly (a missing or foreign
+`app.tenant_id` cannot hide rows) and have `EXECUTE` revoked from `PUBLIC`. Existing rows are not re-validated.
+The CHECK applies even with `session_replication_role = replica`. The two triggers do not, so test fixtures that
+disable triggers bypass them.
+
+## Policy defaults (hardening)
+
+| ID | Default | Flip point |
+| --- | --- | --- |
+| H-D1 | Label authors = writers **before** the analysis plus the label's current creator; later writers and deleters do not count | `label-authors.ts` + migration (new migration needed) |
+| H-D2 | When the 50-id list may be incomplete, exclude every tenant label author before the analysis (fail closed; OQ-H1) | same |
+| H-D3 | Known-device exception for login and MFA verify only, never for change-password; the presented token must be the current (unused) one | `auth/service.ts`, `session.ts` |
+| H-D4 | Invite for another tenant's email: create the invite and attempt the mail as usual; acceptance is refused | `users-routes.ts` |
+| H-D5 | `CLIENT_IP_HEADER` optional in production; fallback to `TRUST_PROXY` | `config.ts` (follow-up for HR-6) |
+| H-D6 | Custom CloudFront origin request policy kept, with a host condition and ACM precondition (HR-10) | `cloudfront.tf`, `alb.tf` |
+| H-D7 | Failure reason precedence: `fuel_check` (when the same analysis without the fuel check would be storable), then `amount_out_of_range`, then `input_values` | `classifyAnalysisFailure` |
+
+## Deferred (hardening)
+
+H-5 (revoke versus rotation race, HR-1); a tighter packet-decision guard or `COMMENT ON FUNCTION` (HR-2); a
+decision guard for packet INSERTs and document status (HR-3); accepting a current and a previous origin-verify
+value, and requiring `CLIENT_IP_HEADER` behind a flag (HR-6); putting the test literals on the production
+denylist (HR-8); a lower-case CHECK on `audit_events.target_id` (HR-12); deeper recovery for claims whose
+documents cause the failure (OQ-H2); revoking API keys when a user is disabled (OQ-H3); a human acceptor for
+auto-accepted documents (FE-S1, OQ-H4).
+
+## Interfaces for later work (after hardening)
+
+- New tenant-chain actions `claim.analysis_failed` and `auth.password.change_failed`, and the platform-chain
+  action `invite.existing_account`, were appended to the shared action list. New allow-listed keys:
+  `stoppedBy`, `documentCount`, `knownDevice` and `learnedLabelIdsTruncated`.
+- Additive DTO fields: `ApprovalItem.selfAuthoredBasis`, `ClaimDetail.analysisFailure`,
+  `BulkAnalyzeResponse.stoppedBy`, `failed[].reasonCode`, `ChargeLinesResponse.influence`,
+  `OutlookSeries.provenance.sourceKind`, and the 422 analyze `details`.
+- Code must read the client address from `req.clientIp`, never from `req.ip` (architecture test). Audit
+  `targetId` must come from a loaded row (architecture test).
+- A new four-eyes basis needs the service check, the trigger (new migration), a basis text in
+  `transparency-copy.ts` and its order in `FOUR_EYES_CLAIM_BASES`.
+
+## Notes (hardening)
+
+- What ran (local, Windows, Node 22.23.3, `CI=true`, one worker, **not GitHub CI**): builder Tier L (typecheck,
+  eslint, unit shared 279, api 460, web 119). Tester Tier L (shared acceptance 405/405, api static 41 + 1 declared
+  skip, full lint and typecheck). Tier H on fresh PostgreSQL 16.15 + MinIO clusters: both migrations applied
+  (11 total); every builder integration file green, with `hardening.int` 11/11 twice at `76458e4`; every api
+  acceptance suite (including the 15 new `hardening-*` files), web acceptance (23 files), web unit and both parity
+  suites green. Details: [security section 13.7](technical/web-platform-security.md#137-what-was-run).
+- Failures on the way were all test design, each shown by an amplified repro: approval reasons and an AUDITED
+  fixture against existing CHECKs, an illegal packet transition, an uninitialised CSRF client, and a
+  `feature_flags` update without the version bump. Two acceptance fixtures were also fixed. No expected outcome
+  was loosened.
+- Review: APPROVE WITH NOTES. Merge gates: the tester commits `*/test-acceptance/**` (done in `4c61607`); CI `terraform fmt -check`
+  and `validate` are green (not run locally, no binary); these docs.
+- Not verified: GitHub CI, Terraform fmt/validate, container images, the compose stack, Playwright, any AWS
+  deployment (F-03 stays "fixed in code and IaC, unverified in AWS").

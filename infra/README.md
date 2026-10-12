@@ -99,7 +99,13 @@ Set the value (first deploy) and rotate it (same steps):
    Field=host-header,HostHeaderConfig={Values=[<app_domain>]}`; `modify-rule` replaces every condition). On the first
    deploy (and after any rule replacement), replace the placeholder with the new value only and switch the action
    to forward: `--actions Type=forward,TargetGroupArn=<api target group arn>`.
-3. Restart the API service so the tasks read the new `ORIGIN_VERIFY_SECRET`.
+3. Restart the API service so the tasks read the new `ORIGIN_VERIFY_SECRET`. **Rotation window (residual
+   R-4 / HR-6):** from this restart until step 4 has deployed, CloudFront still sends the old value, so the API
+   does not trust `CloudFront-Viewer-Address` and falls back to the `TRUST_PROXY` address, which is the CloudFront
+   edge address. During that window the per-address limits, `login_attempts.ip` and the audit `ip` key on edge
+   addresses again, as in F-03. Requests do not fail. Keep the window short: run step 4 right after the
+   restart, and rotate at a quiet time. The API accepts only one value at a time; accepting a current and a
+   previous value would close this window (follow-up).
 4. CloudFront: set the `x-origin-verify` origin custom header of the `api` origin to the new value and wait
    for the distribution to deploy.
 5. Remove the old value from the ALB rule.
@@ -109,6 +115,12 @@ address, that a direct request to the ALB without the header gets `403`, and tha
 the placeholder value (`x-origin-verify: placeholder-set-out-of-band-see-infra-readme`) gets `403`. Until that check is recorded,
 F-03 stays open as "fixed in code and IaC, unverified in AWS". During step 3 a task with the old value falls
 back to the TRUST_PROXY address (never fails a request).
+
+Production does not require `CLIENT_IP_HEADER`. If the ECS task runs without it, the API starts normally and
+silently keys every per-address control on the edge address again (with it set, a missing
+`ORIGIN_VERIFY_SECRET` stops the start). Check `CLIENT_IP_HEADER` in the running task definition as part of the
+deploy gate. Residuals, the F-03 history and the
+open follow-ups: [technical/web-platform-security.md, section 13](../technical/web-platform-security.md#13-hardening-run).
 
 ## Known gap
 

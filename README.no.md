@@ -231,6 +231,10 @@ Byggesteg 1 til 8 er ferdige:
   til gjennomgang. Når kontrollen kjøres, opprettes et D&D-krav med bevispakke og et utkast til tvistebrev til
   gjennomgang etter firøyeprinsippet. **Ikke juridisk rådgivning.** Se
   [Kontroll av demurrage og detention for sjøcontainere (steg 8)](#kontroll-av-demurrage-og-detention-for-sjøcontainere-steg-8).
+- **Herding (etter steg 8):** ingen nye funksjoner. De eksisterende er tydeligere og vanskeligere å misbruke:
+  databasesperrer bak firøyereglene, en ny firøyeregel for teamets gebyretiketter, synlige grunner når en
+  analyse feiler eller en masseanalyse stopper, klarere formuleringer, og rettelser i innlogging, invitasjoner og
+  klientadressen bak CloudFront. Se [Herding: forbedringer av eksisterende funksjoner](#herding-forbedringer-av-eksisterende-funksjoner).
 
 «Send» merker bare et krav som klart til sending og logger det i revisjonssporet. Ingen e-post sendes, og
 ingen penger flyttes. De seedede kravene og bevispakkene er syntetiske og er transkribert fra
@@ -716,8 +720,10 @@ dette; skjermbildene skjuler bare knappen.
   kan ikke godta det. En annen gjennomgåer må gjøre det. Å bekrefte et felt, avvise et felt, endre
   dokumenttypen og avvise dokumentet teller ikke, og står åpent for alle med gjennomgangsrett. Et
   dokument som er lastet opp med en API-nøkkel, regnes som lastet opp av den som opprettet nøkkelen.
-- **Hva du ser.** På `/approvals` viser raden «You edited this revision. Another approver must approve
-  it.» i stedet for Approve/Reject. I gjennomgangsdialogen erstatter «You uploaded or edited this
+- **Hva du ser.** På `/approvals` viser raden hvorfor du ikke kan avgjøre, i stedet for Approve/Reject (siden
+  herdingskjøringen én tekst per grunn, for eksempel «You created a revision of this claim (by editing,
+  analyzing or running the D&D audit). Another approver must approve it.»; se
+  [Herding](#firøyeprinsippet-hvem-som-ikke-kan-godkjenne-og-hvorfor)). I gjennomgangsdialogen erstatter «You uploaded or edited this
   document. Another reviewer must accept it.» knappen Accept document (tekstene i appen er på engelsk).
   Prøver du likevel (et gammelt skjermbilde eller en annen fane), svarer API-et 403 `four_eyes_required`
   («A different person must make this decision.»), endrer ingenting og registrerer forsøket i
@@ -771,24 +777,26 @@ Tillatelsen er `claims:analyze` i `packages/shared/src/rbac.ts`. API-nøkler kan
    arbeidslisten i Recovery intelligence.
 
 Avvises analysen, viser seksjonen en fast melding: 409 «This claim is no longer awaiting analysis or has no
-accepted documents. Reload to continue.», 422 «The extracted values of this claim cannot be analysed
-automatically.», 403 «You do not have permission to analyze claims.», 429 «Too many requests. Try again
+accepted documents. Reload to continue.», 422 én av tre grunntekster (siden herdingskjøringen; se
+[Analyser som feiler](#analyser-som-feiler)), 403 «You do not have permission to analyze claims.», 429 «Too many requests. Try again
 later.», alt annet «Analysis failed. Try again.» En avvist analyse endrer ingenting.
 
 En 422 betyr at reglene avviste inndataene (for eksempel et feilformet beløp eller en feilformet dato),
 eller at resultatet ikke kan lagres (et negativt beløp, eller mer enn 2 147 483 647 cent). Kravet blir
 stående som Venter på analyse. Godtatte dokumenter kan ikke endres, så et slikt krav trenger en ny import
-av rettede dokumenter (se restrisikoene).
+av rettede dokumenter (se restrisikoene). Siden herdingskjøringen viser kravarket en merknad med dato, antall
+mislykkede forsøk og grunnen, synlig for alle som kan lese kravet.
 
 ### Analysere krav som venter (masseanalyse)
 
 På kravsiden åpner **Analyze awaiting claims** en dialog («Analyzes up to 10 claims awaiting analysis,
-oldest first.»). **Analyze** sender én forespørsel med `{ "limit": 10 }` og viser et sammendrag som «Analyzed
+oldest first. Claims whose analysis failed before are tried after the others.»). **Analyze** sender én forespørsel med `{ "limit": 10 }` og viser et sammendrag som «Analyzed
 8. Skipped 1. Could not analyze 1. 4 still awaiting analysis.», pluss kravnumrene som ikke kunne
 analyseres.
 
 - API-et godtar `limit` 1..25 (standard 10) og ser på høyst `min(4 x limit, 100)` kandidater: krav som
-  venter på analyse og har minst ett godtatt dokument, eldste først.
+  venter på analyse og har minst ett godtatt dokument. Krav uten en tidligere mislykket analyse kommer først,
+  deretter de som har feilet før; innenfor hver gruppe eldste først.
 - Hvert krav analyseres i sin egen transaksjon, nøyaktig som enkelthandlingen. Et krav som noen andre har
   analysert i mellomtiden, **hoppes over** (skipped); et krav som får 422, **kunne ikke analyseres**
   (could not analyze). Krav som allerede er analysert, forblir analysert selv om et senere feiler.
@@ -796,17 +804,20 @@ analyseres.
   standard 30 per 10 minutter). En masseforespørsel bruker én enhet for det første kravet den prøver, og
   én enhet til for hvert nytt krav den prøver, også krav som hoppes over eller ikke kunne analyseres. Når
   budsjettet er brukt opp, stopper kjøringen tidlig og svarer likevel normalt: kravene den ikke prøvde,
-  blir stående som Venter på analyse og telles i «still awaiting analysis». Dialogen sier ikke at
-  budsjettet stoppet kjøringen; vent til vinduet er over og kjør på nytt. Er budsjettet allerede tomt, får
+  blir stående som Venter på analyse og telles i «still awaiting analysis». Siden herdingskjøringen sier
+  dialogen da «Stopped early: your analysis budget is used up for now. Try again later.»; vent til vinduet er
+  over og kjør på nytt. Er budsjettet allerede tomt, får
   forespørselen 429.
-- Et krav som fortsetter å feile med 422, forblir en kandidat. Fordi masseanalysen tar de eldste kravene
-  først, prøves det (og belastes) på nytt i hver kjøring til det importeres på nytt.
+- Et krav som fortsetter å feile med 422, forblir en kandidat til det importeres på nytt. Siden
+  herdingskjøringen prøves det etter kravene som ikke har feilet, så det holder ikke lenger nyere krav tilbake.
+  Når det prøves, belastes det fortsatt.
 
 ### Firøyeprinsippet etter analyse
 
 Den som kjører analysen (enkeltvis eller som masseanalyse), registreres som forfatter av revisjon 1.
 Firøyeprinsippet avviser da den personens godkjenning eller avvisning av kravet, og `/approvals` viser dem
-«You edited this revision. Another approver must approve it.» (den eksisterende teksten). En annen
+«You created a revision of this claim (by editing, analyzing or running the D&D audit). Another approver must
+approve it.» (siden herdingskjøringen). En annen
 godkjenner må avgjøre. De som lastet opp eller redigerte kravets dokumenter, regnes **ikke** som forfattere
 av kravet; firøyeprinsippet for dokumenter krevde allerede at en annen person godtok dokumentene, unntatt
 dokumenter som ble godtatt automatisk ved opplasting.
@@ -816,7 +827,7 @@ dokumenter som ble godtatt automatisk ved opplasting.
 | Rute | Innhold | Suksess |
 | --- | --- | --- |
 | `POST /api/v1/claims/:id/analyze` | `{}` (eller uten innhold) | 201: `claim` (status og beløp i cent), `packet` (id, revisjon 1, innholdshash), `analysis` (`rulesVersion: "rules-v1"`, antall funn) |
-| `POST /api/v1/claims/analyze-awaiting` | `{ "limit": 1..25 }` (valgfritt, standard 10) | 200: `limit`, `examined`, `analyzed[]`, `skipped[]`, `failed[]`, `remaining` |
+| `POST /api/v1/claims/analyze-awaiting` | `{ "limit": 1..25 }` (valgfritt, standard 10) | 200: `limit`, `examined`, `analyzed[]`, `skipped[]`, `failed[]` (hver med `reasonCode` siden herdingskjøringen), `remaining`, `stoppedBy` |
 
 Begge rutene krever en innlogget bruker (API-nøkler avvises) og går gjennom de samme Origin- og
 CSRF-kontrollene som alle andre ruter som endrer data. Hver vellykket analyse registreres i tenantens
@@ -1343,6 +1354,141 @@ tilgjengelighets- og returdatoer skrives inn); ingen kontroll av hvem som ble fa
 NVOCC-forlengelsen i 541.7(c), per diem-, chassis- og timegebyrer og andre valutaer enn USD håndteres ikke;
 malene kan være utdaterte, og CMA CGM-malen er fra en sekundærkilde. Hele listen står i
 [technical/web-platform-security.md, del 12.5](technical/web-platform-security.md#125-accepted-residuals-step-8)
+(engelsk).
+
+## Herding: forbedringer av eksisterende funksjoner
+
+Kjøringen `REQ-20261012-hardening` legger **ikke** til noen ny funksjon, rute, tillatelse eller brukerinnstilling.
+Den gjør eksisterende funksjoner tydeligere og vanskeligere å misbruke, og den retter funnene fra en
+sikkerhetsrevisjon av hele plattformen. Før produkt, bare syntetiske data, aldri utrullet. Trusselmodellen,
+status for hver tidligere restrisiko og hva som fortsatt er åpent, står i
+[technical/web-platform-security.md, del 13](technical/web-platform-security.md#13-hardening-run) (engelsk).
+Arkitektur: [ARCHITECTURE.no.md, herdingskjøringen](ARCHITECTURE.no.md#nettplattform-herdingskjøringen).
+
+### Firøyeprinsippet: hvem som ikke kan godkjenne, og hvorfor
+
+Godkjenning og avvisning av et krav avvises av tre grunner, som kontrolleres i denne rekkefølgen. API-et svarer
+403 `four_eyes_required`, ingenting endres, og forsøket registreres i revisjonssporet. `/approvals` viser teksten
+for den første grunnen som gjelder, i stedet for Approve/Reject (tekstene i appen er på engelsk):
+
+| Grunn | Tekst på `/approvals` |
+| --- | --- |
+| Du har laget en revisjon av kravet (redigering, analyse eller D&D-kontroll) | «You created a revision of this claim (by editing, analyzing or running the D&D audit). Another approver must approve it.» |
+| Du har lagt inn eller redigert kravets D&D-faktura | «You entered or edited the D&D invoice of this claim. Another approver must approve it.» |
+| **Ny:** du har satt en gebyretikett for teamet som påvirket analysen av kravet | «You set a team charge label that influenced this analysis. Another approver must approve it.» |
+
+- **Etikettforfattere.** Du er etikettforfatter for et krav hvis du, før analysen kjørte, opprettet eller endret
+  en av teametikettene som analysen registrerte som påvirkende. Å endre en etikett etter analysen teller ikke,
+  og det gjør heller ikke sletting. Krav som aldri er analysert (seedede krav og D&D-krav), har ingen
+  etikettforfattere.
+- **Mer enn 50 påvirkende etiketter.** Analysen registrerer høyst 50 etiketter. Når flere kan ha påvirket et
+  krav, noterer analysen at listen er ufullstendig. **Alle** i organisasjonen som satte en teametikett før
+  analysen, utelukkes da fra å godkjenne kravet. I et lite team kan det bety at ingen i organisasjonen kan
+  godkjenne det (akseptert foreløpig).
+- **Sperre i databasen.** En databasetrigger håndhever nå også reglene for D&D-faktura og etiketter, slik en
+  allerede gjorde for revisjonsregelen. I tillegg kan en direkte oppdatering i databasen ikke lenger merke en
+  bevispakke som godkjent, avvist eller klar til sending uten en tilhørende beslutningsrad.
+- **Id-er med store bokstaver.** Id-er for krav, fakturaer og annet i URL-er behandles uten hensyn til store og
+  små bokstaver og lagres med små bokstaver. Før denne kjøringen kunne en id med store bokstaver i URL-en skjule
+  en redigering for firøyekontrollen.
+
+### Analyser som feiler
+
+Når en analyse ikke kan lagres (422), sier kravarket nå hvorfor:
+
+| Grunnkode | Tekst |
+| --- | --- |
+| `input_values` | «The extracted values of this claim cannot be analysed automatically. Accepted documents cannot be changed, so the claim stays awaiting analysis.» |
+| `amount_out_of_range` | «The computed amounts are negative or larger than the product can store, so nothing was saved.» |
+| `fuel_check` | «The fuel check produced amounts that cannot be stored. Clear the fuel inputs or choose another fuel table, then analyze again.» |
+
+Som før skriver en avvist analyse ingenting til kravet, pakken eller dokumentene. Hver feil registreres nå i
+revisjonssporet som `claim.analysis_failed`: krav-id og kravnummer, grunnkode, enkeltvis eller masseanalyse,
+regelversjon og antall dokumenter, men ingen uttrukne verdier. Så lenge kravet venter på analyse, viser
+kravarket en merknad til alle som kan lese kravet, for eksempel «Last analysis attempt failed on <dato> (2
+failed attempts so far). <grunntekst>». Svaret fra analyse-ruten har
+`details: [{ "path": "analysis", "code": "<grunnkode>" }]`. `GET /api/v1/claims/:id` har `analysisFailure`:
+`lastFailedAt`, `reasonCode` og `failedAttempts`, eller null.
+
+### Masseanalyse
+
+- Dialogen sier «Analyzes up to 10 claims awaiting analysis, oldest first. Claims whose analysis failed before
+  are tried after the others.»
+- Etter en kjøring sier dialogen under sammendragslinjen hvorfor den stoppet: «Stopped after the batch limit.»,
+  «Stopped early: your analysis budget is used up for now. Try again later.» eller «All candidate claims in
+  this run were tried.»
+- Svaret får `stoppedBy` (`limit`, `budget` eller `candidates`) og en `reasonCode` for hvert krav som feilet.
+  Revisjonshendelsen `claim.bulk_analyzed` registrerer også `stoppedBy`. Ender en kjøring med en uventet feil,
+  svarer API-et fortsatt 500, men registrerer først den delvise kjøringen med `stoppedBy: "error"`.
+
+### Fanen Charges
+
+- For et analysert krav lister en seksjon «Team labels that influenced this analysis» hver etiketts beskrivelse
+  og kategori («Deleted label» for en etikett som er slettet siden). Den slutter med «A team label can only move
+  findings to human review or add review items. It never adds confirmed money.» Hvis ingen etikett påvirket
+  analysen, står det «No team label influenced this analysis.» Seksjonen vises ikke for krav som ikke er
+  analysert. I API-et får `GET /api/v1/claims/:id/charge-lines` feltet `influence` (null, eller listen over
+  etiketter).
+- I det sjeldne tilfellet at en lagring av en etikett kolliderer med en samtidig endring av samme formulering, og
+  det automatiske nye forsøket også kolliderer, er svaret nå 409 `conflict` med «This label was changed at the
+  same time by someone else. Reload and try again.» Før var det en generell 500.
+
+### Formuleringer på eksisterende sider
+
+- **Funn** viser `<regel-id> - rule setting 0.90 (fixed per rule; not a measured probability)` i stedet for
+  `confidence 90%`. Tallet er den samme faste verdien per regel som før. Det er ikke en sannsynlighet.
+- **Maler for Ocean D&D** viser verifiseringsnivået i ord, for eksempel «Verification: Read from the carrier's
+  published tariff through a search-engine extract; the document itself was not downloaded. Verify before
+  use.»
+- **Drivstofftabeller**: ved taket sier siden «This organization has reached the maximum of 50 fuel tables.
+  Archived tables count toward this limit.»
+- **Outlook**: under kildelinjen for hver serie står det hvor prisene kom fra: «Downloaded from FRED by the
+  import command.», «From the files bundled with the product, checked against their pinned sha256.» eller
+  «Imported from a file supplied by the operator; the product did not download it.» API-et legger til
+  `provenance.sourceKind` (`fetch`, `bundled` eller `file`).
+- **Tilgjengelighet**: tabellene for kravlisten, pakkekildene, koblede dokumenter, uttrukne felt og
+  gjennomgangskøen har nå tilgjengelige navn, så alle datatabeller i nettappen har ett.
+
+### Innlogging, kontoer og invitasjoner
+
+- **Bytte passord** teller nå feil nåværende passord mot den samme sperren som innlogging (5 feil som
+  standard). Etter det svarer passordbytte og innlogging for den e-postadressen 429 `account_locked` til
+  sperren utløper, også med riktig passord. Et vellykket bytte fjerner sperren. Ruten bruker også den
+  strengere `auth`-ratebegrensningen. Hvert feil forsøk registreres som `auth.password.change_failed`.
+- **Sperret ute, men på din egen enhet.** Mens en e-postadresse er sperret, behandles en innlogging eller et
+  MFA-steg likevel normalt hvis det kommer fra en nettleser som har en levende øktcookie for den samme brukeren.
+  Passordet, og MFA der det kreves, kontrolleres fortsatt. Et feil passord fra den nettleseren gir 401, ikke 429.
+  Uten en slik økt gjelder sperren som før. Den vellykkede innloggingen registreres med `knownDevice: true`.
+- **Forfremmelse til Owner eller Admin** av en bruker uten MFA avslutter brukerens økter med en gang. Ved neste
+  innlogging må brukeren registrere MFA.
+- **Invitasjoner** til en e-postadresse som allerede har en konto i en annen organisasjon, får nå samme `201`
+  som alle andre invitasjoner. Før fikk de 409, som avslørte at personen bruker plattformen. En slik invitasjon
+  kan ikke godtas. Å invitere et medlem av din egen organisasjon gir fortsatt 409.
+- **Klientadresse bak CloudFront (driftere).** Ratebegrensninger, innloggingsforsøk og `ip` i revisjonssporet
+  bruker besøkendes adresse fra `CloudFront-Viewer-Address`, men bare når forespørselen også har den hemmelige
+  headeren `x-origin-verify` som CloudFront legger til. Ellers brukes adressen fra `TRUST_PROXY`, som før.
+  Terraform og kontrollen før utrulling står i
+  [infra/README.md](infra/README.md#deploy-gate-cloudfront-origin-verification-and-client-address-fix-round-1-f-03)
+  (engelsk). Dette er rettet i koden og i infrastrukturkoden, men er ikke verifisert før den kontrollen er
+  registrert i AWS.
+
+### Konfigurasjon (herding)
+
+| Variabel | Standard | Betydning |
+| --- | --- | --- |
+| `CLIENT_IP_HEADER` | ikke satt | `cloudfront-viewer-address` bak CloudFront; la den være usatt lokalt. Produksjon krever den ikke, men uten den knyttes begrensningene per adresse til CloudFront-kantnodens adresse |
+| `ORIGIN_VERIFY_SECRET` | ikke satt | påkrevd når `CLIENT_IP_HEADER` er satt; minst 43 tilfeldige tegn, forskjellig fra alle andre hemmeligheter. Den ligger i Secrets Manager; se [docs/secrets.no.md](docs/secrets.no.md) |
+
+### Ikke dekket (akseptert foreløpig)
+
+- En analyse som feiler på grunn av dokumentene, trenger fortsatt en ny import av rettede dokumenter.
+- En masseanalyse belaster fortsatt én budsjettenhet for hvert krav den prøver.
+- Avvisninger fra firøyetriggerne i databasen logges, men registreres ikke i revisjonssporet.
+- En bruker uten levende økt på noen enhet kan fortsatt sperres ute av noen som kjenner e-postadressen.
+- Mens origin-verify-verdien roteres, bruker API-et kantnodens adresse i et kort vindu.
+
+Hele listen (HR-1..HR-13) står i
+[technical/web-platform-security.md, del 13.5](technical/web-platform-security.md#135-known-gaps-and-residual-risks-hardening)
 (engelsk).
 
 ## Tester og kontroller

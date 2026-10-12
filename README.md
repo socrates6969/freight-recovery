@@ -222,6 +222,10 @@ are done:
   545.5 for review. Running the audit creates a D&D claim with an evidence packet and a draft dispute letter
   for four-eyes review. **Not legal advice.** See
   [Ocean demurrage and detention audit (step 8)](#ocean-demurrage-and-detention-audit-step-8).
+- **Hardening (after step 8):** no new features. Existing ones are clearer and harder to misuse: database
+  backstops for the four-eyes rules, a new four-eyes rule for team charge labels, visible reasons for failed
+  analyses and stopped bulk runs, plainer wording, and fixes to sign-in, invites and the client address behind
+  CloudFront. See [Hardening: improvements to existing features](#hardening-improvements-to-existing-features).
 
 "Send" only marks a demand send-ready and audits it. No email is sent and no money moves. The seeded claims and
 packets are synthetic and are transcribed from the Python CLI output on `tests/fixtures/`. Claims created
@@ -716,8 +720,10 @@ screens only hide the button.
   accept it. Another reviewer must. Confirming a field, rejecting a field, changing the document type
   and rejecting the document do not count and stay open to everyone with review rights. A document
   uploaded with an API key counts as uploaded by the key's creator.
-- **What you see.** On `/approvals` the row shows "You edited this revision. Another approver must
-  approve it." instead of Approve/Reject. In the review dialog, "You uploaded or edited this document.
+- **What you see.** On `/approvals` the row shows why you cannot decide instead of Approve/Reject (since the
+  hardening run one text per reason, for example "You created a revision of this claim (by editing, analyzing
+  or running the D&D audit). Another approver must approve it."; see
+  [Hardening](#four-eyes-who-may-not-approve-and-why)). In the review dialog, "You uploaded or edited this document.
   Another reviewer must accept it." replaces Accept document. If you try anyway (an old screen or a
   second tab), the API answers 403 `four_eyes_required` ("A different person must make this decision."),
   changes nothing, and records the attempt in the audit trail as `authz.four_eyes_denied`. API callers
@@ -767,24 +773,26 @@ The permission is `claims:analyze` in `packages/shared/src/rbac.ts`. API keys ca
    intelligence worklist.
 
 If the analysis is refused, the section shows a fixed message: 409 "This claim is no longer awaiting
-analysis or has no accepted documents. Reload to continue.", 422 "The extracted values of this claim cannot
-be analysed automatically.", 403 "You do not have permission to analyze claims.", 429 "Too many requests.
+analysis or has no accepted documents. Reload to continue.", 422 one of three reason texts (since the
+hardening run; see [Failed analyses](#failed-analyses)), 403 "You do not have permission to analyze claims.", 429 "Too many requests.
 Try again later.", anything else "Analysis failed. Try again." A refused analysis changes nothing.
 
 A 422 means the rules refused the input (for example a malformed amount or date) or the result cannot be
 stored (a negative amount, or more than 2,147,483,647 cents). The claim stays Awaiting analysis. Accepted
 documents cannot be edited, so such a claim needs a new import of corrected documents (see the residual
-risks).
+risks). Since the hardening run the claim sheet keeps a note with the date, the number of failed attempts and
+the reason, visible to everyone who can read the claim.
 
 ### Analyze awaiting claims (bulk)
 
 On the claims page, **Analyze awaiting claims** opens a dialog ("Analyzes up to 10 claims awaiting
-analysis, oldest first."). **Analyze** sends one request with `{ "limit": 10 }` and shows a summary such
+analysis, oldest first. Claims whose analysis failed before are tried after the others."). **Analyze** sends one request with `{ "limit": 10 }` and shows a summary such
 as "Analyzed 8. Skipped 1. Could not analyze 1. 4 still awaiting analysis.", plus the claim numbers that
 could not be analyzed.
 
 - The API accepts `limit` 1..25 (default 10) and looks at no more than `min(4 x limit, 100)` candidates:
-  claims awaiting analysis with at least one accepted document, oldest first.
+  claims awaiting analysis with at least one accepted document. Claims without an earlier failed analysis
+  come first, then the ones that failed before; within each group oldest first.
 - Each claim is analyzed in its own transaction, exactly like the single action. A claim someone else
   analyzed in the meantime is **skipped**; a claim that gets 422 is **could not analyze**. Claims already
   analyzed stay analyzed if a later one fails.
@@ -792,16 +800,18 @@ could not be analyzed.
   30 per 10 minutes). A bulk request uses one unit for the first claim it tries and one more unit for every
   further claim it tries, including claims that are skipped or could not be analyzed. When the budget runs
   out, the run stops early and still answers normally: the claims it did not try stay Awaiting analysis
-  and are counted in "still awaiting analysis". The dialog does not say that the budget stopped the run;
-  wait for the window to pass and run it again. When the budget is already empty, the request gets 429.
-- A claim that keeps failing with 422 stays a candidate. Because the bulk run takes the oldest claims
-  first, it is tried (and charged) again on every run until it is re-imported.
+  and are counted in "still awaiting analysis". Since the hardening run the dialog then says "Stopped early:
+  your analysis budget is used up for now. Try again later."; wait for the window to pass and run it again. When the budget is already empty, the request gets 429.
+- A claim that keeps failing with 422 stays a candidate until it is re-imported. Since the hardening run it is
+  tried after the claims that have not failed, so it no longer holds back newer claims. When it is tried, it
+  is still charged.
 
 ### Four-eyes after analysis
 
 The person who runs the analysis (single or bulk) is recorded as the author of revision 1. Four-eyes then
-refuses their approve or reject of that claim, and `/approvals` shows them "You edited this revision.
-Another approver must approve it." (the existing four-eyes text). Another approver must decide. The people
+refuses their approve or reject of that claim, and `/approvals` shows them "You created a revision of this
+claim (by editing, analyzing or running the D&D audit). Another approver must approve it." (since the
+hardening run). Another approver must decide. The people
 who uploaded or edited the claim's documents are **not** counted as claim authors; document four-eyes
 already required a second person to accept those documents, except for documents accepted automatically
 at upload.
@@ -811,7 +821,7 @@ at upload.
 | Route | Body | Success |
 | --- | --- | --- |
 | `POST /api/v1/claims/:id/analyze` | `{}` (or no body) | 201: `claim` (status and amounts in cents), `packet` (id, revision 1, content hash), `analysis` (`rulesVersion: "rules-v1"`, findings counts) |
-| `POST /api/v1/claims/analyze-awaiting` | `{ "limit": 1..25 }` (optional, default 10) | 200: `limit`, `examined`, `analyzed[]`, `skipped[]`, `failed[]`, `remaining` |
+| `POST /api/v1/claims/analyze-awaiting` | `{ "limit": 1..25 }` (optional, default 10) | 200: `limit`, `examined`, `analyzed[]`, `skipped[]`, `failed[]` (each with `reasonCode` since the hardening run), `remaining`, `stoppedBy` |
 
 Both routes need a signed-in user (API keys are refused) and go through the same Origin and CSRF checks as
 every other mutating route. Each successful
@@ -1327,6 +1337,137 @@ refused-return dates are typed in); no check of who was billed (541.4 was remove
 of 541.7(c), per diem, chassis and hourly charges, and currencies other than USD are not handled; presets may
 be out of date and the CMA CGM preset is from a secondary source. The full list is in
 [technical/web-platform-security.md, section 12.5](technical/web-platform-security.md#125-accepted-residuals-step-8).
+
+## Hardening: improvements to existing features
+
+Run `REQ-20261012-hardening` adds **no new feature, route, permission or user setting**. It makes existing
+features clearer and harder to misuse, and it fixes the findings of a security audit of the whole platform.
+Pre-product, synthetic data only, never deployed. The threat model, the status of each earlier residual risk and
+what is still open are in [technical/web-platform-security.md, section 13](technical/web-platform-security.md#13-hardening-run).
+Architecture: [ARCHITECTURE.md, hardening run](ARCHITECTURE.md#web-platform-hardening-run).
+
+### Four-eyes: who may not approve, and why
+
+Approve and reject of a claim are refused for any of three reasons, checked in this order. The API answers 403
+`four_eyes_required`, nothing changes, and the attempt is audited. `/approvals` shows the text for the first
+reason that applies instead of Approve/Reject:
+
+| Reason | Text on `/approvals` |
+| --- | --- |
+| You created any revision of the claim (edit, analysis or D&D audit) | "You created a revision of this claim (by editing, analyzing or running the D&D audit). Another approver must approve it." |
+| You entered or edited the claim's D&D invoice | "You entered or edited the D&D invoice of this claim. Another approver must approve it." |
+| **New:** you set a team charge label that influenced the claim's analysis | "You set a team charge label that influenced this analysis. Another approver must approve it." |
+
+- **Label authors.** You are a label author of a claim if, before the analysis ran, you created or changed one
+  of the team labels that the analysis recorded as influencing it. Changing a label after the analysis does not
+  count, and neither does deleting one. Claims that were never analysed (seeded or D&D claims) have no label
+  authors.
+- **More than 50 influencing labels.** The analysis records at most 50 labels. When more may have influenced a
+  claim, the analysis notes that the list is incomplete. **Everyone** in the organization who set a team label
+  before the analysis is then excluded from approving that claim. In a small team this can mean that nobody in
+  the organization can approve it (accepted for now).
+- **Database backstop.** A database trigger now also enforces the D&D-invoice and label rules, as one already
+  did for the revision rule. Separately, a direct database update can no longer mark an evidence packet
+  approved, rejected or send-ready without a matching decision record.
+- **Upper-case ids.** Claim, invoice and other ids in URLs are treated case-insensitively and stored in lower
+  case. Before this run, an upper-case id in the URL could hide an edit from the four-eyes check.
+
+### Failed analyses
+
+When an analysis cannot be stored (422), the claim sheet now says why:
+
+| Reason code | Text |
+| --- | --- |
+| `input_values` | "The extracted values of this claim cannot be analysed automatically. Accepted documents cannot be changed, so the claim stays awaiting analysis." |
+| `amount_out_of_range` | "The computed amounts are negative or larger than the product can store, so nothing was saved." |
+| `fuel_check` | "The fuel check produced amounts that cannot be stored. Clear the fuel inputs or choose another fuel table, then analyze again." |
+
+As before, a refused analysis writes nothing to the claim, the packet or the documents. Each failure is now
+recorded in the audit trail as `claim.analysis_failed`: claim id and number, reason code, single or bulk, rules
+version and number of documents, but no extracted values. While the claim is awaiting analysis, its sheet shows
+a note to everyone who can read the claim, for example "Last analysis attempt failed on <date> (2 failed
+attempts so far). <reason text>". The analyze response carries
+`details: [{ "path": "analysis", "code": "<reason code>" }]`. `GET /api/v1/claims/:id` carries `analysisFailure`:
+`lastFailedAt`, `reasonCode` and `failedAttempts`, or null.
+
+### Bulk analysis
+
+- The dialog says "Analyzes up to 10 claims awaiting analysis, oldest first. Claims whose analysis failed
+  before are tried after the others."
+- After a run, under the summary line, the dialog says why it stopped: "Stopped after the batch limit.",
+  "Stopped early: your analysis budget is used up for now. Try again later." or "All candidate claims in
+  this run were tried."
+- The response gains `stoppedBy` (`limit`, `budget` or `candidates`) and a `reasonCode` for each failed claim.
+  The `claim.bulk_analyzed` audit event records `stoppedBy` too. If a run ends with an unexpected error, the API
+  still answers 500, but it first records the partial run with `stoppedBy: "error"`.
+
+### Charges tab
+
+- For an analysed claim, a section "Team labels that influenced this analysis" lists each label's description
+  and category ("Deleted label" for a label deleted since then). It ends with "A team label can only move
+  findings to human review or add review items. It never adds confirmed money." If no label influenced the
+  analysis, it says "No team label influenced this analysis." The section is absent for claims that were not
+  analysed. In the API, `GET /api/v1/claims/:id/charge-lines` gains `influence` (null, or the list of labels).
+- In the rare case that a label save collides with a concurrent change of the same wording and the automatic
+  retry collides too, the answer is now 409 `conflict` with "This label was changed at the same time by
+  someone else. Reload and try again." It used to be a generic 500.
+
+### Wording on existing pages
+
+- **Findings** show `<rule id> - rule setting 0.90 (fixed per rule; not a measured probability)` instead of
+  `confidence 90%`. The number is the same fixed per-rule value as before. It is not a probability.
+- **Ocean D&D presets** show the verification level in words, for example "Verification: Read from the
+  carrier's published tariff through a search-engine extract; the document itself was not downloaded. Verify
+  before use."
+- **Fuel tables**: at the cap, the page says "This organization has reached the maximum of 50 fuel tables.
+  Archived tables count toward this limit."
+- **Outlook**: under each series' provenance line, a sentence says where its prices came from: "Downloaded from
+  FRED by the import command.", "From the files bundled with the product, checked against their pinned
+  sha256." or "Imported from a file supplied by the operator; the product did not download it." The API adds
+  `provenance.sourceKind` (`fetch`, `bundled` or `file`).
+- **Accessibility**: the claims list, packet sources, linked documents, extracted fields and review queue
+  tables now have accessible names, so every data table in the web app has one.
+
+### Sign-in, accounts and invites
+
+- **Change password** now counts wrong current passwords toward the same lockout as login (5 failures by
+  default). After that, change password and login for that email answer 429 `account_locked` until the lock
+  expires, even with the right password. A successful change clears the lock. The route also uses the stricter
+  `auth` rate limit. Each wrong attempt is audited as `auth.password.change_failed`.
+- **Locked out, but on your own device.** While an email is locked, a login or MFA step is still processed
+  normally if it comes from a browser that holds a live session cookie of that same user. The password, and
+  MFA where required, are still checked. A wrong password from that browser answers 401, not 429. Without such
+  a session the lock applies as before. The successful login is audited with `knownDevice: true`.
+- **Promotion to Owner or Admin** of a user without MFA ends that user's sessions at once. Their next login asks
+  them to enrol in MFA.
+- **Invites** to an email that already has an account in another organization now get the same `201` as any
+  other invite. Before, they got 409, which revealed that the person uses the platform. Accepting such an
+  invite is refused. Inviting a member of your own organization still gives 409.
+- **Client address behind CloudFront (operators).** Rate limits, lockout attempts and the audit `ip` use the
+  visitor's address from `CloudFront-Viewer-Address`, but only when the request also carries the secret
+  `x-origin-verify` header that CloudFront adds. Otherwise the address from `TRUST_PROXY` is used, as before.
+  The Terraform and the deploy-gate check are in
+  [infra/README.md](infra/README.md#deploy-gate-cloudfront-origin-verification-and-client-address-fix-round-1-f-03).
+  This is fixed in code and in the infrastructure code, but it stays unverified until that check has been
+  recorded in AWS.
+
+### Configuration (hardening)
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `CLIENT_IP_HEADER` | unset | `cloudfront-viewer-address` behind CloudFront; leave it unset locally. Production does not require it, but without it the per-address limits key on the CloudFront edge address |
+| `ORIGIN_VERIFY_SECRET` | unset | required when `CLIENT_IP_HEADER` is set; at least 43 random characters, different from every other secret. It lives in Secrets Manager; see [docs/secrets.md](docs/secrets.md) |
+
+### Not covered (accepted for now)
+
+- An analysis that fails because of its documents still needs a re-import of corrected documents.
+- A bulk run still charges one budget unit for each claim it tries.
+- Refusals by the four-eyes database triggers are logged but not audited.
+- A user with no live session on any device can still be locked out by someone who knows the email address.
+- While the origin-verify value is being rotated, the API uses the edge address for a short window.
+
+The full list (HR-1..HR-13) is in
+[technical/web-platform-security.md, section 13.5](technical/web-platform-security.md#135-known-gaps-and-residual-risks-hardening).
 
 ## Tests and checks
 
