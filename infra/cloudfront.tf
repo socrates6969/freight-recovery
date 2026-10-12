@@ -17,8 +17,27 @@ data "aws_cloudfront_cache_policy" "disabled" {
   name = "Managed-CachingDisabled"
 }
 
-data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
-  name = "Managed-AllViewerExceptHostHeader"
+# Fix round 1 (C11.1): API behaviours forward the viewer headers plus CloudFront-Viewer-Address (the API derives
+# the client address from it when the origin-verify header matches), all cookies and all query strings.
+resource "aws_cloudfront_origin_request_policy" "api" {
+  name    = "${local.name}-api"
+  comment = "Viewer headers plus CloudFront-Viewer-Address, all cookies and query strings"
+
+  cookies_config {
+    cookie_behavior = "all"
+  }
+
+  headers_config {
+    header_behavior = "allViewerAndWhitelistCloudFront"
+
+    headers {
+      items = ["CloudFront-Viewer-Address"]
+    }
+  }
+
+  query_strings_config {
+    query_string_behavior = "all"
+  }
 }
 
 resource "aws_cloudfront_response_headers_policy" "web" {
@@ -92,6 +111,7 @@ resource "aws_cloudfront_distribution" "main" {
   default_root_object = "index.html"
   price_class         = "PriceClass_100"
   http_version        = "http2and3"
+  web_acl_id          = aws_wafv2_web_acl.cloudfront.arn
 
   origin {
     origin_id                = "static"
@@ -102,6 +122,12 @@ resource "aws_cloudfront_distribution" "main" {
   origin {
     origin_id   = "api"
     domain_name = aws_lb.main.dns_name
+
+    # Fix round 1 (C11.1): proves to the ALB rule and the API that the request came through CloudFront.
+    custom_header {
+      name  = "x-origin-verify"
+      value = local.origin_verify_placeholder
+    }
 
     custom_origin_config {
       http_port              = 80
@@ -134,7 +160,7 @@ resource "aws_cloudfront_distribution" "main" {
     cached_methods           = ["GET", "HEAD"]
     compress                 = true
     cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    origin_request_policy_id = aws_cloudfront_origin_request_policy.api.id
   }
 
   ordered_cache_behavior {
@@ -144,7 +170,7 @@ resource "aws_cloudfront_distribution" "main" {
     allowed_methods          = ["GET", "HEAD"]
     cached_methods           = ["GET", "HEAD"]
     cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
+    origin_request_policy_id = aws_cloudfront_origin_request_policy.api.id
   }
 
   restrictions {
@@ -157,5 +183,11 @@ resource "aws_cloudfront_distribution" "main" {
     acm_certificate_arn      = var.cloudfront_certificate_arn
     ssl_support_method       = "sni-only"
     minimum_protocol_version = "TLSv1.2_2021"
+  }
+
+  # Fix round 1 (C11.3): the origin-verify header value is managed by the rotation procedure (README.md), not by
+  # Terraform. Terraform cannot ignore one nested header, so origin changes need a deliberate review.
+  lifecycle {
+    ignore_changes = [origin]
   }
 }

@@ -96,8 +96,37 @@ resource "aws_lb_listener" "https" {
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = var.alb_certificate_arn
 
+  # Fix round 1 (C11.2): nothing is served without the CloudFront origin-verify header.
   default_action {
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
+  }
+}
+
+# Fix round 1 (C11.2): forward to the API only when x-origin-verify matches (up to two values during rotation).
+resource "aws_lb_listener_rule" "api_from_cloudfront" {
+  listener_arn = aws_lb_listener.https.arn
+  priority     = 10
+
+  action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.api.arn
+  }
+
+  condition {
+    http_header {
+      http_header_name = "x-origin-verify"
+      values           = [local.origin_verify_placeholder]
+    }
+  }
+
+  # The real values are set out of band by the rotation procedure (README.md).
+  lifecycle {
+    ignore_changes = [condition]
   }
 }

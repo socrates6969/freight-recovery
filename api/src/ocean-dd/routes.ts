@@ -45,7 +45,7 @@ export interface OceanDdRouteDeps {
 
 function actorOf(req: FastifyRequest): Actor {
   const ctx = requireTenant(req);
-  return { userId: ctx.user.id, role: userRole(ctx), ip: req.ip, requestId: req.frRequestId };
+  return { userId: ctx.user.id, role: userRole(ctx), ip: req.clientIp, requestId: req.frRequestId };
 }
 
 export function registerOceanDdRoutes(app: FastifyInstance, deps: OceanDdRouteDeps): void {

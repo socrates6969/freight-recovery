@@ -33,7 +33,7 @@ const NO_USER_ID = '00000000-0000-0000-0000-000000000000';
 type TenantCtx = ReturnType<typeof requireTenant>;
 
 function auditBase(ctx: TenantCtx, req: FastifyRequest) {
-  return { tenantId: ctx.tenantId, actorId: ctx.user.id, actorRole: ctx.role, ip: req.ip, requestId: req.frRequestId };
+  return { tenantId: ctx.tenantId, actorId: ctx.user.id, actorRole: ctx.role, ip: req.clientIp, requestId: req.frRequestId };
 }
 
 /** Load the subject's membership in the actor's tenant (404 for unknown ids and other tenants alike). */
@@ -169,7 +169,7 @@ export function registerUserRoutes(app: FastifyInstance, deps: AuthDeps): void {
             targetType: 'invite',
             targetId: created.id,
             metadata: { inviteId: created.id },
-            ip: req.ip,
+            ip: req.clientIp,
             requestId: req.frRequestId,
           });
         }

@@ -47,7 +47,7 @@ export async function auditViewed(req: FastifyRequest, metadata: Record<string, 
       targetType: target.type,
       targetId: target.id,
       metadata,
-      ip: req.ip,
+      ip: req.clientIp,
       requestId: req.frRequestId,
     }),
   );

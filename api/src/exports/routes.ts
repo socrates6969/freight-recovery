@@ -55,7 +55,7 @@ async function runExport(deps: ImportDeps, req: FastifyRequest, reply: FastifyRe
   try {
     const rowCount = await plan.count();
     if (rowCount > deps.cfg.imports.exportMaxRows) throw errors.exportTooLarge();
-    const actor = { actorId: ctx.user.id, actorRole: ctx.role, ip: req.ip, requestId: req.frRequestId };
+    const actor = { actorId: ctx.user.id, actorRole: ctx.role, ip: req.clientIp, requestId: req.frRequestId };
     const target = { targetType: 'export', targetId: null };
     const base = { entity: plan.entity, format: plan.format, filters: plan.filters };
     await ctx.db.tx((tx) => appendAudit(tx, { tenantId: ctx.tenantId, action: 'export.started', ...actor, ...target, metadata: { ...base, rowCount } }));

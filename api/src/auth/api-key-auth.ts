@@ -93,7 +93,7 @@ export class ApiKeyAuthenticator {
     const r = await this.deps.failLimiter(req);
     // RATE_LIMIT_API_KEY_FAIL_MAX failures are allowed per window; once this failure used up the budget
     // (remaining 0) the NEXT attempt from the address is already refused, before any verification work.
-    if (!r.allowed || r.remaining === 0) this.gate.block(req.ip, this.deps.now().getTime() + r.retryAfterSeconds * 1000);
+    if (!r.allowed || r.remaining === 0) this.gate.block(req.clientIp, this.deps.now().getTime() + r.retryAfterSeconds * 1000);
   }
 
   private async deny(req: FastifyRequest, row: KeyRow, reason: DenyReason, status: 401 | 403): Promise<never> {
@@ -106,7 +106,7 @@ export class ApiKeyAuthenticator {
         targetType: 'api_key',
         targetId: row.id,
         metadata: { keyId: row.keyId, reason },
-        ip: req.ip,
+        ip: req.clientIp,
         requestId: req.frRequestId,
       }),
     );
@@ -120,7 +120,7 @@ export class ApiKeyAuthenticator {
   async authenticate(req: FastifyRequest, presented: string, access: RouteAccess | undefined): Promise<RequestCtx> {
     const now = this.deps.now();
     if (this.deps.rateLimitEnabled) {
-      const retry = this.gate.check(req.ip, now.getTime());
+      const retry = this.gate.check(req.clientIp, now.getTime());
       if (retry !== null) throw errors.rateLimited(retry);
     }
     const parsed = parseKey(presented);
@@ -177,7 +177,7 @@ export class ApiKeyAuthenticator {
       permissions,
       db: tenantDb(this.deps.base, row.tenantId),
       requestId: req.frRequestId,
-      ip: req.ip,
+      ip: req.clientIp,
       viaApiKey: row.keyId,
     };
   }

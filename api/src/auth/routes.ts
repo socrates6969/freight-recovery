@@ -38,7 +38,7 @@ const P = '/api/v1';
 
 function meta(req: FastifyRequest): RequestMeta {
   const ua = req.headers['user-agent'];
-  return { ip: req.ip, requestId: req.frRequestId, userAgent: typeof ua === 'string' ? ua : undefined };
+  return { ip: req.clientIp, requestId: req.frRequestId, userAgent: typeof ua === 'string' ? ua : undefined };
 }
 
 function sendSession(reply: FastifyReply, deps: AuthDeps, s: SessionResult) {

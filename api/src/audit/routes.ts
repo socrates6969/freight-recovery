@@ -35,7 +35,7 @@ export function registerAuditRoutes(app: FastifyInstance): void {
           targetType: 'audit_chain',
           targetId: ctx.tenantId,
           metadata: { valid: result.valid, eventsChecked: result.eventsChecked, brokenAtSeq: result.brokenAtSeq },
-          ip: req.ip,
+          ip: req.clientIp,
           requestId: req.frRequestId,
         }),
       );

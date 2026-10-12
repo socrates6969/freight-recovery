@@ -15,7 +15,7 @@ const P = '/api/v1';
 
 function actorOf(req: FastifyRequest): KeyActor {
   const ctx = requireTenant(req);
-  return { userId: ctx.user.id, role: userRole(ctx), permissions: ctx.permissions, ip: req.ip, requestId: req.frRequestId };
+  return { userId: ctx.user.id, role: userRole(ctx), permissions: ctx.permissions, ip: req.clientIp, requestId: req.frRequestId };
 }
 
 export function registerApiKeyRoutes(app: FastifyInstance, policy: KeyPolicy, now: () => Date): void {

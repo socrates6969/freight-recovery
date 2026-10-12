@@ -75,7 +75,16 @@ export interface AppConfig {
   apiKeys: ApiKeyConfig;
   /** Step 7 (F16): maximum age of the cached active price import per series (0 = no cache). */
   priceCacheTtlMs: number;
+  /**
+   * Fix round 1 (C11, P2): the CDN header that carries the viewer address (null = use TRUST_PROXY only) and the
+   * shared origin-verify secret that proves a request came through the CDN (null when unset).
+   */
+  clientIpHeader: typeof CLIENT_IP_HEADER_VALUE | null;
+  originVerifySecret: string | null;
 }
+
+/** The only accepted value of CLIENT_IP_HEADER (fix round 1, C11). */
+export const CLIENT_IP_HEADER_VALUE = 'cloudfront-viewer-address';
 
 export interface ApiKeyConfig {
   /** HMAC-SHA-256 key for stored secret hashes. Never logged. */
@@ -594,6 +603,32 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
     if ([jwtSecret, csrfSecret, refreshPepper, mfaRaw].includes(pepperRaw)) problems.push('API_KEY_PEPPER must differ from every other secret');
   }
 
+  // ---- Fix round 1 (C11, P2): client address behind CloudFront ----
+  const clientIpHeaderRaw = env['CLIENT_IP_HEADER'];
+  let clientIpHeader: typeof CLIENT_IP_HEADER_VALUE | null = null;
+  if (clientIpHeaderRaw !== undefined && clientIpHeaderRaw !== '') {
+    if (clientIpHeaderRaw === CLIENT_IP_HEADER_VALUE) clientIpHeader = CLIENT_IP_HEADER_VALUE;
+    else problems.push(`CLIENT_IP_HEADER must be empty or exactly ${CLIENT_IP_HEADER_VALUE}`);
+  }
+  const originRaw = env['ORIGIN_VERIFY_SECRET'];
+  const originSetButBlank = originRaw !== undefined && originRaw.trim() === '';
+  if (originSetButBlank) problems.push('ORIGIN_VERIFY_SECRET is set but empty');
+  const originVerifySecret = originRaw !== undefined && !originSetButBlank ? originRaw : null;
+  if (clientIpHeader !== null && originVerifySecret === null) problems.push('ORIGIN_VERIFY_SECRET is required when CLIENT_IP_HEADER is set');
+  if (originVerifySecret !== null) {
+    const v = originVerifySecret;
+    if (v.length < MIN_SECRET_CHARS) problems.push(`ORIGIN_VERIFY_SECRET must be at least ${MIN_SECRET_CHARS} characters`);
+    if (looksLikePlaceholder(v)) problems.push('ORIGIN_VERIFY_SECRET looks like a placeholder, not a secret');
+    if (prod && DOCUMENTED_DEV_SECRETS.includes(v)) problems.push('ORIGIN_VERIFY_SECRET must not be a documented dev default');
+    if (prod) {
+      const weak = secretEntropyProblem(v);
+      if (weak) problems.push(`ORIGIN_VERIFY_SECRET ${weak} to be a random secret`);
+      const bits = (/^[0-9a-fA-F]+$/u.test(v) ? 4 : /^[A-Za-z0-9+/_-]+={0,2}$/u.test(v) ? 6 : 6.5) * v.replace(/=+$/u, '').length;
+      if (bits < MIN_PEPPER_ENTROPY_BITS) problems.push('ORIGIN_VERIFY_SECRET must carry at least 32 bytes of entropy');
+    }
+    if ([jwtSecret, csrfSecret, refreshPepper, mfaRaw, apiKeyPepper].includes(v)) problems.push('ORIGIN_VERIFY_SECRET must differ from every other secret');
+  }
+
   const totpIssuer = get('TOTP_ISSUER') ?? 'FreightRecovery';
   if (!/^[A-Za-z0-9 ._-]{1,64}$/u.test(totpIssuer)) problems.push('TOTP_ISSUER contains invalid characters');
 
@@ -647,5 +682,7 @@ export function loadConfig(env: Record<string, string | undefined>, runtime: Con
       rateLimitFailMax: s4.rateLimitApiKeyFailMax,
     },
     priceCacheTtlMs: s4.priceCacheTtlMs,
+    clientIpHeader,
+    originVerifySecret,
   };
 }

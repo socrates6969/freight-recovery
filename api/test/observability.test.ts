@@ -200,7 +200,7 @@ describe('logger tee and serializers', () => {
       route: '/x/:id',
       durationMs: 2,
     });
-    expect(serializeReq({ id: 'r', method: 'GET', url: '/x/fr_live_0123456789abcdef_aaaa', ip: '1.1.1.1' })['path']).toBe('/x/[REDACTED]');
+    expect(serializeReq({ id: 'r', method: 'GET', url: '/x/fr_live_0123456789abcdef_aaaa', clientIp: '1.1.1.1' })['path']).toBe('/x/[REDACTED]');
     expect(scrub({ a: { b: ['Bearer fr_live_0123456789abcdef_secretpart'] }, msg: 'fr_live_x' })).toEqual({ a: { b: ['Bearer [REDACTED]'] }, msg: '[REDACTED]' });
   });
 });

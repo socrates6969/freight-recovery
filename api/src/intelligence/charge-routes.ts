@@ -25,7 +25,7 @@ export interface ChargeRouteDeps {
 
 function actorOf(req: FastifyRequest): Actor {
   const ctx = requireTenant(req);
-  return { userId: ctx.user.id, role: userRole(ctx), ip: req.ip, requestId: req.frRequestId };
+  return { userId: ctx.user.id, role: userRole(ctx), ip: req.clientIp, requestId: req.frRequestId };
 }
 
 export function registerChargeRoutes(app: FastifyInstance, deps: ChargeRouteDeps): void {

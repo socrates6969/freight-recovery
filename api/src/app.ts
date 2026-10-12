@@ -41,6 +41,7 @@ import { KeyedGate } from './imports/sandbox/semaphore.js';
 import { TenantScopeError } from './db/errors.js';
 import { isAnalysisDbError, isDdDbError, isFourEyesDbError, isPacketDecisionDbError } from './http/db-guard.js';
 import { AnalysisFailure, ERROR_MESSAGES, FourEyesRefusal, HttpError, errors } from './http/errors.js';
+import { registerClientIp } from './http/client-ip.js';
 import { enforceRouteAccess, requireTenant, zodDetails } from './http/route.js';
 import { registerSecurityHeaders, registerSecurityPipeline, type Limiter } from './http/security.js';
 import { registerChargeRoutes } from './intelligence/charge-routes.js';
@@ -181,6 +182,8 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     return503OnClosing: true,
   });
   app.server.headersTimeout = 10_000;
+  // Fix round 1 (C11): the derived client address; the FIRST onRequest hook (before access, limits, telemetry).
+  registerClientIp(app, cfg);
   app.removeContentTypeParser('text/plain');
   enforceRouteAccess(app);
   app.decorate('metrics', metrics);
@@ -231,13 +234,13 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
   const createRateLimit = (app as unknown as { createRateLimit: (o: Record<string, unknown>) => RateLimitFn }).createRateLimit;
   const minute = 60_000;
   const globalLimiter = wrapLimiter(
-    createRateLimit({ max: cfg.rateLimitGlobalMax, timeWindow: minute, keyGenerator: (req: FastifyRequest) => `g:${req.ip}` }),
+    createRateLimit({ max: cfg.rateLimitGlobalMax, timeWindow: minute, keyGenerator: (req: FastifyRequest) => `g:${req.clientIp}` }),
   );
   const authLimiter = wrapLimiter(
     createRateLimit({
       max: cfg.rateLimitAuthMax,
       timeWindow: cfg.rateLimitAuthWindowSeconds * 1000,
-      keyGenerator: (req: FastifyRequest) => `a:${req.ip}`,
+      keyGenerator: (req: FastifyRequest) => `a:${req.clientIp}`,
     }),
   );
   const forgotLimiter = wrapLimiter(
@@ -247,22 +250,22 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
       keyGenerator: (req: FastifyRequest) => {
         const body = req.body as { email?: unknown } | undefined;
         const email = typeof body?.email === 'string' ? body.email : '';
-        return `f:${req.ip}:${emailHash(cfg.refreshPepper, email)}`;
+        return `f:${req.clientIp}:${emailHash(cfg.refreshPepper, email)}`;
       },
     }),
   );
 
   const tenMinutes = 600_000;
-  const userKey = (prefix: string) => (req: FastifyRequest) => `${prefix}:${req.ctx?.user.id ?? req.ip}`;
+  const userKey = (prefix: string) => (req: FastifyRequest) => `${prefix}:${req.ctx?.user.id ?? req.clientIp}`;
   const uploadLimiter = wrapLimiter(createRateLimit({ max: cfg.imports.rateLimitUploadMax, timeWindow: tenMinutes, keyGenerator: userKey('u') }));
   const exportLimiter = wrapLimiter(createRateLimit({ max: cfg.imports.rateLimitExportMax, timeWindow: tenMinutes, keyGenerator: userKey('e') }));
   const platformLimiter = wrapLimiter(createRateLimit({ max: cfg.rateLimitPlatformMax, timeWindow: tenMinutes, keyGenerator: userKey('p') }));
   // Step 4 (Q13): per key (60 s) and per client address for FAILED key authentications (600 s).
   const apiKeyLimiter = wrapLimiter(
-    createRateLimit({ max: cfg.apiKeys.rateLimitMax, timeWindow: minute, keyGenerator: (req: FastifyRequest) => `k:${req.frApiKeyId ?? req.ip}` }),
+    createRateLimit({ max: cfg.apiKeys.rateLimitMax, timeWindow: minute, keyGenerator: (req: FastifyRequest) => `k:${req.frApiKeyId ?? req.clientIp}` }),
   );
   const apiKeyFailLimiter = wrapLimiter(
-    createRateLimit({ max: cfg.apiKeys.rateLimitFailMax, timeWindow: tenMinutes, keyGenerator: (req: FastifyRequest) => `kf:${req.ip}` }),
+    createRateLimit({ max: cfg.apiKeys.rateLimitFailMax, timeWindow: tenMinutes, keyGenerator: (req: FastifyRequest) => `kf:${req.clientIp}` }),
   );
   const intelligenceLimiter = wrapLimiter(createRateLimit({ max: cfg.rateLimitIntelligenceMax, timeWindow: tenMinutes, keyGenerator: userKey('i') }));
   // Step 5 (P11): both analyze routes share one per-user bucket.
@@ -332,7 +335,7 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
             targetType: err.audit.targetType,
             targetId: err.audit.targetId,
             metadata: err.audit.metadata,
-            ip: req.ip,
+            ip: req.clientIp,
             requestId: req.frRequestId,
           }),
         );
@@ -345,7 +348,7 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
       // own tenant transaction. Fail closed (500) if it cannot be written.
       try {
         const ctx = requireTenant(req);
-        await appendAnalysisFailure(ctx.db, err.audit, { userId: ctx.user.id, role: ctx.role, ip: req.ip, requestId: req.frRequestId });
+        await appendAnalysisFailure(ctx.db, err.audit, { userId: ctx.user.id, role: ctx.role, ip: req.clientIp, requestId: req.frRequestId });
       } catch {
         req.log.error({ errorKind: 'analysis_failure_audit_failed' }, 'request failed');
         httpErr = new HttpError(500, 'internal_error');

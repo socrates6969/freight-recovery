@@ -149,7 +149,7 @@ export function registerSecurityPipeline(app: FastifyInstance, deps: PipelineDep
     // 4. Authentication (Bearer access token; state reloaded from the database).
     const token = bearerToken(req);
     if (!token) throw errors.unauthenticated();
-    const ctx = await deps.authenticate(token, { ip: req.ip, requestId: req.frRequestId });
+    const ctx = await deps.authenticate(token, { ip: req.clientIp, requestId: req.frRequestId });
     if (!ctx) throw errors.unauthenticated();
     req.ctx = ctx;
 

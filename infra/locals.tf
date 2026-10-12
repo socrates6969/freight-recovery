@@ -22,5 +22,10 @@ locals {
   public_subnets  = [for i, az in local.azs : cidrsubnet(var.vpc_cidr, 8, i)]
   private_subnets = [for i, az in local.azs : cidrsubnet(var.vpc_cidr, 8, i + 10)]
 
+  # Fix round 1 (C11.3): NON-secret placeholder for the CloudFront origin-verify header. The real value lives in
+  # Secrets Manager (aws_secretsmanager_secret.origin_verify), is set out of band and is rotated per README.md;
+  # the CloudFront origin header and the ALB listener-rule values ignore changes after creation.
+  origin_verify_placeholder = "placeholder-set-out-of-band-see-infra-readme"
+
   secret_names = ["jwt-secret", "csrf-secret", "refresh-pepper", "mfa-enc-key", "database-url", "redis-url", "redis-auth-token", "api-key-pepper"]
 }
