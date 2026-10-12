@@ -1,7 +1,13 @@
 # Marketing site (static, pre-product)
 
 A real, deployable static site built from `../seo-and-growth.md` and `../landing/outline.md`.
-**Not deployed.** You hold the hosting and domain.
+**Deployed to GitHub Pages** at https://socrates6969.github.io/freight-recovery/ by
+`.github/workflows/pages.yml` on every push to `master` that touches `marketing/site/` or `brand/`.
+The workflow builds with `npm test`, so a failing check blocks the deploy. When the site is served under
+a sub-path, `SITE_URL`'s path becomes the base path and every root-absolute link is prefixed with it.
+GitHub Pages ignores `static/_headers` (only the meta CSP applies there), and crawlers read
+`robots.txt` only at a domain root. Moving to a custom domain (e.g. scoup.ai) fixes both: set
+`SITE_URL` in the workflow and add a CNAME.
 
 ## Stack choice
 
@@ -9,6 +15,8 @@ Hand-rolled HTML/CSS plus a ~100-line, zero-dependency Node build script (`build
 framework, no bundler, no client-side JavaScript, no `node_modules`, so there is nothing to pin or
 audit beyond the Node runtime. The script adds the shared layout, per-page SEO tags, JSON-LD,
 `sitemap.xml` and `robots.txt`. Pages are fragments in `pages/` (first line `<!--meta {json} -->`).
+The header/footer logo and favicon are copied at build time from the repo-root `brand/` folder (see
+`brand/README.md` for the name and logo rules: always lowercase "scoup.ai").
 
 ## Build and preview
 

@@ -1,0 +1,58 @@
+# Builds the static marketing site (marketing/site) and deploys it to GitHub Pages.
+# Served at https://socrates6969.github.io/freight-recovery/ ; build.mjs derives the base path
+# from SITE_URL. Requires Settings > Pages > Source = "GitHub Actions".
+name: pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "marketing/site/**"
+      - "brand/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SITE_URL: https://socrates6969.github.io/freight-recovery
+      CONTACT_EMAIL: mariuscarlsson@gmail.com
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      # Zero-dependency builder: no npm install. `npm test` builds, then runs the SEO, honesty,
+      # security, brand and base-path checks; a failing check stops the deploy.
+      - name: Build and check site
+        working-directory: marketing/site
+        run: npm test
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: marketing/site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

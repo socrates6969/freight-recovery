@@ -1,0 +1,52 @@
+<!--meta {"title":"Platform: what the prototype does today","description":"Each scoup.ai module and how it is tested: claim analysis, evidence packets, four-eyes approval, charge and fuel checks, cost outlook and ocean D&D audit.","path":"/platform/","crumb":"Platform"} -->
+<h1>The platform, module by module</h1>
+<p class="lead">What the prototype does today, how each part is tested, and where its limits are. Everything below runs in our own test environment on synthetic data and published reference data.</p>
+<p class="draft">Status: built and tested, not deployed. No customer has used it, and no customer data has been processed.</p>
+
+<h2>At a glance</h2>
+<div class="scroll"><table>
+<thead><tr><th>Module</th><th>What it does</th><th>How it is tested</th></tr></thead>
+<tbody>
+<tr><td>Document import</td><td>Reads rate confirmations, bills of lading, delivery receipts and invoices (PDF text, CSV, text) in an isolated worker with time, memory and size limits. A person confirms or corrects every extracted field.</td><td>Hostile-file test corpus; results compared with the original Python reference parser</td></tr>
+<tr><td>Claim analysis</td><td>Applies detention and accessorial rules to each load and shows every step of the arithmetic.</td><td>Matches the Python reference engine on 2,132 test cases with zero differences</td></tr>
+<tr><td>Evidence packet</td><td>Versioned packet with source documents, citations, timeline, totals and a DRAFT demand letter, sealed with a content hash.</td><td>Packet contents and hashes checked in acceptance tests</td></tr>
+<tr><td>Four-eyes approval</td><td>Nothing is approved by the person who created it, edited its source data, or wrote a charge label that influenced it. Enforced in the application and again by database rules.</td><td>Attack tests, including edits made through upper-case record IDs</td></tr>
+<tr><td>Charge intelligence</td><td>Recognises the many names carriers use for the same accessorial charge, and learns from each reviewer correction for that customer only.</td><td>On 159 accessorial names from six public carrier tariffs, one carrier held out at a time: 145 recognised, 1 wrong, the rest sent to a reviewer</td></tr>
+<tr><td>Fuel surcharge check</td><td>Recomputes the fuel surcharge from the official weekly diesel price and the customer's own surcharge table, and identifies which week was billed.</td><td>Worked examples on the public EIA diesel series</td></tr>
+<tr><td>Cost outlook</td><td>Short-term diesel and truckload price outlook with 80% ranges, shown only where it beat a no-change forecast in backtests; otherwise it shows no change.</td><td>Walk-forward backtests on public EIA and BLS data</td></tr>
+<tr><td>Ocean D&amp;D audit</td><td>Checks container demurrage and detention invoices against the content the US rules require, the 30-day billing deadline and the carrier tariff, and drafts a dispute letter that quotes the rule.</td><td>Worked examples from published tariffs and an independently written calculation on 3,000 random invoices</td></tr>
+<tr><td>Claim prioritisation</td><td>Ranks open claims, finds similar past claims and shows where each field came from.</td><td>Acceptance tests on synthetic claims</td></tr>
+<tr><td>Exports and API</td><td>CSV and XLSX exports with spreadsheet-formula neutralisation; a programming interface with scoped, revocable API keys.</td><td>Acceptance tests</td></tr>
+</tbody>
+</table></div>
+
+<h2>Claim analysis and evidence</h2>
+<p>For each load the rules compare the invoice with the rate confirmation and the time records: when the detention clock starts, free time, rounding, the hourly rate and cap, and accessorial lines the rate confirmation never authorised. Amounts are computed with exact decimal arithmetic by explicit rules. Machine learning is used only to read and classify messy inputs, never to decide an amount.</p>
+<p>Findings are split into <strong>confirmed</strong> (they count toward the claim) and <strong>needs review</strong> (listed separately, never claimed automatically). The demand letter is always a DRAFT until a second person approves it.</p>
+
+<h2>Charge intelligence</h2>
+<p>Carriers name the same charge in many ways, and a charge that is not recognised is never checked against the contract. The classifier compares a new charge name with labelled examples and suggests a category only when it is confident; otherwise it asks a reviewer. Each confirmation or correction is stored for that customer and used on the next invoice. There is no model retraining and no data is shared between customers.</p>
+<p>The test above uses charge names from public tariffs, not invoice lines from customers. A gate in our release pipeline stops a release if those results fall.</p>
+
+<h2>Fuel surcharges and the cost outlook</h2>
+<p>A fuel surcharge is meant to follow the weekly diesel price published by the US Energy Information Administration. The platform recomputes it from that series and the customer's own table, so an invoice that used the wrong week is flagged with the difference.</p>
+<p>The cost outlook forecasts diesel one and four weeks ahead and a truckload price index one month ahead. Each forecast is re-tested against a no-change forecast whenever new data arrives, and is switched off if it stops winning. In backtests on 2011-2026 weekly diesel data, the one-week forecast had 15% lower error than no change, and its 80% ranges contained 74-81% of outcomes. For 13-week diesel and for lane-level truck rates no method beat no change, so the platform shows no change there.</p>
+
+<h2>Ocean container fees</h2>
+<p>Since May 2024, US rules (46 CFR Part 541) list the information a demurrage or detention invoice must contain, and say an invoice that is missing it, or that is sent more than 30 days after the charge was last incurred, does not have to be paid. The audit checks each invoice against those requirements and against the carrier's published tariff, including free time, holidays and terminal closures. When a federal court set aside one provision of the rule in September 2025, we removed that check rather than keep a claim we could not support. Every finding quotes the rule text and is marked for human and legal review.</p>
+
+<h2>Approval and audit trail</h2>
+<ul>
+<li>Every action is written to an append-only, hash-linked audit log, so changes to evidence or approvals can be detected.</li>
+<li>The approval rules are enforced twice: in the application and by database triggers.</li>
+<li>Learning components never approve anything. Every finding they influence is marked, and the labels that influenced it are recorded.</li>
+</ul>
+
+<h2>What is not here yet</h2>
+<ul>
+<li>No hosted service and no customer deployments.</li>
+<li>No TMS, ELD, carrier-portal or accounting integrations.</li>
+<li>No measured recovery rates on real files; those come from design partners.</li>
+<li>No external security assessment yet. See <a href="/security/">security status</a>.</li>
+</ul>
+<p><a class="cta" href="/contact/">Become a design partner</a><a class="cta secondary" href="/how-it-works/">See how it works</a></p>
