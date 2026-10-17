@@ -27,6 +27,7 @@ Incumbents could move down-market; invoice-error % figures are vendor-grade. Val
 - marketing/ — B2B SEO + content + channel plan (`seo-and-growth.md`) and a landing-page outline (`landing/`); plan only, no live site yet.
 - hiring/ — role specs + how to source an operator/CEO in Norway (recruiters & official channels).
 - web/, api/, packages/shared/, infra/ — the new TypeScript web platform (pre-product, synthetic data only); see [Web platform](#web-platform-typescript-pre-product-synthetic-data-only) below.
+- docs/design/ — design documents for features that are not built yet (email-forward ingestion: design only).
 ## Build plan
 Follows the 12-prompt playbook: eval set first → verified tool layer → draft + independent verifier (measured pass^k) → retrieval/memory → routing/cost control → red-team → audit trail + human approval → measured recovery rate → pilot one-pager → seed deck grounded only in measured results.
 
@@ -168,8 +169,8 @@ The software foundation above is necessary, not sufficient. Still required:
 > [technical/web-platform-security.md](technical/web-platform-security.md). Architecture:
 > [ARCHITECTURE.md, "Web platform"](ARCHITECTURE.md#web-platform-typescript-steps-1-2).
 
-A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1 and 2
-are done:
+A multi-tenant web app for the evidence-packet workflow, built security-first. Build-order steps 1, 2
+and 3 are done:
 
 - **Step 1:** email + password login (argon2id), a short-lived access token plus a rotating refresh
   cookie, TOTP MFA for Owner/Admin/platform roles, lockout with exponential backoff, CSRF protection,
@@ -177,10 +178,15 @@ are done:
   (PostgreSQL row-level security plus a Prisma guard), and a hash-chained, append-only audit trail.
 - **Step 2:** a claims list (filter, sort, search), a claim detail sheet with the evidence-packet viewer,
   and the approvals human gate (approve / edit / reject / send, each with a reason).
+- **Step 3:** document import (PDF, CSV, TXT, PNG, JPEG) with type sniffing, encrypted storage, parsing
+  in an isolated worker process, deterministic field extraction with source pointers, a human review
+  queue and commit to claims; plus CSV and Excel export of claims, packets and approval decisions with
+  formula neutralization. See [Import and export (step 3)](#import-and-export-step-3).
 
-"Send" only marks a demand send-ready and audits it. No email is sent and no money moves. Claims and
-packets are synthetic and are transcribed from the Python CLI output on `tests/fixtures/`. Import/export,
-the dev dashboard, AI features and the TS port of the Python rules are later steps.
+"Send" only marks a demand send-ready and audits it. No email is sent and no money moves. The seeded claims and
+packets are synthetic and are transcribed from the Python CLI output on `tests/fixtures/`. Claims created
+by import have no amounts or packet yet. The dev dashboard, AI features, OCR, email-forward ingestion and
+the TS port of the Python rules (build step 5, which will analyse imported claims) are later steps.
 
 **The Python service and the `webapp/` pilot dashboard are unchanged and remain.** The web platform has
 its own compose file (`compose.web.yml`), CI workflow (`.github/workflows/web-ci.yml`) and Terraform
@@ -200,8 +206,11 @@ its own compose file (`compose.web.yml`), CI workflow (`.github/workflows/web-ci
 
 ## Local quickstart (without Docker: the path that was actually verified)
 
-Prerequisites: Node 22 (`.nvmrc`; `engines` allows `>=22.12 <25`), PostgreSQL 16, and `openssl` (or Node,
-see below).
+Prerequisites: Node 22 (`.nvmrc` pins 22.23.3, the version in the digest-pinned `node:22-alpine` images;
+`engines` allows `>=22.15.0 <23 || >=23.5.0 <25`: step 3 needs `module.registerHooks`, added in Node 22.15.0 /
+23.5.0, for the parse sandbox guard, and the API refuses to start without it), PostgreSQL 16, and `openssl` (or Node, see below). Import/export also needs an
+S3-compatible store (MinIO locally) and, for the parity tests, Python: see
+[Local verification without Docker](#local-verification-without-docker).
 
 ```bash
 npm ci --ignore-scripts                 # install scripts stay disabled (.npmrc)
@@ -248,16 +257,192 @@ outside production.
 http://127.0.0.1:8080. This file passes `docker compose config`, but the images have never been built.
 Treat the first run as a test.
 
+## Import and export (step 3)
+
+Step 3 lets staff upload freight documents, check what was read from them, turn accepted documents
+into claims, and export claims, packets and approval decisions. Every uploaded file is treated as
+hostile. Architecture: [ARCHITECTURE.md, step 3](ARCHITECTURE.md#web-platform-import-and-export-step-3).
+Threats: section 6 of [technical/web-platform-security.md](technical/web-platform-security.md).
+
+**Not in step 3:** OCR, any AI or LLM call, outbound email, and email-forward ingestion. Email
+forwarding is **design only**; see [docs/design/email-ingest.md](docs/design/email-ingest.md).
+
+### Who can do what
+
+| Role | Import (upload, view, download, commit) | Review (resolve fields, accept or reject) | Export claims | Export packets and decisions |
+| --- | --- | --- | --- | --- |
+| OWNER, ADMIN, MANAGER, REVIEWER | yes | yes | yes | yes |
+| ANALYST | yes | no | yes | no |
+| VIEWER, PLATFORM_DEV, SUPER_ADMIN | no | no | no | no |
+
+The permissions are `import:run`, `import:review`, `export:claims`, `export:packets` and
+`export:outcomes`, defined in `packages/shared/src/rbac.ts`. The API enforces them on every request.
+The UI only hides the controls.
+
+### Formats and limits
+
+- **Accepted files:** PDF (text layer only), CSV, TXT, PNG and JPEG. The type is read from the file's
+  bytes, not from the browser's media type, and the extension must agree with it. Images are checked
+  for structure and stored, but no text is read from them (no OCR), so they always go to review for
+  manual entry.
+- **Refused before storage:** files over 10 MiB (`413`); unknown or mismatched types; text files with
+  binary control bytes; HTML, SVG, XML or PHP disguised as text; empty files (`415` with a reason code).
+  Nothing is stored for a refused file.
+- **Refused after parsing** (the document shows status `REJECTED` and its stored copy is deleted):
+  malformed or encrypted PDFs, PDFs over 50 pages, more than 2,000,000 characters of text, malformed
+  CSV, broken or oversized images, and parses that hit the time or memory limit.
+- **Batches:** up to 10 files per batch. Uploading the same file twice into one batch returns `409`.
+  The tenant storage quota is 1 GiB (`422 quota_exceeded`).
+- **Uploads** send the raw file bytes (`POST /api/v1/imports/:batchId/documents?filename=...`,
+  `Content-Type: application/octet-stream`). The browser uploads 2 files at a time and shows progress.
+
+### What happens to an upload
+
+1. The API streams the body with a hard size limit and computes its SHA-256.
+2. It checks the file type from the bytes.
+3. It stores the original in S3 under `t/<tenantId>/imports/...`, encrypted with SSE-KMS.
+4. A separate, locked-down worker process parses the file. That process has no environment, no
+   secrets, no network modules and no database access.
+5. Deterministic rules extract fields from `Key: value` lines. Every field records where it came from
+   (page, line, characters, CSV row and an excerpt).
+6. The document ends up `ACCEPTED` (nothing to check), `NEEDS_REVIEW`, `REJECTED` or `FAILED`
+   (infrastructure error). The upload response already contains this final state.
+
+### Review flow
+
+- A document goes to the **review queue** (`/import/review`) when a field is flagged, the type is
+  unknown, no fields or no load number were found, it is an image, it duplicates an earlier upload, or
+  some content could not be used.
+- A reviewer (`import:review`) confirms, corrects or rejects each flagged field. For images the reviewer
+  can also set the document type and type fields in by hand. The reviewer then accepts or rejects the
+  whole document. Every decision needs a reason of at least 10 characters and is recorded in an
+  append-only table and in the audit trail. Accepted documents cannot be changed.
+- **Create claims from accepted documents** (on the Import page; you choose Shipper or Carrier) groups
+  the accepted documents by load number. It creates a new claim with status **Awaiting analysis**, or
+  links the documents to an existing claim. A new claim has no amounts and no evidence packet until the
+  analysis step (build step 5) exists. A claim that already has a packet only gets the documents linked;
+  its packet does not change.
+
+**Confidence is a rule-based parse score, not an accuracy measure.** It says how the value was read (for
+example 0.95 for an explicit `Key: value` line in a text or CSV file, 0.85 for a PDF, lower for a
+guessed document type or an ambiguous date format). It does not say how likely the value is to be
+correct, and the product never presents it as accuracy. Fields below 90% (`REVIEW_CONFIDENCE_THRESHOLD`)
+need review, so every PDF field is reviewed by default.
+
+### Exports
+
+- **Claims list** (`Export` on `/claims`): the current filtered list. **Packets** (`Export packet` on a
+  claim): one row per finding of the latest packet. **Decisions** (`Export decisions` on `/approvals`):
+  one row per approval record.
+- **Formats:** CSV (UTF-8 with BOM, CRLF, text cells quoted) or Excel `.xlsx` (one sheet, bold frozen
+  header, typed numbers). Files are streamed; nothing is stored on the server. The limit is 50,000 rows
+  per file (`422`, "Too many rows to export. Narrow your filters.").
+- **Formula neutralization:** a text cell that would start with `=`, `+`, `-` or `@` (also the
+  full-width forms), after any leading whitespace, is prefixed with `'`, so a spreadsheet shows it as
+  text instead of running it. Control and invisible characters are removed first. Numbers stay numbers
+  (`-12.50` is not changed). The `.xlsx` files contain no formulas, links or macros.
+- **Content:** no user names, emails or ids, and no demand letter text. Money is USD with two decimals.
+  `Invoice Date` is `YYYY-MM-DD`; other timestamps are ISO-8601 UTC.
+- **Audit:** `export.started` is written before the first byte. `export.completed` records the row
+  count, size and SHA-256 of the exact file sent. An interrupted download records `export.aborted`.
+
+### Configuration (step 3)
+
+All knobs are read once at start-up. Production floors and ceilings apply only with
+`NODE_ENV=production`. `.env.example` lists them.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `IMPORT_MAX_FILE_BYTES` | 10485760 | max bytes per file (production ceiling 26214400) |
+| `IMPORT_MAX_FILES_PER_BATCH` | 10 | documents per batch (`409 batch_full`) |
+| `TENANT_STORAGE_QUOTA_BYTES` | 1073741824 | bytes of non-rejected documents per tenant (`422`) |
+| `UPLOAD_REQUEST_TIMEOUT_SECONDS` / `UPLOAD_IDLE_TIMEOUT_SECONDS` | 60 / 10 | whole-request timeout / no-bytes timeout during an upload (`408`) |
+| `UPLOAD_MAX_CONCURRENT_PER_TENANT` / `EXPORT_MAX_CONCURRENT_PER_TENANT` | 4 / 2 | simultaneous uploads / exports per tenant **per API instance** (`429`) |
+| `RATE_LIMIT_UPLOAD_MAX` / `RATE_LIMIT_EXPORT_MAX` | 60 / 10 | uploads / exports per user per 10 minutes (all limiters are off with `RATE_LIMIT_ENABLED=false`, which production refuses) |
+| `PARSE_TIMEOUT_MS` | 20000 | wall clock per parse (production 1000..60000) |
+| `PARSE_MEMORY_MB` | 256 | heap per parse (production 64..1024) |
+| `PARSE_MAX_CONCURRENCY` / `PARSE_QUEUE_TIMEOUT_MS` | 2 / 5000 | parse jobs at once per instance / wait for a slot before `503 parser_busy` |
+| `PARSE_MAX_OUTPUT_BYTES` | 25165824 | max size of a parse result |
+| `PARSE_MAX_PDF_PAGES` / `PARSE_MAX_TEXT_CHARS` / `PARSE_MAX_IMAGE_PIXELS` | 50 / 2000000 / 50000000 | content limits (text ceiling 5000000) |
+| `REVIEW_CONFIDENCE_THRESHOLD` | 0.90 | fields below this need review (0.50..1.00) |
+| `EXPORT_MAX_ROWS` | 50000 | rows per export file (`422 export_too_large`) |
+| `IMPORT_STALE_SECONDS` | 600 | a document stuck in `RECEIVED` this long is marked `FAILED` |
+| `S3_SSE` / `S3_KMS_KEY_ID` | `aws:kms` / unset | encryption of stored documents; production refuses `none` and a missing key id |
+| `PARSE_WORKER_ENTRY` | built worker | override for tests |
+
+### Local verification without Docker
+
+The Docker engine was broken on the build machine, so step 3 was verified with portable binaries. CI
+(`.github/workflows/web-ci.yml`) is the authority for container builds. Keep all binaries outside the
+repository and never commit them.
+
+1. **PostgreSQL 16:** a portable PostgreSQL 16 on a free loopback port (the build used
+   `127.0.0.1:55433`). Apply `api/db/init/00-roles.sql`, then migrate and seed as in the quickstart.
+2. **MinIO with KMS:** download the Windows `minio.exe` from the official MinIO GitHub release and check
+   its published SHA-256 before the first run (the build used `RELEASE.2025-09-07T16-13-09Z`). Start it
+   on loopback with a static KMS key so that SSE-KMS works locally:
+   ```bash
+   export MINIO_ROOT_USER=localdev MINIO_ROOT_PASSWORD=localdev-minio-password   # public dev values
+   export MINIO_KMS_SECRET_KEY="fr-dev-key:$(openssl rand -base64 32)"          # <key name>:<base64 of 32 bytes>
+   ./minio.exe server ./minio-data --address 127.0.0.1:59000
+   ```
+3. **API environment for S3** (in the shell that runs the tests):
+   ```bash
+   export S3_ENDPOINT=http://127.0.0.1:59000 S3_FORCE_PATH_STYLE=true S3_REGION=us-east-1
+   export S3_BUCKET=fr-documents-dev S3_ACCESS_KEY_ID=localdev S3_SECRET_ACCESS_KEY=localdev-minio-password
+   export S3_SSE=aws:kms S3_KMS_KEY_ID=fr-dev-key      # S3_SSE=none is the dev-only fallback
+   npm run ensure-bucket                               # creates the bucket, enables versioning
+   ```
+   `ensure-bucket` runs only with `NODE_ENV=development` or `test`. It refuses production and an unset
+   `NODE_ENV`, because the AWS bucket is managed by Terraform.
+4. **Python parity:** the parity suite runs the Python reference code. Set `PYTHON` to an interpreter
+   that has the repository's runtime dependencies (for example the Python service's `.venv`). The test
+   adds `PYTHONPATH=<repo>/src` itself. In CI (`CI=true`) a missing Python fails the suite; locally it is
+   skipped with a message.
+   ```bash
+   export PYTHON=/path/to/.venv/Scripts/python    # Linux/macOS: .venv/bin/python
+   ```
+5. **Build, then test:** the parser worker is a build artifact, so build before the DB-backed suites.
+   ```bash
+   npm run build
+   npm run test:integration
+   npm run test:acceptance
+   ```
+
+Stop the portable services afterwards. With Docker, `compose.web.yml` starts MinIO with the same KMS
+key name (`fr-dev-key`) and enables versioning (unverified locally).
+
+### Python parity and registered divergences
+
+The TypeScript parser is a port of the Python `ingest/` and `extraction/` code. The parity suite
+(`api/test/parity/`, run by `npm run test:integration`) compares both on fixtures, generated text and
+CSV files, and generated text-layer PDFs. These registered divergences are the only allowed
+differences. The full register, with the rationale for each, is in
+[ARCHITECTURE.md](ARCHITECTURE.md#python-parity-registered-divergences-d1-d8).
+
+- **D1:** the PDF signature must be at byte 0 (Python allows 1024 junk bytes).
+- **D2:** PDF text comes from pdf.js instead of pdfplumber. Parity holds only for simple text-layer PDFs.
+- **D3:** the extension must match the sniffed type (Python looks at the extension only).
+- **D4:** invalid UTF-8 adds `DECODE_REPLACEMENTS`. NUL, C0 control bytes (except tab, LF, CR, FF) and
+  DEL (0x7F) reject the file as `binary_content`; Python would continue.
+- **D5:** text over 2,000,000 characters is rejected (Python: 5,000,000).
+- **D6:** string values are sanitized and capped at 200 characters (`SANITIZED_VALUE`).
+- **D7:** only ASCII digits in dates and times, and only an ASCII `USD` suffix.
+- **D8:** PNG and JPEG are accepted but yield no fields (no OCR); they go to manual review.
+
 ## Tests and checks
 
 ```bash
 npm run typecheck
 npm run lint                 # --max-warnings 0
 npm test                     # unit tests (shared, api, web); no database needed
+npm run ensure-bucket        # step 3: create the dev/test bucket in MinIO (S3_* env; refuses production)
+npm run build                # shared + api + web (+ dist check: no inline script/style, no sourcemaps);
+                             # builds the parser worker, so run it BEFORE the integration/acceptance suites
 npm run test:integration     # api, against a migrated + seeded test DB (TEST_DATABASE_URL, TEST_ADMIN_DATABASE_URL,
-                             # and the same MFA_ENC_KEY the seed used); see the env block in .github/workflows/web-ci.yml
+                             # and the same MFA_ENC_KEY the seed used), S3 (MinIO) and Python (PYTHON=...) for the
+                             # parity suite; see the env block in .github/workflows/web-ci.yml
 npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
-npm run build                # shared + api + web (+ dist check: no inline script/style, no sourcemaps)
 npm run audit && npm audit signatures
 terraform -chdir=infra fmt -check -recursive && terraform -chdir=infra init -backend=false && terraform -chdir=infra validate
 ```
@@ -267,3 +452,12 @@ tests (shared 30, api 83, web 29), integration (3/3), build, `npm audit` (0 vuln
 `npm audit signatures`, migrate + seed, and terraform fmt/validate (portable 1.16.5). The independent
 acceptance run gave 334 passed, 0 failed, 5 skipped, 2 todo. **Not run:** the Docker images or compose
 stack, Playwright end-to-end tests, and any AWS deployment.
+
+Step 3 (2026-10-09, Windows, Node 24 plus a Node 22.23 check of the worker, portable PostgreSQL 16.15,
+portable MinIO with SSE-KMS, Python 3.14 and 3.12 for parity): typecheck, lint, unit tests (shared 113,
+api 279, web 46), migrate + seed, `ensure-bucket`, build, integration (55 passed, 2 placeholder skips),
+`npm audit` (0 vulnerabilities), `npm audit signatures`, terraform fmt/validate. Parity with the Python
+reference: zero unregistered differences. Independent acceptance run (round 2): shared 22/22, web 87
+passed (1 Playwright skip), api 500 passed; the 3 api failures were this documentation (since added) and
+two test bugs that were fixed and re-run. **Not run:** container images and the compose stack,
+Playwright, the forced audit-failure export test, encrypted-PDF tests (no `qpdf`), any AWS deployment.

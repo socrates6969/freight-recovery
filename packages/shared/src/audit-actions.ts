@@ -27,6 +27,23 @@ export const AUDIT_ACTIONS = [
   'audit.verify',
   'platform.cross_tenant_read',
   'authz.denied',
+  // Step 3 (N10): import, review, commit and export.
+  'import.batch_created',
+  'import.document_received',
+  'import.document_rejected',
+  'import.document_parsed',
+  'import.document_downloaded',
+  'review.field_resolved',
+  'review.field_added',
+  'review.doctype_set',
+  'review.document_accepted',
+  'review.document_rejected',
+  'import.committed',
+  'claim.created_from_import',
+  'claim.documents_linked',
+  'export.started',
+  'export.completed',
+  'export.aborted',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

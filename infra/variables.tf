@@ -128,6 +128,17 @@ variable "body_limit_bytes" {
   }
 }
 
+variable "import_max_file_bytes" {
+  description = "Maximum size of one imported document (API IMPORT_MAX_FILE_BYTES). The WAF upload Content-Length rule encodes this value."
+  type        = number
+  default     = 10485760
+
+  validation {
+    condition     = var.import_max_file_bytes == 10485760
+    error_message = "The WAF upload Content-Length regex in waf.tf is written for 10485760 bytes; update both together."
+  }
+}
+
 variable "waf_rate_limit_per_5min" {
   description = "WAF rate-based rule: max requests per IP per 5 minutes."
   type        = number

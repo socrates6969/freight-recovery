@@ -43,12 +43,14 @@ export const routes: RouteObject[] = [
         children: [{ path: ':id', lazy: async () => ({ Component: (await import('./features/claims/ClaimSheet')).ClaimSheet }) }],
       },
       { path: 'approvals', lazy: async () => ({ Component: (await import('./features/approvals/ApprovalsPage')).ApprovalsPage }) },
+      { path: 'import', lazy: async () => ({ Component: (await import('./features/imports/ImportPage')).ImportPage }) },
+      { path: 'import/review', lazy: async () => ({ Component: (await import('./features/imports/ReviewQueuePage')).ReviewQueuePage }) },
     ],
   },
   { path: '*', element: <NotFound /> },
 ];
 
-function createServices(fetchImpl: typeof fetch, onAuthLost: () => void): AppServices {
+function createServices(fetchImpl: typeof fetch, onAuthLost: () => void, xhrImpl: typeof XMLHttpRequest | undefined): AppServices {
   const session = createSessionStore();
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -56,19 +58,21 @@ function createServices(fetchImpl: typeof fetch, onAuthLost: () => void): AppSer
       mutations: { retry: false },
     },
   });
-  const api = new ApiClient(fetchImpl, session, onAuthLost);
+  const api = new ApiClient(fetchImpl, session, onAuthLost, xhrImpl);
   return { api, session, queryClient, toasts: createToastStore() };
 }
 
 export interface AppRootProps {
   fetchImpl?: typeof fetch;
+  /** Used for upload progress (default globalThis.XMLHttpRequest). */
+  xhrImpl?: typeof XMLHttpRequest;
   initialEntries?: string[];
 }
 
 type AppRouter = ReturnType<typeof createBrowserRouter>;
 
 /** Build per-instance services and router (outside React so nothing here is a hook). */
-function createAppState(fetchImpl: typeof fetch | undefined, initialEntries: string[] | undefined) {
+function createAppState(fetchImpl: typeof fetch | undefined, initialEntries: string[] | undefined, xhrImpl: typeof XMLHttpRequest | undefined) {
   const boundFetch: typeof fetch = fetchImpl ?? ((input, init) => globalThis.fetch(input, init));
   const holder: { router: AppRouter | null } = { router: null };
   const services = createServices(boundFetch, () => {
@@ -79,13 +83,13 @@ function createAppState(fetchImpl: typeof fetch | undefined, initialEntries: str
       const loc = router.state.location;
       void router.navigate(`/login?next=${encodeURIComponent(`${loc.pathname}${loc.search}`)}`, { replace: true });
     }
-  });
+  }, xhrImpl ?? (typeof XMLHttpRequest === 'undefined' ? undefined : globalThis.XMLHttpRequest));
   holder.router = initialEntries ? createMemoryRouter(routes, { initialEntries }) : createBrowserRouter(routes);
   return { services, router: holder.router };
 }
 
-export function AppRoot({ fetchImpl, initialEntries }: AppRootProps) {
-  const [state] = useState(() => createAppState(fetchImpl, initialEntries));
+export function AppRoot({ fetchImpl, xhrImpl, initialEntries }: AppRootProps) {
+  const [state] = useState(() => createAppState(fetchImpl, initialEntries, xhrImpl));
 
   useEffect(() => {
     const { session, api } = state.services;

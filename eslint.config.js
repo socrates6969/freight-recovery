@@ -19,6 +19,16 @@ const SYSTEM_DB_IMPORTS = {
 const WEB_IMPORTS = { group: ['@fr/web', '**/web/src/**'], message: 'api must not import from web.' };
 const CHILD_PROCESS = { name: 'node:child_process', message: 'Spawning processes is banned in the API.' };
 const CHILD_PROCESS_BARE = { name: 'child_process', message: 'Spawning processes is banned in the API.' };
+// The sandboxed parser (api/src/imports/parse/** and the worker entry) must not reach the network, the
+// file system, other processes or any API service module (A1.4c; re-checked by api/test/architecture.test.ts).
+const SANDBOX_BANNED_PATHS = [
+  'node:net', 'net', 'node:http', 'http', 'node:https', 'https', 'node:http2', 'http2', 'node:dns', 'dns', 'node:tls', 'tls',
+  'node:dgram', 'dgram', 'node:child_process', 'child_process', 'node:cluster', 'cluster', 'node:worker_threads', 'worker_threads',
+  'node:fs', 'fs', 'node:fs/promises', 'fs/promises', 'node:vm', 'vm', 'fastify',
+].map((name) => ({ name, message: 'Not available inside the parse sandbox.' }));
+const SANDBOX_BANNED_PATTERNS = [
+  { group: ['@aws-sdk/*', '**/db/**', '**/db', '**/storage/**', '**/storage', '**/http/**', '**/http', '**/audit/**', '**/audit'], message: 'Not available inside the parse sandbox.' },
+];
 
 const UNSAFE_RAW = {
   selector: 'MemberExpression[property.name=/^\\$(queryRawUnsafe|executeRawUnsafe)$/]',
@@ -90,6 +100,19 @@ export default tseslint.config(
     rules: {
       'no-restricted-imports': ['error', { paths: [CHILD_PROCESS, CHILD_PROCESS_BARE], patterns: [PRISMA_IMPORTS, SYSTEM_DB_IMPORTS, WEB_IMPORTS] }],
       'no-restricted-syntax': ['error', UNSAFE_RAW, RAW_SQL],
+    },
+  },
+  {
+    // The ONE file allowed to spawn a process: the parse sandbox launcher (A1.4).
+    files: ['api/src/imports/sandbox/spawn.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { patterns: [PRISMA_IMPORTS, SYSTEM_DB_IMPORTS, WEB_IMPORTS] }],
+    },
+  },
+  {
+    files: ['api/src/imports/parse/**/*.ts', 'api/src/imports/sandbox/worker-main.ts', 'api/src/imports/sandbox/guard.ts'],
+    rules: {
+      'no-restricted-imports': ['error', { paths: SANDBOX_BANNED_PATHS, patterns: [PRISMA_IMPORTS, WEB_IMPORTS, ...SANDBOX_BANNED_PATTERNS] }],
     },
   },
   {

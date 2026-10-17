@@ -50,6 +50,7 @@ enum ClaimStatus {
   APPROVED
   REJECTED
   SEND_READY
+  AWAITING_ANALYSIS
 }
 
 enum PacketStatus {
@@ -95,6 +96,64 @@ enum VerifierStatus {
   NEEDS_REVIEW
 }
 
+enum ImportSource {
+  UPLOAD
+  EMAIL
+}
+
+enum DetectedType {
+  PDF
+  PNG
+  JPEG
+  CSV
+  TXT
+}
+
+enum ImportDocStatus {
+  RECEIVED
+  NEEDS_REVIEW
+  ACCEPTED
+  REJECTED
+  FAILED
+}
+
+enum DocTypeBasis {
+  HEADER
+  KEYS
+  FILENAME
+  MANUAL
+  NONE
+}
+
+enum FieldKind {
+  STRING
+  DECIMAL
+  DATETIME
+  STRING_LIST
+}
+
+enum FieldStatus {
+  PROPOSED
+  CONFIRMED
+  CORRECTED
+  REJECTED
+}
+
+enum FieldOrigin {
+  EXTRACTED
+  MANUAL
+}
+
+enum ReviewAction {
+  CONFIRM
+  CORRECT
+  REJECT
+  ADD
+  SET_TYPE
+  ACCEPT
+  REJECT_DOC
+}
+
 enum MailKind {
   PASSWORD_RESET
   INVITE
@@ -128,6 +187,11 @@ model Tenant {
   packetTimeline  PacketTimelineEvent[]
   packetFindings  PacketFinding[]
   approvals       Approval[]
+  importBatches   ImportBatch[]
+  importDocuments ImportDocument[]
+  extractedFields ExtractedField[]
+  reviewDecisions ImportReviewDecision[]
+  claimDocuments  ClaimDocument[]
 
   @@map("tenants")
 }
@@ -149,10 +213,15 @@ model User {
   mfaSecret      MfaSecret?
   recoveryCodes  MfaRecoveryCode[]
   passwordResets PasswordReset[]
-  invitesSent    Invite[]          @relation("InvitedBy")
-  assignedClaims Claim[]           @relation("ClaimAssignee")
-  packetsCreated EvidencePacket[]  @relation("PacketCreatedBy")
-  approvals      Approval[]        @relation("ApprovalActor")
+  invitesSent    Invite[]               @relation("InvitedBy")
+  assignedClaims Claim[]                @relation("ClaimAssignee")
+  packetsCreated EvidencePacket[]       @relation("PacketCreatedBy")
+  approvals      Approval[]             @relation("ApprovalActor")
+  importBatches  ImportBatch[]          @relation("ImportBatchCreatedBy")
+  importUploads  ImportDocument[]       @relation("ImportDocumentUploadedBy")
+  fieldsResolved ExtractedField[]       @relation("ExtractedFieldResolvedBy")
+  reviewActions  ImportReviewDecision[] @relation("ReviewDecisionActor")
+  documentLinks  ClaimDocument[]        @relation("ClaimDocumentLinkedBy")
 
   @@map("users")
 }
@@ -315,6 +384,7 @@ model Claim {
   assignee  User?            @relation("ClaimAssignee", fields: [assigneeId], references: [id])
   packets   EvidencePacket[]
   approvals Approval[]
+  documents ClaimDocument[]
 
   @@unique([tenantId, claimNumber])
   @@unique([id, tenantId])
@@ -441,6 +511,148 @@ model Approval {
 
   @@index([tenantId, claimId, createdAt])
   @@map("approvals")
+}
+
+// ---------------------------------------------------------------------------------------------
+// Step 3: imports (upload pipeline, extracted fields with provenance, human review) and the
+// document -> claim links. All tenant-scoped with RLS FORCE; see migration 20261009000000.
+// ---------------------------------------------------------------------------------------------
+
+model ImportBatch {
+  id          String       @id @default(uuid()) @db.Uuid
+  tenantId    String       @map("tenant_id") @db.Uuid
+  label       String?
+  source      ImportSource @default(UPLOAD)
+  createdById String       @map("created_by_id") @db.Uuid
+  createdAt   DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id])
+  createdBy User             @relation("ImportBatchCreatedBy", fields: [createdById], references: [id])
+  documents ImportDocument[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, createdAt])
+  @@map("import_batches")
+}
+
+model ImportDocument {
+  id              String          @id @default(uuid()) @db.Uuid
+  tenantId        String          @map("tenant_id") @db.Uuid
+  batchId         String          @map("batch_id") @db.Uuid
+  uploadedById    String?         @map("uploaded_by_id") @db.Uuid
+  source          ImportSource
+  sourceRef       String?         @map("source_ref")
+  displayName     String          @map("display_name")
+  detectedType    DetectedType    @map("detected_type")
+  sizeBytes       Int             @map("size_bytes")
+  sha256          String          @db.Char(64)
+  storageKey      String?         @map("storage_key")
+  textKey         String?         @map("text_key")
+  docType         DocType         @map("doc_type")
+  docTypeBasis    DocTypeBasis    @map("doc_type_basis")
+  status          ImportDocStatus
+  rejectReason    String?         @map("reject_reason")
+  reviewReasons   String[]        @map("review_reasons")
+  warnings        String[]
+  pageCount       Int?            @map("page_count")
+  charCount       Int?            @map("char_count")
+  loadNumber      String?         @map("load_number")
+  providerName    String          @map("provider_name")
+  providerVersion String          @map("provider_version")
+  parserVersion   String          @map("parser_version")
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  parsedAt        DateTime?       @map("parsed_at") @db.Timestamptz(3)
+
+  tenant     Tenant                 @relation(fields: [tenantId], references: [id])
+  batch      ImportBatch            @relation(fields: [batchId, tenantId], references: [id, tenantId])
+  uploadedBy User?                  @relation("ImportDocumentUploadedBy", fields: [uploadedById], references: [id])
+  fields     ExtractedField[]
+  decisions  ImportReviewDecision[]
+  claimLinks ClaimDocument[]
+
+  @@unique([tenantId, batchId, sha256])
+  @@unique([id, tenantId])
+  @@index([tenantId, batchId])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, sha256])
+  @@map("import_documents")
+}
+
+model ExtractedField {
+  id             String      @id @default(uuid()) @db.Uuid
+  tenantId       String      @map("tenant_id") @db.Uuid
+  documentId     String      @map("document_id") @db.Uuid
+  key            String
+  groupIndex     Int?        @map("group_index")
+  ordinal        Int
+  kind           FieldKind
+  value          String?
+  rawValue       String      @map("raw_value")
+  correctedValue String?     @map("corrected_value")
+  confidence     Decimal     @db.Decimal(4, 3)
+  needsReview    Boolean     @map("needs_review")
+  reviewReasons  String[]    @map("review_reasons")
+  status         FieldStatus @default(PROPOSED)
+  origin         FieldOrigin
+  page           Int?
+  line           Int?
+  startCol       Int?        @map("start_col")
+  endCol         Int?        @map("end_col")
+  sourceRow      Int?        @map("source_row")
+  excerpt        String?
+  resolvedById   String?     @map("resolved_by_id") @db.Uuid
+  resolvedAt     DateTime?   @map("resolved_at") @db.Timestamptz(3)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant     Tenant                 @relation(fields: [tenantId], references: [id])
+  document   ImportDocument         @relation(fields: [documentId, tenantId], references: [id, tenantId])
+  resolvedBy User?                  @relation("ExtractedFieldResolvedBy", fields: [resolvedById], references: [id])
+  decisions  ImportReviewDecision[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, documentId])
+  @@map("extracted_fields")
+}
+
+model ImportReviewDecision {
+  id                String       @id @default(uuid()) @db.Uuid
+  tenantId          String       @map("tenant_id") @db.Uuid
+  documentId        String       @map("document_id") @db.Uuid
+  fieldId           String?      @map("field_id") @db.Uuid
+  action            ReviewAction
+  reason            String
+  beforeValueSha256 String?      @map("before_value_sha256")
+  afterValueSha256  String?      @map("after_value_sha256")
+  actorId           String       @map("actor_id") @db.Uuid
+  actorRole         String       @map("actor_role")
+  createdAt         DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  tenant   Tenant          @relation(fields: [tenantId], references: [id])
+  document ImportDocument  @relation(fields: [documentId, tenantId], references: [id, tenantId])
+  field    ExtractedField? @relation(fields: [fieldId, tenantId], references: [id, tenantId])
+  actor    User            @relation("ReviewDecisionActor", fields: [actorId], references: [id])
+
+  @@index([tenantId, documentId, createdAt])
+  @@map("import_review_decisions")
+}
+
+model ClaimDocument {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  claimId    String   @map("claim_id") @db.Uuid
+  documentId String   @map("document_id") @db.Uuid
+  linkedById String   @map("linked_by_id") @db.Uuid
+  linkedAt   DateTime @default(now()) @map("linked_at") @db.Timestamptz(3)
+
+  tenant   Tenant         @relation(fields: [tenantId], references: [id])
+  claim    Claim          @relation(fields: [claimId, tenantId], references: [id, tenantId])
+  document ImportDocument @relation(fields: [documentId, tenantId], references: [id, tenantId])
+  linkedBy User           @relation("ClaimDocumentLinkedBy", fields: [linkedById], references: [id])
+
+  @@unique([tenantId, documentId])
+  @@index([tenantId, claimId])
+  @@map("claim_documents")
 }
 
 model AuditEvent {

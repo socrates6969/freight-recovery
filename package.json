@@ -10,7 +10,7 @@
     "web"
   ],
   "engines": {
-    "node": ">=22.12.0 <25"
+    "node": ">=22.15.0 <23 || >=23.5.0 <25"
   },
   "scripts": {
     "prisma:generate": "prisma generate --config api/prisma.config.ts",
@@ -21,6 +21,7 @@
     "test:acceptance": "npm run test:acceptance -w packages/shared && npm run test:acceptance -w api && npm run test:acceptance -w web",
     "db:migrate:deploy": "prisma migrate deploy --config api/prisma.config.ts",
     "db:seed": "npm run seed -w api --",
+    "ensure-bucket": "npm run ensure-bucket -w api",
     "build": "npm run build -w packages/shared && npm run build -w api && npm run build -w web",
     "audit": "npm audit --omit=dev --audit-level=high",
     "verify:no-install-scripts": "node tools/verify-no-install-scripts.mjs"

@@ -1,6 +1,6 @@
 import { ApprovalsPage as ApprovalsPageSchema } from '@fr/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { ClipboardCheck, Command as CommandIcon, FileText, LogOut, UserRound } from 'lucide-react';
+import { ClipboardCheck, Command as CommandIcon, FileText, ListChecks, LogOut, Upload, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
@@ -75,6 +75,8 @@ export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const paletteButton = useRef<HTMLButtonElement>(null);
   const isTenantUser = Boolean(user?.tenant) && permissions.includes('claims:read');
+  const canImport = permissions.includes('import:run');
+  const canReview = permissions.includes('import:review');
 
   const pending = useQuery({
     queryKey: ['approvals', 'pending-count'],
@@ -127,6 +129,18 @@ export function AppShell() {
             Approvals
             {pending.data ? <span className="badge badge-accent num ml-auto">{pending.data.total}</span> : null}
           </NavLink>
+          {canImport ? (
+            <NavLink to="/import" end className={navClass}>
+              <Upload size={16} aria-hidden="true" />
+              Import
+            </NavLink>
+          ) : null}
+          {canReview ? (
+            <NavLink to="/import/review" className={navClass}>
+              <ListChecks size={16} aria-hidden="true" />
+              Review queue
+            </NavLink>
+          ) : null}
         </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">

@@ -24,6 +24,12 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'PacketTimelineEvent',
   'PacketFinding',
   'Approval',
+  // Step 3: imports and document -> claim links.
+  'ImportBatch',
+  'ImportDocument',
+  'ExtractedField',
+  'ImportReviewDecision',
+  'ClaimDocument',
 ]);
 
 const TENANT_READ_OPS: ReadonlySet<string> = new Set(['findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow']);
@@ -137,6 +143,11 @@ export type TenantTx = Pick<
   | 'packetTimelineEvent'
   | 'packetFinding'
   | 'approval'
+  | 'importBatch'
+  | 'importDocument'
+  | 'extractedField'
+  | 'importReviewDecision'
+  | 'claimDocument'
 >;
 
 const RAW = Symbol('fr.rawTx');

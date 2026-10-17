@@ -184,6 +184,27 @@
     padding: var(--space-3);
     animation: fade-in var(--duration-base) var(--ease-out);
   }
+  .dialog-wide {
+    top: 6vh;
+    width: min(1040px, calc(100vw - 32px));
+    max-height: 88vh;
+    overflow-y: auto;
+  }
+  .break-anywhere {
+    overflow-wrap: anywhere;
+  }
+  .conf-meter {
+    display: block;
+    width: 64px;
+    height: 4px;
+    margin-top: 2px;
+    accent-color: var(--color-accent);
+  }
+  .upload-progress {
+    width: 160px;
+    height: 6px;
+    accent-color: var(--color-accent);
+  }
   .toast {
     background: var(--color-text);
     color: var(--color-bg);

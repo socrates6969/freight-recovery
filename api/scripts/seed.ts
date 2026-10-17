@@ -166,6 +166,12 @@ async function resetSeedData(base: BaseClient): Promise<void> {
            OR u.id IN (SELECT user_id FROM memberships WHERE tenant_id = ANY(${ids}::uuid[]))`
     ).map((u) => u.id);
     await tx.$executeRaw`DELETE FROM audit_events WHERE tenant_id = ANY(${ids}::uuid[]) OR chain_key = 'platform'`;
+    // Step 3 import tables (children first). Stored objects are NOT removed here (dev/test buckets only).
+    await tx.$executeRaw`DELETE FROM claim_documents WHERE tenant_id = ANY(${ids}::uuid[])`;
+    await tx.$executeRaw`DELETE FROM import_review_decisions WHERE tenant_id = ANY(${ids}::uuid[])`;
+    await tx.$executeRaw`DELETE FROM extracted_fields WHERE tenant_id = ANY(${ids}::uuid[])`;
+    await tx.$executeRaw`DELETE FROM import_documents WHERE tenant_id = ANY(${ids}::uuid[])`;
+    await tx.$executeRaw`DELETE FROM import_batches WHERE tenant_id = ANY(${ids}::uuid[])`;
     await tx.$executeRaw`DELETE FROM approvals WHERE tenant_id = ANY(${ids}::uuid[])`;
     await tx.$executeRaw`DELETE FROM packet_findings WHERE tenant_id = ANY(${ids}::uuid[])`;
     await tx.$executeRaw`DELETE FROM packet_timeline_events WHERE tenant_id = ANY(${ids}::uuid[])`;

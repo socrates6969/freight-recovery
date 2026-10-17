@@ -11,7 +11,8 @@ import { hasUnsafeChars, stripUnsafeMultiline } from './text.js';
 // Primitives
 // ---------------------------------------------------------------------------------------------
 
-export const CLAIM_STATUSES = ['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'SEND_READY'] as const;
+/** AWAITING_ANALYSIS (step 3): claim created from imported documents; no packet and zero amounts yet. */
+export const CLAIM_STATUSES = ['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'SEND_READY', 'AWAITING_ANALYSIS'] as const;
 export const PACKET_STATUSES = ['PENDING_REVIEW', 'APPROVED', 'REJECTED', 'SEND_READY', 'SUPERSEDED'] as const;
 export const PERSPECTIVES = ['SHIPPER', 'CARRIER'] as const;
 export const APPROVAL_ACTIONS = ['EDIT', 'APPROVE', 'REJECT', 'SEND_READY'] as const;

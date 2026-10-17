@@ -60,3 +60,24 @@ No real mail transport exists yet. In production the API's config validator refu
 `MAIL_TRANSPORT` value (`outbox` is a dev/test sink; `ses` is a stub whose `SesMailer` throws), so the
 ECS task in `ecs.tf` (which sets `MAIL_TRANSPORT=ses`) will not start until a real transport is
 implemented and allow-listed in `PRODUCTION_MAIL_TRANSPORTS` (`api/src/config.ts`).
+
+## Imports and exports (step 3)
+
+- **Documents bucket.** Writes must request SSE-KMS with the data CMK (`DenyNonKmsPuts`,
+  `DenyMissingSseHeader`, `DenyWrongKmsKey`); the API sends `S3_SSE=aws:kms` and
+  `S3_KMS_KEY_ID=<CMK ARN>` on every single-request `PutObject` (no multipart). Lifecycle: noncurrent
+  versions expire after 30 days, expired delete markers are removed, incomplete multipart uploads are
+  aborted after 1 day. The task role may `s3:DeleteObject` only under `t/*/imports/*` (rejected/failed
+  originals); it has no version-level permissions.
+- **WAF.** The 65536-byte Content-Length block excludes only `POST /api/v1/imports/<uuid>/documents`,
+  which has its own block above `var.import_max_file_bytes` (10485760). The API enforces both limits
+  authoritatively while streaming. The AWS Common rule set still inspects the first 8 KB of upload
+  bodies; watch the `aws-common` metrics for false positives on binary documents before launch.
+- **Parser sandbox.** Documents are parsed in a child Node process (`--permission`, memory and time
+  limits, empty working directory under `/tmp`). It inherits this task's network posture: private
+  subnets, no NAT, egress only to the VPC endpoints. The worker's in-process network guard is best
+  effort only, not a boundary. A dedicated no-egress parser task (separate task definition and security
+  group with no egress rules) is a **launch gate**.
+- **Image.** The API image contains the built worker (`/app/api/dist/src/imports/sandbox/worker-main.js`,
+  set as `PARSE_WORKER_ENTRY`) and the `pdfjs-dist` production dependency; `/tmp` is the task's writable
+  volume while the root filesystem stays read-only.

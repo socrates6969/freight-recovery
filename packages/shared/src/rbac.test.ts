@@ -29,6 +29,11 @@ const Y: Record<Permission, readonly Role[]> = {
   'billing:manage': ['OWNER'],
   'tenant:delete': ['OWNER'],
   'import:run': ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER', 'ANALYST'],
+  // Step 3 (N2): VIEWER and platform roles get none of these.
+  'import:review': ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER'],
+  'export:claims': ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER', 'ANALYST'],
+  'export:packets': ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER'],
+  'export:outcomes': ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER'],
   'platform:health': ['PLATFORM_DEV', 'SUPER_ADMIN'],
   'platform:flags': ['PLATFORM_DEV'],
   'platform:logs': ['PLATFORM_DEV'],

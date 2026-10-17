@@ -23,6 +23,13 @@ export const ERROR_MESSAGES = {
   account_locked: 'Too many failed attempts. Try again later.',
   service_unavailable: 'Service unavailable.',
   internal_error: 'Internal server error.',
+  // Step 3 (N1)
+  request_timeout: 'The request body was not received in time.',
+  batch_full: 'This import batch is full.',
+  unresolved_fields: 'Some flagged fields are still unresolved.',
+  quota_exceeded: 'Storage quota reached.',
+  export_too_large: 'Too many rows to export. Narrow your filters.',
+  parser_busy: 'The parser is busy. Try again shortly.',
 } as const;
 
 export type ErrorCode = keyof typeof ERROR_MESSAGES;
@@ -66,6 +73,17 @@ export const errors = {
   invalidState: () => new HttpError(409, 'invalid_state'),
   unprocessable: (message?: string) => new HttpError(422, 'unprocessable', message ? { message } : {}),
   rateLimited: (retryAfterSeconds: number) => new HttpError(429, 'rate_limited', { retryAfterSeconds }),
+  requestTimeout: () => new HttpError(408, 'request_timeout'),
+  payloadTooLarge: () => new HttpError(413, 'payload_too_large'),
+  /** 415 for upload content problems: fixed message, reason code in details. */
+  unsupportedFile: (reason: string) =>
+    new HttpError(415, 'unsupported_media_type', { message: 'File type not supported.', details: [{ path: 'file', code: reason }] }),
+  uploadMediaType: () => new HttpError(415, 'unsupported_media_type', { message: 'Content-Type must be application/octet-stream.' }),
+  batchFull: () => new HttpError(409, 'batch_full'),
+  unresolvedFields: () => new HttpError(409, 'unresolved_fields'),
+  quotaExceeded: () => new HttpError(422, 'quota_exceeded'),
+  exportTooLarge: () => new HttpError(422, 'export_too_large'),
+  parserBusy: () => new HttpError(503, 'parser_busy', { retryAfterSeconds: 5 }),
   accountLocked: (retryAfterSeconds: number) => new HttpError(429, 'account_locked', { retryAfterSeconds }),
 };
 

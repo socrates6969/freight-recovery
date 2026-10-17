@@ -50,6 +50,14 @@ describe('tenant scope (fail-closed Prisma extension logic)', () => {
     expect(TENANT_MODELS.has('AuditEvent')).toBe(false);
   });
 
+  it('classifies every step-3 import model as tenant-scoped', () => {
+    for (const m of ['ImportBatch', 'ImportDocument', 'ExtractedField', 'ImportReviewDecision', 'ClaimDocument']) {
+      expect([m, TENANT_MODELS.has(m)]).toEqual([m, true]);
+      expect(scopeArgs(m, 'findMany', { where: { id: 'x' } }, T)).toEqual({ where: { id: 'x', tenantId: T } });
+      expect(() => scopeArgs(m, 'create', { data: { tenantId: OTHER } }, T)).toThrow(TenantScopeError);
+    }
+  });
+
   it('allows Tenant only as a read of the own tenant', () => {
     expect(scopeArgs('Tenant', 'findUnique', { where: { id: T } }, T)).toEqual({ where: { id: T } });
     expect(scopeArgs('Tenant', 'findFirst', {}, T)).toEqual({ where: { id: T } });

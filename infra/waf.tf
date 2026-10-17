@@ -3,6 +3,9 @@
 # declared Content-Length (regex below encodes > 65536 = var.body_limit_bytes) and, authoritatively,
 # by the API's own BODY_LIMIT_BYTES. The Common rule set's 8 KB body rule is set to COUNT so legitimate
 # demand-letter edits (up to 20000 characters) are not blocked.
+# The single exception is the document upload route (POST /api/v1/imports/<uuid>/documents), whose
+# declared Content-Length may go up to var.import_max_file_bytes (10485760); the API enforces that limit
+# authoritatively while streaming.
 
 resource "aws_wafv2_regex_pattern_set" "oversized_content_length" {
   name        = "${local.name}-oversized-content-length"
@@ -11,6 +14,16 @@ resource "aws_wafv2_regex_pattern_set" "oversized_content_length" {
 
   regular_expression {
     regex_string = "^(6553[7-9]|655[4-9][0-9]|65[6-9][0-9]{2}|6[6-9][0-9]{3}|[7-9][0-9]{4}|[1-9][0-9]{5,})$"
+  }
+}
+
+resource "aws_wafv2_regex_pattern_set" "oversized_upload_content_length" {
+  name        = "${local.name}-oversized-upload-content-length"
+  description = "Content-Length values greater than 10485760"
+  scope       = "REGIONAL"
+
+  regular_expression {
+    regex_string = "^([1-9][0-9]{8,}|[2-9][0-9]{7}|1[1-9][0-9]{6}|10[5-9][0-9]{5}|1049[0-9]{4}|1048[6-9][0-9]{3}|10485[89][0-9]{2}|104857[7-9][0-9]|1048576[1-9])$"
   }
 }
 
@@ -32,8 +45,75 @@ resource "aws_wafv2_web_acl" "alb" {
     }
 
     statement {
+      and_statement {
+        statement {
+          regex_pattern_set_reference_statement {
+            arn = aws_wafv2_regex_pattern_set.oversized_content_length.arn
+            field_to_match {
+              single_header {
+                name = "content-length"
+              }
+            }
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+        statement {
+          not_statement {
+            statement {
+              and_statement {
+                statement {
+                  byte_match_statement {
+                    positional_constraint = "EXACTLY"
+                    search_string         = "POST"
+                    field_to_match {
+                      method {}
+                    }
+                    text_transformation {
+                      priority = 0
+                      type     = "NONE"
+                    }
+                  }
+                }
+                statement {
+                  regex_match_statement {
+                    regex_string = "^/api/v1/imports/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/documents$"
+                    field_to_match {
+                      uri_path {}
+                    }
+                    text_transformation {
+                      priority = 0
+                      type     = "NONE"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "body-size-limit"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "upload-size-limit"
+    priority = 2
+
+    action {
+      block {}
+    }
+
+    statement {
       regex_pattern_set_reference_statement {
-        arn = aws_wafv2_regex_pattern_set.oversized_content_length.arn
+        arn = aws_wafv2_regex_pattern_set.oversized_upload_content_length.arn
         field_to_match {
           single_header {
             name = "content-length"
@@ -48,7 +128,7 @@ resource "aws_wafv2_web_acl" "alb" {
 
     visibility_config {
       cloudwatch_metrics_enabled = true
-      metric_name                = "body-size-limit"
+      metric_name                = "upload-size-limit"
       sampled_requests_enabled   = true
     }
   }

@@ -122,6 +122,8 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "documents" {
   }
 }
 
+# Deleted import originals (and superseded versions) are kept 30 days as noncurrent versions, then
+# purged; expired delete markers are removed; unfinished multipart uploads are aborted after a day.
 resource "aws_s3_bucket_lifecycle_configuration" "documents" {
   bucket = aws_s3_bucket.documents.id
   rule {
@@ -129,10 +131,13 @@ resource "aws_s3_bucket_lifecycle_configuration" "documents" {
     status = "Enabled"
     filter {}
     noncurrent_version_expiration {
-      noncurrent_days = 90
+      noncurrent_days = 30
+    }
+    expiration {
+      expired_object_delete_marker = true
     }
     abort_incomplete_multipart_upload {
-      days_after_initiation = 7
+      days_after_initiation = 1
     }
   }
 }
@@ -157,6 +162,57 @@ data "aws_iam_policy_document" "documents" {
       test     = "Bool"
       variable = "aws:SecureTransport"
       values   = ["false"]
+    }
+  }
+
+  # Every write must ask for SSE-KMS explicitly (the API always sends the header; single PutObject,
+  # no multipart, so UploadPart requests without the header never occur).
+  statement {
+    sid       = "DenyNonKmsPuts"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.documents.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "StringNotEquals"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["aws:kms"]
+    }
+  }
+
+  statement {
+    sid       = "DenyMissingSseHeader"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.documents.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "Null"
+      variable = "s3:x-amz-server-side-encryption"
+      values   = ["true"]
+    }
+  }
+
+  # ... and only with the data CMK (S3_KMS_KEY_ID is this ARN in ecs.tf).
+  statement {
+    sid       = "DenyWrongKmsKey"
+    effect    = "Deny"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.documents.arn}/*"]
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    condition {
+      test     = "StringNotEquals"
+      variable = "s3:x-amz-server-side-encryption-aws-kms-key-id"
+      values   = [aws_kms_key.data.arn]
     }
   }
 }
