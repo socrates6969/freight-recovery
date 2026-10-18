@@ -1,5 +1,7 @@
 > **Uoffisiell oversettelse (bokmål).** Bekvemmelighetsoversettelse, ikke juridisk/finansiell fagoversettelse. Ved avvik gjelder den engelske originalen ([model.md](model.md)). Juridisk og skattemessig innhold er utkast og må gjennomgås av advokat/rådgiver før bruk.
 
+> **Erstattet (2026-10-17).** Erstattet av finanspakken: `financial/assumptions.md`, `scenarios.md`, `unit-economics.md`, `budget.md`, `use-of-funds.md`, `audit.md` og den formelbaserte `model.xlsx` (på engelsk). Tallene nedenfor (femårsmodell, kontraktsverdi $40 000, såkornrunde $2-3 mill.) er ikke gjeldende.
+
 # Freight Recovery - finansmodell
 
 > **Status: før produkt. Dette er et planleggingsskjelett, ikke en prognose.** Det finnes ingen inntekt, ingen kunde og ingen målt innkrevingsrate. **Hvert inndata nedenfor er en ASSUMPTION (antakelse)** med mindre kilde og grad er oppgitt. Utdataene er aritmetiske konsekvenser av disse antakelsene. «$1B» vises kun som en regning for hva som måtte være sant og er **ikke** lovet eller forventet. Ingen verdsettelser av sammenlignbare selskaper hevdes her.

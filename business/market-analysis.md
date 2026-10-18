@@ -1,5 +1,7 @@
 # Freight Recovery - Market Analysis
 
+> **Superseded (2026-10-17).** Replaced by the research package in `research/` (`01-competitors.md` to `05-market-size.md`). Figures below, including the "~$3.1B" freight audit market and the $40K contract value, are not current and must not be used in investor material.
+
 > **Status: pre-product.** Sizing is directional. Competitor descriptions are characterizations from general knowledge and earlier vendor-page research, **not** verified this session (live search budget was exhausted). Verify before external use. Grades: A primary/audited, B reputable secondary, C vendor/aggregator.
 
 ## 1. Market sizing (honest version)

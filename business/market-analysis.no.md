@@ -1,5 +1,7 @@
 > **Uoffisiell oversettelse (bokmål).** Bekvemmelighetsoversettelse, ikke juridisk/finansiell fagoversettelse. Ved avvik gjelder den engelske originalen ([market-analysis.md](market-analysis.md)). Juridisk og skattemessig innhold er utkast og må gjennomgås av advokat/rådgiver før bruk.
 
+> **Erstattet (2026-10-17).** Erstattet av analysepakken i `research/` (`01-competitors.md` til `05-market-size.md`, på engelsk). Tallene nedenfor, blant annet markedet på "~$3,1 mrd." og kontraktsverdien på $40 000, er ikke gjeldende og skal ikke brukes overfor investorer.
+
 # Freight Recovery - markedsanalyse
 
 > **Status: før produkt.** Størrelsesestimater er retningsgivende. Konkurrentbeskrivelsene er karakteristikker fra generell kunnskap og tidligere research på leverandørsider, **ikke** verifisert i denne økten (budsjettet for live søk var oppbrukt). Verifiser før ekstern bruk. Grader: A primær/revidert, B anerkjent sekundær, C leverandør/aggregator.

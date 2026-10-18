@@ -75,3 +75,9 @@ under NDA) and we will review them."
 - Inputs outside 0..1 for shares, negative or non-numeric values are rejected with a plain message.
 - Same inputs always give the same output; no network requests occur until the lead form is submitted.
 - Page text contains the caveat block, the formula, and the "illustration" label on the example.
+
+## Shipper and importer variants (added 2026-10-17)
+
+The plan now leads with mid-market shippers and mid-size importers. The variants for both segments, with worked
+examples and acceptance tests, are specified in `marketing/brand/calculator-variants.md`; that file is the source of
+truth for them. The detention calculator above remains the variant for the later carrier channel.

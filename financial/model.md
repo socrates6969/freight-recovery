@@ -1,5 +1,7 @@
 # Freight Recovery - Financial Model
 
+> **Superseded (2026-10-17).** Replaced by the financial package: `financial/assumptions.md`, `scenarios.md`, `unit-economics.md`, `budget.md`, `use-of-funds.md`, `audit.md` and the formula-driven `model.xlsx`. The figures below (five-year model, $40K contract value, $2-3M seed) are not current.
+
 > **Status: pre-product. This is a planning scaffold, not a forecast.** There is no revenue, no customer, and no measured recovery rate. **Every input below is an ASSUMPTION** unless a source and grade are shown. The outputs are arithmetic consequences of those assumptions. "$1B" is shown only as a what-would-have-to-be-true calculation and is **not** promised or expected. No comparable-company valuations are asserted here.
 >
 > Grades: A primary/audited; B reputable secondary; C blog/vendor/aggregator.

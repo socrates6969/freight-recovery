@@ -1,5 +1,7 @@
 > **Uoffisiell oversettelse (bokmål).** Bekvemmelighetsoversettelse, ikke juridisk/finansiell fagoversettelse. Ved avvik gjelder den engelske originalen ([business-plan.md](business-plan.md)). Juridisk og skattemessig innhold er utkast og må gjennomgås av advokat/rådgiver før bruk.
 
+> **Erstattet (2026-10-17).** Denne oversettelsen gjelder en eldre versjon av forretningsplanen. Gjeldende plan er `business/business-plan.md` (engelsk); norsk oversettelse er ikke laget ennå. Ikke bruk tallene nedenfor.
+
 # Freight Recovery - forretningsplan
 
 > **Status: før produkt, før inntekt, null kunder.** Ingenting nedenfor er validert på reelle kundedata. Hvert tall er enten (a) sitert med en grad, eller (b) merket ASSUMPTION (antakelse). «$1B» er en regneøvelse for et tak-scenario (se `financial/model.md`), ikke et løfte eller en prognose.
