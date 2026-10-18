@@ -64,16 +64,19 @@ export const addDays = (iso: string, k: number): string => isoOf(dayNum(iso) + k
 export const ruleText = (o: number): string => `Monday posting applies ${DAY[o] ?? '?'} to ${DAY[(o + 6) % 7] ?? '?'}`;
 
 export interface OPosting { index: number; postedDate: string; price: string; effectiveFrom: string; effectiveTo: string }
+// dayNum memoized on the date text: the scan below visits every observation for every call (CI-W02 makes 3,500 calls).
+const obsDays = new Map<string, number>();
+const obsDay = (iso: string): number => { let n = obsDays.get(iso); if (n === undefined) { n = dayNum(iso); obsDays.set(iso, n); } return n; };
 export function oPosting(obs: readonly Obs[], shipDate: string, o: number): OPosting | null {
   const D = dayNum(shipDate);
   let idx = -1;
   for (let i = 0; i < obs.length; i++) {
     const w = obs[i];
-    if (w && dayNum(w.date) + o <= D) idx = i;
+    if (w && obsDay(w.date) + o <= D) idx = i;
   }
   const w = obs[idx];
   if (!w) return null;
-  const from = dayNum(w.date) + o;
+  const from = obsDay(w.date) + o;
   if (D > from + 6) return null;
   return { index: idx, postedDate: w.date, price: w.value, effectiveFrom: isoOf(from), effectiveTo: isoOf(from + 6) };
 }
