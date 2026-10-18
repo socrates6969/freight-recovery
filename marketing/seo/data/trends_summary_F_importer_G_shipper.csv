@@ -1,0 +1,11 @@
+batch,term,mean_interest,ratio_to_anchor
+F_importer,freight audit,8.5,1.0
+F_importer,demurrage charges,1.8,0.22
+F_importer,container detention,1.1,0.13
+F_importer,per diem charges,0.2,0.02
+F_importer,fmc demurrage,0.3,0.03
+G_shipper,freight audit,8.5,1.0
+G_shipper,freight invoice,12.4,1.47
+G_shipper,accessorial,7.4,0.88
+G_shipper,lumper,32.9,3.89
+G_shipper,freight bill,32.8,3.88

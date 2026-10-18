@@ -1,0 +1,26 @@
+batch,term,mean_interest,ratio_to_anchor
+A_core,freight audit,4.4,1.0
+A_core,detention pay,10.2,2.33
+A_core,detention time,21.9,4.97
+A_core,freight claim,6.6,1.51
+A_core,accessorial charges,0.4,0.08
+B_audit,freight audit,8.5,1.0
+B_audit,freight audit software,0.2,0.02
+B_audit,freight bill audit,0.1,0.01
+B_audit,freight invoice audit,0.0,0.0
+B_audit,freight payment,39.2,4.63
+C_accessorial,freight audit,8.5,1.0
+C_accessorial,lumper fee,2.1,0.25
+C_accessorial,tonu,23.5,2.77
+C_accessorial,layover pay,6.0,0.71
+C_accessorial,detention charges,10.5,1.24
+D_ocean,freight audit,7.0,1.0
+D_ocean,demurrage,34.2,4.88
+D_ocean,demurrage and detention,0.7,0.1
+D_ocean,detention trucking,0.5,0.07
+D_ocean,accessorial fees,0.0,0.0
+E_dispute,freight audit,4.6,1.0
+E_dispute,freight dispute,0.5,0.1
+E_dispute,rate confirmation,15.2,3.34
+E_dispute,detention fee,1.6,0.36
+E_dispute,freight overcharge,0.0,0.0
