@@ -7,7 +7,9 @@
  * pages/*.html   fragments; first line is `<!--meta {json} -->` (title, description, path, crumb, updated?, noindex?, faq?)
  *                updated = "YYYY-MM-DD" of the page's last content change; it becomes the sitemap lastmod and
  *                the WebPage dateModified. Without it no lastmod is written (never the build date).
- * static/*       copied as-is (style.css, _headers)
+ *                Page bodies may use {{icon:name}}; it becomes an inline line icon from ICONS (aria-hidden, so it
+ *                must sit next to visible label text).
+ * static/*       copied as-is (style.css, _headers, fonts/)
  * ../../brand/   logo files (single source of truth) -> dist/favicon.svg, dist/brand/*.svg
  * -> dist/<path>/index.html, sitemap.xml, robots.txt, 404.html
  *
@@ -80,12 +82,45 @@ function lockup(heightPx, cls) {
     `<img src="/brand/lockup-horizontal.svg" alt="${SITE_NAME}" width="${w}" height="${heightPx}"></picture></a>`;
 }
 
+/**
+ * Simple line icons drawn on a 24px grid (no icon library, no external request; inline SVG is markup, so the
+ * strict CSP is unaffected). Every icon is decorative: aria-hidden, next to a visible label that names what the
+ * link does, so the link's accessible name is that label and meaning never rests on the icon or its colour.
+ * No style attributes: the CSP has no 'unsafe-inline' for styles.
+ */
+const ICONS = {
+  buyers: '<path d="M3 6h11v9H3z"/><path d="M14 9h4l3 3v3h-7"/><circle cx="7" cy="17.5" r="1.5"/><circle cx="17.5" cy="17.5" r="1.5"/>',
+  container: '<rect x="3" y="6" width="18" height="12" rx="1"/><path d="M7.5 6v12M12 6v12M16.5 6v12"/>',
+  developers: '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5.5l-3 13"/>',
+  investors: '<path d="M4 20h16"/><path d="M7 16v-4M12 16V8M17 16V5"/>',
+  platform: '<path d="M12 4l9 5-9 5-9-5z"/><path d="M3 14l9 5 9-5"/>',
+  flow: '<circle cx="5" cy="12" r="2"/><circle cx="19" cy="12" r="2"/><path d="M7 12h10M14 9l3 3-3 3"/>',
+  shield: '<path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/>',
+  partner: '<path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/>',
+  arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+  file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h6"/>',
+  key: '<circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M3 7l9 6 9-6"/>',
+};
+function icon(name) {
+  if (!ICONS[name]) throw new Error(`unknown icon "${name}"`);
+  return `<svg class="icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+}
+const withIcons = (html) => html.replace(/{{icon:([a-z]+)}}/g, (_, n) => icon(n));
+
+// Audience entry points first (buyers, developers, investors), then the site pages. Every item carries an icon
+// and a visible label; "How it works" is reached from Buyers, Platform and the footer.
 const NAV = [
-  ["/platform/", "Platform"],
-  ["/how-it-works/", "How it works"],
-  ["/security/", "Security status"],
-  ["/about/", "About"],
-  ["/contact/", "Design partners"],
+  ["/buyers/", "Buyers", "buyers"],
+  ["/developers/", "Developers", "developers"],
+  ["/investors/", "Investors", "investors"],
+  ["/platform/", "Platform", "platform"],
+  ["/security/", "Security status", "shield"],
+  ["/about/", "About", "info"],
+  ["/contact/", "Design partners", "partner"],
 ];
 
 function jsonLd(meta, url) {
@@ -114,6 +149,8 @@ function layout(meta, body) {
   const url = `${SITE_URL}${meta.path}`;
   const robots = meta.noindex ? "noindex, follow" : "index, follow";
   const title = fullTitle(meta);
+  // The 404 page has no URL of its own to declare, so it gets no canonical and no og:url (technical-checklist T10).
+  const is404 = meta.path === "/404.html";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -124,12 +161,12 @@ function layout(meta, body) {
 <meta name="description" content="${esc(meta.description)}">
 <meta name="robots" content="${robots}">
 <meta name="referrer" content="${esc(REFERRER)}">
-<link rel="canonical" href="${esc(url)}">
+${is404 ? "" : `<link rel="canonical" href="${esc(url)}">`}
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="${esc(SITE_NAME)}">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(meta.description)}">
-<meta property="og:url" content="${esc(url)}">
+${is404 ? "" : `<meta property="og:url" content="${esc(url)}">`}
 <meta property="og:image" content="${esc(OG_IMAGE)}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -144,15 +181,17 @@ function layout(meta, body) {
 <script type="application/ld+json">${jsonLd(meta, url)}</script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <p class="status" role="note"><strong>Pre-product.</strong> Nothing here is a live service; no customer data is accepted yet. Examples use synthetic data.</p>
 <header class="site">${lockup(28, "brand")}
-<nav aria-label="Main">${NAV.map(([h, t]) => `<a href="${h}"${h === meta.path ? ' aria-current="page"' : ""}>${t}</a>`).join("")}</nav></header>
-<main>
+<nav aria-label="Main">${NAV.map(([h, t, i]) => `<a href="${h}"${h === meta.path ? ' aria-current="page"' : ""}>${icon(i)}${t}</a>`).join("")}</nav></header>
+<main id="main">
 ${body}
 </main>
 <footer class="site">
 ${lockup(20, "brand brand-footer")}
 <p>This site belongs to ${SITE_NAME}, a pre-product venture in design-partner validation. No customers, certifications or integrations are claimed.</p>
+<p><a href="/how-it-works/">How it works</a> | <a href="/buyers/">Buyers</a> | <a href="/developers/">Developers</a> | <a href="/investors/">Investors</a></p>
 <p><a href="/privacy/">Privacy (draft)</a> | <a href="/terms/">Terms (draft)</a> | <a href="/cookies/">Cookies (draft)</a> | <a href="mailto:${esc(EMAIL)}">Contact</a></p>
 <p>This site sets no cookies, runs no scripts and loads no third-party resources.</p>
 </footer>
@@ -172,7 +211,7 @@ for (const f of readdirSync(join(root, "pages")).filter((n) => n.endsWith(".html
   const t = fullTitle(meta);
   if (t.length > MAX_TITLE) console.warn(`WARN ${f}: title ${t.length} chars (>${MAX_TITLE})`);
   if (meta.description.length > MAX_DESCRIPTION) console.warn(`WARN ${f}: description ${meta.description.length} chars (>${MAX_DESCRIPTION})`);
-  const html = withBase(layout(meta, raw.slice(m[0].length)));
+  const html = withBase(layout(meta, withIcons(raw.slice(m[0].length))));
   if (meta.path === "/404.html") {
     writeFileSync(join(dist, "404.html"), html);
     continue;

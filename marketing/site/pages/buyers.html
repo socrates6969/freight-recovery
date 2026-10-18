@@ -1,0 +1,78 @@
+<!--meta {"title":"For shippers and importers: invoice review","description":"For shippers and importers: accessorial lines checked against the rate confirmation, D&D invoices against the FMC rule. Free 90-day review for design partners.","path":"/buyers/","crumb":"Buyers","updated":"2026-10-18"} -->
+<h1>For shippers and importers who pay freight invoices</h1>
+<p class="lead">We check the invoices you pay against the documents that should support them, show the arithmetic,
+and hand the few lines that do not match to a person with a draft short-pay or dispute. Carriers come later,
+through partners.</p>
+<p class="draft">Status: pre-product, in design-partner validation. No hosted service, no customers, no integrations, no certifications. Everything on this page is built and tested on synthetic data only.</p>
+
+<nav class="jump" aria-label="On this page">
+<ul>
+<li><a href="#shippers">{{icon:buyers}}Shippers: accessorial review</a></li>
+<li><a href="#importers">{{icon:container}}Importers: D&amp;D invoices</a></li>
+<li><a href="#roles">{{icon:down}}What it means for your role</a></li>
+<li><a href="#carriers">{{icon:clock}}Carriers: later, through partners</a></li>
+<li><a href="#offer">{{icon:partner}}The free 90-day review</a></li>
+</ul>
+</nav>
+
+<h2 id="shippers">Shippers: take accessorial review off AP's desk</h2>
+<p>Every accessorial, detention and fuel line on a carrier or broker invoice is checked against the rate
+confirmation that should have authorized it, with the source attached. Accessorial and detention lines arrive with
+little to check them against, so someone in AP has to find the rate confirmation, match each line and chase the ones
+that do not fit. In a survey by RXO, a freight broker, 61% of shippers agreed that managing accessorial requests is
+one of the biggest time-wasters for their accounting team, and 70% said carriers are usually honest when requesting
+accessorials. So the job is mostly checking, quickly and with the evidence kept.</p>
+<ul>
+<li><strong>Accessorial charges:</strong> each line checked against the rate confirmation, with charge names recognised across carriers' different wording.</li>
+<li><strong>Detention billed to you:</strong> waiting time recomputed from the contract terms and time records.</li>
+<li><strong>Fuel surcharges:</strong> recomputed from the official weekly diesel price and your own surcharge table, so a wrong week shows up.</li>
+</ul>
+<p>Ambiguous lines go to a person; nothing is disputed automatically.</p>
+<p class="source">Source: RXO (a freight broker; survey of 750 shippers and carriers), "What Shippers &amp; Carriers Really
+Think About Trucking Accessorials (Original Research)", 25 November 2024, https://rxo.com/resources/research/freight-accessorials/, accessed 2026-10-17.</p>
+
+<h2 id="importers">Importers: check every D&amp;D invoice before the 30-day window closes</h2>
+<p>We check each container detention and demurrage invoice against the FMC billing rule's content and timing
+requirements and the carrier's tariff, and list what to dispute and by when. Under the rule (46 CFR Part 541), a
+billing party's failure to meet the invoice content and timing requirements relieves the billed party of the
+obligation to pay, and the billed party has 30 calendar days from the invoice date to request mitigation, refund or
+waiver. In September 2025 the D.C. Circuit set aside one provision, 46 CFR 541.4; the rest of the rule remains in
+effect. We describe what the rule requires and never tell you that a specific charge is not owed: confirm with counsel or your customs broker.</p>
+<p>If your forwarder handles D&amp;D for you, the review still helps: many forwarders pass the charges through, and
+the list shows what to dispute with them or through them.</p>
+<p class="source">Sources: Thompson Hine, "FMC Issues Final Rule on Billing Requirements and Practices for Detention
+and Demurrage Invoices", https://www.thompsonhine.com/insights/fmc-issues-final-rule-on-billing-requirements-and-practices-for-detention-and-demurrage-invoices/, accessed 2026-10-17;
+Thompson Hine, "Court sets aside part of FMC's demurrage and detention billing rule", 26 September 2025,
+https://www.thompsonhine.com/insights/court-sets-aside-part-of-fmcs-demurrage-and-detention-billing-rule/, accessed 2026-10-17.</p>
+
+<h2 id="roles">What it means for your role</h2>
+<div class="scroll">
+<table>
+<thead><tr><th scope="col">Your role</th><th scope="col">What we offer</th><th scope="col">What you can see today</th></tr></thead>
+<tbody>
+<tr><td>Transportation or logistics manager at a shipper</td><td>Every accessorial and detention line checked against the rate confirmation, with the source attached and the few mismatches shown.</td><td>A synthetic example: linehaul above the rate confirmation, an unauthorized lumper charge flagged for review, not disputed automatically.</td></tr>
+<tr><td>AP manager or controller</td><td>Approve the supported lines quickly, short-pay the rest with a packet that shows why, and keep the record for the auditors.</td><td>Findings split into confirmed and "needs review"; letters marked DRAFT / not sent; per-document SHA-256 fingerprints.</td></tr>
+<tr><td>CFO or VP finance</td><td>A review of three months of paid invoices costs nothing. During a pilot we would be paid only from money you get back or no longer pay.</td><td>The pilot terms and the <a href="/security/">security status</a> page, which lists what is still missing.</td></tr>
+<tr><td>Import or logistics manager at an importer</td><td>Each container D&amp;D invoice checked against the rule's content and timing requirements before the 30-day window closes.</td><td>A synthetic D&amp;D invoice check with the rule's required fields marked and the deadline shown.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Already using a freight audit vendor? Keep it. Send us only the lines you are unsure about. For the full
+pipeline see <a href="/how-it-works/">how it works</a>; for each module and its tests see the <a href="/platform/">platform</a> page.</p>
+
+<h2 id="carriers">Carriers: later, through partners</h2>
+<p>The same engine builds a carrier's detention packet: the lines a carrier bills arrive with the documents and the
+arithmetic behind them. We plan to reach carriers through factoring and broker partners once shipper pilots exist.
+Carriers, and factoring or broker firms that work with carriers, are welcome to write now; that side comes later.</p>
+
+<h2 id="offer">The free 90-day review</h2>
+<p>A free review of 90 days of your paid invoices: carrier and broker invoices against the rate confirmations that
+authorized them, or container D&amp;D invoices against the FMC rule's requirements. Read-only, under an NDA we agree
+first. No software to buy, and nothing is disputed without your approval. Before any real documents change hands we
+will agree handling terms in writing.</p>
+<ul>
+<li>We never send anything without human approval.</li>
+<li>Only confirmed findings count toward a short-pay or dispute; low-confidence items are listed separately.</li>
+<li>We do not move money, and we do not give legal advice.</li>
+</ul>
+<p><a class="cta" href="/contact/">{{icon:partner}}Ask for the free review</a><a class="cta secondary" href="/how-it-works/">{{icon:flow}}See how it works</a></p>

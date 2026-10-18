@@ -52,12 +52,36 @@ label "a freight broker"; ATRI figures only with the "cost of waiting" caveat. B
 "recovered", "accurate", "secure", "seamless", "robust", "leverage" and "saves". Sources are plain text, not
 links, because the site loads and links to nothing outside itself.
 
+### Audience entry points (2026-10-18)
+
+Home links three audience pages from the main nav and from a "Pick your starting point" list:
+
+- **/buyers/**: the shipper and importer messages from home (with their source lines), a per-role table from
+  `marketing/marketing-plan.md` section 3, carriers as "later, through partners", and the 90-day review offer.
+- **/developers/**: what the TypeScript API does today for machine clients (9 key routes, scopes `imports.write`,
+  `claims.read`, `exports.claims`; `fr_live_` Bearer keys; 401/403/429 behaviour), what a key cannot do, and the
+  developer portal's real status (built, not hosted, still documents the Python reference service; being
+  regenerated). Source: `docs/architecture/dev-portal-drift.md` and `api-surface.md` on `docs/investor-package`.
+  No portal link until a portal is hosted.
+- **/investors/**: a plain summary of the business plan's executive summary with a section reference per point,
+  and the seven investor PDFs. **PDF wiring:** copy the files to `static/investors/pdf/NN-<name>.pdf` (names in
+  `test.mjs`, `PDF_NAMES`), then remove the "PDFs added on publication" note and its test line. Once that folder
+  exists, `npm test` fails if any linked PDF is missing.
+
+Each audience page has an in-page "On this page" nav. Every nav item and call to action carries an inline line
+icon from `ICONS` in `build.mjs` (pages write `{{icon:name}}`): drawn on a 24px grid, no library, no request,
+`aria-hidden` next to a visible label, so the CSP is unchanged and meaning never rests on the icon or a colour.
+
+The stylesheet uses the brand tokens (slate neutrals, teal `#0f766e` / `#2dd4bf`) and self-hosted Inter Variable
+(`static/fonts/`, from `@fontsource-variable/inter` 5.3.0, the version the web app pins; OFL licence alongside).
+`_headers` gained `font-src 'self'`.
+
 ## Lenses built in
 
 - **SEO:** unique title/description, one H1, canonical, Open Graph and Twitter tags, honest JSON-LD
   (Organization, WebSite, WebPage with `dateModified`, BreadcrumbList; FAQPage only because the FAQ is
   visible; no SoftwareApplication, no ratings), `sitemap.xml` with per-page `lastmod`, `robots.txt`, no JS,
-  ~2 KB CSS. Titles say "accessorial", "D&D", "freight invoice" and "rate confirmation", not "claim".
+  ~4.5 KB CSS plus one 48 KB self-hosted Inter font file. Titles say "accessorial", "D&D", "freight invoice" and "rate confirmation", not "claim".
 - **Security:** `static/_headers` holds the full header set (CSP, HSTS, nosniff, X-Frame-Options,
   frame-ancestors, referrer and permissions policies, COOP). `build.mjs` derives the meta CSP and the meta
   referrer policy from that file, so they cannot drift; the meta CSP drops `frame-ancestors`, which a meta tag
@@ -100,7 +124,5 @@ contact address, publish entity details on About/Privacy, and have the legal pag
 
 Solution pages in the order of `marketing/seo/content-plan.md` (`/accessorial-audit/`, `/demurrage-detention-audit/`,
 carrier `/detention-recovery/` later), guides, evidence-packet examples, the calculator, pricing and comparison pages
-(need content review and verified facts); Organization `logo` in JSON-LD; dropping the canonical tag on the 404 page;
-removing the obsolete `interest-cohort` directive from `_headers`; a skip link; a Norwegian-language version;
-consent-aware analytics (none by design until decided). The site stylesheet still uses the old blue accent rather
-than the brand teal (`brand/README.md`).
+(need content review and verified facts); a Norwegian-language version;
+consent-aware analytics (none by design until decided). Done on 2026-10-18: brand palette and Inter, skip link, no canonical on 404, `interest-cohort` removed. Still open: Organization `logo` (needs Google's image requirements checked) and HSTS `includeSubDomains` (only once on an own domain).
