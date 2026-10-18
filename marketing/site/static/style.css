@@ -22,3 +22,4 @@ table { border-collapse:collapse; width:100%; } th, td { border:1px solid var(--
 details { margin:.6rem 0; } summary { cursor:pointer; font-weight:600; }
 footer.site { margin-top:3rem; padding-top:1rem; padding-bottom:2rem; border-top:1px solid var(--line); color:var(--muted); font-size:.9rem; }
 .scroll { overflow-x:auto; } .scroll table { min-width:36rem; }
+.source { font-size:.85rem; color:var(--muted); overflow-wrap:anywhere; }

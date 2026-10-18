@@ -4,7 +4,9 @@
  *
  *   SITE_URL=https://www.example.no CONTACT_EMAIL=you@example.no node build.mjs
  *
- * pages/*.html   fragments; first line is `<!--meta {json} -->` (title, description, path, crumb, noindex?)
+ * pages/*.html   fragments; first line is `<!--meta {json} -->` (title, description, path, crumb, updated?, noindex?, faq?)
+ *                updated = "YYYY-MM-DD" of the page's last content change; it becomes the sitemap lastmod and
+ *                the WebPage dateModified. Without it no lastmod is written (never the build date).
  * static/*       copied as-is (style.css, _headers)
  * ../../brand/   logo files (single source of truth) -> dist/favicon.svg, dist/brand/*.svg
  * -> dist/<path>/index.html, sitemap.xml, robots.txt, 404.html
@@ -32,11 +34,23 @@ const MAX_TITLE = 60;
 const MAX_DESCRIPTION = 160;
 // Social preview card (static/og-card.png, rendered from og/og-card.html). Crawlers need an absolute URL.
 const OG_IMAGE = `${SITE_URL}/og-card.png`;
-const OG_IMAGE_ALT = "scoup.ai: Get paid for detention you can prove. Pre-product, looking for design partners.";
+const OG_IMAGE_ALT = "scoup.ai: Take accessorial review off AP's desk. Pre-product, looking for design partners.";
 const brandDir = join(root, "..", "..", "brand");
 // Horizontal lockup: viewBox 873.32 x 162.97. Header 28px tall, footer 20px (the minimum on screen).
 const LOCKUP_RATIO = 873.32 / 162.97;
 const BRAND_FILES = ["lockup-horizontal.svg", "lockup-horizontal-on-dark.svg", "favicon.svg"];
+// The meta CSP and referrer policy are derived from static/_headers so the two never drift apart. A meta CSP
+// cannot carry frame-ancestors (or report-uri/report-to/sandbox), so those stay header-only; on a host that
+// ignores _headers (GitHub Pages) the pages can therefore still be framed. See README.md.
+const HEADERS = readFileSync(join(root, "static", "_headers"), "utf8");
+function headerValue(name) {
+  const line = HEADERS.split(/\r?\n/).map((l) => l.trim()).find((l) => l.startsWith(`${name}:`));
+  if (!line) throw new Error(`static/_headers: ${name} missing`);
+  return line.slice(name.length + 1).trim();
+}
+const META_CSP = headerValue("Content-Security-Policy").split(";").map((d) => d.trim())
+  .filter((d) => d && !/^(frame-ancestors|report-uri|report-to|sandbox)\b/.test(d)).join("; ");
+const REFERRER = headerValue("Referrer-Policy");
 const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 if (SITE_URL.includes("example.invalid")) console.warn("WARN: SITE_URL not set; canonical/sitemap use a placeholder. Set it before deploying.");
@@ -77,9 +91,10 @@ const NAV = [
 function jsonLd(meta, url) {
   const graph = [
     { "@type": "Organization", "@id": `${SITE_URL}/#org`, name: SITE_NAME, url: `${SITE_URL}/`,
-      description: "Pre-product venture working on documented freight detention and accessorial recovery. Not yet a live service." },
+      description: "Pre-product venture building accessorial, detention and container D&D invoice checks for shippers and importers. Not yet a live service." },
     { "@type": "WebSite", "@id": `${SITE_URL}/#site`, url: `${SITE_URL}/`, name: SITE_NAME, publisher: { "@id": `${SITE_URL}/#org` }, inLanguage: "en" },
-    { "@type": "WebPage", "@id": `${url}#page`, url, name: fullTitle(meta), description: meta.description, isPartOf: { "@id": `${SITE_URL}/#site` }, inLanguage: "en" },
+    { "@type": "WebPage", "@id": `${url}#page`, url, name: fullTitle(meta), description: meta.description, isPartOf: { "@id": `${SITE_URL}/#site` }, inLanguage: "en",
+      ...(meta.updated ? { dateModified: meta.updated } : {}) },
   ];
   if (meta.path !== "/") {
     graph.push({ "@type": "BreadcrumbList", itemListElement: [
@@ -103,12 +118,12 @@ function layout(meta, body) {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="${esc(META_CSP)}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(meta.description)}">
 <meta name="robots" content="${robots}">
-<meta name="referrer" content="no-referrer">
+<meta name="referrer" content="${esc(REFERRER)}">
 <link rel="canonical" href="${esc(url)}">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="${esc(SITE_NAME)}">
@@ -153,6 +168,7 @@ for (const f of readdirSync(join(root, "pages")).filter((n) => n.endsWith(".html
   if (!m) throw new Error(`${f}: missing <!--meta {json} --> first line`);
   const meta = JSON.parse(m[1]);
   for (const k of ["title", "description", "path"]) if (!meta[k]) throw new Error(`${f}: meta.${k} missing`);
+  if (meta.updated !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(meta.updated)) throw new Error(`${f}: meta.updated must be YYYY-MM-DD`);
   const t = fullTitle(meta);
   if (t.length > MAX_TITLE) console.warn(`WARN ${f}: title ${t.length} chars (>${MAX_TITLE})`);
   if (meta.description.length > MAX_DESCRIPTION) console.warn(`WARN ${f}: description ${meta.description.length} chars (>${MAX_DESCRIPTION})`);
@@ -164,12 +180,14 @@ for (const f of readdirSync(join(root, "pages")).filter((n) => n.endsWith(".html
   const dir = join(dist, meta.path);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "index.html"), html);
-  if (!meta.noindex) urls.push(meta.path);
+  if (!meta.noindex) urls.push(meta);
 }
 
-const today = new Date().toISOString().slice(0, 10);
+// lastmod comes only from each page's own "updated" date: one build date on every URL teaches crawlers to
+// ignore lastmod. (A git-log fallback would be wrong in CI, where the Pages workflow uses a shallow clone.)
 writeFileSync(join(dist, "sitemap.xml"),
   `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
-  urls.sort().map((p) => `  <url><loc>${esc(SITE_URL + p)}</loc><lastmod>${today}</lastmod></url>`).join("\n") + `\n</urlset>\n`);
+  urls.sort((a, b) => a.path.localeCompare(b.path)).map((m) =>
+    `  <url><loc>${esc(SITE_URL + m.path)}</loc>${m.updated ? `<lastmod>${m.updated}</lastmod>` : ""}</url>`).join("\n") + `\n</urlset>\n`);
 writeFileSync(join(dist, "robots.txt"), `User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}/sitemap.xml\n`);
 console.log(`built ${urls.length} indexable pages -> ${dist}${BASE ? ` (base path ${BASE})` : ""}`);

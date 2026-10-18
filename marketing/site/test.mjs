@@ -8,6 +8,11 @@ const dist = join(dirname(fileURLToPath(import.meta.url)), "dist");
 const BASE = new URL((process.env.SITE_URL || "https://example.invalid").replace(/\/$/, "")).pathname.replace(/\/$/, "");
 const reEsc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const B = reEsc(BASE);
+// static/_headers is the source of truth for the CSP and referrer policy; the meta tags must mirror it.
+const HEADERS = readFileSync(join(dist, "_headers"), "utf8").split(/\r?\n/).map((l) => l.trim());
+const headerValue = (name) => ((HEADERS.find((l) => l.startsWith(`${name}:`)) || "").slice(name.length + 1)).trim();
+const HEADER_CSP = headerValue("Content-Security-Policy");
+const EXPECTED_META_CSP = HEADER_CSP.split(";").map((d) => d.trim()).filter((d) => d && !d.startsWith("frame-ancestors")).join("; ");
 const pages = [];
 (function walk(d) {
   for (const n of readdirSync(d)) {
@@ -41,10 +46,27 @@ for (const p of pages) {
   check(!/(?:src|href)="https?:\/\/(?!example\.invalid|[^"]*\/sitemap)/.test(h.replace(/<link rel="canonical"[^>]*>/, "")), `${rel}: no external resources`);
   // honesty: banned claims
   const text = h.replace(/<script[\s\S]*?<\/script>/g, "").toLowerCase();
-  for (const bad of ["soc 2", "gdpr compliant", "iso 27001", "testimonial", "trusted by", "% savings", "ai-powered"]) {
+  for (const bad of ["soc 2", "gdpr compliant", "iso 27001", "testimonial", "trusted by", "% savings", "ai-powered",
+    "recovered", "accurate", "seamless", "robust", "leverage", "saves "]) {
     check(!text.includes(bad), `${rel}: banned phrase "${bad}"`);
   }
-  if (/\/(privacy|terms|cookies)\//.test(rel)) check(h.includes("licensed Norwegian advokat"), `${rel}: advokat review flag`);
+  check(!/\bsecure\b/.test(text), `${rel}: "secure" used as a claim`);
+  // honesty: rule effects and third-party figures always travel with their source and caveat
+  if (text.includes("fmc") || text.includes("46 cfr")) {
+    check(text.includes("confirm with counsel or your customs broker"), `${rel}: FMC rule described without the counsel/customs-broker note`);
+    check(text.includes("thompsonhine.com"), `${rel}: FMC rule described without its source line`);
+  }
+  if (/\brxo\b/.test(text)) {
+    check(text.includes("a freight broker") && text.includes("rxo.com/resources/research/freight-accessorials"), `${rel}: RXO survey quoted without broker label and source line`);
+  }
+  if (/\batri\b/.test(text)) check(text.includes("cost of waiting"), `${rel}: ATRI figure quoted without the cost-of-waiting caveat`);
+  // security: meta CSP and referrer policy mirror static/_headers (minus frame-ancestors, which meta cannot carry)
+  check(h.includes(`<meta http-equiv="Content-Security-Policy" content="${EXPECTED_META_CSP.replace(/&/g, "&amp;")}">`) && EXPECTED_META_CSP.includes("default-src 'none'"), `${rel}: meta CSP must equal the _headers CSP minus frame-ancestors`);
+  check(h.includes(`<meta name="referrer" content="${headerValue("Referrer-Policy")}">`), `${rel}: meta referrer must equal _headers Referrer-Policy`);
+  if (/[\\/](privacy|terms|cookies)[\\/]/.test(rel)) {
+    check(h.includes("licensed Norwegian advokat"), `${rel}: advokat review flag`);
+    check(h.includes('<meta name="robots" content="noindex'), `${rel}: draft legal page must be noindex`);
+  }
   for (const m of h.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) JSON.parse(m[1]);
   // brand (brand/README.md): one name, lowercase, logo in header and footer, favicon
   check(!h.includes("Freight Recovery"), `${rel}: old product name "Freight Recovery"`);
@@ -72,10 +94,28 @@ const css = readFileSync(join(dist, "style.css"), "utf8");
 check(!/\.brand[^{]*\{[^}]*text-transform/.test(css), "brand never uppercased via CSS");
 const csp = readFileSync(join(dist, "_headers"), "utf8");
 check(/img-src 'self'/.test(csp), "CSP allows self-hosted logo images");
-check(!readFileSync(join(dist, "sitemap.xml"), "utf8").includes("404"), "sitemap excludes 404");
+const sitemap = readFileSync(join(dist, "sitemap.xml"), "utf8");
+check(!sitemap.includes("404"), "sitemap excludes 404");
+for (const d of ["/privacy/", "/terms/", "/cookies/"]) check(!sitemap.includes(`${d}</loc>`), `sitemap excludes draft ${d}`);
+// lastmod: only from the page's own date (mirrored as WebPage dateModified), never one build date for all
+for (const m of sitemap.matchAll(/<url><loc>([^<]+)<\/loc>(?:<lastmod>([^<]+)<\/lastmod>)?<\/url>/g)) {
+  const path = new URL(m[1]).pathname.slice(BASE.length);
+  const file = join(dist, path, "index.html");
+  check(existsSync(file), `sitemap entry ${path} has a page`);
+  if (!existsSync(file)) continue;
+  const ld = (readFileSync(file, "utf8").match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/) || [])[1];
+  const page = ld && JSON.parse(ld)["@graph"].find((n) => n["@type"] === "WebPage");
+  check(page && page.dateModified === m[2], `sitemap lastmod for ${path} (${m[2]}) must equal the page's dateModified (${page && page.dateModified})`);
+}
+check((sitemap.match(/<url>/g) || []).length >= 5, "sitemap lists the indexable pages");
 const home = readFileSync(join(dist, "index.html"), "utf8");
 check(home.includes("FAQPage") && home.includes("<details>"), "FAQPage only with visible FAQ");
 check(!home.includes("SoftwareApplication"), "no SoftwareApplication schema (nothing usable yet)");
+// positioning (marketing-plan.md section 2.3): shipper hero leads, importer line present, carriers later
+const h1 = (home.match(/<h1>([\s\S]*?)<\/h1>/) || [])[1] || "";
+check(h1.startsWith("Take accessorial review off AP's desk.") && h1.includes("checked against the rate confirmation"), `home: shipper hero line (${h1})`);
+check(home.includes("Check every D&amp;D invoice before the 30-day window closes") || home.includes("check every D&amp;D invoice before the 30-day window closes"), "home: importer line");
+check(home.includes("Carriers, later and through partners"), "home: carriers only as a later, partner-led channel");
 
 if (failed) { console.error(`${failed} check(s) failed`); process.exit(1); }
 console.log(`ok: ${pages.length} pages passed`);
