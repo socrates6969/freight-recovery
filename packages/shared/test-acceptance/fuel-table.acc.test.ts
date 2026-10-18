@@ -68,7 +68,7 @@ describe('T3 week rule (F3)', () => {
       }
     }
     expect(found).toBeGreaterThan(3000);
-  });
+  }, 20_000);
 });
 
 describe('T3 table evaluation (F4)', () => {

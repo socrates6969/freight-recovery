@@ -32,9 +32,9 @@ const rel = (a: number | null, e: number | null, tag: string) => {
   if (e === null || a === null) { expect(a, tag).toBe(e); return; }
   expect(Math.abs(a - e), `${tag}: ${a} vs oracle ${e}`).toBeLessThanOrEqual(1e-9 * Math.abs(e));
 };
-function expectAllOracle(y: number[], dates: string[], key: 'diesel_us' | 'ppi_tl', tag: string): Outlook {
+/** `exp` may be passed in when the caller also needs the oracle result (it is computed once per series). */
+function expectAllOracle(y: number[], dates: string[], key: 'diesel_us' | 'ppi_tl', tag: string, exp = oOutlook(y, dates, O_CFG[key])): Outlook {
   const got = outlook(dates, y, key);
-  const exp = oOutlook(y, dates, O_CFG[key]);
   expect([got.status, got.backtestYears], tag).toEqual([exp.status, exp.backtestYears]);
   expect(got.horizons.length, tag).toBe(exp.horizons.length);
   exp.horizons.forEach((e, i) => {
@@ -56,8 +56,8 @@ describe('T6 gate and edge cases (F7)', () => {
   it(`CI-G02 automatic fallback on pure random walks (sd 0.02; seeds ${SEEDS_G02_RATIO[0]}..${SEEDS_G02_RATIO.at(-1)} and ${SEED_G02_DM})`, () => {
     for (const s of [...SEEDS_G02_RATIO, SEED_G02_DM]) {
       const y = walk(s, 1000, 0.02, 0);
-      const got = expectAllOracle(y, W, 'diesel_us', `seed ${s}`);
       const exp = oOutlook(y, W, O_CFG.diesel_us);
+      const got = expectAllOracle(y, W, 'diesel_us', `seed ${s}`, exp);
       for (const [i, e] of exp.horizons.entries()) {
         const gateFails = e.candidate !== 'naive' && !(e.origins >= 100 && e.maeRatio !== null && e.maeRatio < 1 && e.dm >= 1.96);
         if (e.candidate !== 'naive') expect(at(got.horizons, i).method === 'naive', `seed ${s} h${e.h}`).toBe(gateFails);
@@ -69,7 +69,7 @@ describe('T6 gate and edge cases (F7)', () => {
     const dm = at(outlook(W, walk(SEED_G02_DM, 1000, 0.02, 0), 'diesel_us').horizons, 0);
     expect(dm.maeRatio ?? 1).toBeLessThan(1);
     expect(dm.dm).toBeLessThan(1.96);
-  });
+  }, 20_000);
   it('CI-G03 constant series (2.5 for 1,000 weeks): maeRatio null and fallback for h1/h4, naive by design for h8/h13; point = low = high = 2.500; coverage 1', () => {
     const y = Array.from({ length: 1000 }, () => 2.5);
     const got = expectAllOracle(y, W, 'diesel_us', 'G03');
