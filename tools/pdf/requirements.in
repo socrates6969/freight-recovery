@@ -1,0 +1,5 @@
+markdown==3.11.1
+matplotlib==3.11.2
+pypdf==6.21.1
+fonttools==4.67.0
+brotli==1.2.0

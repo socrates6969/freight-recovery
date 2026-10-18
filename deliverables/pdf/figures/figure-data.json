@@ -1,0 +1,396 @@
+{
+ "cac-target-vs-ceiling": {
+  "data": {
+   "rows": [
+    {
+     "account": "Importer, Year 3",
+     "ceiling": 13206.0,
+     "target": 4402.0
+    },
+    {
+     "account": "Shipper, Year 3",
+     "ceiling": 11555.0,
+     "target": 3852.0
+    },
+    {
+     "account": "Importer, Year 2",
+     "ceiling": 3687.0,
+     "target": 1229.0
+    },
+    {
+     "account": "Shipper, Year 2",
+     "ceiling": 3123.0,
+     "target": 1041.0
+    },
+    {
+     "account": "Importer buying only the D&D check, Year 3 (est.)",
+     "ceiling": 11000.0,
+     "target": 3667.0
+    },
+    {
+     "account": "Shipper buying only the fuel check, Year 3 (est.)",
+     "ceiling": 8200.0,
+     "target": 2733.0
+    }
+   ]
+  },
+  "source": "marketing/digital/cac-targets.md § CAC ceilings",
+  "title": "Acquisition-cost target against the payback ceiling for importer and shipper accounts; carriers are not shown because the source gives only a media target for them"
+ },
+ "feature-matrix": {
+  "data": {
+   "cell_counts": {
+    "no": 18,
+    "partial": 21,
+    "unknown": 71,
+    "yes": 20
+   },
+   "codes": {
+    "C1": "Sells to carriers (claims for money owed to the carrier)",
+    "C10": "Pays carriers (freight payment)",
+    "C11": "Requires a second person to approve outgoing claims (four-eyes)",
+    "C12": "Fuel-surcharge outlook or forecast",
+    "C13": "Publishes prices",
+    "C2": "Captures detention time from ELD or geofence data",
+    "C3": "Builds a claim packet where each figure cites its source document",
+    "C4": "Extracts detention or accessorial terms from rate confirmations or contracts",
+    "C5": "Audits shipper-side freight invoices against rates",
+    "C6": "Validates accessorial charges specifically",
+    "C7": "Tracks disputes to resolution (status, deadlines)",
+    "C8": "Audits ocean demurrage and detention invoices",
+    "C9": "Checks D&D invoices against the FMC billing rule (OSRA)"
+   },
+   "header": [
+    "Company",
+    "C1",
+    "C2",
+    "C3",
+    "C4",
+    "C5",
+    "C6",
+    "C7",
+    "C8",
+    "C9",
+    "C10",
+    "C11",
+    "C12",
+    "C13"
+   ],
+   "rows": [
+    [
+     "Loop",
+     "unknown",
+     "unknown",
+     "unknown",
+     "partial",
+     "yes",
+     "unknown",
+     "unknown",
+     "unknown",
+     "unknown",
+     "yes",
+     "unknown",
+     "unknown",
+     "no"
+    ],
+    [
+     "Cass Information Systems",
+     "unknown",
+     "unknown",
+     "unknown",
+     "unknown",
+     "yes",
+     "unknown",
+     "unknown",
+     "unknown",
+     "unknown",
+     "yes",
+     "unknown",
+     "unknown",
+     "no"
+    ],
+    [
+     "Trax Technologies",
+     "unknown",
+     "unknown",
+     "unknown",
+     "partial",
+     "yes",
+     "yes",
+     "unknown",
+     "unknown",
+     "unknown",
+     "unknown",
+     "unknown",
+     "unknown",
+     "no"
+    ],
+    [
+     "CTSI-Global",
+     "unknown",
+     "unknown",
+     "unknown",
+     "unknown",
+     "yes",
+     "unknown",
+     "unknown",
+     "unknown",
+     "unknown",
+     "yes",
+     "unknown",
+     "unknown",
+     "no"
+    ],
+    [
+     "nVision Global",
+     "unknown",
+     "unknown",
+     "unknown",
+     "unknown",
+     "yes",
+     "unknown",
+     "partial",
+     "partial",
+     "unknown",
+     "yes",
+     "unknown",
+     "unknown",
+     "no"
+    ],
+    [
+     "Intelligent Audit",
+     "unknown",
+     "unknown",
+     "unknown",
+     "unknown",
+     "yes",
+     "yes",
+     "unknown",
+     "partial",
+     "unknown",
+     "unknown",
+     "unknown",
+     "unknown",
+     "no"
+    ],
+    [
+     "BlueCargo",
+     "partial",
+     "unknown",
+     "partial",
+     "unknown",
+     "yes",
+     "unknown",
+     "yes",
+     "yes",
+     "yes",
+     "yes",
+     "unknown",
+     "unknown",
+     "no"
+    ],
+    [
+     "Hey Bubba",
+     "yes",
+     "yes",
+     "partial",
+     "partial",
+     "no",
+     "unknown",
+     "unknown",
+     "no",
+     "no",
+     "unknown",
+     "unknown",
+     "unknown",
+     "no"
+    ],
+    [
+     "FleetOptos",
+     "yes",
+     "partial",
+     "unknown",
+     "partial",
+     "no",
+     "unknown",
+     "unknown",
+     "no",
+     "no",
+     "unknown",
+     "unknown",
+     "unknown",
+     "no"
+    ],
+    [
+     "scoup.ai (pre-product)",
+     "partial",
+     "no",
+     "partial",
+     "partial",
+     "partial",
+     "partial",
+     "partial",
+     "partial",
+     "partial",
+     "no",
+     "partial",
+     "partial",
+     "no"
+    ]
+   ]
+  },
+  "source": "research/03-feature-matrix.md § Matrix and § Columns",
+  "title": "Competitor feature matrix (yes, partial, no or unknown per capability C1 to C13); the scoup.ai row is pre-product code tested on synthetic data only"
+ },
+ "net-burn-runway": {
+  "data": {
+   "burn_kusd_per_month": {
+    "base": [
+     81.392,
+     131.303,
+     172.798,
+     188.612,
+     106.66,
+     0.0,
+     0.0
+    ],
+    "bear": [
+     82.444,
+     136.502,
+     149.222,
+     105.682,
+     274.621,
+     445.416,
+     464.313
+    ],
+    "bull": [
+     80.183,
+     121.504,
+     123.295,
+     63.422,
+     0.0,
+     0.0,
+     0.0
+    ]
+   },
+   "runway_months": {
+    "base": 49.0,
+    "bear": 52.0,
+    "bull": "beyond month 84"
+   }
+  },
+  "source": "financial/tools/verify_results.json § Cash Flow|burn, Cash Flow|runway; checked against financial/budget.md § Net burn by year and financial/scenarios.md § Headline comparison",
+  "title": "Average monthly net burn by year and seed-only runway (both tranches) in the three cases; the bull bar is drawn at the 84-month model horizon"
+ },
+ "revenue-accounts-base": {
+  "data": {
+   "accounts": {
+    "car": [
+     0.0,
+     0.0,
+     15.0,
+     42.0,
+     84.0,
+     137.0,
+     200.0
+    ],
+    "imp": [
+     3.0,
+     17.0,
+     51.0,
+     101.0,
+     163.0,
+     230.0,
+     301.0
+    ],
+    "shp": [
+     3.0,
+     17.0,
+     52.0,
+     102.0,
+     165.0,
+     232.0,
+     304.0
+    ]
+   },
+   "revenue_musd": {
+    "car": [
+     0.0,
+     0.0,
+     0.059213,
+     0.225008,
+     0.49738499999999997,
+     0.872398,
+     1.330308
+    ],
+    "imp": [
+     0.0195,
+     0.179,
+     0.7446,
+     1.8544,
+     3.6431999999999998,
+     5.7378,
+     8.1774
+    ],
+    "shp": [
+     0.015015,
+     0.15163,
+     0.661124,
+     1.676906,
+     3.297717,
+     5.193554,
+     7.403768
+    ]
+   }
+  },
+  "source": "financial/tools/verify_results.json § base (recomputed financial/model.xlsx); checked against financial/scenarios.md § Base case",
+  "title": "Base-case revenue and accounts at year end by segment, years 1 to 7"
+ },
+ "revenue-bull-base-bear": {
+  "data": {
+   "revenue_musd": {
+    "base": [
+     0.034515000000000004,
+     0.33063,
+     1.464936,
+     3.756313,
+     7.438301999999999,
+     11.803751,
+     16.911475
+    ],
+    "bear": [
+     0.018408,
+     0.145477,
+     0.5332720000000001,
+     1.245233,
+     2.372391,
+     3.669393,
+     5.134202
+    ],
+    "bull": [
+     0.052923000000000005,
+     0.558699,
+     2.413746,
+     6.1395919999999995,
+     12.141315,
+     19.368195,
+     27.918153999999998
+    ]
+   }
+  },
+  "source": "financial/tools/verify_results.json § bull, base, bear; checked against financial/scenarios.md § Bull case, Base case, Bear case and § Headline comparison",
+  "title": "Revenue by year in the bull, base and bear cases"
+ },
+ "sam-som": {
+  "data": {
+   "sam": 945.4,
+   "sam_importers": 395.3,
+   "sam_shippers": 550.1,
+   "som_importers": 8.1774,
+   "som_share_pct": 1.6,
+   "som_shippers": 7.403768
+  },
+  "source": "research/05-market-size.md § 4. TAM, SAM, SOM; SOM from financial/tools/verify_results.json § base, checked against the same section",
+  "title": "Serviceable market (SAM) against obtainable base-case revenue in year 7 (SOM), split by core segment"
+ }
+}
