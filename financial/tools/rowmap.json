@@ -1,0 +1,1407 @@
+{
+"rows": {
+"Assumptions|sel": 5,
+"Assumptions|yr": 6,
+"Assumptions|infl": 8,
+"Assumptions|fx": 9,
+"Assumptions|no_load": 10,
+"Assumptions|us_ben": 11,
+"Assumptions|tax": 12,
+"Assumptions|dso": 13,
+"Assumptions|dpo": 14,
+"Assumptions|capex": 15,
+"Assumptions|dep": 16,
+"Assumptions|int": 17,
+"Assumptions|cash0": 18,
+"Assumptions|milestone": 19,
+"Assumptions|buffer": 20,
+"Assumptions|seed1": 21,
+"Assumptions|seed1y": 22,
+"Assumptions|seed2": 23,
+"Assumptions|seed2y": 24,
+"Assumptions|seriesA": 25,
+"Assumptions|seriesAy": 26,
+"Assumptions|pre": 27,
+"Assumptions|bench_sm": 28,
+"Assumptions|bench_grr": 29,
+"Assumptions|bench_nrr": 30,
+"Assumptions|sam": 31,
+"Assumptions|sam_usd": 32,
+"Assumptions|pess_cac": 33,
+"Assumptions|fee": 35,
+"Assumptions|recov": 36,
+"Assumptions|share": 37,
+"Assumptions|mix_shp": 39,
+"Assumptions|shp_mult": 40,
+"Assumptions|car_rec": 41,
+"Assumptions|car_share": 42,
+"Assumptions|partner": 43,
+"Assumptions|churn": 45,
+"Assumptions|rmult": 46,
+"Assumptions|scale": 47,
+"Assumptions|freeze": 48,
+"Assumptions|fdur": 49,
+"Assumptions|varc": 50,
+"Assumptions|new_Base": 52,
+"Assumptions|new_Bull": 53,
+"Assumptions|new_Bear": 54,
+"Assumptions|new_live": 55,
+"Assumptions|car_Base": 56,
+"Assumptions|car_Bull": 57,
+"Assumptions|car_Bear": 58,
+"Assumptions|car_live": 59,
+"Assumptions|hc_ceo": 61,
+"Assumptions|sal_ceo": 62,
+"Assumptions|sq_ceo": 63,
+"Assumptions|cost_ceo": 64,
+"Assumptions|hc_swe": 65,
+"Assumptions|sal_swe": 66,
+"Assumptions|sq_swe": 67,
+"Assumptions|cost_swe": 68,
+"Assumptions|hc_ml": 69,
+"Assumptions|sal_ml": 70,
+"Assumptions|sq_ml": 71,
+"Assumptions|cost_ml": 72,
+"Assumptions|hc_sec": 73,
+"Assumptions|sal_sec": 74,
+"Assumptions|sq_sec": 75,
+"Assumptions|cost_sec": 76,
+"Assumptions|hc_ae": 77,
+"Assumptions|sal_ae": 78,
+"Assumptions|sq_ae": 79,
+"Assumptions|cost_ae": 80,
+"Assumptions|hc_se": 81,
+"Assumptions|sal_se": 82,
+"Assumptions|sq_se": 83,
+"Assumptions|cost_se": 84,
+"Assumptions|hc_cs": 85,
+"Assumptions|sal_cs": 86,
+"Assumptions|sq_cs": 87,
+"Assumptions|cost_cs": 88,
+"Assumptions|hc_mkt": 89,
+"Assumptions|sal_mkt": 90,
+"Assumptions|sq_mkt": 91,
+"Assumptions|cost_mkt": 92,
+"Assumptions|hc_fin": 93,
+"Assumptions|sal_fin": 94,
+"Assumptions|sq_fin": 95,
+"Assumptions|cost_fin": 96,
+"Assumptions|o_host": 98,
+"Assumptions|o_sec": 99,
+"Assumptions|o_legal": 100,
+"Assumptions|o_mkt": 101,
+"Assumptions|o_trav": 102,
+"Assumptions|o_off": 103,
+"Revenue|new_shp": 5,
+"Revenue|lost_shp": 6,
+"Revenue|end_shp": 7,
+"Revenue|avg_shp": 8,
+"Revenue|rpa_shp": 9,
+"Revenue|rev_shp": 10,
+"Revenue|arr_shp": 11,
+"Revenue|new_imp": 12,
+"Revenue|lost_imp": 13,
+"Revenue|end_imp": 14,
+"Revenue|avg_imp": 15,
+"Revenue|rpa_imp": 16,
+"Revenue|rev_imp": 17,
+"Revenue|arr_imp": 18,
+"Revenue|new_car": 19,
+"Revenue|lost_car": 20,
+"Revenue|end_car": 21,
+"Revenue|avg_car": 22,
+"Revenue|rpa_car": 23,
+"Revenue|rev_car": 24,
+"Revenue|arr_car": 25,
+"Revenue|new": 26,
+"Revenue|lost": 27,
+"Revenue|end": 28,
+"Revenue|avg": 29,
+"Revenue|rev": 30,
+"Revenue|arr": 31,
+"Revenue|rpa": 32,
+"Revenue|rev_fee": 33,
+"Revenue|rev_shr": 34,
+"Revenue|custrec": 35,
+"Revenue|nrr": 36,
+"Revenue|growth": 37,
+"Revenue|mile_m": 38,
+"Revenue|mile": 39,
+"Revenue|sam_share": 40,
+"Revenue|sam_rev": 41,
+"Headcount|n_ceo": 5,
+"Headcount|n_swe": 6,
+"Headcount|n_ml": 7,
+"Headcount|n_sec": 8,
+"Headcount|n_ae": 9,
+"Headcount|n_se": 10,
+"Headcount|n_cs": 11,
+"Headcount|n_mkt": 12,
+"Headcount|n_fin": 13,
+"Headcount|n_tot": 14,
+"Headcount|hires": 15,
+"Headcount|f_ceo": 17,
+"Headcount|f_swe": 18,
+"Headcount|f_ml": 19,
+"Headcount|f_sec": 20,
+"Headcount|f_ae": 21,
+"Headcount|f_se": 22,
+"Headcount|f_cs": 23,
+"Headcount|f_mkt": 24,
+"Headcount|f_fin": 25,
+"Headcount|c_ceo": 27,
+"Headcount|c_swe": 28,
+"Headcount|c_ml": 29,
+"Headcount|c_sec": 30,
+"Headcount|c_ae": 31,
+"Headcount|c_se": 32,
+"Headcount|c_cs": 33,
+"Headcount|c_mkt": 34,
+"Headcount|c_fin": 35,
+"Headcount|c_tot": 36,
+"Headcount|d_Engineering": 38,
+"Headcount|d_Security": 39,
+"Headcount|d_Sales": 40,
+"Headcount|d_Marketing": 41,
+"Headcount|d_G&A": 42,
+"Headcount|d_Claims operations (COGS)": 43,
+"Headcount|hd_Engineering": 45,
+"Headcount|hd_Security": 46,
+"Headcount|hd_Sales": 47,
+"Headcount|hd_Marketing": 48,
+"Headcount|hd_G&A": 49,
+"Headcount|hd_Claims operations (COGS)": 50,
+"OpEx|o_host": 5,
+"OpEx|o_sec": 6,
+"OpEx|o_legal": 7,
+"OpEx|o_mkt": 8,
+"OpEx|o_trav": 9,
+"OpEx|o_off": 10,
+"OpEx|o_partner": 11,
+"OpEx|dep_Engineering": 13,
+"OpEx|dep_Security": 14,
+"OpEx|dep_Sales": 15,
+"OpEx|dep_Marketing": 16,
+"OpEx|dep_G&A": 17,
+"OpEx|opex": 18,
+"OpEx|sm": 19,
+"OpEx|cogs_ppl": 21,
+"OpEx|cogs_host": 22,
+"OpEx|cogs_var": 23,
+"OpEx|cogs": 24,
+"OpEx|q_ceo": 27,
+"OpEx|q_swe": 28,
+"OpEx|q_ml": 29,
+"OpEx|q_sec": 30,
+"OpEx|q_ae": 31,
+"OpEx|q_se": 32,
+"OpEx|q_cs": 33,
+"OpEx|q_mkt": 34,
+"OpEx|q_fin": 35,
+"OpEx|q_o_host": 36,
+"OpEx|q_o_sec": 37,
+"OpEx|q_o_legal": 38,
+"OpEx|q_o_mkt": 39,
+"OpEx|q_o_trav": 40,
+"OpEx|q_o_off": 41,
+"OpEx|q_o_partner": 42,
+"OpEx|q_var": 43,
+"OpEx|qd_Engineering": 45,
+"OpEx|qd_Security": 46,
+"OpEx|qd_Sales": 47,
+"OpEx|qd_Marketing": 48,
+"OpEx|qd_G&A": 49,
+"OpEx|qd_Claims operations (COGS)": 50,
+"OpEx|qd_tot": 51,
+"OpEx|qd_chk": 52,
+"P&L|rev": 4,
+"P&L|cogs": 5,
+"P&L|gp": 6,
+"P&L|gm": 7,
+"P&L|o_Engineering": 8,
+"P&L|o_Security": 9,
+"P&L|o_Sales": 10,
+"P&L|o_Marketing": 11,
+"P&L|o_G&A": 12,
+"P&L|opex": 13,
+"P&L|ebitda": 14,
+"P&L|ebitda_m": 15,
+"P&L|da": 16,
+"P&L|ebit": 17,
+"P&L|intinc": 18,
+"P&L|ebt": 19,
+"P&L|cum": 20,
+"P&L|tax": 21,
+"P&L|ni": 22,
+"Headcount|capex": 51,
+"Cash Flow|ni": 4,
+"Cash Flow|da": 5,
+"Cash Flow|dar": 6,
+"Cash Flow|dap": 7,
+"Cash Flow|cfo": 8,
+"Cash Flow|capex": 9,
+"Cash Flow|fcf": 10,
+"Cash Flow|s1": 11,
+"Cash Flow|s2": 12,
+"Cash Flow|sa": 13,
+"Cash Flow|cff": 14,
+"Cash Flow|net": 15,
+"Cash Flow|open": 16,
+"Cash Flow|close": 17,
+"Cash Flow|burn": 18,
+"Cash Flow|cumfcf": 19,
+"Cash Flow|preA": 20,
+"Cash Flow|seedonly": 21,
+"Cash Flow|run_m": 22,
+"Cash Flow|need_seed": 24,
+"Cash Flow|need_total": 25,
+"Cash Flow|mincash": 26,
+"Cash Flow|runway": 27,
+"Cash Flow|y1burn": 28,
+"Cash Flow|u_Engineering": 30,
+"Cash Flow|u_Security": 31,
+"Cash Flow|u_Sales": 32,
+"Cash Flow|u_Marketing": 33,
+"Cash Flow|u_G&A": 34,
+"Cash Flow|u_cogs": 35,
+"Cash Flow|u_capex": 36,
+"Cash Flow|u_wc": 37,
+"Cash Flow|u_tax": 38,
+"Cash Flow|u_gross": 39,
+"Cash Flow|u_rev": 40,
+"Cash Flow|u_int": 41,
+"Cash Flow|u_net": 42,
+"Cash Flow|u_seed": 43,
+"Cash Flow|u_res": 44,
+"Cash Flow|own": 45,
+"Balance Sheet|cash": 4,
+"Balance Sheet|ar": 5,
+"Balance Sheet|ppe": 6,
+"Balance Sheet|ta": 7,
+"Balance Sheet|ap": 8,
+"Balance Sheet|tl": 9,
+"Balance Sheet|paid": 10,
+"Balance Sheet|re": 11,
+"Balance Sheet|te": 12,
+"Balance Sheet|tle": 13,
+"Balance Sheet|chk": 14,
+"Unit Economics|new": 4,
+"Unit Economics|sm": 5,
+"Unit Economics|cac": 6,
+"Unit Economics|rpa": 7,
+"Unit Economics|gm": 8,
+"Unit Economics|gpa": 9,
+"Unit Economics|life": 10,
+"Unit Economics|ltv": 11,
+"Unit Economics|ltvcac": 12,
+"Unit Economics|pay": 13,
+"Unit Economics|nrr": 14,
+"Unit Economics|smr": 15,
+"Unit Economics|cac_b": 16,
+"Unit Economics|ltvcac_b": 17,
+"Unit Economics|pay_b": 18,
+"Unit Economics|car_new": 20,
+"Unit Economics|car_cac": 21,
+"Unit Economics|car_rpa": 22,
+"Unit Economics|car_ltv": 23,
+"Unit Economics|cac_p": 25,
+"Unit Economics|ltvcac_p": 26,
+"Unit Economics|pay_p": 27,
+"Scenarios|Base_new_shp": 5,
+"Scenarios|Base_lost_shp": 6,
+"Scenarios|Base_end_shp": 7,
+"Scenarios|Base_avg_shp": 8,
+"Scenarios|Base_rpa_shp": 9,
+"Scenarios|Base_rev_shp": 10,
+"Scenarios|Base_arr_shp": 11,
+"Scenarios|Base_new_imp": 12,
+"Scenarios|Base_lost_imp": 13,
+"Scenarios|Base_end_imp": 14,
+"Scenarios|Base_avg_imp": 15,
+"Scenarios|Base_rpa_imp": 16,
+"Scenarios|Base_rev_imp": 17,
+"Scenarios|Base_arr_imp": 18,
+"Scenarios|Base_new_car": 19,
+"Scenarios|Base_lost_car": 20,
+"Scenarios|Base_end_car": 21,
+"Scenarios|Base_avg_car": 22,
+"Scenarios|Base_rpa_car": 23,
+"Scenarios|Base_rev_car": 24,
+"Scenarios|Base_arr_car": 25,
+"Scenarios|Base_new": 26,
+"Scenarios|Base_lost": 27,
+"Scenarios|Base_end": 28,
+"Scenarios|Base_avg": 29,
+"Scenarios|Base_rev": 30,
+"Scenarios|Base_arr": 31,
+"Scenarios|Base_rpa": 32,
+"Scenarios|Base_n_ceo": 33,
+"Scenarios|Base_n_swe": 34,
+"Scenarios|Base_n_ml": 35,
+"Scenarios|Base_n_sec": 36,
+"Scenarios|Base_n_ae": 37,
+"Scenarios|Base_n_se": 38,
+"Scenarios|Base_n_cs": 39,
+"Scenarios|Base_n_mkt": 40,
+"Scenarios|Base_n_fin": 41,
+"Scenarios|Base_hc": 42,
+"Scenarios|Base_ppl_cogs": 43,
+"Scenarios|Base_ppl_op": 44,
+"Scenarios|Base_o_host": 45,
+"Scenarios|Base_o_sec": 46,
+"Scenarios|Base_o_legal": 47,
+"Scenarios|Base_o_mkt": 48,
+"Scenarios|Base_o_trav": 49,
+"Scenarios|Base_o_off": 50,
+"Scenarios|Base_o_partner": 51,
+"Scenarios|Base_cogs": 52,
+"Scenarios|Base_gp": 53,
+"Scenarios|Base_gm": 54,
+"Scenarios|Base_opex": 55,
+"Scenarios|Base_ebitda": 56,
+"Scenarios|Base_capex": 57,
+"Scenarios|Base_da": 58,
+"Scenarios|Base_ebt": 59,
+"Scenarios|Base_cum": 60,
+"Scenarios|Base_tax": 61,
+"Scenarios|Base_ni": 62,
+"Scenarios|Base_ar": 63,
+"Scenarios|Base_ap": 64,
+"Scenarios|Base_fcf": 65,
+"Scenarios|Base_cash": 66,
+"Scenarios|Base_cumfcf": 67,
+"Scenarios|Base_preA": 68,
+"Scenarios|Base_mincash": 69,
+"Scenarios|Base_need": 70,
+"Scenarios|Base_seedneed": 71,
+"Scenarios|Base_mile_m": 72,
+"Scenarios|Base_mile": 73,
+"Scenarios|Base_seedonly": 74,
+"Scenarios|Base_run_m": 75,
+"Scenarios|Base_runway": 76,
+"Scenarios|Bull_new_shp": 79,
+"Scenarios|Bull_lost_shp": 80,
+"Scenarios|Bull_end_shp": 81,
+"Scenarios|Bull_avg_shp": 82,
+"Scenarios|Bull_rpa_shp": 83,
+"Scenarios|Bull_rev_shp": 84,
+"Scenarios|Bull_arr_shp": 85,
+"Scenarios|Bull_new_imp": 86,
+"Scenarios|Bull_lost_imp": 87,
+"Scenarios|Bull_end_imp": 88,
+"Scenarios|Bull_avg_imp": 89,
+"Scenarios|Bull_rpa_imp": 90,
+"Scenarios|Bull_rev_imp": 91,
+"Scenarios|Bull_arr_imp": 92,
+"Scenarios|Bull_new_car": 93,
+"Scenarios|Bull_lost_car": 94,
+"Scenarios|Bull_end_car": 95,
+"Scenarios|Bull_avg_car": 96,
+"Scenarios|Bull_rpa_car": 97,
+"Scenarios|Bull_rev_car": 98,
+"Scenarios|Bull_arr_car": 99,
+"Scenarios|Bull_new": 100,
+"Scenarios|Bull_lost": 101,
+"Scenarios|Bull_end": 102,
+"Scenarios|Bull_avg": 103,
+"Scenarios|Bull_rev": 104,
+"Scenarios|Bull_arr": 105,
+"Scenarios|Bull_rpa": 106,
+"Scenarios|Bull_n_ceo": 107,
+"Scenarios|Bull_n_swe": 108,
+"Scenarios|Bull_n_ml": 109,
+"Scenarios|Bull_n_sec": 110,
+"Scenarios|Bull_n_ae": 111,
+"Scenarios|Bull_n_se": 112,
+"Scenarios|Bull_n_cs": 113,
+"Scenarios|Bull_n_mkt": 114,
+"Scenarios|Bull_n_fin": 115,
+"Scenarios|Bull_hc": 116,
+"Scenarios|Bull_ppl_cogs": 117,
+"Scenarios|Bull_ppl_op": 118,
+"Scenarios|Bull_o_host": 119,
+"Scenarios|Bull_o_sec": 120,
+"Scenarios|Bull_o_legal": 121,
+"Scenarios|Bull_o_mkt": 122,
+"Scenarios|Bull_o_trav": 123,
+"Scenarios|Bull_o_off": 124,
+"Scenarios|Bull_o_partner": 125,
+"Scenarios|Bull_cogs": 126,
+"Scenarios|Bull_gp": 127,
+"Scenarios|Bull_gm": 128,
+"Scenarios|Bull_opex": 129,
+"Scenarios|Bull_ebitda": 130,
+"Scenarios|Bull_capex": 131,
+"Scenarios|Bull_da": 132,
+"Scenarios|Bull_ebt": 133,
+"Scenarios|Bull_cum": 134,
+"Scenarios|Bull_tax": 135,
+"Scenarios|Bull_ni": 136,
+"Scenarios|Bull_ar": 137,
+"Scenarios|Bull_ap": 138,
+"Scenarios|Bull_fcf": 139,
+"Scenarios|Bull_cash": 140,
+"Scenarios|Bull_cumfcf": 141,
+"Scenarios|Bull_preA": 142,
+"Scenarios|Bull_mincash": 143,
+"Scenarios|Bull_need": 144,
+"Scenarios|Bull_seedneed": 145,
+"Scenarios|Bull_mile_m": 146,
+"Scenarios|Bull_mile": 147,
+"Scenarios|Bull_seedonly": 148,
+"Scenarios|Bull_run_m": 149,
+"Scenarios|Bull_runway": 150,
+"Scenarios|Bear_new_shp": 153,
+"Scenarios|Bear_lost_shp": 154,
+"Scenarios|Bear_end_shp": 155,
+"Scenarios|Bear_avg_shp": 156,
+"Scenarios|Bear_rpa_shp": 157,
+"Scenarios|Bear_rev_shp": 158,
+"Scenarios|Bear_arr_shp": 159,
+"Scenarios|Bear_new_imp": 160,
+"Scenarios|Bear_lost_imp": 161,
+"Scenarios|Bear_end_imp": 162,
+"Scenarios|Bear_avg_imp": 163,
+"Scenarios|Bear_rpa_imp": 164,
+"Scenarios|Bear_rev_imp": 165,
+"Scenarios|Bear_arr_imp": 166,
+"Scenarios|Bear_new_car": 167,
+"Scenarios|Bear_lost_car": 168,
+"Scenarios|Bear_end_car": 169,
+"Scenarios|Bear_avg_car": 170,
+"Scenarios|Bear_rpa_car": 171,
+"Scenarios|Bear_rev_car": 172,
+"Scenarios|Bear_arr_car": 173,
+"Scenarios|Bear_new": 174,
+"Scenarios|Bear_lost": 175,
+"Scenarios|Bear_end": 176,
+"Scenarios|Bear_avg": 177,
+"Scenarios|Bear_rev": 178,
+"Scenarios|Bear_arr": 179,
+"Scenarios|Bear_rpa": 180,
+"Scenarios|Bear_n_ceo": 181,
+"Scenarios|Bear_n_swe": 182,
+"Scenarios|Bear_n_ml": 183,
+"Scenarios|Bear_n_sec": 184,
+"Scenarios|Bear_n_ae": 185,
+"Scenarios|Bear_n_se": 186,
+"Scenarios|Bear_n_cs": 187,
+"Scenarios|Bear_n_mkt": 188,
+"Scenarios|Bear_n_fin": 189,
+"Scenarios|Bear_hc": 190,
+"Scenarios|Bear_ppl_cogs": 191,
+"Scenarios|Bear_ppl_op": 192,
+"Scenarios|Bear_o_host": 193,
+"Scenarios|Bear_o_sec": 194,
+"Scenarios|Bear_o_legal": 195,
+"Scenarios|Bear_o_mkt": 196,
+"Scenarios|Bear_o_trav": 197,
+"Scenarios|Bear_o_off": 198,
+"Scenarios|Bear_o_partner": 199,
+"Scenarios|Bear_cogs": 200,
+"Scenarios|Bear_gp": 201,
+"Scenarios|Bear_gm": 202,
+"Scenarios|Bear_opex": 203,
+"Scenarios|Bear_ebitda": 204,
+"Scenarios|Bear_capex": 205,
+"Scenarios|Bear_da": 206,
+"Scenarios|Bear_ebt": 207,
+"Scenarios|Bear_cum": 208,
+"Scenarios|Bear_tax": 209,
+"Scenarios|Bear_ni": 210,
+"Scenarios|Bear_ar": 211,
+"Scenarios|Bear_ap": 212,
+"Scenarios|Bear_fcf": 213,
+"Scenarios|Bear_cash": 214,
+"Scenarios|Bear_cumfcf": 215,
+"Scenarios|Bear_preA": 216,
+"Scenarios|Bear_mincash": 217,
+"Scenarios|Bear_need": 218,
+"Scenarios|Bear_seedneed": 219,
+"Scenarios|Bear_mile_m": 220,
+"Scenarios|Bear_mile": 221,
+"Scenarios|Bear_seedonly": 222,
+"Scenarios|Bear_run_m": 223,
+"Scenarios|Bear_runway": 224,
+"Scenarios|chk_rev": 227,
+"Scenarios|chk_ebitda": 228,
+"Scenarios|chk_ni": 229,
+"Scenarios|chk_fcf": 230,
+"Scenarios|chk_cash": 231
+},
+"inputs": [
+[
+"infl",
+"Compensation inflation per year",
+[
+0.04
+],
+"ASSUMED",
+"Planning assumption carried from the investor-pack workbook (grade C)."
+],
+[
+"fx",
+"NOK per USD",
+[
+9.3817
+],
+"SOURCED",
+"Norges Bank, USD/NOK monthly average Sep 2026 = 9.3817, https://data.norges-bank.no/api/data/EXR/M.USD.NOK.SP, accessed 2026-10-17. Replaces 10.5 in the prior workbook."
+],
+[
+"no_load",
+"Norway loading on gross salary (employer tax + pension + other)",
+[
+1.22
+],
+"ASSUMED",
+"Employer tax zone I 14.1% is SOURCED (Skatteetaten, https://www.skatteetaten.no/satser/arbeidsgiveravgift/, accessed 2026-10-17); the remaining ~8 points (mandatory pension, insurance) are assumed."
+],
+[
+"us_ben",
+"US benefits share of total compensation",
+[
+0.3
+],
+"SOURCED",
+"BLS Employer Costs for Employee Compensation, June 2026: benefits 30.0% of private-industry compensation, https://www.bls.gov/news.release/ecec.nr0.htm, accessed 2026-10-17. Loaded cost = wage / (1 - 0.30)."
+],
+[
+"tax",
+"Norwegian corporate income tax rate",
+[
+0.22
+],
+"SOURCED",
+"22% (DLA Piper Global Expansion Tax, Norway, https://intelligence.dlapiper.com/global-expansion-tax/?c=NO, accessed 2026-10-17). Unlimited loss carry-forward assumed; confirm with counsel."
+],
+[
+"dso",
+"Days sales outstanding",
+[
+60
+],
+"ASSUMED",
+"Contingency fees are invoiced after the counterparty pays the customer; 60 days assumed. Unmeasured."
+],
+[
+"dpo",
+"Days payable outstanding (non-payroll costs)",
+[
+30
+],
+"ASSUMED",
+"Standard 30-day vendor terms assumed."
+],
+[
+"capex",
+"Equipment capex per net new hire ($K)",
+[
+3
+],
+"ASSUMED",
+"Laptop and peripherals. Software development is expensed, not capitalised."
+],
+[
+"dep",
+"Depreciation life (years)",
+[
+3
+],
+"ASSUMED",
+"Straight line."
+],
+[
+"int",
+"Interest earned on cash",
+[
+0.0
+],
+"ASSUMED",
+"Set to zero for conservatism."
+],
+[
+"cash0",
+"Opening cash at seed close, before seed ($K)",
+[
+0
+],
+"ASSUMED",
+"UNKNOWN; owner to confirm founder-funded cash and share capital (NOK 30,000 minimum for an AS)."
+],
+[
+"milestone",
+"Series A ARR milestone ($K)",
+[
+2500
+],
+"ASSUMED",
+"Planning target. Reference: median ARR at Series A $2.8M in 2025 (Carta, ARR at Series A, https://carta.com/data/newsletter-arr-at-series-a/, figure confirmed via search result 2026-10-17; direct fetch returned HTTP 403)."
+],
+[
+"buffer",
+"Cash buffer on each round",
+[
+0.2
+],
+"ASSUMED",
+"Planning assumption carried from the investor-pack workbook."
+],
+[
+"seed1",
+"Seed tranche 1 ($K)",
+[
+4000
+],
+"ASSUMED",
+"Plan decision; sized against the Cash Flow funding-need rows."
+],
+[
+"seed1y",
+"Seed tranche 1 year",
+[
+1
+],
+"ASSUMED",
+"At close."
+],
+[
+"seed2",
+"Seed tranche 2 ($K)",
+[
+3000
+],
+"ASSUMED",
+"Released at milestone: 5 paying customers, recovery measured on real invoices, ARR above $0.5M."
+],
+[
+"seed2y",
+"Seed tranche 2 year",
+[
+2
+],
+"ASSUMED",
+"Base case passes $0.5M ARR in year 2."
+],
+[
+"seriesA",
+"Series A ($K)",
+[
+8500
+],
+"ASSUMED",
+"Plan decision, kept from the investor-pack plan; tested against all three scenarios."
+],
+[
+"seriesAy",
+"Series A year",
+[
+4
+],
+"ASSUMED",
+"Base case crosses the ARR milestone early in year 4."
+],
+[
+"pre",
+"Seed pre-money valuation ($K)",
+[
+18400
+],
+"ASSUMED",
+"Orientation only: median US seed pre-money $18.4M in Q1 2026 (PitchBook via WaveUp, grade C, not re-verified). Terms are set with the lead investor."
+],
+[
+"bench_sm",
+"Benchmark: S&M spend per $1 of new ARR",
+[
+2.0
+],
+"SOURCED",
+"Benchmarkit 2025 SaaS Performance Metrics (2024 data), median New CAC Ratio $2.00, https://www.benchmarkit.ai/2025benchmarks, accessed 2026-10-17."
+],
+[
+"bench_grr",
+"Benchmark: median gross revenue retention",
+[
+0.88
+],
+"SOURCED",
+"Benchmarkit 2025 report: GRR 88%, same URL, accessed 2026-10-17."
+],
+[
+"bench_nrr",
+"Benchmark: median net revenue retention",
+[
+1.01
+],
+"SOURCED",
+"Benchmarkit 2025 report: NRR 101%, same URL, accessed 2026-10-17."
+],
+[
+"sam",
+"SAM: addressable shipper + importer accounts (count)",
+[
+32765
+],
+"SOURCED",
+"market-researcher research/05-market-size.md v3 (2026-10-17): 19,932 mid-market shippers (Census SUSB 2022 firms with $100M-$999.9M receipts in manufacturing, wholesale and retail, i.e. $5M-$50M freight spend at 4.68% transport-to-sales, Establish via DC Velocity 2008, grade B) + SME importers capped at 12,833 (FMC D&D pool $3.08B / $240K exposure). TAM adds carriers 72,053 and brokers 28,438 = 133,256 accounts."
+],
+[
+"sam_usd",
+"SAM: annual revenue pool, shipper + importer accounts ($K)",
+[
+945400
+],
+"SOURCED",
+"market-researcher research/05-market-size.md v3: final figure at our year-7 segment rates: shippers 19,932 x $27.6K = $550.1M + importers 12,833 x $30.8K = $395.3M = $945.4M; range $0.61B-$1.01B because the shipper/importer overlap is unknown. TAM $1,855.5M (133,256 accounts: SAM + 72,053 carriers x $7,895 + 28,438 brokers x $12K, broker rate assumed). Replaces the flat-rate $1,009.2M SAM / $4.10B TAM. Supersedes the withdrawn v2 figures ($474.2M SAM, $10.30B TAM, $8.99B SAM)."
+],
+[
+"pess_cac",
+"Pessimistic CAC: paid-media cost per small-company customer ($K)",
+[
+31
+],
+"SOURCED",
+"Metadata.io, 2026 B2B Paid Media Benchmark Report (2025 data, 153 advertisers): small-company customer cost $31k, https://metadata.io/md/benchmark-report-2026.md, accessed 2026-10-17. Media cost only; excludes sales labour. LinkedIn cost per customer $58,572 (same source, reported by digital-marketing, not re-verified by finance)."
+],
+[
+"fee",
+"Platform fee",
+[
+0,
+6,
+10,
+13,
+15,
+16,
+17
+],
+"ASSUMED",
+"Investor-pack workbook (grade C). Hybrid fee starts in year 2. No competitor publishes pricing (market-researcher research/01-competitors.md, 2026-10-17), so there is no market check."
+],
+[
+"recov",
+"Amount recovered for the customer",
+[
+52,
+70,
+85,
+95,
+105,
+110,
+115
+],
+"ASSUMED",
+"Year 1 $52K = business-case base for a mid-size importer-shipper (D&D $36K + fuel surcharge $16K), built on FMC and EIA/ATRI figures; grows as modules are added. Not measured on any customer data."
+],
+[
+"share",
+"Recovery share (contingency %)",
+[
+0.25,
+0.17,
+0.14,
+0.12,
+0.12,
+0.12,
+0.12
+],
+"ASSUMED",
+"25% pilot contingency, falling once the platform fee starts. No freight competitor publishes a contingency rate (market-researcher research/01-competitors.md, 2026-10-17). Only public reference: Refund Retriever (parcel audit) 40-50%, https://www.refundretriever.com/pricing, accessed 2026-10-17."
+],
+[
+"mix_shp",
+"Shipper share of new shipper + importer accounts",
+[
+0.5
+],
+"ASSUMED",
+"Owner decision 2026-10-17: shipper- and importer-first. 50/50 split assumed; SME importers are counted (234,023, US Census) but mid-market shippers are not yet."
+],
+[
+"shp_mult",
+"Shipper amount recovered vs importer path",
+[
+0.77
+],
+"ASSUMED",
+"A domestic mid-market shipper has no ocean D&D. Business-case year-1 example: fuel-surcharge recovery $16K (business case, EIA-based) + accessorial and detention invoice audit $24K (assumed) = $40K vs $52K for an importer = 0.77."
+],
+[
+"car_rec",
+"Carrier: amount recovered per carrier ($K/yr)",
+[
+39.475,
+39.475,
+39.475,
+39.475,
+39.475,
+39.475,
+39.475
+],
+"ASSUMED",
+"market-researcher research/02 and 05 (2026-10-17): $471.60 fee per power unit x 16.7 units = $7,895 per carrier at a 20% fee, so recovered = $7,895 / 20% = $39.5K. Built on assumed inputs (400 stops per truck, $100 per detained stop, 30% winnable); ATRI 39.3% detention rate sourced."
+],
+[
+"car_share",
+"Carrier: contingency share (no platform fee)",
+[
+0.2
+],
+"ASSUMED",
+"Fee used in the research carrier model and in gtm.md."
+],
+[
+"partner",
+"Partner commission on carrier revenue (factoring / ELD channel)",
+[
+0.2
+],
+"ASSUMED",
+"Carriers come through a channel partner, not direct sales; commission booked in the Sales department."
+],
+[
+"churn",
+"Annual logo churn",
+[
+0.2,
+0.15,
+0.3
+],
+"ASSUMED",
+"Share of start-of-year accounts lost in the year. Benchmarkit median GRR 88% implies ~12% revenue churn for SaaS; a contingency service is easy to switch off, so 20% base."
+],
+[
+"rmult",
+"Revenue per account vs base path",
+[
+1.0,
+1.15,
+0.8
+],
+"ASSUMED",
+"Bull: larger recoveries and early platform-fee adoption. Bear: recoveries 20% lower."
+],
+[
+"scale",
+"Headcount and spend scale vs base plan",
+[
+1.0,
+1.1,
+0.85
+],
+"ASSUMED",
+"Applied to every role except the founder, and to other operating costs from year 2."
+],
+[
+"freeze",
+"Hold headcount and spend at prior-year level from year (0 = never)",
+[
+0,
+0,
+3
+],
+"ASSUMED",
+"Bear cost response: if the tranche-2 milestone is missed, hold at year-2 levels (investor-pack financial plan section 4 describes this but the workbook did not model it)."
+],
+[
+"fdur",
+"Number of years the hold lasts",
+[
+0,
+0,
+2
+],
+"ASSUMED",
+"Bear: years 3 and 4 held at year-2 levels, then the scaled plan resumes. A permanent hold would leave 2 claims analysts serving 235 accounts, which is not credible."
+],
+[
+"varc",
+"Variable cost of revenue (% of revenue)",
+[
+0.08,
+0.07,
+0.1
+],
+"ASSUMED",
+"New input: LLM inference, OCR and per-container event data. Unmeasured; replaces the gross-margin-% input of the prior workbook."
+],
+[
+"new_Base",
+"New shipper + importer accounts won - Base",
+[
+6,
+30,
+75,
+120,
+165,
+200,
+235
+],
+"ASSUMED",
+"Plan input from the investor-pack workbook (grade C). No pipeline exists yet."
+],
+[
+"new_Bull",
+"New shipper + importer accounts won - Bull",
+[
+8,
+40,
+100,
+160,
+215,
+260,
+300
+],
+"ASSUMED",
+"Plan input from the investor-pack workbook (grade C). No pipeline exists yet."
+],
+[
+"new_Bear",
+"New shipper + importer accounts won - Bear",
+[
+4,
+16,
+35,
+55,
+75,
+90,
+105
+],
+"ASSUMED",
+"Plan input from the investor-pack workbook (grade C). No pipeline exists yet."
+],
+[
+"car_Base",
+"New carrier accounts via partner - Base",
+[
+0,
+0,
+15,
+30,
+50,
+70,
+90
+],
+"ASSUMED",
+"Small partner-led segment starting later (base: factoring partner from year 3; bull: partner signed in year 2; bear: partner slips to year 5)."
+],
+[
+"car_Bull",
+"New carrier accounts via partner - Bull",
+[
+0,
+10,
+30,
+60,
+90,
+120,
+150
+],
+"ASSUMED",
+"Small partner-led segment starting later (base: factoring partner from year 3; bull: partner signed in year 2; bear: partner slips to year 5)."
+],
+[
+"car_Bear",
+"New carrier accounts via partner - Bear",
+[
+0,
+0,
+0,
+0,
+10,
+20,
+30
+],
+"ASSUMED",
+"Small partner-led segment starting later (base: factoring partner from year 3; bull: partner signed in year 2; bear: partner slips to year 5)."
+],
+[
+"hc_ceo",
+"Founder / CEO - headcount plan",
+[
+1,
+1,
+1,
+1,
+1,
+1,
+1
+],
+"ASSUMED",
+"Department: G&A. Plan from the investor-pack workbook (grade C)."
+],
+[
+"sal_ceo",
+"Founder / CEO - annual pay (NOK)",
+[
+1200000
+],
+"ASSUMED",
+"NOK pay held below market until Series A; equals the $140K loaded in the prior workbook at 10.5 NOK/USD."
+],
+[
+"sq_ceo",
+"Founder / CEO - year-1 start quarter (1-4)",
+[
+1
+],
+"ASSUMED",
+"Hiring quarter for year-1 hires; drives the year-1 quarterly budget."
+],
+[
+"hc_swe",
+"Software engineers - headcount plan",
+[
+2,
+3,
+5,
+8,
+10,
+12,
+13
+],
+"ASSUMED",
+"Department: Engineering. Plan from the investor-pack workbook (grade C)."
+],
+[
+"sal_swe",
+"Software engineers - annual pay (NOK)",
+[
+969240
+],
+"SOURCED",
+"SSB average monthly earnings, information and communication, Nov 2025: NOK 80,770 x 12, https://www.ssb.no/arbeid-og-lonn/lonn-og-arbeidskraftkostnader/statistikk/lonn, accessed 2026-10-17."
+],
+[
+"sq_swe",
+"Software engineers - year-1 start quarter (1-4)",
+[
+2
+],
+"ASSUMED",
+"Hiring quarter for year-1 hires; drives the year-1 quarterly budget."
+],
+[
+"hc_ml",
+"ML / data engineers - headcount plan",
+[
+1,
+1,
+2,
+3,
+3,
+4,
+4
+],
+"ASSUMED",
+"Department: Engineering. Plan from the investor-pack workbook (grade C)."
+],
+[
+"sal_ml",
+"ML / data engineers - annual pay (NOK)",
+[
+1060000
+],
+"ASSUMED",
+"SSB sector average plus ~9% for specialist skills (ratio kept from the prior workbook)."
+],
+[
+"sq_ml",
+"ML / data engineers - year-1 start quarter (1-4)",
+[
+3
+],
+"ASSUMED",
+"Hiring quarter for year-1 hires; drives the year-1 quarterly budget."
+],
+[
+"hc_sec",
+"Security engineer - headcount plan",
+[
+1,
+1,
+1,
+2,
+2,
+3,
+3
+],
+"ASSUMED",
+"Department: Security. Plan from the investor-pack workbook (grade C)."
+],
+[
+"sal_sec",
+"Security engineer - annual pay (NOK)",
+[
+1060000
+],
+"ASSUMED",
+"As ML / data engineers."
+],
+[
+"sq_sec",
+"Security engineer - year-1 start quarter (1-4)",
+[
+2
+],
+"ASSUMED",
+"Hiring quarter for year-1 hires; drives the year-1 quarterly budget."
+],
+[
+"hc_ae",
+"Account executives (US) - headcount plan",
+[
+0,
+1,
+3,
+5,
+7,
+8,
+9
+],
+"ASSUMED",
+"Department: Sales. Plan from the investor-pack workbook (grade C)."
+],
+[
+"sal_ae",
+"Account executives (US) - annual pay (USD)",
+[
+161000
+],
+"ASSUMED",
+"On-target earnings, set so the loaded cost equals the $230K in the prior workbook. Not re-verified."
+],
+[
+"sq_ae",
+"Account executives (US) - year-1 start quarter (1-4)",
+[
+1
+],
+"ASSUMED",
+"Hiring quarter for year-1 hires; drives the year-1 quarterly budget."
+],
+[
+"hc_se",
+"Sales engineer (US) - headcount plan",
+[
+0,
+1,
+1,
+2,
+2,
+3,
+3
+],
+"ASSUMED",
+"Department: Sales. Plan from the investor-pack workbook (grade C)."
+],
+[
+"sal_se",
+"Sales engineer (US) - annual pay (USD)",
+[
+124900
+],
+"SOURCED",
+"BLS Occupational Outlook Handbook, sales engineers median $124,900 (May 2025), https://www.bls.gov/ooh/sales/sales-engineers.htm, accessed 2026-10-17."
+],
+[
+"sq_se",
+"Sales engineer (US) - year-1 start quarter (1-4)",
+[
+1
+],
+"ASSUMED",
+"Hiring quarter for year-1 hires; drives the year-1 quarterly budget."
+],
+[
+"hc_cs",
+"Claims analysts / customer success (US) - headcount plan",
+[
+1,
+2,
+4,
+7,
+10,
+13,
+16
+],
+"ASSUMED",
+"Department: Claims operations (COGS). Plan from the investor-pack workbook (grade C)."
+],
+[
+"sal_cs",
+"Claims analysts / customer success (US) - annual pay (USD)",
+[
+70000
+],
+"ASSUMED",
+"Analyst base pay ~$70K (prior workbook, grade C)."
+],
+[
+"sq_cs",
+"Claims analysts / customer success (US) - year-1 start quarter (1-4)",
+[
+3
+],
+"ASSUMED",
+"Hiring quarter for year-1 hires; drives the year-1 quarterly budget."
+],
+[
+"hc_mkt",
+"Marketing (US) - headcount plan",
+[
+0,
+0,
+1,
+1,
+2,
+2,
+2
+],
+"ASSUMED",
+"Department: Marketing. Plan from the investor-pack workbook (grade C)."
+],
+[
+"sal_mkt",
+"Marketing (US) - annual pay (USD)",
+[
+105000
+],
+"ASSUMED",
+"Estimate; loaded $150K as in the prior workbook."
+],
+[
+"sq_mkt",
+"Marketing (US) - year-1 start quarter (1-4)",
+[
+1
+],
+"ASSUMED",
+"Hiring quarter for year-1 hires; drives the year-1 quarterly budget."
+],
+[
+"hc_fin",
+"Finance, legal operations, people - headcount plan",
+[
+0,
+1,
+1,
+2,
+2,
+3,
+3
+],
+"ASSUMED",
+"Department: G&A. Plan from the investor-pack workbook (grade C)."
+],
+[
+"sal_fin",
+"Finance, legal operations, people - annual pay (NOK)",
+[
+1120000
+],
+"ASSUMED",
+"SSB sector average plus ~15%; loaded $130K at 10.5 NOK/USD in the prior workbook."
+],
+[
+"sq_fin",
+"Finance, legal operations, people - year-1 start quarter (1-4)",
+[
+1
+],
+"ASSUMED",
+"Hiring quarter for year-1 hires; drives the year-1 quarterly budget."
+],
+[
+"o_host",
+"Cloud hosting, data feeds and tooling [COGS]",
+[
+45,
+80,
+140,
+220,
+300,
+370,
+430
+],
+"ASSUMED",
+"Terraform footprint plus container-event data fees (prior workbook, grade C)."
+],
+[
+"o_sec",
+"Security programme (SOC 2, pen tests, tooling, insurance) [Security]",
+[
+120,
+150,
+170,
+190,
+210,
+230,
+250
+],
+"ASSUMED",
+"SOC 2 Type II first year $50-110K and pen tests $15-35K each (vendor blogs, grade C, not re-verified)."
+],
+[
+"o_legal",
+"Legal and regulatory [G&A]",
+[
+150,
+110,
+120,
+140,
+150,
+160,
+170
+],
+"ASSUMED",
+"US entity, customer contracts, FMC and data-protection counsel (grade C)."
+],
+[
+"o_mkt",
+"Marketing programmes and events [Marketing]",
+[
+30,
+90,
+200,
+320,
+420,
+480,
+520
+],
+"ASSUMED",
+"Trade shows (TIA, CSCMP, TPM), content, list data (grade C). Channel CAC from digital-marketing pending."
+],
+[
+"o_trav",
+"Travel and customer visits [Sales]",
+[
+60,
+100,
+150,
+200,
+240,
+270,
+300
+],
+"ASSUMED",
+"US customer and partner visits (grade C)."
+],
+[
+"o_off",
+"Office, software, admin, accounting [G&A]",
+[
+50,
+80,
+110,
+150,
+180,
+210,
+240
+],
+"ASSUMED",
+"Estimate (grade C)."
+]
+]
+}
