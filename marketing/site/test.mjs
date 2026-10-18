@@ -182,16 +182,19 @@ const dev = readFileSync(join(dist, "developers", "index.html"), "utf8");
 check(dev.includes("fr_live_") && dev.includes("Bearer") && ["imports.write", "claims.read", "exports.claims"].every((x) => dev.includes(x)), "developers: key format, Bearer header and the three scopes");
 check(dev.includes("Python reference service") && dev.includes("built but not hosted"), "developers: honest developer-portal status");
 check(!/href="[^"]*developer-portal/.test(dev), "developers: no link to a developer portal that is not hosted");
-// investor documents: the seven PDFs, each under /investors/pdf/, flagged as added on publication
+// investor documents: sent on request only (owner decision, 2026-10-18; general-solicitation risk). The site must
+// carry no PDF link and no /investors/pdf/ path anywhere, and the investors page must say the documents are on request.
 const inv = readFileSync(join(dist, "investors", "index.html"), "utf8");
-const pdfs = [...inv.matchAll(/href="([^"]+\.pdf)"/gi)].map((m) => m[1]);
-const PDF_NAMES = ["01-business-plan", "02-founder-narrative", "03-financial-package", "04-market-research", "05-marketing-and-gtm", "06-architecture-and-adrs", "07-venture-pipeline"];
-check(pdfs.length === PDF_NAMES.length, `investors: ${PDF_NAMES.length} PDF links (found ${pdfs.length})`);
-for (const p of pdfs) check(p.startsWith(`${BASE}/investors/pdf/`) && /\/\d{2}-[a-z0-9-]+\.pdf$/.test(p), `investors: PDF link outside /investors/pdf/: ${p}`);
-for (const n of PDF_NAMES) check(pdfs.includes(`${BASE}/investors/pdf/${n}.pdf`), `investors: link to ${n}.pdf`);
-check(inv.includes("PDFs added on publication"), "investors: document list marked 'PDFs added on publication'");
-// once the PDFs are copied into static/investors/pdf/, every link must resolve to a file
-if (existsSync(join(dist, "investors", "pdf"))) for (const n of PDF_NAMES) check(existsSync(join(dist, "investors", "pdf", `${n}.pdf`)), `investors/pdf/${n}.pdf exists`);
+for (const p of pages) {
+  const h = readFileSync(p, "utf8");
+  const rel = p.slice(dist.length);
+  check(!/(?:href|src)="[^"]*\.pdf(?:[?#][^"]*)?"/i.test(h), `${rel}: links to a PDF (investor documents are sent on request only)`);
+  check(!h.includes("/investors/pdf"), `${rel}: mentions an /investors/pdf/ path`);
+}
+check(!existsSync(join(dist, "investors", "pdf")), "dist/investors/pdf/ must not exist (documents are not published)");
+check(inv.includes('<h2 id="documents">Documents on request</h2>') && inv.includes("not published on this site"), "investors: 'Documents on request' section");
+check(/<h2 id="documents">Documents on request<\/h2>[\s\S]*?<a class="cta" href="mailto:[^"]+">/.test(inv), "investors: contact call to action after the documents section");
+check(!/\$\d[\d.,]*\s?M seed/i.test(inv) && !/raising/i.test(inv), "investors: no raise size on the public page");
 // brand typeface: self-hosted Inter, relative URL (works under the base path), allowed by the CSP
 check(existsSync(join(dist, "fonts", "inter-latin-wght-normal.woff2")) && existsSync(join(dist, "fonts", "OFL.txt")), "Inter font file and its licence are shipped");
 check(/font-family:\s*"Inter Variable"/.test(css) && /font:[^;]*"Inter Variable"/.test(css), "CSS uses the brand typeface Inter");

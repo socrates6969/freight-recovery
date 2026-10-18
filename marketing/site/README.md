@@ -64,9 +64,10 @@ Home links three audience pages from the main nav and from a "Pick your starting
   regenerated). Source: `docs/architecture/dev-portal-drift.md` and `api-surface.md` on `docs/investor-package`.
   No portal link until a portal is hosted.
 - **/investors/**: a plain summary of the business plan's executive summary with a section reference per point,
-  and the seven investor PDFs. **PDF wiring:** copy the files to `static/investors/pdf/NN-<name>.pdf` (names in
-  `test.mjs`, `PDF_NAMES`), then remove the "PDFs added on publication" note and its test line. Once that folder
-  exists, `npm test` fails if any linked PDF is missing.
+  and a "Documents on request" section that lists the seven investor documents as plain text with a contact link.
+  By the owner's decision of 2026-10-18 the documents are **not published** on the site (general-solicitation risk)
+  and the raise size stays off the page; `npm test` fails on any `.pdf` link, any `/investors/pdf/` path or a
+  `dist/investors/pdf/` folder.
 
 Each audience page has an in-page "On this page" nav. Every nav item and call to action carries an inline line
 icon from `ICONS` in `build.mjs` (pages write `{{icon:name}}`): drawn on a 24px grid, no library, no request,
