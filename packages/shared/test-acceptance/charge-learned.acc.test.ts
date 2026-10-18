@@ -3,7 +3,7 @@
 // Part C C4). Fixed expectations from test-spec; the CI-L12 property uses a test-owned oracle of C4.2-C4.5 built on
 // the test-owned C3 oracle and the step-5 public functions (applyRules, buildDemandLetter, renderPacketMarkdown).
 import { beforeAll, describe, expect, it } from 'vitest';
-import { oExamples, oRng, oSuggest } from './helpers/charge-oracle.js';
+import { oExamples, oRng, oSuggest, type OExample } from './helpers/charge-oracle.js';
 
 let R: any;
 let C: any;
@@ -225,9 +225,19 @@ function genCase(rnd: () => number) {
   return { b: bundle({ invoice: inv(lines, { total: null }), rate_confirmation: rcv, bol: bolv }), labels };
 }
 
+// oExamples memoized on the exact label list: the corpus draws at most 64 distinct subsets of LABEL_POOL (59 occur), and
+// rebuilding the seed features for each of the 360 bundles was about 40 % of this test's run time. The examples are only read.
+const examplesMemo = new Map<string, OExample[]>();
+const examplesFor = (labels: any[]): OExample[] => {
+  const k = JSON.stringify(labels);
+  let ex = examplesMemo.get(k);
+  if (ex === undefined) { ex = oExamples(C.SEED_V1, labels); examplesMemo.set(k, ex); }
+  return ex;
+};
+
 /** Oracle of C4.2: the expected LRN findings (in line order) and detention look-alike steps for one bundle. */
 function expectC4(b: any, labels: any[]) {
-  const ex = oExamples(C.SEED_V1, labels);
+  const ex = examplesFor(labels);
   const seen: { key: string; c: bigint }[] = [];
   const lrn: any[] = [];
   const steps: string[] = [];
@@ -323,7 +333,7 @@ describe('CI-L12 property over a seeded corpus (seed 6012026, 360 bundles)', () 
     expect(nBundles).toBe(360);
     expect(nLrn, 'corpus produces LRN findings').toBeGreaterThan(40);
     expect(nFlag, 'corpus produces review flags').toBeGreaterThan(10);
-  });
+  }, 20_000);
 });
 
 describe('T17 CI-L13 buildEvidenceLearned(...).labelIds (C1, C9 fix round 1)', () => {
