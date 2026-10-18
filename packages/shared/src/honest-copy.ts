@@ -34,3 +34,47 @@ export const LOGS_NOTE = 'Recent records from this API instance only. Messages a
 
 export const PIPELINE_NOTE =
   'Aggregates across all tenants. No customer data is shown. Files rejected before storage appear only in request telemetry.';
+
+// ---------------------------------------------------------------------------------------------
+// REQ-20261018-exec-dashboard: executive insights page. Rendered verbatim by the web; the D1/D2 labels are
+// also the API `label` fields. Outcome words appear only in INSIGHTS_OUTCOME_DISCLAIMER.
+// ---------------------------------------------------------------------------------------------
+
+export const INSIGHTS_OUTCOME_DISCLAIMER =
+  'Recovery outcomes are not tracked yet. Every amount on this page was identified in carrier or terminal invoices, is pending your review, or was approved for a demand by your team. None of it is money recovered, saved or won.';
+
+export const INSIGHTS_TEXT = Object.freeze({
+  title: 'Insights',
+  forbidden: 'You do not have permission to view insights.',
+  empty: 'No claims match these filters.',
+  ddWindowLabel:
+    'Days left in the regulatory minimum dispute window: 46 CFR 541.8(a) gives at least 30 calendar days from the invoice date. A carrier tariff may allow more.',
+  invoiceAgeLabel: 'Freight invoice age: days since the invoice date. No dispute window is stored for truck freight.',
+  billingParty: 'Billing party',
+  notTrackedHeading: 'Not tracked yet',
+  periodNote: 'Period: from the start date up to, not including, the end date (UTC).',
+  intakeScopeNote: 'Document counts cover all imported documents; the claim type and perspective filters do not apply.',
+} as const);
+
+export interface InsightsNotTracked {
+  readonly id: string;
+  readonly title: string;
+  readonly reason: string;
+}
+
+export const INSIGHTS_NOT_TRACKED: readonly InsightsNotTracked[] = Object.freeze([
+  Object.freeze({ id: 'G1', title: 'Money paid or credited by carriers', reason: 'Nothing is recorded after a claim is marked ready to demand.' }),
+  Object.freeze({ id: 'G2', title: 'Freight dispute windows', reason: 'No contract or tariff dispute window is stored for truck freight.' }),
+  Object.freeze({ id: 'G3', title: 'Leakage by lane', reason: 'Claims have no origin or destination.' }),
+  Object.freeze({ id: 'G4', title: 'Carrier acceptance rate and response time', reason: 'Needs carrier outcomes, which are not recorded yet.' }),
+  Object.freeze({ id: 'G5', title: 'Cost and return of using this service', reason: 'No billing or fee data is held in the product.' }),
+  Object.freeze({ id: 'G6', title: 'Breakdown by business unit, site or team', reason: 'Claims are not assigned to teams.' }),
+  Object.freeze({ id: 'G7', title: 'Exact history of the open backlog', reason: 'Amounts are current values; past amounts are not stored.' }),
+  Object.freeze({ id: 'G8', title: 'Comparisons with other companies', reason: "Not offered: your data is never compared with other customers' data." }),
+  Object.freeze({
+    id: 'G9',
+    title: 'Overcharge as a share of audited freight spend',
+    reason: 'Invoices without a finding are not recorded, and invoice totals are not stored on claims.',
+  }),
+  Object.freeze({ id: 'G10', title: 'Invoice payment due dates', reason: 'Freight invoices are read without a payment due date.' }),
+]);

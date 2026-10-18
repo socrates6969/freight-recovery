@@ -1,6 +1,6 @@
-import { ApprovalsPage as ApprovalsPageSchema, DD_TEXT, FUEL_TABLES_TEXT, OUTLOOK_TEXT } from '@fr/shared';
+import { ApprovalsPage as ApprovalsPageSchema, DD_TEXT, FUEL_TABLES_TEXT, INSIGHTS_TEXT, OUTLOOK_TEXT } from '@fr/shared';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Activity, ClipboardCheck, Command as CommandIcon, FileText, Fuel, KeyRound, ListChecks, ListOrdered, LogOut, Ship, TrendingUp, Upload, UserRound } from 'lucide-react';
+import { Activity, BarChart3, ClipboardCheck, Command as CommandIcon, FileText, Fuel, KeyRound, ListChecks, ListOrdered, LogOut, Ship, TrendingUp, Upload, UserRound } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 
@@ -81,6 +81,7 @@ export function AppShell() {
   const canReadClaims = permissions.includes('claims:read');
   const canReview = permissions.includes('import:review');
   const canManageKeys = isTenantUser && permissions.includes('apikeys:manage');
+  const canInsights = isTenantUser && permissions.includes('insights:read');
   // Platform users (no tenant) with platform:health get the Dev dashboard and never tenant links.
   const canDev = !user?.tenant && permissions.includes('platform:health');
   const features = useFeatures();
@@ -143,6 +144,12 @@ export function AppShell() {
               Approvals
               {pending.data ? <span className="badge badge-accent num ml-auto">{pending.data.total}</span> : null}
             </NavLink>
+            {canInsights ? (
+              <NavLink to="/insights" className={navClass}>
+                <BarChart3 size={16} aria-hidden="true" />
+                {INSIGHTS_TEXT.title}
+              </NavLink>
+            ) : null}
             {canImport ? (
               <NavLink to="/import" end className={navClass}>
                 <Upload size={16} aria-hidden="true" />

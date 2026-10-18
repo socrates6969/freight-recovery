@@ -47,6 +47,8 @@ export const routes: RouteObject[] = [
       { path: 'import/review', lazy: async () => ({ Component: (await import('./features/imports/ReviewQueuePage')).ReviewQueuePage }) },
       // Step 4: Recovery intelligence, API keys and the Dev dashboard (each tab is its own chunk).
       { path: 'intelligence', lazy: async () => ({ Component: (await import('./features/intelligence/IntelligencePage')).IntelligencePage }) },
+      // REQ-20261018-exec-dashboard: executive insights (its own chunk; insights:read only).
+      { path: 'insights', lazy: async () => ({ Component: (await import('./features/insights/InsightsPage')).InsightsPage }) },
       // Step 7 (REQ-20261011-fuel-outlook): fuel tables and the cost outlook (flag-gated in the nav; the API 404s when off).
       { path: 'settings/fuel-tables', lazy: async () => ({ Component: (await import('./features/fuel/FuelTablesPage')).FuelTablesPage }) },
       { path: 'outlook', lazy: async () => ({ Component: (await import('./features/outlook/OutlookPage')).OutlookPage }) },
