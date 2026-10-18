@@ -1,0 +1,65 @@
+<!--meta {"title":"For developers: the API today","description":"What the scoup.ai programming interface can do today, how fr_live_ API keys and scopes work, and what it cannot do yet. Pre-product; no public endpoint.","path":"/developers/","crumb":"Developers","updated":"2026-10-18"} -->
+<h1>For developers: what the API can do today</h1>
+<p class="lead">The platform has a programming interface for machine clients. This page describes it as it is
+built today, including what a key cannot do. There is no public endpoint yet: nothing is deployed, and every
+example below uses placeholders.</p>
+<p class="draft">Status: pre-product. The API runs only in our own test environment on synthetic data. No customer has an API key, and route names, limits and scopes can still change.</p>
+
+<nav class="jump" aria-label="On this page">
+<ul>
+<li><a href="#today">{{icon:developers}}What a key can do today</a></li>
+<li><a href="#keys">{{icon:key}}How API keys and scopes work</a></li>
+<li><a href="#errors">{{icon:down}}Errors and rate limits</a></li>
+<li><a href="#not-yet">{{icon:clock}}What a key cannot do yet</a></li>
+<li><a href="#portal">{{icon:file}}Developer portal status</a></li>
+</ul>
+</nav>
+
+<h2 id="today">What a key can do today</h2>
+<p>Nine routes accept a tenant API key, each only with the matching scope. Every other route answers 403 to a key.</p>
+<div class="scroll">
+<table>
+<thead><tr><th scope="col">Scope</th><th scope="col">Routes</th><th scope="col">What it is for</th></tr></thead>
+<tbody>
+<tr><td><code>imports.write</code></td><td>Five upload and batch routes under <code>/api/v1/imports</code></td><td>Create an import batch and upload documents to it, one <code>application/octet-stream</code> body per file. Files are type-checked and parsed in a sandbox, then reviewed by a person before they become claims.</td></tr>
+<tr><td><code>claims.read</code></td><td><code>GET /api/v1/claims</code>, <code>GET /api/v1/claims/:id</code>, <code>GET /api/v1/claims/:id/documents</code></td><td>List and read claim summaries and the documents attached to a claim.</td></tr>
+<tr><td><code>exports.claims</code></td><td><code>GET /api/v1/exports/claims</code></td><td>Stream a CSV or XLSX export of claims, with spreadsheet formulas neutralised.</td></tr>
+</tbody>
+</table>
+</div>
+<p>Current upload defaults: up to 10 files per batch and 10 MiB per file, with a parse timeout per file. They are
+configuration values, not published commitments.</p>
+
+<h2 id="keys">How API keys and scopes work</h2>
+<ul>
+<li><strong>Format:</strong> <code>fr_live_&lt;keyId&gt;_&lt;secret&gt;</code>. The secret is shown once, when the key is created; we store only a keyed hash (HMAC-SHA256 with a server-side pepper), never the secret itself.</li>
+<li><strong>Sending it:</strong> only in the <code>Authorization</code> header as a Bearer token. Other headers are not read as keys.</li>
+<li><strong>Who issues keys:</strong> a tenant's OWNER or ADMIN creates, lists and revokes keys in the app or through <code>/api/v1/api-keys</code>. Each key carries one or more scopes and an optional expiry date.</li>
+<li><strong>Scopes:</strong> a key opens only the routes of the scopes it holds. Creating keys, approving findings and every other administrative or decision route stay closed to keys.</li>
+<li><strong>Tenancy:</strong> a key belongs to one tenant and sees only that tenant's data.</li>
+</ul>
+<pre><code>curl -H "Authorization: Bearer fr_live_&lt;keyId&gt;_&lt;secret&gt;" \
+     https://&lt;host&gt;/api/v1/claims</code></pre>
+<p class="source">The host is a placeholder: there is no public base URL yet.</p>
+
+<h2 id="errors">Errors and rate limits</h2>
+<ul>
+<li><strong>401:</strong> a missing, invalid, revoked or expired key. All of these answer with the same body, so a response never reveals which keys exist.</li>
+<li><strong>403:</strong> the route is not open to keys, or the key lacks the scope.</li>
+<li><strong>Error body:</strong> <code>{"error": {"code", "message", "requestId", "details?"}}</code> with a stable, machine-readable <code>code</code>. Validation errors list field paths, never the values you sent.</li>
+<li><strong>429:</strong> rate limits apply per address, per route group and per key, and a 429 response carries <code>Retry-After</code>. The numbers are not published, because pricing has not fixed them.</li>
+</ul>
+
+<h2 id="not-yet">What a key cannot do yet</h2>
+<p>An integration can push documents and read claim summaries. It cannot trigger an analysis, read an evidence
+packet or record a decision: those routes are open only to signed-in people today. Approving, rejecting and marking
+a packet ready to send need a second person who did not prepare it, and they will stay human-only. Whether a scope
+should open packet reads and analysis is an open design question.</p>
+<p>There are no TMS, ERP or accounting integrations, no SDK and no webhooks.</p>
+
+<h2 id="portal">Developer portal status</h2>
+<p>The developer portal is built but not hosted, so there is nothing to link to yet. It currently documents an
+earlier Python reference service, which uses a different key format, header and error shape from the API described
+on this page. We are regenerating it from the API's own request and response schemas, as an OpenAPI 3.1 document,
+starting with the nine routes that accept keys. Until then, this page is the summary we stand behind.</p>
+<p><a class="cta" href="/contact/">{{icon:mail}}Ask about API access for a pilot</a><a class="cta secondary" href="/security/">{{icon:shield}}Read the security status</a></p>

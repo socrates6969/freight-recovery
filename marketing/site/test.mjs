@@ -26,12 +26,16 @@ let failed = 0;
 const check = (ok, msg) => { if (!ok) { failed++; console.error("FAIL:", msg); } };
 
 check(pages.length >= 9, "expected >= 9 pages");
+let iconCount = 0;
 for (const p of pages) {
   const h = readFileSync(p, "utf8");
   const rel = p.slice(dist.length);
   check(/<title>[^<]{5,}<\/title>/.test(h), `${rel}: title`);
   check(/<meta name="description" content="[^"]{20,}"/.test(h), `${rel}: description`);
-  check(/<link rel="canonical" href="https?:\/\//.test(h), `${rel}: canonical`);
+  // The 404 page declares no URL of its own (technical-checklist T10); every other page has an absolute canonical.
+  const is404 = rel.endsWith("404.html");
+  if (is404) check(!h.includes('rel="canonical"') && !h.includes('property="og:url"'), `${rel}: 404 page must not carry a canonical or og:url`);
+  else check(/<link rel="canonical" href="https?:\/\//.test(h), `${rel}: canonical`);
   check((h.match(/<h1[ >]/g) || []).length === 1, `${rel}: exactly one h1`);
   check(/property="og:title"/.test(h) && /name="twitter:card"/.test(h), `${rel}: og/twitter`);
   const ogImg = (h.match(/<meta property="og:image" content="([^"]+)">/) || [])[1] || "";
@@ -88,6 +92,45 @@ for (const p of pages) {
     const org = JSON.parse(ld[1])["@graph"].find((n) => n["@type"] === "Organization");
     check(org && org.name === "scoup.ai", `${rel}: JSON-LD Organization name`);
   }
+  check(!title.includes("(pre-product)"), `${rel}: "(pre-product)" in the title`);
+  for (const ld of h.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) {
+    // T14/T6: status notes belong in the banner and descriptions, never in an entity or page name
+    check(JSON.parse(ld[1])["@graph"].every((n) => !String(n.name || "").includes("(pre-product)")), `${rel}: "(pre-product)" in a JSON-LD name`);
+  }
+  // accessibility: skip link to the main landmark (technical-checklist T13)
+  check(h.includes('<a class="skip" href="#main">Skip to content</a>') && h.includes('<main id="main">'), `${rel}: skip link to <main id="main">`);
+  // CSP: no inline style attributes (style-src has no 'unsafe-inline'), so icons and markup must not use them
+  check(!/<[a-z][^>]*\sstyle\s*=/i.test(h.replace(/<script[\s\S]*?<\/script>/g, "")), `${rel}: inline style attribute`);
+  // icons: every <svg> is decorative (aria-hidden, no label of its own) or carries its own accessible name
+  const svgs = [...h.matchAll(/<svg\b([^>]*)>([\s\S]*?)<\/svg>/g)];
+  iconCount += svgs.length;
+  for (const [, attrs, inner] of svgs) {
+    const hidden = /\saria-hidden="true"/.test(attrs);
+    const named = /\saria-label="[^"]+"/.test(attrs) || (/\srole="img"/.test(attrs) && /<title>[^<]+<\/title>/.test(inner));
+    check(hidden !== named, `${rel}: <svg> must be either aria-hidden or labelled (hidden=${hidden}, named=${named})`);
+  }
+  // every <svg> inside a link or button: a hidden icon needs visible label text in the same control
+  const labelText = (inner) => inner.replace(/<svg\b[\s\S]*?<\/svg>/g, "").replace(/<[^>]+>/g, "").replace(/&[a-z]+;/g, "x").trim();
+  for (const [, tag, attrs, inner] of h.matchAll(/<(a|button)\b([^>]*)>([\s\S]*?)<\/\1>/g)) {
+    if (!inner.includes("<svg")) continue;
+    const ownName = /\saria-label="[^"]+"/.test(attrs);
+    const iconsHidden = [...inner.matchAll(/<svg\b([^>]*)>/g)].every((m) => /\saria-hidden="true"/.test(m[1]));
+    check(labelText(inner).length >= 2 || ownName, `${rel}: <${tag}> with an icon but no visible label or aria-label`);
+    check(iconsHidden || ownName, `${rel}: <${tag}> has an icon that is neither hidden nor named by the control`);
+  }
+  // every navigation item and every call to action carries an icon next to a visible label
+  for (const nav of h.matchAll(/<nav\b[^>]*>([\s\S]*?)<\/nav>/g)) {
+    for (const a of nav[1].matchAll(/<a\b[^>]*>([\s\S]*?)<\/a>/g)) {
+      check(a[1].includes("<svg") && labelText(a[1]).length >= 2, `${rel}: nav item without icon and visible label: ${labelText(a[1]).slice(0, 40)}`);
+    }
+  }
+  for (const a of h.matchAll(/<a class="cta[^"]*"[^>]*>([\s\S]*?)<\/a>/g)) {
+    check(a[1].includes("<svg") && labelText(a[1]).length >= 2, `${rel}: call to action without icon and label: ${labelText(a[1]).slice(0, 40)}`);
+  }
+  // in-page navigation: every jump link targets an id on the same page
+  for (const jump of h.matchAll(/<nav class="jump" aria-label="On this page">([\s\S]*?)<\/nav>/g)) {
+    for (const t of jump[1].matchAll(/href="#([^"]+)"/g)) check(h.includes(`id="${t[1]}"`), `${rel}: in-page link #${t[1]} has no target`);
+  }
 }
 for (const f of ["sitemap.xml", "robots.txt", "_headers", "style.css", "404.html", "favicon.svg", "og-card.png", "brand/lockup-horizontal.svg", "brand/lockup-horizontal-on-dark.svg"]) check(existsSync(join(dist, f)), `${f} exists`);
 const css = readFileSync(join(dist, "style.css"), "utf8");
@@ -117,5 +160,76 @@ check(h1.startsWith("Take accessorial review off AP's desk.") && h1.includes("ch
 check(home.includes("Check every D&amp;D invoice before the 30-day window closes") || home.includes("check every D&amp;D invoice before the 30-day window closes"), "home: importer line");
 check(home.includes("Carriers, later and through partners"), "home: carriers only as a later, partner-led channel");
 
+// audience entry points: each has its own indexable page with in-page navigation, linked from the home page's
+// main nav and from the home page's audience list
+const homeNav = (home.match(/<nav aria-label="Main">([\s\S]*?)<\/nav>/) || [])[1] || "";
+const homeAudiences = (home.match(/<ul class="audiences">([\s\S]*?)<\/ul>/) || [])[1] || "";
+for (const a of ["buyers", "developers", "investors"]) {
+  const file = join(dist, a, "index.html");
+  check(existsSync(file), `audience page /${a}/ exists`);
+  if (!existsSync(file)) continue;
+  const p = readFileSync(file, "utf8");
+  check(homeNav.includes(`href="${BASE}/${a}/"`), `home: main nav links to /${a}/`);
+  check(homeAudiences.includes(`href="${BASE}/${a}/"`), `home: audience entry point for /${a}/`);
+  check(/<nav class="jump" aria-label="On this page">[\s\S]*?href="#/.test(p), `/${a}/: in-page navigation`);
+  check(sitemap.includes(`/${a}/</loc>`), `/${a}/ is in the sitemap`);
+  check(p.includes('<p class="draft">Status: pre-product'), `/${a}/: pre-product status note`);
+}
+const buyers = readFileSync(join(dist, "buyers", "index.html"), "utf8");
+check(buyers.includes("Take accessorial review off AP") && buyers.includes("before the 30-day window closes"), "buyers: shipper and importer lines");
+check(buyers.includes("Carriers: later, through partners"), "buyers: carriers only as a later, partner-led channel");
+const dev = readFileSync(join(dist, "developers", "index.html"), "utf8");
+check(dev.includes("fr_live_") && dev.includes("Bearer") && ["imports.write", "claims.read", "exports.claims"].every((x) => dev.includes(x)), "developers: key format, Bearer header and the three scopes");
+check(dev.includes("Python reference service") && dev.includes("built but not hosted"), "developers: honest developer-portal status");
+check(!/href="[^"]*developer-portal/.test(dev), "developers: no link to a developer portal that is not hosted");
+// investor documents: sent on request only (owner decision, 2026-10-18; general-solicitation risk). The site must
+// carry no PDF link and no /investors/pdf/ path anywhere, and the investors page must say the documents are on request.
+const inv = readFileSync(join(dist, "investors", "index.html"), "utf8");
+for (const p of pages) {
+  const h = readFileSync(p, "utf8");
+  const rel = p.slice(dist.length);
+  check(!/(?:href|src)="[^"]*\.pdf(?:[?#][^"]*)?"/i.test(h), `${rel}: links to a PDF (investor documents are sent on request only)`);
+  check(!h.includes("/investors/pdf"), `${rel}: mentions an /investors/pdf/ path`);
+}
+check(!existsSync(join(dist, "investors", "pdf")), "dist/investors/pdf/ must not exist (documents are not published)");
+check(inv.includes('<h2 id="documents">Documents on request</h2>') && inv.includes("not published on this site"), "investors: 'Documents on request' section");
+check(/<h2 id="documents">Documents on request<\/h2>[\s\S]*?<a class="cta" href="mailto:[^"]+">/.test(inv), "investors: contact call to action after the documents section");
+check(!/\$\d[\d.,]*\s?M seed/i.test(inv) && !/raising/i.test(inv), "investors: no raise size on the public page");
+// brand typeface: self-hosted Inter, relative URL (works under the base path), allowed by the CSP
+check(existsSync(join(dist, "fonts", "inter-latin-wght-normal.woff2")) && existsSync(join(dist, "fonts", "OFL.txt")), "Inter font file and its licence are shipped");
+check(/font-family:\s*"Inter Variable"/.test(css) && /font:[^;]*"Inter Variable"/.test(css), "CSS uses the brand typeface Inter");
+check(!/url\(\s*["']?\//.test(css), "CSS url() values are relative, so they resolve under a base path");
+check(/font-src 'self'/.test(csp), "CSP allows self-hosted fonts");
+// contrast: every text/background pair in the stylesheet meets WCAG AA (4.5:1) in the light and the dark theme
+const lum = (hex) => {
+  let x = hex.slice(1);
+  if (x.length === 3) x = [...x].map((c) => c + c).join("");
+  const ch = [0, 2, 4].map((i) => parseInt(x.slice(i, i + 2), 16) / 255).map((c) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * ch[0] + 0.7152 * ch[1] + 0.0722 * ch[2];
+};
+const ratio = (a, b) => { const [hi, lo] = [lum(a), lum(b)].sort((p, q) => q - p); return (hi + 0.05) / (lo + 0.05); };
+const tokens = (block) => Object.fromEntries([...block.matchAll(/--([a-z-]+):\s*(#[0-9a-f]{6}|#[0-9a-f]{3})\b/gi)].map((m) => [m[1], m[2]]));
+const light = tokens((css.match(/:root\s*\{([^}]*)\}/) || [])[1] || "");
+const dark = { ...light, ...tokens((css.match(/@media \(prefers-color-scheme: dark\)\s*\{\s*:root\s*\{([^}]*)\}/) || [])[1] || "") };
+// explicit pairs (text on each surface it sits on) plus every rule that sets a colour, against its own background or the page
+const pairs = new Set(["fg/bg", "muted/bg", "accent/bg", "fg/surface", "muted/surface", "accent/surface", "on-accent/accent", "warn/warnbg"]);
+for (const rule of css.replace(/@font-face\s*\{[^}]*\}/g, "").matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+  if (rule[1].includes(":root")) continue;
+  const fg = (rule[2].match(/(?:^|[;\s])color:\s*var\(--([a-z-]+)\)/) || [])[1];
+  const bg = (rule[2].match(/background:\s*var\(--([a-z-]+)\)/) || [])[1];
+  if (fg) pairs.add(`${fg}/${bg || "bg"}`);
+  check(!/(?:^|[;\s])(?:color|background):\s*#/.test(rule[2]), `CSS rule "${rule[1].trim()}" uses a raw hex colour instead of a token`);
+}
+check(Object.keys(light).length >= 8 && Object.keys(dark).length >= 8, "contrast: colour tokens parsed for both themes");
+for (const [name, theme] of [["light", light], ["dark", dark]]) {
+  for (const pr of pairs) {
+    const [f, b] = pr.split("/");
+    check(Boolean(theme[f] && theme[b]), `contrast (${name}): --${f} or --${b} is not a hex token`);
+    if (!theme[f] || !theme[b]) continue;
+    const r = ratio(theme[f], theme[b]);
+    check(r >= 4.5, `contrast (${name}): --${f} ${theme[f]} on --${b} ${theme[b]} is ${r.toFixed(2)}:1 (< 4.5:1)`);
+  }
+}
+
 if (failed) { console.error(`${failed} check(s) failed`); process.exit(1); }
-console.log(`ok: ${pages.length} pages passed`);
+console.log(`ok: ${pages.length} pages passed; ${iconCount} inline icons checked; ${pairs.size} text/background pairs >= 4.5:1 in both themes`);
