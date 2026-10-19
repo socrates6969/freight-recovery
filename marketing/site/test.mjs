@@ -31,6 +31,7 @@ for (const p of pages) {
   const rel = p.slice(dist.length);
   check(/<title>[^<]{5,}<\/title>/.test(h), `${rel}: title`);
   check(/<meta name="description" content="[^"]{20,}"/.test(h), `${rel}: description`);
+  check(/<meta name="viewport" content="width=device-width, initial-scale=1">/.test(h), `${rel}: responsive viewport`);
   check(/<link rel="canonical" href="https?:\/\//.test(h), `${rel}: canonical`);
   check((h.match(/<h1[ >]/g) || []).length === 1, `${rel}: exactly one h1`);
   check(/property="og:title"/.test(h) && /name="twitter:card"/.test(h), `${rel}: og/twitter`);
@@ -46,15 +47,22 @@ for (const p of pages) {
   check(!/(?:src|href)="https?:\/\/(?!example\.invalid|[^"]*\/sitemap)/.test(h.replace(/<link rel="canonical"[^>]*>/, "")), `${rel}: no external resources`);
   // honesty: banned claims
   const text = h.replace(/<script[\s\S]*?<\/script>/g, "").toLowerCase();
+  check(!/\b(?:lorem ipsum|todo|coming soon|dummy data|example\.invalid|to be completed|to be determined|to be drafted|__contact_email__)\b/i.test(h), `${rel}: no shipped placeholder text`);
   for (const bad of ["soc 2", "gdpr compliant", "iso 27001", "testimonial", "trusted by", "% savings", "ai-powered",
     "recovered", "accurate", "seamless", "robust", "leverage", "saves "]) {
     check(!text.includes(bad), `${rel}: banned phrase "${bad}"`);
   }
   check(!/\bsecure\b/.test(text), `${rel}: "secure" used as a claim`);
+  // Internal benchmark results are unpublished until data and methods are independently reproduced.
+  if (rel.replaceAll("\\", "/") === "/platform/index.html") {
+    for (const unpublished of ["2,132", "3,000", "145/159", "15% lower error", "74-81%", "74–81%", "80% ranges"])
+      check(!text.includes(unpublished.toLowerCase()), `${rel}: unpublished benchmark "${unpublished}"`);
+    check(text.includes("not published") && text.includes("not been independently reproduced"), `${rel}: benchmark caveat`);
+  }
   // honesty: rule effects and third-party figures always travel with their source and caveat
   if (text.includes("fmc") || text.includes("46 cfr")) {
-    check(text.includes("confirm with counsel or your customs broker"), `${rel}: FMC rule described without the counsel/customs-broker note`);
-    check(text.includes("thompsonhine.com"), `${rel}: FMC rule described without its source line`);
+    check(text.includes("counsel or your customs broker"), `${rel}: FMC rule described without the counsel/customs-broker note`);
+    check(text.includes("ecfr.gov/current/title-46/chapter-iv/subchapter-b/part-541"), `${rel}: FMC rule described without the current eCFR source`);
   }
   if (/\brxo\b/.test(text)) {
     check(text.includes("a freight broker") && text.includes("rxo.com/resources/research/freight-accessorials"), `${rel}: RXO survey quoted without broker label and source line`);
@@ -64,8 +72,24 @@ for (const p of pages) {
   check(h.includes(`<meta http-equiv="Content-Security-Policy" content="${EXPECTED_META_CSP.replace(/&/g, "&amp;")}">`) && EXPECTED_META_CSP.includes("default-src 'none'"), `${rel}: meta CSP must equal the _headers CSP minus frame-ancestors`);
   check(h.includes(`<meta name="referrer" content="${headerValue("Referrer-Policy")}">`), `${rel}: meta referrer must equal _headers Referrer-Policy`);
   if (/[\\/](privacy|terms|cookies)[\\/]/.test(rel)) {
-    check(h.includes("licensed Norwegian advokat"), `${rel}: advokat review flag`);
-    check(h.includes('<meta name="robots" content="noindex'), `${rel}: draft legal page must be noindex`);
+    check(h.includes('<meta name="robots" content="noindex'), `${rel}: site information remains noindex`);
+    check(!/DRAFT|To be completed|To be determined|to be drafted|placeholder/i.test(h), `${rel}: unfinished legal placeholder`);
+  }
+  // Every local page and asset referenced by rendered HTML must exist in dist; external/fragment URLs are ignored.
+  const refs = [];
+  for (const m of h.matchAll(/\b(?:href|src)="([^"]+)"/g)) refs.push(m[1]);
+  for (const m of h.matchAll(/\bsrcset="([^"]+)"/g)) for (const candidate of m[1].split(',')) refs.push(candidate.trim().split(/\s+/)[0]);
+  for (const ref of refs) {
+    if (!ref || ref.startsWith('#')) continue;
+    let u;
+    try { u = new URL(ref, `https://local.invalid${rel.replaceAll('\\', '/')}`); } catch { check(false, `${rel}: invalid URL ${ref}`); continue; }
+    if (u.origin !== 'https://local.invalid') continue;
+    let pathname;
+    try { pathname = decodeURIComponent(u.pathname); } catch { check(false, `${rel}: malformed URL ${ref}`); continue; }
+    if (BASE && (pathname === BASE || pathname.startsWith(`${BASE}/`))) pathname = pathname.slice(BASE.length);
+    const target = join(dist, pathname.replace(/^\//, ''));
+    const resolved = pathname.endsWith('/') || !/\.[a-z0-9]{1,8}$/i.test(pathname) ? join(target, 'index.html') : target;
+    check(existsSync(resolved), `${rel}: broken local link or asset ${ref}`);
   }
   for (const m of h.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) JSON.parse(m[1]);
   // brand (brand/README.md): one name, lowercase, logo in header and footer, favicon
@@ -92,6 +116,10 @@ for (const p of pages) {
 for (const f of ["sitemap.xml", "robots.txt", "_headers", "style.css", "404.html", "favicon.svg", "og-card.png", "brand/lockup-horizontal.svg", "brand/lockup-horizontal-on-dark.svg"]) check(existsSync(join(dist, f)), `${f} exists`);
 const css = readFileSync(join(dist, "style.css"), "utf8");
 check(!/\.brand[^{]*\{[^}]*text-transform/.test(css), "brand never uppercased via CSS");
+check(/@media[^{}]*max-width/.test(css), "mobile breakpoint exists");
+check(/nav\s*\{[^}]*flex-wrap:\s*wrap/s.test(css), "navigation wraps at narrow widths");
+check(/\.source\s*\{[^}]*overflow-wrap:\s*anywhere/s.test(css), "long source text can wrap");
+check(/\.scroll\s*\{\s*overflow-x:\s*auto/s.test(css), "wide tables scroll within their container");
 const csp = readFileSync(join(dist, "_headers"), "utf8");
 check(/img-src 'self'/.test(csp), "CSP allows self-hosted logo images");
 const sitemap = readFileSync(join(dist, "sitemap.xml"), "utf8");
@@ -114,7 +142,7 @@ check(!home.includes("SoftwareApplication"), "no SoftwareApplication schema (not
 // positioning (marketing-plan.md section 2.3): shipper hero leads, importer line present, carriers later
 const h1 = (home.match(/<h1>([\s\S]*?)<\/h1>/) || [])[1] || "";
 check(h1.startsWith("Take accessorial review off AP's desk.") && h1.includes("checked against the rate confirmation"), `home: shipper hero line (${h1})`);
-check(home.includes("Check every D&amp;D invoice before the 30-day window closes") || home.includes("check every D&amp;D invoice before the 30-day window closes"), "home: importer line");
+check(home.includes("check every D&amp;D invoice against its required dispute window"), "home: importer line");
 check(home.includes("Carriers, later and through partners"), "home: carriers only as a later, partner-led channel");
 
 if (failed) { console.error(`${failed} check(s) failed`); process.exit(1); }
