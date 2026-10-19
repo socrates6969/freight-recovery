@@ -39,14 +39,13 @@ build), and a `git log` fallback is not used because the Pages workflow checks o
 Positioning follows the owner's shipper- and importer-first decision of 2026-10-17
 (`marketing/marketing-plan.md` sections 2-3 on the `docs/investor-package` branch). Home leads with the shipper
 line "Take accessorial review off AP's desk. Every line checked against the rate confirmation, with the source
-attached.", then the importer line "Check every D&D invoice before the 30-day window closes."; carriers appear
-only as a later, partner-led channel. Home also has the four modules, trust limits, the design-partner offer (a
-free review of 90 days of invoices) and the FAQ. Then Platform, How it works, Security status, About, Design
-partners (mailto only: no form backend, no tracking), and **draft** Privacy, Terms, Cookie/disclaimer pages (each
-flagged "must be reviewed by a licensed Norwegian advokat"; they do not claim GDPR compliance, and they are
-`noindex` and left out of the sitemap until the advokat signs off).
+attached.", then the importer line "Check the terms, timestamps and evidence for each D&D invoice."; carriers appear
+only as a later, partner-led channel. Home also has the four modules, trust limits, a design-partner research
+invitation (no free review or document-handling offer), and the FAQ. Then Platform, How it works, Security status, About, Design
+partners (mailto only: no form backend, no tracking), and noindex website privacy, scope and cookie notices. These
+describe the current static site; they are not product terms or a hosted-product privacy policy.
 
-Copy rules the tests enforce: any page that describes the FMC billing rule carries the Thompson Hine source line
+Copy rules the tests enforce: any page that describes the FMC billing rule carries the current eCFR source line
 and "confirm with counsel or your customs broker"; the RXO survey is quoted only with its source line and the
 label "a freight broker"; ATRI figures only with the "cost of waiting" caveat. Banned words include
 "recovered", "accurate", "secure", "seamless", "robust", "leverage" and "saves". Sources are plain text, not
@@ -65,9 +64,11 @@ links, because the site loads and links to nothing outside itself.
   `strict-origin-when-cross-origin`; the site links nowhere external, so nothing breaks). No third-party
   resources, so no SRI is needed (if you ever add an external asset, pin it with `integrity=` and extend the
   CSP in `_headers`); no cookies or trackers.
-- **Marketing/honesty:** no testimonials, logos, metrics, "AI-powered", certification or integration claims;
+- **Marketing/honesty:** no testimonials, logos, unsupported product-performance metrics, "AI-powered", certification or integration claims;
   `test.mjs` fails the build on a list of banned phrases.
-- **Legal:** DRAFT pages only. A licensed Norwegian advokat must review before use.
+- **Legal:** public copy describes only the current static, pre-product site. Legal entity details are not
+  confirmed for publication. Obtain Norwegian legal review before accepting customer files, offering a service,
+  or making legal commitments.
 
 ## What GitHub Pages cannot do
 
@@ -102,5 +103,5 @@ Solution pages in the order of `marketing/seo/content-plan.md` (`/accessorial-au
 carrier `/detention-recovery/` later), guides, evidence-packet examples, the calculator, pricing and comparison pages
 (need content review and verified facts); Organization `logo` in JSON-LD; dropping the canonical tag on the 404 page;
 removing the obsolete `interest-cohort` directive from `_headers`; a skip link; a Norwegian-language version;
-consent-aware analytics (none by design until decided). The site stylesheet still uses the old blue accent rather
-than the brand teal (`brand/README.md`).
+consent-aware analytics (none by design until decided). The stylesheet uses the brand teal defined in
+`brand/README.md`.

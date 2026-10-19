@@ -153,7 +153,7 @@ ${body}
 <footer class="site">
 ${lockup(20, "brand brand-footer")}
 <p>This site belongs to ${SITE_NAME}, a pre-product venture in design-partner validation. No customers, certifications or integrations are claimed.</p>
-<p><a href="/privacy/">Privacy (draft)</a> | <a href="/terms/">Terms (draft)</a> | <a href="/cookies/">Cookies (draft)</a> | <a href="mailto:${esc(EMAIL)}">Contact</a></p>
+<p><a href="/privacy/">Website privacy</a> | <a href="/terms/">No product terms</a> | <a href="/cookies/">Cookies</a> | <a href="mailto:${esc(EMAIL)}">Contact</a></p>
 <p>This site sets no cookies, runs no scripts and loads no third-party resources.</p>
 </footer>
 </body>
