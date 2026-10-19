@@ -1,0 +1,192 @@
+@import 'tailwindcss';
+@source "../../product";
+
+/* Same palette and type as marketing/site/static/style.css so the app reads as one site. */
+:root {
+  --fg: #1b1f24;
+  --bg: #fff;
+  --muted: #4a525a;
+  --accent: #0f766e;
+  --accent-ink: #fff;
+  --warn: #7a4200;
+  --warnbg: #fff4e0;
+  --okbg: #ecfdf5;
+  --ok: #065f46;
+  --line: #d5d9dd;
+  --surface: #f6f7f8;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fg: #e6e8ea;
+    --bg: #14171a;
+    --muted: #aab2ba;
+    --accent: #2dd4bf;
+    --accent-ink: #0b1210;
+    --warn: #ffcf99;
+    --warnbg: #2b2113;
+    --okbg: #0f2a22;
+    --ok: #a7f3d0;
+    --line: #3a4046;
+    --surface: #1b1f24;
+  }
+}
+
+@layer base {
+  html,
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font: 16px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+  a {
+    color: var(--accent);
+  }
+  *:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  button {
+    cursor: pointer;
+  }
+  button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  th,
+  td {
+    border: 1px solid var(--line);
+    padding: 0.35rem 0.55rem;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: var(--surface);
+  }
+}
+
+@layer components {
+  .wrap {
+    max-width: 64rem;
+    margin: 0 auto;
+    padding: 0 1rem;
+  }
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 1rem;
+    background: var(--bg);
+  }
+  .muted {
+    color: var(--muted);
+  }
+  .label {
+    display: block;
+    font-size: 0.85rem;
+    font-weight: 600;
+    margin-bottom: 0.2rem;
+  }
+  .input {
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.45rem 0.6rem;
+    background: var(--bg);
+    color: var(--fg);
+    font: inherit;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.5rem 0.9rem;
+    background: var(--bg);
+    color: var(--fg);
+    font: inherit;
+    font-weight: 600;
+  }
+  .btn-primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+  }
+  .btn-link {
+    border: 0;
+    background: none;
+    color: var(--accent);
+    padding: 0.2rem 0.3rem;
+    text-decoration: underline;
+    font-weight: 500;
+  }
+  .note {
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--accent);
+    background: var(--surface);
+    padding: 0.6rem 0.9rem;
+    border-radius: 6px;
+    font-size: 0.92rem;
+  }
+  .warn {
+    border: 2px solid var(--warn);
+    background: var(--warnbg);
+    color: var(--warn);
+    padding: 0.6rem 0.9rem;
+    border-radius: 6px;
+    font-weight: 600;
+  }
+  .ok {
+    background: var(--okbg);
+    color: var(--ok);
+    padding: 0.6rem 0.9rem;
+    border-radius: 6px;
+  }
+  .tab {
+    border: 1px solid var(--line);
+    border-bottom: 0;
+    border-radius: 8px 8px 0 0;
+    padding: 0.55rem 0.9rem;
+    background: var(--surface);
+    color: var(--fg);
+    font: inherit;
+    font-weight: 600;
+  }
+  .tab[aria-selected='true'] {
+    background: var(--bg);
+    color: var(--accent);
+    box-shadow: inset 0 -3px 0 var(--accent);
+  }
+  .num {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .safe-text {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    unicode-bidi: isolate;
+  }
+  .scroll {
+    overflow-x: auto;
+  }
+  .mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9em;
+  }
+  pre.doc {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 0.8rem;
+    background: var(--surface);
+    font-size: 0.85rem;
+    max-height: 28rem;
+    overflow: auto;
+  }
+}

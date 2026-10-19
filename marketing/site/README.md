@@ -1,6 +1,9 @@
-# Marketing site (static, pre-product)
+# Marketing site (static) and the public app
 
-A real, deployable static site built from `../seo-and-growth.md` and `../landing/outline.md`.
+The launch site of scoup.ai plus the public app under `/app/`: the shared rules engine
+(`packages/shared`) bundled by Vite from `web/product/` and `web/src/product/` so that every check
+runs in the visitor's browser (no API, no network after load, no storage). The site itself is built from
+`../seo-and-growth.md` and `../landing/outline.md`.
 **Deployed to GitHub Pages** at https://socrates6969.github.io/freight-recovery/ by
 `.github/workflows/pages.yml` on every push to `master` that touches `marketing/site/` or `brand/`.
 The workflow builds with `npm test`, so a failing check blocks the deploy. When the site is served under
@@ -10,9 +13,11 @@ GitHub Pages ignores `static/_headers` (only the meta tags apply there), and cra
 
 ## Stack choice
 
-Hand-rolled HTML/CSS plus a ~100-line, zero-dependency Node build script (`build.mjs`, Node >= 18). No
-framework, no bundler, no client-side JavaScript, no `node_modules`, so there is nothing to pin or
-audit beyond the Node runtime. The script adds the shared layout, per-page SEO tags, JSON-LD,
+Hand-rolled HTML/CSS plus a zero-dependency Node build script (`build.mjs`, Node >= 18) for the pages: no
+framework, no bundler, no client-side JavaScript, no `node_modules`. The app is the one exception: it is a
+Vite build of the web workspace (`npm run build:product -w web`, output `web/dist-product`) that `build.mjs`
+copies to `dist/app/` when `SITE_APP_DIR` points at it. Without `SITE_APP_DIR` a plain placeholder page is
+written so local link checks still resolve; `test.mjs` refuses the placeholder when the variable is set. The script adds the shared layout, per-page SEO tags, JSON-LD,
 `sitemap.xml` and `robots.txt`. Pages are fragments in `pages/` (first line `<!--meta {json} -->`).
 The header/footer logo and favicon are copied at build time from the repo-root `brand/` folder (see
 `brand/README.md` for the name and logo rules: always lowercase "scoup.ai").
@@ -20,9 +25,11 @@ The header/footer logo and favicon are copied at build time from the repo-root `
 ## Build and preview
 
 ```bash
+# App bundle (from the repository root; needs npm ci --ignore-scripts once)
+SITE_URL=https://www.your-domain.example npm run build -w packages/shared && npm run build:product -w web
+# Pages (from marketing/site)
 cd marketing/site
-SITE_URL=https://www.your-domain.example CONTACT_EMAIL=you@your-domain.example npm run build
-npm test            # builds, then checks SEO basics and honesty/security guards
+SITE_URL=https://www.your-domain.example CONTACT_EMAIL=you@your-domain.example SITE_APP_DIR=../../web/dist-product npm test
 npx --yes serve dist   # or: python -m http.server -d dist 8080
 ```
 
@@ -36,21 +43,19 @@ build), and a `git log` fallback is not used because the Pages workflow checks o
 
 ## What is on the site
 
-Positioning follows the owner's shipper- and importer-first decision of 2026-10-17
-(`marketing/marketing-plan.md` sections 2-3 on the `docs/investor-package` branch). Home leads with the shipper
-line "Take accessorial review off AP's desk. Every line checked against the rate confirmation, with the source
-attached.", then the importer line "Check the terms, timestamps and evidence for each D&D invoice."; carriers appear
-only as a later, partner-led channel. Home also has the four modules, trust limits, a design-partner research
-invitation (no free review or document-handling offer), and the FAQ. Then Platform, How it works, Security status, About, Design
-partners (mailto only: no form backend, no tracking), and noindex website privacy, scope and cookie notices. These
-describe the current static site; they are not product terms or a hosted-product privacy policy.
+Launch positioning (owner decision of 2026-10-19): scoup.ai is the product, and the product is the browser app.
+Home leads with "Check freight invoices in your browser." and its primary call to action opens `/app/`; then
+Product (every rule of the three tools, and the team workspace prototype), How it works (worked synthetic example
+LD-5001, the same one the app loads), Pricing (browser tools free; team workspace by early-access request),
+Security and privacy (what runs where, limits, prototype controls), About, Contact, and indexable Privacy, Terms and
+Cookies notices. The team workspace (`api/`, `web/`) is described as a prototype that is not hosted or offered.
 
 Copy rules the tests enforce: any page that describes the FMC billing rule carries the current eCFR source line
-and "confirm with counsel or your customs broker"; the RXO survey is quoted only with its source line and the
-label "a freight broker"; ATRI figures only with the "cost of waiting" caveat. Banned words include
-"recovered", "accurate", "secure", "seamless", "robust", "leverage" and "saves". Sources are plain text, not
-links, because the site loads and links to nothing outside itself.
-
+and "confirm with counsel or your customs broker"; no page carries pre-launch wording ("pre-product", "design
+partner"); banned words include "recovered", "accurate", "secure", "seamless", "robust", "leverage" and "saves";
+no accuracy figures or customer results; the home page is the only one with a SoftwareApplication schema; every
+page links to the app from the header. Sources are plain text, not links, because the site loads and links to
+nothing outside itself.
 ## Lenses built in
 
 - **SEO:** unique title/description, one H1, canonical, Open Graph and Twitter tags, honest JSON-LD
@@ -66,9 +71,9 @@ links, because the site loads and links to nothing outside itself.
   CSP in `_headers`); no cookies or trackers.
 - **Marketing/honesty:** no testimonials, logos, unsupported product-performance metrics, "AI-powered", certification or integration claims;
   `test.mjs` fails the build on a list of banned phrases.
-- **Legal:** public copy describes only the current static, pre-product site. Legal entity details are not
-  confirmed for publication. Obtain Norwegian legal review before accepting customer files, offering a service,
-  or making legal commitments.
+- **Legal:** the Privacy, Terms and Cookies pages describe the static site and the browser app as they are.
+  Legal entity details are not confirmed for publication and are marked as such. Obtain legal review before
+  accepting customer files or offering the hosted workspace.
 
 ## What GitHub Pages cannot do
 

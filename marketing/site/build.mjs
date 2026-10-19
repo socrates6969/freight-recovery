@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 /**
- * Zero-dependency static site builder (Node >= 18). No framework, no bundler, no runtime JS.
+ * Zero-dependency static site builder (Node >= 18). No framework, no bundler, no runtime JS on these pages.
+ * The product app (web/dist-product, a separate Vite build) is copied to dist/app when SITE_APP_DIR points at it;
+ * without it a plain placeholder page is written so links resolve in local checks (the Pages workflow always sets it).
  *
  *   SITE_URL=https://www.example.no CONTACT_EMAIL=you@example.no node build.mjs
  *
@@ -34,7 +36,8 @@ const MAX_TITLE = 60;
 const MAX_DESCRIPTION = 160;
 // Social preview card (static/og-card.png, rendered from og/og-card.html). Crawlers need an absolute URL.
 const OG_IMAGE = `${SITE_URL}/og-card.png`;
-const OG_IMAGE_ALT = "scoup.ai: Take accessorial review off AP's desk. Pre-product, looking for design partners.";
+const OG_IMAGE_ALT = "scoup.ai: check freight invoices in your browser. Accessorials, detention and ocean D&D against the rate confirmation and the tariff, with the arithmetic shown.";
+const APP_DIR = process.env.SITE_APP_DIR ? join(process.cwd(), process.env.SITE_APP_DIR) : null;
 const brandDir = join(root, "..", "..", "brand");
 // Horizontal lockup: viewBox 873.32 x 162.97. Header 28px tall, footer 20px (the minimum on screen).
 const LOCKUP_RATIO = 873.32 / 162.97;
@@ -81,17 +84,18 @@ function lockup(heightPx, cls) {
 }
 
 const NAV = [
-  ["/platform/", "Platform"],
+  ["/platform/", "Product"],
   ["/how-it-works/", "How it works"],
-  ["/security/", "Security status"],
+  ["/pricing/", "Pricing"],
+  ["/security/", "Security and privacy"],
   ["/about/", "About"],
-  ["/contact/", "Design partners"],
+  ["/contact/", "Contact"],
 ];
 
 function jsonLd(meta, url) {
   const graph = [
     { "@type": "Organization", "@id": `${SITE_URL}/#org`, name: SITE_NAME, url: `${SITE_URL}/`,
-      description: "Pre-product venture building accessorial, detention and container D&D invoice checks for shippers and importers. Not yet a live service." },
+      description: "scoup.ai checks accessorial, detention and ocean D&D invoices against the rate confirmation, the carrier tariff and the FMC billing rule. The checks run in the visitor's browser." },
     { "@type": "WebSite", "@id": `${SITE_URL}/#site`, url: `${SITE_URL}/`, name: SITE_NAME, publisher: { "@id": `${SITE_URL}/#org` }, inLanguage: "en" },
     { "@type": "WebPage", "@id": `${url}#page`, url, name: fullTitle(meta), description: meta.description, isPartOf: { "@id": `${SITE_URL}/#site` }, inLanguage: "en",
       ...(meta.updated ? { dateModified: meta.updated } : {}) },
@@ -101,6 +105,12 @@ function jsonLd(meta, url) {
       { "@type": "ListItem", position: 1, name: "Home", item: `${SITE_URL}/` },
       { "@type": "ListItem", position: 2, name: meta.crumb || meta.title, item: url },
     ] });
+  }
+  if (meta.path === "/") {
+    graph.push({ "@type": "SoftwareApplication", "@id": `${SITE_URL}/app/#app`, name: `${SITE_NAME} app`, url: `${SITE_URL}/app/`,
+      applicationCategory: "BusinessApplication", operatingSystem: "Any (web browser)", browserRequirements: "Requires JavaScript",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" }, publisher: { "@id": `${SITE_URL}/#org` },
+      description: "Freight invoice checks that run in the browser: accessorial and detention lines against the rate confirmation, ocean D&D invoices against 46 CFR Part 541 and the carrier tariff, and charge-name recognition." });
   }
   if (meta.faq) {
     graph.push({ "@type": "FAQPage", mainEntity: meta.faq.map(([q, a]) => (
@@ -144,17 +154,16 @@ function layout(meta, body) {
 <script type="application/ld+json">${jsonLd(meta, url)}</script>
 </head>
 <body>
-<p class="status" role="note"><strong>Pre-product.</strong> Nothing here is a live service; no customer data is accepted yet. Examples use synthetic data.</p>
 <header class="site">${lockup(28, "brand")}
-<nav aria-label="Main">${NAV.map(([h, t]) => `<a href="${h}"${h === meta.path ? ' aria-current="page"' : ""}>${t}</a>`).join("")}</nav></header>
+<nav aria-label="Main">${NAV.map(([h, t]) => `<a href="${h}"${h === meta.path ? ' aria-current="page"' : ""}>${t}</a>`).join("")}<a class="cta nav-cta" href="/app/">Open the app</a></nav></header>
 <main>
 ${body}
 </main>
 <footer class="site">
 ${lockup(20, "brand brand-footer")}
-<p>This site belongs to ${SITE_NAME}, a pre-product venture in design-partner validation. No customers, certifications or integrations are claimed.</p>
-<p><a href="/privacy/">Website privacy</a> | <a href="/terms/">No product terms</a> | <a href="/cookies/">Cookies</a> | <a href="mailto:${esc(EMAIL)}">Contact</a></p>
-<p>This site sets no cookies, runs no scripts and loads no third-party resources.</p>
+<p>${SITE_NAME} checks freight invoices with fixed, published rules and shows its arithmetic. It does not decide what is owed and does not give legal advice; outputs are drafts for a person to review.</p>
+<p><a href="/app/">Open the app</a> | <a href="/privacy/">Privacy</a> | <a href="/terms/">Terms</a> | <a href="/cookies/">Cookies</a> | <a href="mailto:${esc(EMAIL)}">Contact</a></p>
+<p>These pages set no cookies, run no scripts and load no third-party resources. The app runs in your browser and sends nothing anywhere.</p>
 </footer>
 </body>
 </html>
@@ -181,6 +190,17 @@ for (const f of readdirSync(join(root, "pages")).filter((n) => n.endsWith(".html
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "index.html"), html);
   if (!meta.noindex) urls.push(meta);
+}
+
+// The product app: a separate Vite build (web/dist-product) copied under /app/. Without SITE_APP_DIR, a
+// placeholder keeps local link checks meaningful; test.mjs refuses the placeholder when SITE_APP_DIR is set.
+const appDist = join(dist, "app");
+if (APP_DIR) {
+  cpSync(APP_DIR, appDist, { recursive: true });
+} else {
+  mkdirSync(appDist, { recursive: true });
+  writeFileSync(join(appDist, "index.html"), `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>scoup.ai app (not built)</title><meta name="robots" content="noindex"></head><body><p>The app bundle is built separately (npm run build:product -w web) and copied here by the Pages workflow.</p><p><a href="${BASE}/">Back to the site</a></p></body></html>\n`);
+  console.warn("WARN: SITE_APP_DIR not set; dist/app holds a placeholder, not the product app.");
 }
 
 // lastmod comes only from each page's own "updated" date: one build date on every URL teaches crawlers to

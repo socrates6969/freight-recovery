@@ -44,6 +44,7 @@ export default tseslint.config(
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
+      '**/dist-product/**',
       '**/coverage/**',
       'api/src/generated/**',
       'src/**',

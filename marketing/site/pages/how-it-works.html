@@ -1,34 +1,36 @@
-<!--meta {"title":"How accessorial and D&D invoice review works","description":"From freight invoice and rate confirmation, or D&D invoice and tariff, to an evidence packet and a DRAFT short-pay or dispute. Pre-product; synthetic examples.","path":"/how-it-works/","crumb":"How it works","updated":"2026-10-19"} -->
-<h1>How accessorial and D&amp;D invoice review works</h1>
-<p class="lead">The pipeline, described as it actually behaves today, from the side of the shipper or importer paying the invoice. Pre-product; examples below are synthetic.</p>
+<!--meta {"title":"How a freight invoice check works","description":"From the figures on an invoice, rate confirmation and gate record to findings with their arithmetic, a packet and a DRAFT letter, all in your browser.","path":"/how-it-works/","crumb":"How it works","updated":"2026-10-19"} -->
+<h1>How it works</h1>
+<p class="lead">Four steps, all on your device. The example below is synthetic and is the one the app loads with "Load synthetic example".</p>
 
-<h2>1. Ingest</h2>
-<p>You provide one shipment's documents (PDF, CSV or text): the carrier or broker invoice, the rate confirmation and the BOL or gate record; for ocean fees, the D&amp;D invoice and the carrier's tariff. Each file is fingerprinted with SHA-256 so the packet can later show exactly which files the numbers came from.</p>
+<h2>1. Enter the figures</h2>
+<p>From the carrier or broker invoice: the charge lines, as description and amount. From the rate confirmation: the linehaul rate, the fuel surcharge, the detention terms and the authorized accessorials. From the bill of lading or gate record: appointment, arrival and departure times. For an ocean D&amp;D invoice, the fields the invoice must carry, each container's charged periods and, if you have it, your own clock evidence; or import a CSV.</p>
 
-<h2>2. Apply the rules</h2>
-<p>Rules compare the invoice with the rate confirmation and the gate record: detention clock start (for example, early arrival starts the clock at the appointment), free time, rounding, hourly rate and cap, and accessorial lines that the rate confirmation never authorized. Each finding lists its calculation steps so a person can check it by hand.</p>
+<h2>2. The rules run in your browser</h2>
+<p>The page is a static bundle. After it loads, its content security policy forbids every network connection, so the figures stay on your device. The rules use exact decimal arithmetic and fixed settings (detention rounding increment, amount tolerance, dispute window), all shown in the settings panel.</p>
 <div class="card">
-<p><strong>Illustration on synthetic data: a detention line on an invoice.</strong> Free time 2 h, rate $60/h, cap $480. Appointment 08:00, departure 13:10 gives 5 h 10 min on site; 3 h 10 min beyond free time, rounded per contract rule, at $60/h. The packet prints each of those steps and the contract rule that was applied, so a line billed for more than the terms support shows the difference. Real contracts vary, and the rules are illustrative until validated on real invoices.</p>
+<p><strong>Worked example (synthetic load LD-5001).</strong> The invoice bills Linehaul $1,500.00, Fuel Surcharge $168.00, Detention $300.00 and Lumper $150.00. The rate confirmation says linehaul $1,400.00, fuel $168.00, 2 free hours of detention at $50.00 per hour up to 8 hours, and authorizes only Detention. The gate record shows appointment 08:00, arrival 07:45 and departure 11:30.</p>
+<ul>
+<li>Linehaul: $1,500.00 billed against $1,400.00 agreed, a $100.00 overcharge.</li>
+<li>Fuel surcharge: matches the rate confirmation, no finding.</li>
+<li>Detention: the truck arrived early, so the clock starts at the 08:00 appointment; 3 h 30 min on site, minus 2 free hours, is 1 h 30 min, rounded down to the 15-minute increment, times $50.00 is $75.00. The invoice bills $300.00, so $225.00 is over-billed.</li>
+<li>Lumper: not among the authorized accessorials, so it is listed for human review rather than counted, because a receipt may support it.</li>
+</ul>
+<p>Each of those steps appears under its finding, and in the packet, so you can check them by hand.</p>
 </div>
 
-<h2>3. Review, then decide</h2>
+<h2>3. Review the findings</h2>
 <ul>
-<li><strong>Confirmed</strong> findings count toward the short-pay or dispute.</li>
-<li><strong>Needs human review</strong> findings (low confidence, or possibly legitimate with a receipt) are listed separately and are not disputed.</li>
-<li>The short-pay or dispute letter is generated as a <strong>DRAFT, not sent, not legal advice</strong>. A person approves and sends it.</li>
+<li><strong>Confirmed</strong> findings are totalled as a pre-review estimate.</li>
+<li><strong>Needs human review</strong> findings are listed separately and never totalled.</li>
+<li>Findings in the other direction (for example a charge the carrier under-billed, when you check from the shipper's side) are shown but not counted.</li>
+<li>For ocean invoices, each finding cites the invoice values it rests on and quotes the regulation or tariff clause.</li>
 </ul>
 
-<h2>4. Approve with a second person</h2>
-<p>Nothing leaves the platform until someone other than the author approves it. People who edited the source data, or whose charge corrections influenced the result, cannot approve it either. Every step is recorded in a tamper-evident audit log.</p>
+<h2>4. Download the packet and the draft letter</h2>
+<p>The evidence packet (Markdown) records the inputs, every finding with its arithmetic and the draft letter. The findings file (JSON) holds the same data for your own systems. The letter is marked <strong>DRAFT, for human review, not sent, not legal advice</strong>; the app never sends anything.</p>
 
-<h2>The same flow for fuel and ocean fees</h2>
-<ul>
-<li><strong>Fuel surcharges:</strong> the platform recomputes the surcharge from the official weekly diesel price and the customer's own table, and shows which week the invoice used.</li>
-<li><strong>Ocean container fees:</strong> each invoice is compared with content and timing provisions in 46 CFR Part 541 and the carrier tariff, with relevant dates surfaced for human review. Section 541.8 provides the billed party at least 30 calendar days from invoice issuance to request mitigation, refund or waiver; deadlines and requirements vary by billing-party type. Section 541.4 is currently reserved following a court decision. The draft letter quotes the rule and is not sent automatically. The software does not decide whether a charge is owed; confirm current rules and any dispute with counsel or your customs broker.</li>
-</ul>
+<h2>Ocean D&amp;D invoices</h2>
+<p>The audit compares the invoice with the content and timing provisions of 46 CFR Part 541 and, if you choose one, a public carrier tariff. Section 541.8 gives the billed party at least 30 calendar days from issuance to request mitigation, refund or waiver; the draft letter states that date from the invoice date. Section 541.4 is reserved following a court decision, and deadlines vary by billing-party type. The audit does not decide whether a charge is owed; confirm current rules and any dispute with counsel or your customs broker.</p>
 <p class="source">Sources: Electronic Code of Federal Regulations, 46 CFR Part 541, current through 2026-10-15, https://www.ecfr.gov/current/title-46/chapter-IV/subchapter-B/part-541; Federal Maritime Commission, "U.S. Court of Appeals Issues Decision in Case on Demurrage and Detention Billing Practices", https://www.fmc.gov/articles/u-s-court-of-appeals-issues-decision-in-case-on-demurrage-and-detention-billing-practices/, accessed 2026-10-19.</p>
-<p>Details of every module are on the <a href="/platform/">Platform</a> page.</p>
-
-<h2>What is not here yet</h2>
-<p>No hosted product, no TMS/ELD/ERP/accounting integrations, no real customer data, and no external security assessment or certification. See <a href="/security/">security status</a>.</p>
-<p><a class="cta" href="/contact/">Become a design partner</a></p>
+<p>Every rule is listed on the <a href="/platform/">Product</a> page.</p>
+<p><a class="cta" href="/app/">Open the app</a></p>
