@@ -1,53 +1,52 @@
-<!--meta {"title":"Platform: what the prototype does today","description":"Each scoup.ai module and how it is tested: accessorial and fuel checks, ocean D&D invoice audit, evidence packets and four-eyes approval. Synthetic data only.","path":"/platform/","crumb":"Platform","updated":"2026-10-19"} -->
-<h1>The platform, module by module</h1>
-<p class="lead">What the prototype does today, how each part is tested, and where its limits are. It is built for shippers and importers checking the invoices they pay; the same engine can build a carrier's detention packet. Everything below runs in our own test environment on synthetic data and published reference data.</p>
-<p class="draft">Status: prototype built and exercised in internal tests. The website is public; the software is not a hosted customer service. No customer has used it, and no customer data has been processed.</p>
+<!--meta {"title":"Product: the rules behind each check","description":"Every rule the scoup.ai browser tools apply to freight invoices, ocean D&D invoices and charge names, and what the team workspace prototype adds.","path":"/platform/","crumb":"Product","updated":"2026-10-19"} -->
+<h1>The product, rule by rule</h1>
+<p class="lead">Three browser tools that share one rules engine, and a hosted team workspace that is still a prototype. Everything below is fixed logic you can check by hand; no model decides an amount, and no accuracy figure is published because none has been measured on real customer documents.</p>
+<p><a class="cta" href="/app/">Open the app</a></p>
 
-<h2>At a glance</h2>
+<h2>Freight invoice check</h2>
+<p>Inputs: the invoice lines (description and amount), the rate confirmation terms (linehaul, fuel surcharge, detention free hours, hourly rate and cap, authorized accessorials) and, optionally, the appointment, arrival and departure times from the bill of lading or gate record. Choose the shipper's or the carrier's perspective.</p>
 <div class="scroll"><table>
-<thead><tr><th>Module</th><th>What it does</th><th>How it is tested</th></tr></thead>
+<thead><tr><th>Rule</th><th>What it flags</th></tr></thead>
 <tbody>
-<tr><td>Document import</td><td>Reads rate confirmations, bills of lading, delivery receipts and invoices (PDF text, CSV, text) in an isolated worker with time, memory and size limits. A person confirms or corrects every extracted field.</td><td>Hostile-file test corpus; results compared with the original Python reference parser</td></tr>
-<tr><td>Invoice line analysis</td><td>Applies accessorial and detention rules to each load's invoice and rate confirmation and shows every step of the arithmetic.</td><td>Internal synthetic scenarios; comparative benchmark results are withheld pending reproducible review</td></tr>
-<tr><td>Charge intelligence</td><td>Recognises the many names carriers use for the same accessorial charge, and learns from each reviewer correction for that customer only.</td><td>Internal examples drawn from public tariffs; no externally validated accuracy claim</td></tr>
-<tr><td>Fuel surcharge check</td><td>Recomputes the fuel surcharge from the official weekly diesel price and the customer's own surcharge table, and identifies which week was billed.</td><td>Worked examples on the public EIA diesel series</td></tr>
-<tr><td>Ocean D&amp;D audit</td><td>Checks container demurrage and detention invoices against the content and timing provisions in 46 CFR Part 541 and the carrier tariff, and drafts a review letter that quotes the rule.</td><td>Internal worked examples from published tariffs; no external validation or customer results</td></tr>
-<tr><td>Evidence packet</td><td>Versioned packet with source documents, citations, timeline, totals and a DRAFT short-pay or dispute letter, sealed with a content hash.</td><td>Packet contents and hashes checked in acceptance tests</td></tr>
-<tr><td>Four-eyes approval</td><td>Nothing is approved by the person who created it, edited its source data, or wrote a charge label that influenced it. Enforced in the application and again by database rules.</td><td>Attack tests, including edits made through upper-case record IDs</td></tr>
-<tr><td>Cost outlook</td><td>Experimental short-term diesel and truckload outlook; it is not a customer recommendation.</td><td>Internal backtests have not been independently reproduced; performance figures are not published</td></tr>
-<tr><td>Dispute prioritisation</td><td>Ranks open disputes, finds similar past ones and shows where each field came from.</td><td>Acceptance tests on synthetic disputes</td></tr>
-<tr><td>Exports and API</td><td>CSV and XLSX exports with spreadsheet-formula neutralisation; a programming interface with scoped, revocable API keys.</td><td>Acceptance tests</td></tr>
+<tr><td>Duplicate line</td><td>Identical description and amount billed more than once.</td></tr>
+<tr><td>Linehaul rate</td><td>A linehaul line that differs from the agreed rate by more than the tolerance.</td></tr>
+<tr><td>Fuel surcharge</td><td>A fuel line that differs from the agreed surcharge.</td></tr>
+<tr><td>Unauthorized accessorial</td><td>An accessorial line whose name is not among the authorized accessorials; listed for human review because a receipt may support it.</td></tr>
+<tr><td>Total mismatch</td><td>An invoice total that does not equal the sum of its lines.</td></tr>
+<tr><td>Detention unbilled, under-billed, over-billed</td><td>Detention recomputed from the time records: early arrival starts the clock at the appointment, free time is deducted, billable time is rounded down to the increment, and the hourly rate and cap are applied. The difference to what was invoiced becomes the finding.</td></tr>
 </tbody>
 </table></div>
+<p>Findings are split into <strong>confirmed</strong> (counted in the pre-review estimate) and <strong>needs human review</strong> (listed, never counted). Each finding carries its rule, its fixed confidence setting and its calculation steps. The packet (Markdown), the findings file (JSON) and the draft letter (text) are created on your device.</p>
 
-<h2>Invoice lines and evidence</h2>
-<p>For each load the rules compare the invoice with the rate confirmation and the time records: when the detention clock starts, free time, rounding, the hourly rate and cap, and accessorial lines the rate confirmation never authorised. Amounts are computed with exact decimal arithmetic by explicit rules. Machine learning is used only to read and classify messy inputs, never to decide an amount.</p>
-<p>Findings are split into <strong>confirmed</strong> (they count toward a short-pay or dispute) and <strong>needs review</strong> (listed separately, never disputed automatically). The letter is always a DRAFT until a second person approves it.</p>
-
-<h2>Charge intelligence</h2>
-<p>Carriers name the same charge in many ways, and a charge that is not recognised is never checked against the contract. The classifier compares a new charge name with labelled examples and suggests a category only when it is confident; otherwise it asks a reviewer. Each confirmation or correction is stored for that customer and used on the next invoice. There is no model retraining and no data is shared between customers.</p>
-<p>The test above uses charge names from public tariffs, not invoice lines from customers. A gate in our release pipeline stops a release if those results fall.</p>
-
-<h2>Fuel surcharges and the cost outlook</h2>
-<p>A fuel surcharge is meant to follow the weekly diesel price published by the US Energy Information Administration. The platform recomputes it from that series and the customer's own table, so an invoice that used the wrong week is flagged with the difference.</p>
-<p>The cost outlook is experimental. Although internal backtests compare forecasts with a no-change baseline, the data preparation, evaluation window and results have not been independently reproduced, so no performance claim is made. Treat any output as informational only.</p>
-
-<h2>Ocean container fees</h2>
-<p>46 CFR Part 541 includes invoice-content and timing provisions and a process for requesting mitigation, refund or waiver. Section 541.4 is currently reserved following a court decision; the remaining provisions include deadlines that vary by billing-party type. This prototype can surface dates and required fields for human review, but it does not decide whether a charge is legally owed or whether a specific invoice complies. Confirm current rules and any dispute with counsel or your customs broker.</p>
+<h2>Ocean D&amp;D audit</h2>
+<p>Inputs: the invoice fields 46 CFR 541.6 requires, each container with its charged periods, your own evidence (clock dates, cargo availability, dates a return was refused), and optionally a public carrier tariff preset to recompute against. A CSV import with the same columns loads a whole invoice at once.</p>
+<div class="scroll"><table>
+<thead><tr><th>Check</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td>Part 541 applies</td><td>Whether the invoice date falls on or after the rule's effective date (28 May 2024).</td></tr>
+<tr><td>Required invoice content (541.6)</td><td>Which required items are missing or inconsistent, with the clause quoted.</td></tr>
+<tr><td>30-day issuance (541.7)</td><td>Whether the invoice was issued within 30 calendar days of the charge last incurred, or, for an NVOCC, of the invoice it received.</td></tr>
+<tr><td>Invoice total</td><td>Whether the total due exceeds the sum of the charge lines.</td></tr>
+<tr><td>Line arithmetic</td><td>Whether each charged period equals days times the stated rate.</td></tr>
+<tr><td>Tariff recomputation</td><td>Free time and chargeable days under the chosen public tariff (working or calendar days, tiers, rates by container size) compared with what was charged.</td></tr>
+<tr><td>Cargo availability (545.5)</td><td>Whether free time was counted from before the cargo was available.</td></tr>
+<tr><td>Refused empty return (545.5)</td><td>Detention days that fall on dates when the empty container could not be returned.</td></tr>
+</tbody>
+</table></div>
+<p>Tariff presets are public figures from carriers' US tariff documents as published on the retrieval date shown in the app, with their source and verification level; your service contract or a newer tariff may differ. The audit surfaces dates and required fields for review; it does not decide whether a charge is legally owed. Confirm current rules and any dispute with counsel or your customs broker.</p>
 <p class="source">Sources: Electronic Code of Federal Regulations, 46 CFR Part 541, current through 2026-10-15, https://www.ecfr.gov/current/title-46/chapter-IV/subchapter-B/part-541; Federal Maritime Commission, "U.S. Court of Appeals Issues Decision in Case on Demurrage and Detention Billing Practices", https://www.fmc.gov/articles/u-s-court-of-appeals-issues-decision-in-case-on-demurrage-and-detention-billing-practices/, accessed 2026-10-19.</p>
 
-<h2>Approval and audit trail</h2>
-<ul>
-<li>Every action is written to an append-only, hash-linked audit log, so changes to evidence or approvals can be detected.</li>
-<li>The approval rules are enforced twice: in the application and by database triggers.</li>
-<li>Learning components never approve anything. Every finding they influence is marked, and the labels that influenced it are recorded.</li>
-</ul>
+<h2>Charge names</h2>
+<p>Carriers name the same charge in many ways, and a charge under an unfamiliar name is easy to skip. The tool shows two views of each name you paste: the fixed-rule class the invoice check uses (detention, linehaul, fuel, accessorial, other) and the nearest of 175 charge names from six public carrier tariffs, with a similarity score. A suggestion is only shown above a fixed threshold, and it only adds an item for review; it never confirms an amount.</p>
 
-<h2>What is not here yet</h2>
+<h2>Team workspace (prototype, not offered yet)</h2>
+<p>The hosted workspace runs the same engine with saved claims and a team around them: document import parsed in an isolated worker with every extracted field confirmed by a person, revisions and timelines, a four-eyes approval rule enforced in the application and by database triggers, a hash-linked audit log, team charge labels that route lines to review, fuel surcharge checks against the weekly EIA diesel price, CSV and XLSX exports, an API with scoped keys, and QuickBooks Online chart-of-accounts and vendor reference data. It is built and tested in our own environment, has processed no customer data, and is not hosted for customers. <a href="/pricing/">Early access</a>.</p>
+
+<h2>Limits</h2>
 <ul>
-<li>No hosted service and no customer deployments.</li>
-<li>No TMS, ELD, ERP, carrier-portal or accounting integrations.</li>
-<li>No measured results on real invoices; those come from design partners.</li>
-<li>No external security assessment yet. See <a href="/security/">security status</a>.</li>
+<li>The browser tools work from the figures you enter; they do not read PDFs.</li>
+<li>Rules are fixed and general. Your contract may define detention, free time or accessorials differently; the findings are the starting point for that conversation, not its end.</li>
+<li>No results on real invoices are published. Internal benchmark figures are not published and have not been independently reproduced.</li>
+<li>No external security assessment yet. See <a href="/security/">security and privacy</a>.</li>
 </ul>
-<p><a class="cta" href="/contact/">Become a design partner</a><a class="cta secondary" href="/how-it-works/">See how it works</a></p>
+<p><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/how-it-works/">See how it works</a></p>

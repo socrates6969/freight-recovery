@@ -11,5 +11,5 @@
     "customConditions": ["source"],
     "allowImportingTsExtensions": false
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx", "test-acceptance/**/*.ts", "test-acceptance/**/*.tsx", "vite.config.ts", "vitest.config.ts"]
+  "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx", "test-acceptance/**/*.ts", "test-acceptance/**/*.tsx", "product/**/*.ts", "product/**/*.tsx", "vite.config.ts", "vite.product.config.ts", "vitest.config.ts"]
 }

@@ -31,3 +31,5 @@ api/dist/
 coverage/
 *.tsbuildinfo
 !.env.example
+# Public app bundle (web/dist-product), built by npm run build:product -w web
+web/dist-product/
