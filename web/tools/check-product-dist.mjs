@@ -29,6 +29,16 @@ export function checkProductHtml(html) {
   return problems;
 }
 
+/**
+ * The components under src/product are styled with Tailwind utilities. The product build's Vite root is
+ * web/product, outside Tailwind's automatic source scan, so a missing @source line silently drops every
+ * utility (the app then ships with no layout and an unhidden file input). Require a few the components use.
+ */
+export function checkProductCss(css) {
+  const required = ['.sr-only', '.grid', 'sm\\:grid-cols-2', '.flex-wrap', '.min-h-screen'];
+  return required.filter((cls) => !css.includes(cls)).map((cls) => `utility class ${cls} missing (Tailwind @source paths in src/product/styles.css)`);
+}
+
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
     const p = path.join(dir, name);
@@ -44,7 +54,11 @@ function main() {
   for (const f of files) {
     const rel = path.relative(dist, f);
     if (f.endsWith('.html')) for (const p of checkProductHtml(readFileSync(f, 'utf8'))) problems.push(`${rel}: ${p}`);
-    if (f.endsWith('.css')) for (const p of checkCss(readFileSync(f, 'utf8'))) problems.push(`${rel}: ${p}`);
+    if (f.endsWith('.css')) {
+      const css = readFileSync(f, 'utf8');
+      for (const p of checkCss(css)) problems.push(`${rel}: ${p}`);
+      for (const p of checkProductCss(css)) problems.push(`${rel}: ${p}`);
+    }
     if (f.endsWith('.map')) problems.push(`${rel}: sourcemap shipped`);
   }
   if (!files.some((f) => path.basename(f) === 'index.html')) problems.push('dist-product/index.html missing');

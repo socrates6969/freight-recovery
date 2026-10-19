@@ -139,9 +139,9 @@ export function TextArea({
 export function Checkbox({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
   const id = useId();
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex min-h-10 items-center gap-2">
       <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} />
-      <label htmlFor={id} className="text-sm">
+      <label htmlFor={id} className="py-2.5 text-sm">
         {label}
       </label>
     </div>

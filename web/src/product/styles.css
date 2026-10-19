@@ -1,5 +1,8 @@
 @import 'tailwindcss';
+/* The product build's Vite root is web/product, so Tailwind's automatic source scan does not reach
+   this directory; name both explicitly or no utility class the components use is generated. */
 @source "../../product";
+@source "../../src/product";
 
 /* Same palette and type as marketing/site/static/style.css so the app reads as one site. */
 :root {
@@ -54,6 +57,17 @@
     cursor: not-allowed;
     opacity: 0.55;
   }
+  /* Touch targets: every control at least 40px tall (summaries, checkboxes; inputs and buttons below). */
+  summary {
+    min-height: 2.5rem;
+    padding: 0.5rem 0;
+  }
+  input[type='checkbox'] {
+    width: 1.25rem;
+    height: 1.25rem;
+    margin: 0;
+    accent-color: var(--accent);
+  }
   table {
     border-collapse: collapse;
     width: 100%;
@@ -96,6 +110,7 @@
     border: 1px solid var(--line);
     border-radius: 6px;
     padding: 0.45rem 0.6rem;
+    min-height: 2.5rem;
     background: var(--bg);
     color: var(--fg);
     font: inherit;
@@ -107,6 +122,7 @@
     border: 1px solid var(--line);
     border-radius: 6px;
     padding: 0.5rem 0.9rem;
+    min-height: 2.5rem;
     background: var(--bg);
     color: var(--fg);
     font: inherit;
@@ -118,6 +134,9 @@
     color: var(--accent-ink);
   }
   .btn-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.5rem;
     border: 0;
     background: none;
     color: var(--accent);
@@ -176,7 +195,63 @@
   }
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.9em;
+    /* Never below 12px, even inside small hint text (rule ids sit in text-xs paragraphs). */
+    font-size: max(0.9em, 0.75rem);
+  }
+  /* Header links of the app: 40px targets around the logo and the site links. */
+  header > a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.5rem;
+  }
+  header nav a,
+  footer p a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.5rem;
+    padding: 0 0.25rem;
+  }
+  /* Result tables (table.stack, cells carry data-label): on narrow screens each row becomes a labelled
+     card instead of a table that scrolls sideways; the header row stays for assistive technology. */
+  @media (max-width: 40rem) {
+    table.stack thead {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
+    table.stack,
+    table.stack tbody,
+    table.stack tr {
+      display: block;
+      width: 100%;
+    }
+    table.stack tr {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      margin: 0 0 0.6rem;
+    }
+    table.stack td {
+      display: grid;
+      grid-template-columns: minmax(6.5rem, 38%) 1fr;
+      gap: 0.5rem;
+      border: 0;
+      border-top: 1px solid var(--line);
+      padding: 0.35rem 0.6rem;
+    }
+    table.stack td:first-child {
+      border-top: 0;
+    }
+    table.stack td::before {
+      content: attr(data-label);
+      font-weight: 600;
+      color: var(--muted);
+      overflow-wrap: anywhere;
+    }
+    table.stack td.num {
+      white-space: normal;
+    }
   }
   pre.doc {
     white-space: pre-wrap;
