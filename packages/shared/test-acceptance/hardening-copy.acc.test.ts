@@ -150,11 +150,11 @@ describe('HD-S07 DTO schemas (C1, C3, C4, C5, C8.2)', () => {
 });
 
 describe('HD-S08 / HP-A01 shared audit-action list (C9, C15)', () => {
-  it('ends with claim.analysis_failed, auth.password.change_failed, invite.existing_account after the BASE list (unchanged, same order)', async () => {
+  it('ends with claim.analysis_failed, auth.password.change_failed, invite.existing_account and (REQ-20261020-claim-outcomes, amended) claim.outcome_recorded after the BASE list (unchanged, same order)', async () => {
     const m = await load();
     const a = [...m.AUDIT_ACTIONS] as string[];
     // the full BASE list (`git show bcc23bb:packages/shared/src/audit-actions.ts`), in order
     const BASE = ['auth.login.success', 'auth.login.failure', 'auth.lockout', 'auth.logout', 'auth.refresh_reuse_detected', 'auth.password.reset_requested', 'auth.password.reset_completed', 'auth.password.changed', 'auth.mfa.enrolled', 'auth.mfa.failure', 'auth.mfa.recovery_used', 'invite.created', 'invite.revoked', 'invite.accepted', 'user.role_changed', 'user.disabled', 'user.enabled', 'user.mfa_reset', 'claim.assigned', 'packet.viewed', 'packet.revision_created', 'approval.approved', 'approval.rejected', 'approval.send_ready', 'audit.verify', 'platform.cross_tenant_read', 'authz.denied', 'import.batch_created', 'import.document_received', 'import.document_rejected', 'import.document_parsed', 'import.document_downloaded', 'review.field_resolved', 'review.field_added', 'review.doctype_set', 'review.document_accepted', 'review.document_rejected', 'import.committed', 'claim.created_from_import', 'claim.documents_linked', 'export.started', 'export.completed', 'export.aborted', 'platform.dashboard_viewed', 'platform.logs_viewed', 'platform.flag_changed', 'eval.run_recorded', 'intelligence.viewed', 'apikey.created', 'apikey.revoked', 'apikey.use_denied', 'authz.four_eyes_denied', 'claim.analyzed', 'claim.bulk_analyzed', 'charge_label.set', 'charge_label.deleted', 'fsc_table.created', 'fsc_table.updated', 'fsc_table.archived', 'claim.fuel_inputs_set', 'claim.fuel_inputs_cleared', 'price_data.imported', 'dd_tariff.created', 'dd_tariff.updated', 'dd_calendar.created', 'dd_calendar.updated', 'dd_invoice.created', 'dd_invoice.updated', 'dd_invoice.deleted', 'dd_invoice.audited'];
-    expect(a).toEqual([...BASE, 'claim.analysis_failed', 'auth.password.change_failed', 'invite.existing_account']);
+    expect(a).toEqual([...BASE, 'claim.analysis_failed', 'auth.password.change_failed', 'invite.existing_account', 'claim.outcome_recorded']);
   });
 });

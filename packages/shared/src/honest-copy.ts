@@ -41,7 +41,7 @@ export const PIPELINE_NOTE =
 // ---------------------------------------------------------------------------------------------
 
 export const INSIGHTS_OUTCOME_DISCLAIMER =
-  'Recovery outcomes are not tracked yet. Every amount on this page was identified in carrier or terminal invoices, is pending your review, or was approved for a demand by your team. None of it is money recovered, saved or won.';
+  'Credited and paid amounts are outcomes your team typed in by hand; nothing is reconciled against payments. Every other amount on this page was identified in carrier or terminal invoices, is pending your review, or was approved for a demand by your team. None of it is money recovered, saved or won.';
 
 export const INSIGHTS_TEXT = Object.freeze({
   title: 'Insights',
@@ -63,10 +63,10 @@ export interface InsightsNotTracked {
 }
 
 export const INSIGHTS_NOT_TRACKED: readonly InsightsNotTracked[] = Object.freeze([
-  Object.freeze({ id: 'G1', title: 'Money paid or credited by carriers', reason: 'Nothing is recorded after a claim is marked ready to demand.' }),
+  Object.freeze({ id: 'G1', title: 'Money paid or credited by carriers, reconciled', reason: 'Only outcomes typed in by your team are recorded; no remittance or payment data is matched to claims.' }),
   Object.freeze({ id: 'G2', title: 'Freight dispute windows', reason: 'No contract or tariff dispute window is stored for truck freight.' }),
   Object.freeze({ id: 'G3', title: 'Leakage by lane', reason: 'Claims have no origin or destination.' }),
-  Object.freeze({ id: 'G4', title: 'Carrier acceptance rate and response time', reason: 'Needs carrier outcomes, which are not recorded yet.' }),
+  Object.freeze({ id: 'G4', title: 'Carrier response time', reason: 'Outcomes carry the dates your team entered, not when the carrier actually answered.' }),
   Object.freeze({ id: 'G5', title: 'Cost and return of using this service', reason: 'No billing or fee data is held in the product.' }),
   Object.freeze({ id: 'G6', title: 'Breakdown by business unit, site or team', reason: 'Claims are not assigned to teams.' }),
   Object.freeze({ id: 'G7', title: 'Exact history of the open backlog', reason: 'Amounts are current values; past amounts are not stored.' }),
@@ -74,7 +74,7 @@ export const INSIGHTS_NOT_TRACKED: readonly InsightsNotTracked[] = Object.freeze
   Object.freeze({
     id: 'G9',
     title: 'Overcharge as a share of audited freight spend',
-    reason: 'Invoices without a finding are not recorded, and invoice totals are not stored on claims.',
+    reason: 'Invoices audited with no finding are counted only when your team records them, and invoice totals are not stored on claims.',
   }),
   Object.freeze({ id: 'G10', title: 'Invoice payment due dates', reason: 'Freight invoices are read without a payment due date.' }),
 ]);

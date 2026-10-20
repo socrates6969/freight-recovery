@@ -170,7 +170,9 @@ describe('C8-C10 shared registries (additive)', () => {
       // REQ-20261011-ocean-dd C15 (additive): the eight step-8 actions follow price_data.imported.
       'dd_tariff.created', 'dd_tariff.updated', 'dd_calendar.created', 'dd_calendar.updated', 'dd_invoice.created', 'dd_invoice.updated', 'dd_invoice.deleted', 'dd_invoice.audited',
       // REQ-20261012-hardening C9/C15 (additive): the three hardening actions follow dd_invoice.audited.
-      'claim.analysis_failed', 'auth.password.change_failed', 'invite.existing_account']);
+      'claim.analysis_failed', 'auth.password.change_failed', 'invite.existing_account',
+      // REQ-20261020-claim-outcomes (additive): one action for a recorded outcome, appended last.
+      'claim.outcome_recorded']);
     expect(new Set(R.AUDIT_ACTIONS).size).toBe(R.AUDIT_ACTIONS.length);
   });
   it('C10 flag registry entry', () => {

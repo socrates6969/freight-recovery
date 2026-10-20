@@ -40,3 +40,5 @@ export * from './ocean-dd/index.js';
 export * from './ocean-dd-dto.js';
 // REQ-20261018-exec-dashboard: executive insights contract (read-only aggregates).
 export * from './insights-dto.js';
+// REQ-20261020-claim-outcomes: recorded claim outcomes and the insights Recovery section.
+export * from './outcomes-dto.js';
