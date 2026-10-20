@@ -8,7 +8,8 @@ import { resolve } from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 
 const ROOT = resolve(__dirname, '..', '..');
-const CI_BOUNDS = ['--min-top1', '173', '--min-accessorial-top1', '158', '--min-accessorial-recognised', '145', '--max-wrong-suggested', '1'];
+// REQ-20261019-seed-v2 (additive pin update): the gate bounds equal the measured tariff-seed-v2 values (were 173/158/145/1).
+const CI_BOUNDS = ['--min-top1', '254', '--min-accessorial-top1', '233', '--min-accessorial-recognised', '215', '--max-wrong-suggested', '1'];
 /** sha256 of .github/workflows/web-ci.yml at 51ea826 (LF line endings), before step 6. */
 const WORKFLOW_51EA826 = '397c065f2e327bc8630a1e65ea092abfd087ab935617aca7c825fdc8eb5027b8';
 
@@ -46,16 +47,16 @@ describe('T14 eval:charges CLI (C11)', () => {
   });
   it('CI-E03 bounds: CI bounds pass; one-too-strict bounds fail with exit 1 naming the bound', () => {
     expect(cli(CI_BOUNDS).code).toBe(0);
-    const t = cli(['--min-top1', '174']);
+    const t = cli(['--min-top1', '255']);
     expect(t.code).toBe(1);
     expect(t.stderr).toContain('--min-top1');
     const w = cli(['--max-wrong-suggested', '0']);
     expect(w.code).toBe(1);
     expect(w.stderr).toContain('--max-wrong-suggested');
-    const a = cli(['--min-accessorial-recognised', '146']);
+    const a = cli(['--min-accessorial-recognised', '216']);
     expect(a.code).toBe(1);
     expect(a.stderr).toContain('--min-accessorial-recognised');
-    const b = cli(['--min-accessorial-top1', '159']);
+    const b = cli(['--min-accessorial-top1', '234']);
     expect(b.code).toBe(1);
     expect(b.stderr).toContain('--min-accessorial-top1');
   });
