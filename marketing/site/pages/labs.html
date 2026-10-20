@@ -1,10 +1,10 @@
-<!--meta {"title":"scoup Labs: measured learning, not promises","description":"Recall, the charge-name suggester in scoup.ai, measured on public tariff charge names: the learning curve, what failed, what is planned and what is not known.","path":"/labs/","crumb":"Labs","updated":"2026-10-20"} -->
+<!--meta {"title":"scoup Labs: measured learning, not promises","description":"Recall, the charge-name suggester in scoup.ai, measured on public tariff charge names: two learning curves, what failed, what is planned and what is not known.","path":"/labs/","crumb":"Labs","updated":"2026-10-20"} -->
 <section class="band page-head">
 <div class="container narrow">
 <p class="pill">scoup Labs, research notes</p>
 <h1>Measured learning, <span class="hl">not promises</span></h1>
 <p class="lead">scoup Labs is where we measure whether the learning parts of scoup.ai improve with data, publish the curve and the method, and say plainly what failed and what has not been measured. Everything on this page was measured on public tariff charge names with a held-out test, not on invoices.</p>
-<p class="actions"><a class="cta" href="#curve">See the measured curve</a><a class="cta secondary" href="/app/">Open the app</a></p>
+<p class="actions"><a class="cta" href="#curve">See the measured curves</a><a class="cta secondary" href="/app/">Open the app</a></p>
 </div>
 </section>
 
@@ -13,7 +13,7 @@
 <div>
 <h2>What Recall is</h2>
 <p class="tag live">Live in the browser app</p>
-<p>Recall is the charge-name suggester behind the <a href="/platform/#charge-names">Charge names</a> tool and the workspace's <a href="/workspace/#charge-intelligence">charge intelligence</a>. It is memory-based: it keeps labelled charge names as examples, turns a name into character and word fragments, and suggests the class of the nearest example when the similarity clears a fixed threshold. Below the threshold it abstains. There is no training step and there are no model weights; the memory is public tariff charge names and, in the workspace, a team's own labels.</p>
+<p>Recall is the charge-name suggester behind the <a href="/platform/#charge-names">Charge names</a> tool and the workspace's <a href="/workspace/#charge-intelligence">charge intelligence</a>. It is memory-based: it keeps labelled charge names as examples, turns a name into character and word fragments, and suggests the class of the nearest example when the similarity clears a fixed threshold. Below the threshold it abstains. There is no training step and there are no model weights; the memory is 256 public tariff charge names from 8 public sources and, in the workspace, a team's own labels.</p>
 <p>It learns in two ways. Every public tariff we add gives it more examples to match against. In the workspace prototype, a label a team gives a charge description becomes an example for that team alone; labels are never shared between workspaces.</p>
 <p>Recall is review-only. A suggestion adds an item for a person to check; it never changes an amount, confirms a charge or decides what is owed.</p>
 </div>
@@ -46,60 +46,87 @@
 
 <section class="surface" id="curve">
 <div class="container">
-<h2>The learning curve</h2>
-<p class="lead">Training names in, held-out names recognised out. Every point is the same test: one public carrier's charge names are held out and recognised only from the other carriers' names, with an exact copy of the query never allowed to count. Hover over a point, or select one, for its figures.</p>
+<h2>The learning curves</h2>
+<p class="lead">Training names in, held-out names recognised out. Every point is the same test: one public source's charge names are held out and recognised only from the other sources' names, with an exact copy of the query never allowed to count. The first run (2026-10-19) used the 175-name seed from six carriers; the second (2026-10-20) the shipped 256-name seed from 8 sources. Hover over a point, or select one, for its figures.</p>
 <div class="card">
 <figure class="lc">
 <figcaption>
+<p class="lc-head">seed-v1 run, 175 names, 2026-10-19</p>
 <ol class="lc-list">
 <li id="lc-1"><a href="#lc-1">15 names</a><span><strong>36.3%</strong> of held-out names recognised</span></li>
 <li id="lc-2"><a href="#lc-2">37 names</a><span><strong>60.2%</strong> recognised</span></li>
 <li id="lc-3"><a href="#lc-3">73 names</a><span><strong>76.6%</strong> recognised</span></li>
 <li id="lc-4"><a href="#lc-4">110 names</a><span><strong>84.5%</strong> recognised</span></li>
-<li id="lc-5"><a href="#lc-5">146 names</a><span><strong>89.1%</strong> recognised: the shipped public seed, 175 names from six carriers</span></li>
-<li id="lc-6"><a class="v2" href="#lc-6">146 + 99 names</a><span><strong>93.1%</strong> recognised after 99 newly fetched public names: 7 names gained, 0 lost</span></li>
+<li id="lc-5"><a href="#lc-5">146 names</a><span><strong>89.1%</strong> recognised: the whole 175-name seed from six carriers</span></li>
+<li id="lc-6"><a class="v2" href="#lc-6">256 names</a><span><strong>93.1%</strong> of the same 175 held-out names recognised from the shipped 256-name seed: 163 of 175, 7 gained, 0 lost, 1 wrong</span></li>
+</ol>
+<p class="lc-head">seed-v2 run, 256 names from 8 sources, 2026-10-20</p>
+<ol class="lc-list">
+<li id="lc-7"><a class="v2" href="#lc-7">22 names</a><span><strong>48.6%</strong> recognised, 1.2% wrong</span></li>
+<li id="lc-8"><a class="v2" href="#lc-8">56 names</a><span><strong>70.3%</strong> recognised</span></li>
+<li id="lc-9"><a class="v2" href="#lc-9">112 names</a><span><strong>83.6%</strong> recognised</span></li>
+<li id="lc-10"><a class="v2" href="#lc-10">168 names</a><span><strong>88.7%</strong> recognised</span></li>
+<li id="lc-11"><a class="v2" href="#lc-11">224 names</a><span><strong>91.8%</strong> recognised, 0.4% wrong: the whole 256-name seed</span></li>
 </ol>
 </figcaption>
-<svg viewBox="-8 0 410 308" role="img" aria-labelledby="lc-title lc-desc">
-<title id="lc-title">Learning curve of Recall: held-out names recognised against training names</title>
-<desc id="lc-desc">Recognition rises from 36.3% with 15 training names to 60.2% with 37, 76.6% with 73, 84.5% with 110 and 89.1% with 146; a further 99 public names raise it to 93.1%. Keyword rules alone recognise 19.4%, shown as a dashed line. Wrong suggestions stayed between 0.6% and 2.5%, shown as a band at the bottom.</desc>
+<svg viewBox="-8 0 410 322" role="img" aria-labelledby="lc-title lc-desc">
+<title id="lc-title">Learning curves of Recall: held-out names recognised against training names, two runs</title>
+<desc id="lc-desc">Seed-v1 run of 2026-10-19: recognition rises from 36.3% with 15 training names to 60.2% with 37, 76.6% with 73, 84.5% with 110 and 89.1% with 146; the shipped 256-name seed recognises 93.1% of the same held-out names. Seed-v2 run of 2026-10-20 over 8 sources: 48.6% with 22 names, 70.3% with 56, 83.6% with 112, 88.7% with 168 and 91.8% with 224. Keyword rules alone recognise 19.4%, shown as a dashed line. Wrong suggestions stayed between 0.4% and 2.5% in both runs, shown as a band at the bottom.</desc>
 <path class="lc-grid" d="M46 212.8H380M46 163.6H380M46 114.4H380M46 65.2H380M46 16H380"/>
-<rect class="lc-band" x="46" y="255.9" width="334" height="4.6"/>
+<rect class="lc-band" x="46" y="255.9" width="334" height="5.1"/>
 <path class="lc-axis" d="M46 16V262H380"/>
 <g class="lc-tick">
 <text x="40" y="266" text-anchor="end">0%</text><text x="40" y="216.8" text-anchor="end">20%</text><text x="40" y="167.6" text-anchor="end">40%</text><text x="40" y="118.4" text-anchor="end">60%</text><text x="40" y="69.2" text-anchor="end">80%</text><text x="40" y="20" text-anchor="end">100%</text>
-<text x="46" y="278" text-anchor="middle">0</text><text x="112.8" y="278" text-anchor="middle">50</text><text x="179.6" y="278" text-anchor="middle">100</text><text x="246.4" y="278" text-anchor="middle">150</text><text x="313.2" y="278" text-anchor="middle">200</text><text x="380" y="278" text-anchor="middle">250</text>
+<text x="46" y="278" text-anchor="middle">0</text><text x="105.6" y="278" text-anchor="middle">50</text><text x="165.3" y="278" text-anchor="middle">100</text><text x="224.9" y="278" text-anchor="middle">150</text><text x="284.6" y="278" text-anchor="middle">200</text><text x="344.2" y="278" text-anchor="middle">250</text>
 <text x="50" y="209">keyword rules alone 19.4%</text>
-<text x="376" y="250" text-anchor="end">wrong suggestions 0.6% to 2.5%</text>
+<text x="376" y="250" text-anchor="end">wrong suggestions 0.4% to 2.5%</text>
 </g>
-<text class="lc-axis-t" x="213" y="298" text-anchor="middle">training names (public tariff charge names)</text>
+<g class="lc-legend lc-tick">
+<path class="lc-line lc-key" d="M56 308h20"/><text x="82" y="312">seed-v1 run (2026-10-19)</text>
+<path class="lc-line2 lc-key" d="M206 308h20"/><text x="232" y="312">seed-v2 run (2026-10-20)</text>
+</g>
+<text class="lc-axis-t" x="213" y="294" text-anchor="middle">training names (public tariff charge names)</text>
 <text class="lc-axis-t" x="4" y="139" text-anchor="middle" transform="rotate(-90 4 139)">held-out names recognised</text>
 <path class="lc-base" d="M46 214.3H380"/>
-<path class="lc-seg" d="M241.1 42.8L373.3 33"/>
-<g class="lc-note lc-tick"><text x="307" y="62" text-anchor="middle">+99 public names</text><text x="307" y="77" text-anchor="middle">7 gained, 0 lost</text></g>
-<path class="lc-line" d="M66 172.7L95.4 113.9L143.5 73.6L193 54.1L241.1 42.8"/>
+<path class="lc-seg" d="M220.2 42.8L351.4 33"/>
+<g class="lc-note lc-tick"><text x="316" y="74" text-anchor="middle">+81 public names</text><text x="316" y="89" text-anchor="middle">7 gained, 0 lost</text></g>
+<path class="lc-line2" d="M72.2 142.4L112.8 89.1L179.6 56.3L246.4 43.8L313.2 36.2"/>
+<path class="lc-line" d="M63.9 172.7L90.1 113.9L133.1 73.6L177.2 54.1L220.2 42.8"/>
 <g class="lc-pts">
-<a href="#lc-1"><title>15 training names: 36.3% of held-out names recognised</title><circle class="lc-hit" cx="66" cy="172.7" r="27.5"/><circle class="lc-ring" cx="66" cy="172.7" r="11"/><circle class="lc-dot" cx="66" cy="172.7" r="5.5"/><text class="lc-label" x="72" y="185">36.3%</text></a>
-<a href="#lc-2"><title>37 training names: 60.2% of held-out names recognised</title><circle class="lc-hit" cx="95.4" cy="113.9" r="27.5"/><circle class="lc-ring" cx="95.4" cy="113.9" r="11"/><circle class="lc-dot" cx="95.4" cy="113.9" r="5.5"/><text class="lc-label" x="102" y="127">60.2%</text></a>
-<a href="#lc-3"><title>73 training names: 76.6% of held-out names recognised</title><circle class="lc-hit" cx="143.5" cy="73.6" r="27.5"/><circle class="lc-ring" cx="143.5" cy="73.6" r="11"/><circle class="lc-dot" cx="143.5" cy="73.6" r="5.5"/><text class="lc-label" x="150" y="87">76.6%</text></a>
-<a href="#lc-4"><title>110 training names: 84.5% of held-out names recognised</title><circle class="lc-hit" cx="193" cy="54.1" r="27.5"/><circle class="lc-ring" cx="193" cy="54.1" r="11"/><circle class="lc-dot" cx="193" cy="54.1" r="5.5"/><text class="lc-label" x="200" y="68">84.5%</text></a>
-<a href="#lc-5"><title>146 training names, the shipped seed: 89.1% of held-out names recognised</title><circle class="lc-hit" cx="241.1" cy="42.8" r="27.5"/><circle class="lc-ring" cx="241.1" cy="42.8" r="11"/><circle class="lc-dot" cx="241.1" cy="42.8" r="5.5"/><text class="lc-label" x="234" y="37" text-anchor="end">89.1%</text></a>
-<a href="#lc-6" class="v2"><title>146 + 99 newly fetched public names: 93.1% of held-out names recognised, 7 gained, 0 lost</title><circle class="lc-hit" cx="373.3" cy="33" r="27.5"/><circle class="lc-ring" cx="373.3" cy="33" r="11"/><circle class="lc-dot" cx="373.3" cy="33" r="5.5"/><text class="lc-label" x="366" y="24" text-anchor="end">93.1%</text></a>
+<a href="#lc-1"><title>seed-v1 run, 15 training names: 36.3% of held-out names recognised</title><circle class="lc-hit" cx="63.9" cy="172.7" r="27.5"/><circle class="lc-ring" cx="63.9" cy="172.7" r="11"/><circle class="lc-dot" cx="63.9" cy="172.7" r="5.5"/><text class="lc-label" x="70" y="185">36.3%</text></a>
+<a href="#lc-2"><title>seed-v1 run, 37 training names: 60.2% of held-out names recognised</title><circle class="lc-hit" cx="90.1" cy="113.9" r="27.5"/><circle class="lc-ring" cx="90.1" cy="113.9" r="11"/><circle class="lc-dot" cx="90.1" cy="113.9" r="5.5"/><text class="lc-label" x="96" y="127">60.2%</text></a>
+<a href="#lc-3"><title>seed-v1 run, 73 training names: 76.6% of held-out names recognised</title><circle class="lc-hit" cx="133.1" cy="73.6" r="27.5"/><circle class="lc-ring" cx="133.1" cy="73.6" r="11"/><circle class="lc-dot" cx="133.1" cy="73.6" r="5.5"/><text class="lc-label" x="139" y="88">76.6%</text></a>
+<a href="#lc-4"><title>seed-v1 run, 110 training names: 84.5% of held-out names recognised</title><circle class="lc-hit" cx="177.2" cy="54.1" r="27.5"/><circle class="lc-ring" cx="177.2" cy="54.1" r="11"/><circle class="lc-dot" cx="177.2" cy="54.1" r="5.5"/><text class="lc-label" x="183" y="69">84.5%</text></a>
+<a href="#lc-5"><title>seed-v1 run, 146 training names, the whole 175-name seed: 89.1% of held-out names recognised</title><circle class="lc-hit" cx="220.2" cy="42.8" r="27.5"/><circle class="lc-ring" cx="220.2" cy="42.8" r="11"/><circle class="lc-dot" cx="220.2" cy="42.8" r="5.5"/><text class="lc-label" x="226" y="63">89.1%</text></a>
+<a href="#lc-6" class="v2"><title>The shipped 256-name seed on the same 175 held-out names: 93.1% recognised, 7 gained, 0 lost, 1 wrong</title><circle class="lc-hit" cx="351.4" cy="33" r="27.5"/><circle class="lc-ring" cx="351.4" cy="33" r="11"/><circle class="lc-dot" cx="351.4" cy="33" r="5.5"/><text class="lc-label v2" x="351.4" y="53" text-anchor="middle">93.1%</text></a>
+<a href="#lc-7" class="v2"><title>seed-v2 run, 22 training names: 48.6% of held-out names recognised, 1.2% wrong</title><circle class="lc-hit" cx="72.2" cy="142.4" r="27.5"/><circle class="lc-ring" cx="72.2" cy="142.4" r="11"/><circle class="lc-dot" cx="72.2" cy="142.4" r="5.5"/><text class="lc-label v2" x="79" y="157">48.6%</text></a>
+<a href="#lc-8" class="v2"><title>seed-v2 run, 56 training names: 70.3% of held-out names recognised</title><circle class="lc-hit" cx="112.8" cy="89.1" r="27.5"/><circle class="lc-ring" cx="112.8" cy="89.1" r="11"/><circle class="lc-dot" cx="112.8" cy="89.1" r="5.5"/><text class="lc-label v2" x="106" y="83" text-anchor="end">70.3%</text></a>
+<a href="#lc-9" class="v2"><title>seed-v2 run, 112 training names: 83.6% of held-out names recognised</title><circle class="lc-hit" cx="179.6" cy="56.3" r="27.5"/><circle class="lc-ring" cx="179.6" cy="56.3" r="11"/><circle class="lc-dot" cx="179.6" cy="56.3" r="5.5"/><text class="lc-label v2" x="173" y="49" text-anchor="end">83.6%</text></a>
+<a href="#lc-10" class="v2"><title>seed-v2 run, 168 training names: 88.7% of held-out names recognised</title><circle class="lc-hit" cx="246.4" cy="43.8" r="27.5"/><circle class="lc-ring" cx="246.4" cy="43.8" r="11"/><circle class="lc-dot" cx="246.4" cy="43.8" r="5.5"/><text class="lc-label v2" x="246.4" y="32" text-anchor="middle">88.7%</text></a>
+<a href="#lc-11" class="v2"><title>seed-v2 run, 224 training names, the whole 256-name seed: 91.8% of held-out names recognised, 0.4% wrong</title><circle class="lc-hit" cx="313.2" cy="36.2" r="27.5"/><circle class="lc-ring" cx="313.2" cy="36.2" r="11"/><circle class="lc-dot" cx="313.2" cy="36.2" r="5.5"/><text class="lc-label v2" x="313.2" y="25" text-anchor="middle">91.8%</text></a>
 </g>
 </svg>
 </figure>
-<p class="source">Keyword rules alone recognise 19.4% of the same held-out names. Wrong suggestions stayed between 0.6% and 2.5% at every point. Measured 2026-10-19 on public tariff charge names held out by carrier; not on invoices.</p>
+<p class="source">Keyword rules alone recognise 19.4% of the seed-v1 held-out names. Wrong suggestions stayed between 0.6% and 2.5% in the seed-v1 run and between 1.2% and 0.4% in the seed-v2 run. The curve is flattening: in the seed-v2 run each doubling of the training names added +21.7, +13.3 and +8.2 points. Measured on public tariff charge names held out by source; not on invoices.</p>
 </div>
+<h3 class="lc-more">More curves from the same runs</h3>
+<ul class="grid">
+<li><h3>Similarity threshold</h3><p>Wrong suggestions stay at one item across thresholds from 0.20 to 0.50. A lower threshold looks better on the same held-out names, but when the operating point is chosen per fold from the other folds it does not beat 0.30, so 0.30 stays.</p></li>
+<li><h3>Per category</h3><p>Detention names go from 65% recognised at 10% of the training names to 100% at all of them; fuel reaches 75% of its names at 100%; accessorial names track the pooled curve; linehaul has one name, so there is nothing to match.</p></li>
+<li><h3>A team's own labels</h3><p>Adding up to 20 of a carrier's own labels changed recognition by +0.9 and +0.6 points in the two runs, not significant (p = 1): no measurable effect on tariff names, which the other sources' public names already cover.</p></li>
+<li><h3>One candidate not shipped</h3><p>Character 2-4-grams plus words at the fixed threshold gained +4.6 and +5.1 points with no new wrong suggestions. Held back until it can be measured on invoice lines, where the extra matches could go either way.</p></li>
+<li><h3>The outlook stays at its ceiling</h3><p>Beyond eight years of price history the cost outlook barely moves: the error ratio goes from 0.882 to 0.873 (diesel, one week ahead) and from 0.846 to 0.842 (PPI, one month ahead) at 22 to 24 years.</p></li>
+</ul>
 </div>
 </section>
 
 <section>
 <div class="container">
-<h2>Three results from the same run</h2>
+<h2>Three results from the two runs</h2>
 <div class="grid">
 <div class="card">
-<h3>99 more public names: 89.1% to 93.1%</h3>
-<p>On 2026-10-19 we fetched 99 charge names from three further public sources (the GSA Uniform Rules Tariff 200-A, the FedEx Freight 2026 accessorial sheet and the J.B. Hunt LTL accessorials guide), labelled them and added them to the memory. On the unchanged held-out test, recognition went from 89.1% to 93.1%: 7 names gained, 0 lost, exact McNemar p = 0.016, wrong suggestions unchanged. The names were labelled by one person and are not yet in the shipped seed.</p>
+<h3>81 more public names: 89.1% to 93.1%</h3>
+<p>On 2026-10-19 we fetched 99 charge names from three further public sources; after source verification 81 were kept (11 J.B. Hunt names dropped because the page forbids reproduction, 7 GSA rule-only items because their text states no charge). The shipped seed is now 256 names from 8 public sources. On the unchanged 175 held-out names it recognises 163, 93.1%, with 1 wrong suggestion; the earlier run with all 99 names gave the same result: 7 names gained, 0 lost, exact McNemar p = 0.016. The added names were labelled by one person and checked, not blind, by a second.</p>
 </div>
 <div class="card">
 <h3>Two candidates failed and were not adopted</h3>
@@ -125,8 +152,8 @@
 <ul>
 <li>How Recall performs on customer invoice lines. Tariff names are clean; invoice text carries carrier codes, abbreviations and typos, a different distribution. Nothing has been measured on it.</li>
 <li>Nothing has been measured on customer documents of any kind, and no accuracy figure is published for invoices.</li>
-<li>The results on this page come from one internal run on 2026-10-19 and have not been independently reproduced.</li>
-<li>The 99 added names were labelled by one person; a second check is planned before they ship.</li>
+<li>The results on this page come from two internal runs by the same team and have not been independently reproduced.</li>
+<li>One wrong suggestion is 0.4 to 0.6 points, and the small classes (fuel 4 names, linehaul 1) move by 25 points or more per name.</li>
 </ul>
 </div>
 </div>
@@ -137,8 +164,8 @@
 <h2>What is next, and what it needs</h2>
 <p class="lead">Each item carries a label. <span class="tag plan">Planned</span> means it can be done with public data and is scheduled. <span class="tag data">Needs customer data</span> means it cannot be measured until pilot teams share files or outcomes under NDA, and its gain is unknown until then.</p>
 <ul class="grid">
-<li><h3>More public tariff names</h3><p class="tag plan">Planned</p><p>A second seed with names from more public tariffs, each label checked by a second person before it ships, measured on the same held-out test. The curve is flattening: 99 names added 4.0 points, and 4 of the 7 names gained were the same storage concept, so public names alone will not settle how Recall does on invoices.</p></li>
-<li><h3>Recall on real invoice lines</h3><p class="tag data">Needs customer data</p><p>Labelled invoice lines from pilot files, shared under NDA. Carrier codes, abbreviations and free text are a different distribution from tariff names, and nothing has been measured on them. This is the measurement that decides whether the public curve carries over.</p></li>
+<li><h3>More public tariff names</h3><p class="tag plan">Planned</p><p>Further public carrier tariffs, each label checked by a second person before it ships, measured on the same held-out test. The curve is flattening: the last doubling added +8.2 points, the 81 added names +4.0 on the first held-out set, and 4 of the 7 names gained were the same storage concept, so public names alone will not settle how Recall does on invoices.</p></li>
+<li><h3>Recall on real invoice lines</h3><p class="tag data">Needs customer data</p><p>Labelled invoice lines from pilot files, shared under NDA. Carrier codes, abbreviations and free text are a different distribution from tariff names, and nothing has been measured on them. This is the measurement that decides whether the public curve carries over, and whether the 2-4-gram candidate ships.</p></li>
 <li><h3>Dispute outcomes feeding suggestion precision</h3><p class="tag data">Needs customer data</p><p>Today nothing is recorded after a demand is marked send-ready, so no one can say how many review items became captured dollars. With outcomes (paid, denied, partial) recorded per finding, the precision of each suggestion rule can be measured and the rules tuned against it.</p></li>
 <li><h3>A learned review-priority ranker</h3><p class="tag data">Needs customer data</p><p>The claim list is ordered by a stated policy with fixed weights. A ranker fitted on outcomes would be compared with that policy on captured dollars per hour of review, on held-out claims, and adopted only if it wins.</p></li>
 <li><h3>Lane-level cost forecasting</h3><p class="tag data">Needs customer data</p><p>The public outlook is national and at its ceiling. A lane-level forecast needs a customer's lane rate history or purchased benchmarks, and it ships only if it beats a seasonal baseline on held-out months.</p></li>
@@ -150,8 +177,8 @@
 <section>
 <div class="container prose">
 <h2>Method and sources</h2>
-<p>Held-out test: leave-one-carrier-out over the 175 public tariff charge names in the shipped seed, from six carriers. Each carrier's names are held out in turn and classified only from the other carriers' names; a candidate whose normalised text equals the query is excluded, so an exact copy can never count as recognised. A name counts as recognised when the nearest example's class is correct and the similarity clears the fixed threshold; below it, Recall abstains. For the smaller training sizes the other carriers' names are randomly subsampled 50 times and the rates averaged. Recognition is pooled over all 175 names; 159 of them are accessorial names, so the test says most about that class.</p>
-<p class="source">Experiment run 2026-10-19 by the scoup.ai team on public data: charge names copied from six public carrier tariffs (retrieved 2026-10-11) plus 99 names from the GSA Uniform Rules Tariff 200-A, the FedEx Freight 2026 accessorial sheet and the J.B. Hunt LTL accessorials guide (retrieved 2026-10-19); diesel and PPI series from FRED (EIA series GASDESW, BLS series PCU4841214841212). The run is being turned into a repository script, api/eval/curve.ts (npm run eval:curve), so the curve can be regenerated from the seed; until that lands, the run outputs are internal. These are internal results on public tariff charge names, not a benchmark on invoices, and they have not been independently reproduced.</p>
+<p>Held-out test: leave-one-source-out over the public tariff charge names in the seed. Each source's names are held out in turn and classified only from the other sources' names; a candidate whose normalised text equals the query is excluded, so an exact copy can never count as recognised. A name counts as recognised when the nearest example's class is correct and the similarity clears the fixed threshold; below it, Recall abstains. For the smaller training sizes the other sources' names are randomly subsampled 50 times and the rates averaged. The seed-v1 run uses the 175 names from six carriers (159 of them accessorial names, so the test says most about that class); the seed-v2 run uses the shipped 256 names from 8 sources (234 accessorial, 17 detention, 4 fuel, 1 linehaul), with the GSA tariff as one source.</p>
+<p class="source">Runs of 2026-10-19 and 2026-10-20 by the scoup.ai team on public data: charge names copied from six public carrier tariffs (retrieved 2026-10-11) plus 81 names kept from the GSA Uniform Rules Tariff 200-A and the FedEx Freight 2026 accessorial sheet (retrieved 2026-10-19); diesel and PPI series from FRED (EIA series GASDESW, BLS series PCU4841214841212). The curve is produced by a script in the repository, packages/shared/src/charge-intel/curve.ts with the command npm run eval:curve (api/src/eval/curve.ts, flags --seed v1|v2), which reproduces the 2026-10-19 run to two decimals. These are internal results on public tariff charge names, not a benchmark on invoices, and they have not been independently reproduced.</p>
 <p class="actions"><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/workspace/#charge-intelligence">Charge intelligence in the workspace</a></p>
 </div>
 </section>

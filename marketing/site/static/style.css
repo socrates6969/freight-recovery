@@ -242,7 +242,7 @@ section.band .dg-stop-x { stroke: #ffcf99; }
 .lc-tick { fill: var(--muted); font-size: 12px; font-weight: 500; }
 .lc-axis-t { fill: var(--muted); font-size: 12px; font-weight: 600; }
 .lc-label { fill: var(--fg); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.lc-line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.lc-line, .lc-line2 { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
 .lc-base { fill: none; stroke: var(--n500); stroke-width: 1.5; stroke-dasharray: 5 5; }
 .lc-seg { fill: none; stroke: var(--tag-live-fg); stroke-width: 2; stroke-dasharray: 4 4; stroke-linecap: round; }
 .lc-band { fill: var(--warnbg); stroke: var(--warn); stroke-width: 0.5; }
@@ -260,7 +260,15 @@ section.band .dg-stop-x { stroke: #ffcf99; }
 .lc:has(#lc-4:target) [href="#lc-4"] .lc-ring, .lc:has(li a[href="#lc-4"]:hover) [href="#lc-4"] .lc-ring { opacity: 1; }
 .lc:has(#lc-5:target) [href="#lc-5"] .lc-ring, .lc:has(li a[href="#lc-5"]:hover) [href="#lc-5"] .lc-ring { opacity: 1; }
 .lc:has(#lc-6:target) [href="#lc-6"] .lc-ring, .lc:has(li a[href="#lc-6"]:hover) [href="#lc-6"] .lc-ring { opacity: 1; }
-.lc-list li:target, .lc:has(svg [href="#lc-1"]:hover) #lc-1, .lc:has(svg [href="#lc-2"]:hover) #lc-2, .lc:has(svg [href="#lc-3"]:hover) #lc-3, .lc:has(svg [href="#lc-4"]:hover) #lc-4, .lc:has(svg [href="#lc-5"]:hover) #lc-5, .lc:has(svg [href="#lc-6"]:hover) #lc-6 { background: var(--accent-soft); border-color: var(--accent); }
+.lc:has(#lc-7:target) [href="#lc-7"] .lc-ring, .lc:has(li a[href="#lc-7"]:hover) [href="#lc-7"] .lc-ring { opacity: 1; }
+.lc:has(#lc-8:target) [href="#lc-8"] .lc-ring, .lc:has(li a[href="#lc-8"]:hover) [href="#lc-8"] .lc-ring { opacity: 1; }
+.lc:has(#lc-9:target) [href="#lc-9"] .lc-ring, .lc:has(li a[href="#lc-9"]:hover) [href="#lc-9"] .lc-ring { opacity: 1; }
+.lc:has(#lc-10:target) [href="#lc-10"] .lc-ring, .lc:has(li a[href="#lc-10"]:hover) [href="#lc-10"] .lc-ring { opacity: 1; }
+.lc:has(#lc-11:target) [href="#lc-11"] .lc-ring, .lc:has(li a[href="#lc-11"]:hover) [href="#lc-11"] .lc-ring { opacity: 1; }
+.lc-list li:target, .lc:has(svg [href="#lc-1"]:hover) #lc-1, .lc:has(svg [href="#lc-2"]:hover) #lc-2, .lc:has(svg [href="#lc-3"]:hover) #lc-3, .lc:has(svg [href="#lc-4"]:hover) #lc-4, .lc:has(svg [href="#lc-5"]:hover) #lc-5, .lc:has(svg [href="#lc-6"]:hover) #lc-6, .lc:has(svg [href="#lc-7"]:hover) #lc-7, .lc:has(svg [href="#lc-8"]:hover) #lc-8, .lc:has(svg [href="#lc-9"]:hover) #lc-9, .lc:has(svg [href="#lc-10"]:hover) #lc-10, .lc:has(svg [href="#lc-11"]:hover) #lc-11 { background: var(--accent-soft); border-color: var(--accent); }
+.lc-head { margin: 0 0 0.4rem; font-size: 0.8125rem; font-weight: 600; color: var(--muted); }
+.lc-list + .lc-head { margin-top: 1rem; }
+.lc-more { margin-top: 2rem; }
 
 /* Footer. */footer.site { background: var(--surface); border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; padding: 3rem 0 2.5rem; }
 .foot-grid { display: grid; gap: 2rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); align-items: start; margin-bottom: 1.5rem; }
@@ -290,7 +298,9 @@ footer.site p a { display: inline-block; padding: 0.6rem 0.1rem; }
   .stats li { animation: rise 0.7s ease-out both; animation-timeline: view(); animation-range: entry 0% entry 60%; }
   .stats li:nth-child(2) { animation-range: entry 15% entry 75%; }
   .stats li:nth-child(3) { animation-range: entry 30% entry 90%; }
-  .lc-line { stroke-dasharray: 236; stroke-dashoffset: 236; animation: draw 1.6s ease-out both; animation-timeline: --lc; animation-range: entry 0% entry 85%; }
+  .lc-line { stroke-dasharray: 220; stroke-dashoffset: 220; animation: draw 1.6s ease-out both; animation-timeline: --lc; animation-range: entry 0% entry 85%; }
+  .lc-line2 { stroke-dasharray: 280; stroke-dashoffset: 280; animation: draw 1.6s ease-out both; animation-timeline: --lc; animation-range: entry 15% entry 95%; }
+  .lc-key { stroke-dasharray: none; stroke-dashoffset: 0; animation: none; }
   .lc-pts a, .lc-seg, .lc-note { animation: fade 0.5s ease-out both; animation-timeline: --lc; animation-range: entry 60% entry 95%; }
   .lc-pts a:nth-child(1) { animation-range: entry 10% entry 45%; }
   .lc-pts a:nth-child(2) { animation-range: entry 20% entry 55%; }
@@ -300,6 +310,8 @@ footer.site p a { display: inline-block; padding: 0.6rem 0.1rem; }
   /* Landing on #curve (the home page link) plays the draw-in over time instead of on scroll. The animation names change so a new animation starts; switching only the timeline of a running one leaves its start time wrong. */
   #curve:target .lc-pts a, #curve:target .lc-seg, #curve:target .lc-note { animation-name: fade-now; animation-timeline: auto; animation-delay: 2s; }
   #curve:target .lc-line { animation-name: draw-now; animation-timeline: auto; animation-delay: 0.2s; }
+  #curve:target .lc-line2 { animation-name: draw-now; animation-timeline: auto; animation-delay: 1s; }
+  #curve:target .lc-key { animation: none; }
   #curve:target .lc-pts a:nth-child(1) { animation-delay: 0.45s; }
   #curve:target .lc-pts a:nth-child(2) { animation-delay: 0.8s; }
   #curve:target .lc-pts a:nth-child(3) { animation-delay: 1.1s; }
