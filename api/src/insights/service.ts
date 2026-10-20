@@ -1,6 +1,6 @@
 /**
  * REQ-20261018-exec-dashboard: pure assembly of the executive insights bodies from the aggregates read by
- * `db/insights.ts` (no SQL, no database access here). Fills missing statuses, buckets and ISO weeks with
+ * `db/insights.ts` and `db/insights-leakage.ts` (no SQL, no database access here). Fills missing statuses, buckets and ISO weeks with
  * zeros, converts durations to hours and ratios to floored basis points. Every list has a fixed order.
  */
 import {
@@ -30,8 +30,6 @@ import {
 import type { AnalysisFailureCounts } from '../audit/analysis-failures.js';
 import type {
   AgeingRow,
-  CarrierRow,
-  CarrierTotals,
   DdShareRow,
   DeadlineRow,
   DurationStats,
@@ -39,10 +37,10 @@ import type {
   InsightsPeriod,
   IntakeCounts,
   PeriodMoney,
-  RuleRow,
   StatusRow,
   WeekActionRow,
 } from '../db/insights.js';
+import type { CarrierRow, CarrierTotals, RuleRow } from '../db/insights-leakage.js';
 
 const DAY_MS = 86_400_000;
 const WEEK_MS = 7 * DAY_MS;

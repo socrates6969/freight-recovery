@@ -24,8 +24,6 @@ import { analysisFailureCounts } from '../audit/analysis-failures.js';
 import {
   ageingRows,
   approvalWeeks,
-  carrierHeader,
-  carrierLeakage,
   claimsByStatus,
   ddShareTotals,
   deadlineRows,
@@ -33,11 +31,11 @@ import {
   insightsRead,
   intakeCounts,
   periodMoney,
-  ruleLeakage,
   sendReadyDurations,
   type InsightsFilter,
   type InsightsPeriod,
 } from '../db/insights.js';
+import { carrierHeader, carrierLeakage, ruleLeakage } from '../db/insights-leakage.js';
 import { defineRoute, requireTenant } from '../http/route.js';
 import { strictBody } from '../http/strict-body.js';
 
