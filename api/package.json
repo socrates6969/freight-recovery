@@ -6,7 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/src/server.js",
-    "dev": "tsx --conditions=source watch src/server.ts",
+    "dev": "tsx watch --conditions=source src/server.ts",
     "seed": "tsx --conditions=source scripts/seed.ts",
     "test": "vitest run --project unit",
     "test:acceptance": "vitest run --project acceptance --passWithNoTests",
