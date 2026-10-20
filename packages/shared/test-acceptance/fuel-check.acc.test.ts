@@ -351,14 +351,18 @@ describe('T17 step-5/6 parity guard', () => {
       'analysis/py-text.ts': '64246b09e8a9b608d959e71528657e1b63673c1de8a2a748858d1e57b6955d37',
       'analysis/tariff-detention.ts': '1dd9e247e575238217ecf9d689ad854985616b16cddfe6f783dc8363a54c9772',
       'analysis/types.ts': 'b009eb1f482740fca0ae455d84dbdf85d698465136cd13d9d09d60f5b09174e6',
-      'charge-intel/classifier.ts': 'ad82fe9bd83ee02cde77fe314b7794aa6d9ff55bd9551ade00da236e0623d7af',
-      'charge-intel/constants.ts': 'd47fa30d441e0b42468b8d24419d62fdab20a8fb28996054bb25849463d3c86d',
-      'charge-intel/copy.ts': 'd194e85ff21ee13a9efa46f87a259dbcb037023946b8d369b74ff1f9c8ec5aa9',
-      'charge-intel/evaluate.ts': '106fa9a20d8937675f0e26df83e8366959cc07d15772e14f9a25335eff3b368b',
+      // REQ-20261019-seed-v2 (additive pin update, reviewed): classifier, constants, copy, evaluate and index point the
+      // default seed at tariff-seed-v2; seed-v2.ts and curve.ts (learning curve) are new; features, learned and seed-v1 unchanged.
+      'charge-intel/classifier.ts': '78511ff6da77d6e14d58beea260c62ff6d1f1a115e81daa4af4f5cf97120db4f',
+      'charge-intel/constants.ts': '82b34be267d9881c603ed0eafa3376a25de7643c6b954533f770d9185ecf7ccf',
+      'charge-intel/copy.ts': '56ab8c4450e2137cd10e90ef7f8fdb9af08854488e798dbd068c927daa395b55',
+      'charge-intel/curve.ts': '992a817d74d6ad3e50694ba9f5c2ebfd8e52eff97aaf380aed65c1430dc08de2',
+      'charge-intel/evaluate.ts': 'e843f73bac276aafe0fcb44e5224efb5f76ad8df64e912c657b6366aec98f1bf',
       'charge-intel/features.ts': '504781cf3017f9c1126c54d83066811cb2ca647d9a9d03fef36f886b7c7f1ee9',
-      'charge-intel/index.ts': 'f3ec702adcf68d7df75f15b03caa6e5b246455502643359c8fa802a5439e7597',
+      'charge-intel/index.ts': '90493ffe2fadd704deecfda7768d884a35526766b17a95a21672584dc87ea4cf',
       'charge-intel/learned.ts': 'c532a60f9c59ccff25a7ea276ac00feb42c37172f2f75ccae25cd9e562821787',
       'charge-intel/seed-v1.ts': '7de8d2d109cbb875371060fdd79981d23096eb0db274e7ffaf25f06a08993bf3',
+      'charge-intel/seed-v2.ts': '5a8ac080d89e0dda9696b97c47dccac5249e31aa0babf208cd8f74d522de55e1',
     };
     const SRC = resolve(ROOT, 'packages', 'shared', 'src');
     const present = ['analysis', 'charge-intel'].flatMap((d) => readdirSync(resolve(SRC, d)).filter((f) => !f.endsWith('.test.ts')).map((f) => `${d}/${f}`)).sort();

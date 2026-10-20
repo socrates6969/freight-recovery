@@ -56,6 +56,8 @@ export interface ChargeIntel {
   buildEvidenceLearned(docs: unknown[], b: Bundle, p: 'shipper' | 'carrier', s: Settings, now: Date, cls: Classifier | null): LearnedOut;
   SEED_V1: readonly SeedEntry[];
   SEED_SOURCES: Record<string, { label: string }>;
+  SEED_V2: readonly SeedEntry[];
+  SEED_V2_SOURCES: Record<string, { label: string }>;
 }
 export interface Posting { index: number; date: string; value: string; effectiveFrom: string; effectiveTo: string }
 export interface FscEval { rate: string; steps: number | null; row: number | null; reachesFirstStep: boolean }
@@ -123,10 +125,10 @@ export const I1 = (o: Partial<FuelInput> = {}): FuelInput => ({ shipDate: '2026-
 
 /** Oracle dependencies: step-5 classifyLine and (optionally) the test-owned C3 suggestion oracle. */
 export function oracleDeps(R: Root, C: ChargeIntel, labels: readonly TenantLabel[] | null): ODeps {
-  const ex = labels === null ? null : oExamples(C.SEED_V1, labels);
+  const ex = labels === null ? null : oExamples(C.SEED_V2, labels);
   return {
     classifyLine: (d) => R.classifyLine(d),
-    suggest: ex === null ? null : (d) => { const s = oSuggest(ex, d, C.SEED_SOURCES); return { abstained: s.abstained, category: s.category }; },
+    suggest: ex === null ? null : (d) => { const s = oSuggest(ex, d, C.SEED_V2_SOURCES); return { abstained: s.abstained, category: s.category }; },
     tolerance: R.DEFAULT_ANALYSIS_SETTINGS.amountTolerance,
     seriesLabel: 'U.S. average diesel price',
     citation: CITE_DIESEL,

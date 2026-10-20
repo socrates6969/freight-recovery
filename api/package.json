@@ -15,6 +15,7 @@
     "eval": "node dist/src/eval/cli.js",
     "eval:charges": "node dist/src/eval/charges.js",
     "eval:outlook": "node dist/src/eval/outlook.js",
+    "eval:curve": "node dist/src/eval/curve.js",
     "prices:import": "node dist/src/platform/prices-cli.js"
   },
   "dependencies": {

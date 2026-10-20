@@ -145,7 +145,7 @@ describe('additive DTO fields (C1, C3, C4, C5, C8)', () => {
   });
 
   it('ChargeLinesResponse requires influence (strict)', () => {
-    const r = { claimId: uuid, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v1', threshold: 0.3, lines: [] };
+    const r = { claimId: uuid, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v2', threshold: 0.3, lines: [] };
     expect(ChargeLinesResponse.safeParse(r).success).toBe(false);
     expect(ChargeLinesResponse.safeParse({ ...r, influence: null }).success).toBe(true);
     expect(ChargeLinesResponse.safeParse({ ...r, influence: { labels: [{ labelId: uuid, description: null, category: null }] } }).success).toBe(true);

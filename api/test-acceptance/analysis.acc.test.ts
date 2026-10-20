@@ -330,7 +330,8 @@ describe('AN-U01..U04 audit', () => {
       findingsCount: 3, pendingFindingsCount: 1, ignoredFindingsCount: 0, recoverableCents: 32500, pendingReviewCents: 15000,
       rulesVersion: 'rules-v1', bulk: false,
       // REQ-20261011-charge-intelligence C9 (additive): ld5001 has no keyword-`other` line, so nothing is learned
-      classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v1', tenantLabelCount: 0, learnedFindingsCount: 0, reviewFlagsCount: 0, learnedLabelIds: [],
+      // REQ-20261019-seed-v2 (additive): the default seed is tariff-seed-v2 (256 public names, 8 sources)
+      classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v2', tenantLabelCount: 0, learnedFindingsCount: 0, reviewFlagsCount: 0, learnedLabelIds: [],
       fuelCheckStatus: 'no_inputs', fscTableId: null, fscTableVersion: null, priceDate: null, fuelFindingsCount: 0, paramsSha256: null, priceImportId: null,
       // REQ-20261012-hardening C4.4 (additive): number of source documents = packet_sources rows
       documentCount: p.sources.length,

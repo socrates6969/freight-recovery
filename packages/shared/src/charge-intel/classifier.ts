@@ -1,7 +1,7 @@
 /**
  * Nearest-example charge classifier `charge-knn-v1` (Part C C3). Examples are the tenant's labels
- * (sorted by normalized text, then id) followed by the seed entries whose normalized text no tenant label
- * overrides. The nearest example and the 0.30 threshold are decided with exact integer arithmetic
+ * (sorted by normalized text, then id) followed by the seed entries (`tariff-seed-v2` by default) whose
+ * normalized text no tenant label overrides. The nearest example and the 0.30 threshold are decided with exact integer arithmetic
  * (exact doubles below 2^53, BigInt above), so no floating-point rounding can change a decision; the
  * reported similarity is one IEEE division rounded to three decimals. Pure and deterministic.
  * `ChargeSuggestion` / `NearestExample` are the C6 DTO types (one definition for the classifier and the API).
@@ -15,7 +15,7 @@ import type { ChargeSuggestion, NearestExample } from '../charge-intel-dto.js';
 
 import { SUGGESTION_THRESHOLD_DEN, SUGGESTION_THRESHOLD_NUM, type ChargeCategory } from './constants.js';
 import { chargeFeatures, featureDot, featureNorm2, featureText, type ChargeFeatures } from './features.js';
-import { SEED_SOURCES, SEED_V1, type SeedExample } from './seed-v1.js';
+import { SEED_V2, SEED_V2_SOURCES, type SeedExampleV2 } from './seed-v2.js';
 
 /** Display origin of a tenant label in suggestions. */
 export const TENANT_LABEL_SOURCE_LABEL = "Your team's label";
@@ -101,14 +101,14 @@ export function accepts(dot: number, qNorm2: number, eNorm2: number): boolean {
   return den * den * BigInt(dot) ** 2n >= num * num * BigInt(qNorm2) * BigInt(eNorm2);
 }
 
-function seedNearest(s: SeedExample): NearestExample {
-  return { text: s.text, category: s.label, origin: 'seed', source: s.source, sourceLabel: SEED_SOURCES[s.source].label, labelId: null };
+function seedNearest(s: SeedExampleV2): NearestExample {
+  return { text: s.text, category: s.label, origin: 'seed', source: s.source, sourceLabel: SEED_V2_SOURCES[s.source].label, labelId: null };
 }
 
 /** Seed examples with features, cached per seed array (analysis and the view share them). */
-const seedCache = new WeakMap<readonly SeedExample[], readonly (ChargeExample & { normalized: string })[]>();
+const seedCache = new WeakMap<readonly SeedExampleV2[], readonly (ChargeExample & { normalized: string })[]>();
 
-export function seedExamples(seed: readonly SeedExample[] = SEED_V1): readonly (ChargeExample & { normalized: string })[] {
+export function seedExamples(seed: readonly SeedExampleV2[] = SEED_V2): readonly (ChargeExample & { normalized: string })[] {
   let cached = seedCache.get(seed);
   if (!cached) {
     cached = Object.freeze(
@@ -136,7 +136,7 @@ function suggestion(fq: ChargeFeatures, rank: Ranker): ChargeSuggestion {
 }
 
 /** C3 example order: tenant labels (sorted by normalized text, then id; first per text), then the seed. */
-function exampleList(labels: readonly TenantLabelInput[], seed: readonly SeedExample[]): readonly ChargeExample[] {
+function exampleList(labels: readonly TenantLabelInput[], seed: readonly SeedExampleV2[]): readonly ChargeExample[] {
   const tenant = labels
     .map((l) => ({ l, nt: normText(l.description) }))
     .filter((x) => x.nt !== '')
@@ -212,7 +212,7 @@ const copySuggestion = (s: ChargeSuggestion): ChargeSuggestion => ({ ...s, neare
  * inverted index; build one classifier per request and reuse it for every line (results are memoized
  * per feature text, at most MEMO_MAX entries).
  */
-export function buildChargeClassifier(labels: readonly TenantLabelInput[], seed: readonly SeedExample[] = SEED_V1): ChargeClassifier {
+export function buildChargeClassifier(labels: readonly TenantLabelInput[], seed: readonly SeedExampleV2[] = SEED_V2): ChargeClassifier {
   const rank = indexedRanker(exampleList(labels, seed));
   const memo = new Map<string, ChargeSuggestion>();
   return Object.freeze({
@@ -229,7 +229,7 @@ export function buildChargeClassifier(labels: readonly TenantLabelInput[], seed:
 }
 
 /** Reference classifier by full scan (same contract; test oracle of `buildChargeClassifier`). */
-export function buildChargeClassifierByScan(labels: readonly TenantLabelInput[], seed: readonly SeedExample[] = SEED_V1): ChargeClassifier {
+export function buildChargeClassifierByScan(labels: readonly TenantLabelInput[], seed: readonly SeedExampleV2[] = SEED_V2): ChargeClassifier {
   const examples = exampleList(labels, seed);
   return Object.freeze({ classify: (d: string): ChargeSuggestion => suggestion(chargeFeatures(d), (fq) => rankNearest(fq, examples)) });
 }

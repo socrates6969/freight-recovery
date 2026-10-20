@@ -166,12 +166,13 @@
 <div class="card feature" id="charge-intelligence">
 <h3>Charge intelligence</h3>
 <p class="tag proto">Prototype, early access</p>
-<p>For each invoice line, the nearest of 175 charge names copied from six public carrier tariffs, with a similarity score. A suggestion appears only above a fixed threshold and only adds an item for review. Two more fixed scores order the work: a documented work-order score over stored amounts, and an explainable similarity between claims from carrier, shared rule ids, amount and perspective, with stated weights. No model is trained on your data; the only memory is your team's own labels.</p>
+<p>For each invoice line, the nearest of 256 charge names copied from seven public carrier tariffs and the U.S. GSA uniform rules tariff, with a similarity score. A suggestion appears only above a fixed threshold and only adds an item for review. Two more fixed scores order the work: a documented work-order score over stored amounts, and an explainable similarity between claims from carrier, shared rule ids, amount and perspective, with stated weights. No model is trained on your data; the only memory is your team's own labels.</p>
+<a class="more" href="/labs/#curve">The measured learning curves, in scoup Labs</a>
 <details><summary>What you enter, what you get, what it does not do</summary>
 <dl class="spec">
 <dt>You enter</dt><dd>Nothing beyond the claim; a label when a suggestion is wrong.</dd>
 <dt>You get</dt><dd>Suggested charge names with scores, a stated order for the claim list, and similar claims with the points behind each match.</dd>
-<dt>It does not</dt><dd>Confirm an amount. The leave-one-carrier-out check on the 175 seed names is a regression check on that set, not an accuracy measure on invoices.</dd>
+<dt>It does not</dt><dd>Confirm an amount. The leave-one-carrier-out check on the 256 seed names is a regression check on that set, not an accuracy measure on invoices.</dd>
 </dl>
 </details>
 </div>

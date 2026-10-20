@@ -101,7 +101,8 @@ describe('T9 analysis with learning (C4)', () => {
     expect(p.demandLetter).not.toContain('Sort and segregate');
     const e = await analyzedEvent(seq, k1.claimId);
     expect(Object.keys(A.baseMeta(e.metadata)).sort()).toEqual([...A.P7_ANALYZED_KEYS].sort());
-    expect(e.metadata).toMatchObject({ findingsCount: 2, pendingFindingsCount: 2, ignoredFindingsCount: 0, recoverableCents: 0, pendingReviewCents: 23500, rulesVersion: 'rules-v1', bulk: false, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v1', tenantLabelCount: 0, learnedFindingsCount: 1, reviewFlagsCount: 0, learnedLabelIds: [] });
+    // REQ-20261019-seed-v2 (additive): seedVersion is tariff-seed-v2 (the default seed of the classifier)
+    expect(e.metadata).toMatchObject({ findingsCount: 2, pendingFindingsCount: 2, ignoredFindingsCount: 0, recoverableCents: 0, pendingReviewCents: 23500, rulesVersion: 'rules-v1', bulk: false, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v2', tenantLabelCount: 0, learnedFindingsCount: 1, reviewFlagsCount: 0, learnedLabelIds: [] });
     const v = await owner.get('/audit/verify');
     expect(v.body.valid, v.text).toBe(true);
   });

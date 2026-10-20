@@ -25,7 +25,7 @@ const SOURCES: Record<string, { label: string; document: string; effective: stri
 
 export const C13 = {
   CHARGE_NOTE: "Suggestions compare each charge name with labelled examples: public carrier tariff charge names and your team's labels. They are not verified. A suggestion only adds items for human review; it never confirms an amount.",
-  CHARGE_EVAL_NOTE: 'Leave-one-carrier-out check on 175 public tariff charge names from 6 carriers. It is a regression check on this seed set, not an accuracy measure on invoices.',
+  CHARGE_EVAL_NOTE: 'Leave-one-carrier-out check on 256 public tariff charge names from 8 sources (7 carriers and the U.S. GSA uniform rules tariff). It is a regression check on this seed set, not an accuracy measure on invoices.',
   CATEGORY_LABELS: { detention: 'Detention', linehaul: 'Linehaul', fuel: 'Fuel', accessorial: 'Accessorial', other: 'Other' },
   CHARGE_TEXT: { tab: 'Charges', heading: 'Charge lines', rules: 'Rules', suggested: 'Suggested', noSuggestion: 'No suggestion', teamLabel: 'Team label', nearest: 'Nearest example', category: 'Category', save: 'Save label', saved: 'Label saved. It applies to future analyses.', empty: 'No invoice charge lines on the accepted documents of this claim.', forbidden: 'You do not have permission to label charges.', limit: 'This organization has reached the maximum number of charge labels.', rateLimited: 'Too many requests. Try again later.', failed: 'Could not save the label. Try again.' },
 };
@@ -40,7 +40,7 @@ describe('C1 constants and module surface', () => {
   it('constants', () => {
     for (const M of [R, C]) {
       expect(M.CHARGE_CLASSIFIER_VERSION).toBe('charge-knn-v1');
-      expect(M.SEED_VERSION).toBe('tariff-seed-v1');
+      expect(M.SEED_VERSION).toBe('tariff-seed-v2'); // REQ-20261019-seed-v2
       expect(M.SUGGESTION_THRESHOLD).toBe(0.3);
       expect([...M.CHARGE_CATEGORIES]).toEqual(['detention', 'linehaul', 'fuel', 'accessorial', 'other']);
       expect(M.CHARGE_LABELS_MAX).toBe(2000);
@@ -132,6 +132,37 @@ describe('T1 seed and attribution (C2)', () => {
   });
   it('C2 stores only names: no rates or money amounts in seed texts', () => {
     for (const e of C.SEED_V1) expect(e.text, e.text).not.toMatch(/\$\s?\d/);
+  });
+});
+
+// REQ-20261019-seed-v2: tariff-seed-v2 = SEED_V1 (unchanged, same objects) followed by the GSA 200-A and FedEx Freight names.
+describe('T1b seed-v2 and its provenance', () => {
+  it('256 entries: the 175 v1 entries by reference, then 81 added ones with exact keys and labels', () => {
+    expect(C.SEED_V2).toHaveLength(256);
+    expect(C.SEED_V2_ADDED).toHaveLength(81);
+    for (let i = 0; i < 175; i++) expect(C.SEED_V2[i]).toBe(C.SEED_V1[i]);
+    for (let i = 0; i < 81; i++) expect(C.SEED_V2[175 + i]).toBe(C.SEED_V2_ADDED[i]);
+    for (const e of C.SEED_V2_ADDED) { expect(Object.keys(e)).toEqual(['text', 'label', 'source']); expect(['gsa_2021', 'fedex_2026']).toContain(e.source); expect(['detention', 'fuel', 'linehaul', 'accessorial']).toContain(e.label); expect(e.text, e.text).not.toMatch(/\$\s?\d/); }
+    const count = (k: string) => C.SEED_V2.reduce((m: Record<string, number>, e: any) => ({ ...m, [e[k]]: (m[e[k]] ?? 0) + 1 }), {});
+    expect(count('label')).toEqual({ accessorial: 234, detention: 17, fuel: 4, linehaul: 1 });
+    expect(count('source')).toEqual({ xpo_2025: 43, dohrn_2025: 30, estes_2025: 29, magnum_2026: 27, gardewine_2025: 27, states_2023: 19, gsa_2021: 64, fedex_2026: 17 });
+  });
+  it('SEED_V2_SOURCES = the six v1 source objects, then gsa_2021 and fedex_2026 (first-appearance order), with provenance', () => {
+    expect(Object.keys(C.SEED_V2_SOURCES)).toEqual([...Object.keys(C.SEED_SOURCES), 'gsa_2021', 'fedex_2026']);
+    for (const k of Object.keys(C.SEED_SOURCES)) expect(C.SEED_V2_SOURCES[k]).toBe(C.SEED_SOURCES[k]);
+    for (const k of ['gsa_2021', 'fedex_2026']) {
+      expect(Object.keys(C.SEED_V2_SOURCES[k])).toEqual(['label', 'document', 'effective', 'url', 'retrieved']);
+      expect(C.SEED_V2_SOURCES[k].retrieved).toBe('2026-10-19');
+      expect(C.SEED_V2_SOURCES[k].url.startsWith('https://')).toBe(true);
+      expect(Object.keys(C.SEED_V2_PROVENANCE[k])).toEqual(['archive', 'sha256', 'extraction', 'terms']);
+      expect(C.SEED_V2_PROVENANCE[k].sha256).toMatch(/^[0-9a-f]{64}$/);
+    }
+    expect(C.SEED_V2_PROVENANCE.gsa_2021.sha256).toBe('053aac16023c4c0f4ef46c8338ac735a24adefe65b7bd2a99167618bfd1a1c43');
+    expect(C.SEED_V2_PROVENANCE.fedex_2026.sha256).toBe('7863bf5870f09fa05275662ab6289832c49769e723ed462fb752ee990a667014');
+    const firsts: string[] = [];
+    for (const e of C.SEED_V2) if (!firsts.includes(e.source)) firsts.push(e.source);
+    expect(firsts).toEqual(Object.keys(C.SEED_V2_SOURCES));
+    for (const o of [C.SEED_V2, C.SEED_V2_ADDED, C.SEED_V2_SOURCES, C.SEED_V2_PROVENANCE, ...C.SEED_V2_ADDED, ...Object.values(C.SEED_V2_SOURCES), ...Object.values(C.SEED_V2_PROVENANCE)]) expect(Object.isFrozen(o)).toBe(true);
   });
 });
 

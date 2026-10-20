@@ -233,7 +233,7 @@ describe.skipIf(!canRunDb)('charge labels (PostgreSQL)', () => {
       const r = await c.get(`/api/v1/claims/${acmeClaim}/charge-lines`, viewer);
       expect(r.statusCode, r.body).toBe(200);
       const body = ChargeLinesResponse.parse(r.json());
-      expect(body).toMatchObject({ claimId: acmeClaim, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v1', threshold: 0.3 });
+      expect(body).toMatchObject({ claimId: acmeClaim, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v2', threshold: 0.3 });
       const ev = await admin.query<{ metadata: Record<string, unknown> }>(
         `SELECT metadata FROM audit_events WHERE action = 'intelligence.viewed' AND target_id = $1 ORDER BY seq DESC LIMIT 1`,
         [acmeClaim],

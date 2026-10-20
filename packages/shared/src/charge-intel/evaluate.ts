@@ -1,6 +1,7 @@
 /**
  * Leave-one-carrier-out evaluation of the charge classifier over the seed set (Part C C11). For each
- * seed entry the candidates are the seed entries of the OTHER carriers, in seed order; nearest example
+ * seed entry the candidates are the seed entries of the OTHER sources (a source is one carrier tariff or
+ * the GSA uniform rules tariff), in seed order; nearest example
  * and acceptance exactly as in classification. A regression check on this seed set, not an accuracy
  * measure on invoices (CHARGE_EVAL_NOTE). Pure and deterministic.
  */
@@ -10,7 +11,7 @@ import type { ChargeEvalReportDto } from '../charge-intel-dto.js';
 import { accepts, rankNearest, rawSimilarity, roundSimilarity, seedExamples } from './classifier.js';
 import { CHARGE_CLASSIFIER_VERSION, SEED_VERSION, SUGGESTION_THRESHOLD, type ChargeCategory } from './constants.js';
 import { CHARGE_EVAL_NOTE } from './copy.js';
-import { SEED_SOURCES, SEED_V1, type SeedExample, type SeedSourceId } from './seed-v1.js';
+import { SEED_V2, SEED_V2_SOURCES, type SeedExampleV2, type SeedSourceIdV2 } from './seed-v2.js';
 
 type EvalCategory = 'detention' | 'linehaul' | 'fuel' | 'accessorial';
 
@@ -29,8 +30,11 @@ function byCat<T>(make: () => T): Record<EvalCategory, T> {
   return { detention: make(), linehaul: make(), fuel: make(), accessorial: make() };
 }
 
-/** Run the leave-one-carrier-out evaluation over `seed` (default SEED_V1) with no tenant labels. */
-export function evaluateLeaveOneCarrierOut(seed: readonly SeedExample[] = SEED_V1): ChargeEvalReportData {
+/**
+ * Run the leave-one-carrier-out evaluation over `seed` (default SEED_V2) with no tenant labels. `perCarrier`
+ * lists the seed's sources in first-appearance order (the registry order of SEED_V2_SOURCES).
+ */
+export function evaluateLeaveOneCarrierOut(seed: readonly SeedExampleV2[] = SEED_V2): ChargeEvalReportData {
   const ex = seedExamples(seed);
   const outcome = (i: number, distinct: boolean): Outcome => {
     const q = ex[i];
@@ -53,11 +57,11 @@ export function evaluateLeaveOneCarrierOut(seed: readonly SeedExample[] = SEED_V
   const distinctName = { top1Correct: 0, suggested: 0, correct: 0, wrong: 0, abstained: 0, accessorialRecognised: 0 };
   const keywordBaseline = { correct: 0, accessorialRecognised: 0 };
   let pipelineAccessorialCovered = 0;
-  const sources = Object.keys(SEED_SOURCES) as SeedSourceId[];
+  const sources = [...new Set(seed.map((s) => s.source))] as SeedSourceIdV2[];
   const per = new Map(
     sources.map((s) => [
       s,
-      { source: s, label: SEED_SOURCES[s].label, examples: 0, top1Correct: 0, accessorialTotal: 0, accessorialTop1: 0, accessorialRecognised: 0, abstained: 0, wrongSuggested: 0 },
+      { source: s, label: SEED_V2_SOURCES[s].label, examples: 0, top1Correct: 0, accessorialTotal: 0, accessorialTop1: 0, accessorialRecognised: 0, abstained: 0, wrongSuggested: 0 },
     ]),
   );
   const errors: ChargeEvalReportData['errors'] = [];

@@ -99,7 +99,8 @@ describe('T4 bundle B1 (C4.1-C4.5)', () => {
     const lrn = eb.evidence.result.findings.filter((f: any) => f.rule_id === 'LRN-ACCESSORIAL-REVIEW');
     expect(lrn).toHaveLength(1);
     expect(lrn[0].amount).toBe('1600.00');
-    expect(lrn[0].calculation[0]).toBe("Nearest labelled example: 'HEAVY LIFT CHARGES' (public tariff example, Gardewine GWN Tariff 100 (2025)) = accessorial, similarity 0.445.");
+    // REQ-20261019-seed-v2: the nearest public example of 'Freight charges' is now the GSA name 'OVERWEIGHT FREIGHT' (0.500).
+    expect(lrn[0].calculation[0]).toBe("Nearest labelled example: 'OVERWEIGHT FREIGHT' (public tariff example, GSA Uniform Rules Tariff 200-A (2021)) = accessorial, similarity 0.500.");
     expect(lrn[0].calculation).toContain('Authorized accessorials: none.');
     const c = mk('1600.00', { linehaul_rate: null, fuel_surcharge: '1600.00' });
     const ec = learned(c, 'shipper', L0);
@@ -231,7 +232,7 @@ const examplesMemo = new Map<string, OExample[]>();
 const examplesFor = (labels: any[]): OExample[] => {
   const k = JSON.stringify(labels);
   let ex = examplesMemo.get(k);
-  if (ex === undefined) { ex = oExamples(C.SEED_V1, labels); examplesMemo.set(k, ex); }
+  if (ex === undefined) { ex = oExamples(C.SEED_V2, labels); examplesMemo.set(k, ex); }
   return ex;
 };
 
@@ -252,7 +253,7 @@ function expectC4(b: any, labels: any[]) {
     if (seen.some((s) => s.key === key && s.c === c)) continue;
     seen.push({ key, c });
     if (R.classifyLine(ln.description) !== 'other' || c <= 0n) continue;
-    const s = oSuggest(ex, ln.description, C.SEED_SOURCES);
+    const s = oSuggest(ex, ln.description, C.SEED_V2_SOURCES);
     if (s.abstained || !s.nearest) continue;
     const exText = R.plain(s.nearest.text, 200);
     const origin = s.nearest.origin === 'seed' ? `public tariff example, ${s.nearest.sourceLabel}` : "your team's label";
