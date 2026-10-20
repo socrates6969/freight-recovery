@@ -52,7 +52,7 @@ def main() -> None:
         "# API reference (generated)",
         "",
         f"Generated from the application's own OpenAPI document: **{info['title']}**, "
-        f"API version `{info['version']}`. Interactive view: [Redoc](redoc.html). "
+        f"API version `{info['version']}`. "
         "Raw spec: [openapi.json](openapi.json).",
         "",
         '!!! warning "Pre-product"',

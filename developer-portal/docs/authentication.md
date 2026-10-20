@@ -1,8 +1,9 @@
 # Authentication
 
-!!! warning "Pre-product"
-    There is no self-serve signup. Keys are issued by an operator with a command-line tool
-    against a database they control. A hosted service does not exist yet.
+!!! warning "Prototype: keys for early-access teams only"
+    The hosted workspace API is a prototype and is not offered to customers yet. There is no
+    self-serve signup: keys are issued by an operator with a command-line tool against a database
+    they control, and only to early-access teams. There is no public base URL.
 
 Every route except `GET /health` needs an API key. The key identifies exactly one **tenant**;
 all data you create or read is scoped to that tenant.

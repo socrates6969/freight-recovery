@@ -1,11 +1,17 @@
-site_name: scoup.ai API (pre-product)
-site_description: Developer documentation for the scoup.ai detention/accessorial recovery API. Pre-product; documents the real current API.
-# No site_url on purpose: nothing is deployed yet. Set it when a real host exists.
+site_name: scoup.ai developer portal
+site_description: Developer documentation for the scoup.ai workspace API, a prototype that is not offered to customers yet. Documents the real current API.
+# Published under /docs/ of the marketing site: marketing/site/build.mjs copies site/ to dist/docs when
+# SITE_DOCS_DIR points at it, and .github/workflows/pages.yml does so on every deploy. site_url only feeds the
+# canonical link and the sitemap; page and asset links stay relative, so a local build works from any path.
+site_url: https://socrates6969.github.io/freight-recovery/docs/
 docs_dir: docs
 strict: true
 
 theme:
   name: material
+  # The pages load nothing from the network: no Google Fonts (font: false uses the system font stack),
+  # no analytics, no CDN scripts. marketing/site/test.mjs fails the deploy if an external URL appears.
+  font: false
   features:
     - navigation.sections
     - navigation.top
@@ -22,6 +28,10 @@ theme:
       toggle:
         icon: material/weather-sunny
         name: Light mode
+
+extra:
+  # No "Made with Material for MkDocs" footer link: the portal links to nothing outside the site.
+  generator: false
 
 markdown_extensions:
   - admonition
@@ -44,6 +54,6 @@ nav:
   - Rate limits (planned): rate-limits.md
   - Changelog: changelog.md
 
-# api/redoc.html and api/openapi.json are copied verbatim (not Markdown pages).
+# api/openapi.json is copied verbatim (not a Markdown page).
 not_in_nav: |
   /api/openapi.json
