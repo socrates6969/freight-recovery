@@ -56,6 +56,19 @@ ${h2}
         try_files $uri =404;
     }
 
+    # Document upload (POST /api/v1/imports/<batchId>/documents): the only route whose body may exceed the
+    # 64k default. Same limit as the API's IMPORT_MAX_FILE_BYTES (10485760) and as the WAF upload rule in
+    # infra/waf.tf; the API still enforces the limit authoritatively while streaming.
+    location ~ ^/api/v1/imports/[^/]+/documents$ {
+        client_max_body_size 10m;
+        proxy_request_buffering off;
+        proxy_pass http://api:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
     location /api/ {
         proxy_pass http://api:3001;
         proxy_http_version 1.1;
