@@ -12,9 +12,10 @@ let ex0: ReturnType<typeof oExamples>;
 beforeAll(async () => {
   C = await import('@fr/shared/charge-intel');
   L0 = C.buildChargeClassifier([]);
-  ex0 = oExamples(C.SEED_V1);
+  // REQ-20261019-seed-v2: the product's default seed is SEED_V2, so the oracle runs over SEED_V2 / SEED_V2_SOURCES.
+  ex0 = oExamples(C.SEED_V2);
 });
-const oracle = (q: string, labels: any[] = []) => oSuggest(labels.length ? oExamples(C.SEED_V1, labels) : ex0, q, C.SEED_SOURCES);
+const oracle = (q: string, labels: any[] = []) => oSuggest(labels.length ? oExamples(C.SEED_V2, labels) : ex0, q, C.SEED_V2_SOURCES);
 const plainSug = (s: any) => JSON.parse(JSON.stringify(s));
 const fmap = (m: any): Record<string, number> => (m instanceof Map ? Object.fromEntries(m) : { ...m });
 
@@ -41,7 +42,8 @@ const S08: Row[] = [
   ['Sort and segregate', 'accessorial', 0.836, false, null, 'SORT AND SEGREGATE SERVICE', 'dohrn_2025'],
   ['Appointment fee', 'accessorial', 0.825, false, null, 'Appointment', 'xpo_2025'],
   ['Driver waiting time', 'detention', 0.45, false, null, 'DETENTION - DRIVER WAIT', 'gardewine_2025'],
-  ['Freight charges', 'accessorial', 0.445, false, null, 'HEAVY LIFT CHARGES', 'gardewine_2025'],
+  // REQ-20261019-seed-v2: the GSA name 'OVERWEIGHT FREIGHT' (0.500) is nearer than v1's 'HEAVY LIFT CHARGES' (0.445).
+  ['Freight charges', 'accessorial', 0.5, false, null, 'OVERWEIGHT FREIGHT', 'gsa_2021'],
   ['Customs', 'accessorial', 0.542, false, null, 'Customs Broker Service', 'xpo_2025'],
   ['Lumper', 'accessorial', 0.549, false, null, 'Lumper Service Fee', 'xpo_2025'],
   ['Inside delivery', 'accessorial', 1, false, null, 'Inside Delivery', 'states_2023'],
@@ -49,7 +51,8 @@ const S08: Row[] = [
   ['Detention', 'detention', 1, false, null, 'DETENTION', 'magnum_2026'],
   ['Wait time', null, 0.271, true, 'below_threshold', 'DETENTION - DRIVER WAIT', 'gardewine_2025'],
   ['Pallet jack rental', null, 0.282, true, 'below_threshold', 'PALLET RETURNS (EXCLUDING C.P.C. OR CHEP PALLETS)', 'gardewine_2025'],
-  ['Scale ticket', null, 0.02, true, 'below_threshold', 'DANGEROUS ARTICLES', 'estes_2025'],
+  // REQ-20261019-seed-v2: the nearest name is now the GSA scale-weight item (0.148, still below the threshold).
+  ['Scale ticket', null, 0.148, true, 'below_threshold', 'WEIGHT - VERIFICATION- SECURE CERTIFIED PUBLIC SCALE WEIGHT ACTUAL CHARGES', 'gsa_2021'],
   ['Linehaul', null, 0.043, true, 'below_threshold', 'HYDRAULIC LIFTGATE SERVICE', 'dohrn_2025'],
   ['---', null, 0, true, 'empty', null, null],
 ];
@@ -60,8 +63,8 @@ describe('T2 suggestions with no tenant labels (C3)', () => {
       const s = L0.classify(q);
       expect([s.category, s.similarity, s.abstained, s.reason], q).toEqual([cat, sim, abst, reason]);
       if (nt === null) { expect(s.nearest, q).toBeNull(); continue; }
-      const seedEntry = C.SEED_V1.find((e: any) => e.text === nt && e.source === src);
-      expect(s.nearest, q).toEqual({ text: nt, category: seedEntry.label, origin: 'seed', source: src, sourceLabel: C.SEED_SOURCES[src!].label, labelId: null });
+      const seedEntry = C.SEED_V2.find((e: any) => e.text === nt && e.source === src);
+      expect(s.nearest, q).toEqual({ text: nt, category: seedEntry.label, origin: 'seed', source: src, sourceLabel: C.SEED_V2_SOURCES[src!].label, labelId: null });
       expect(plainSug(s), `${q} = oracle`).toEqual(oracle(q));
     }
   });
@@ -152,7 +155,8 @@ describe('T3 tenant labels (C3 example order, C5)', () => {
     ['Sort & segregate service', 'accessorial', 0.839, false, 'SORT AND SEGREGATE SERVICE', 'seed', 'dohrn_2025'],
     ['Freight charges', 'linehaul', 1, false, 'Freight charges', 'tenant', null],
     ['Freight charge', 'linehaul', 0.825, false, 'Freight charges', 'tenant', null],
-    ['Freight', 'linehaul', 0.663, false, 'Freight charges', 'tenant', null],
+    // REQ-20261019-seed-v2: the GSA seed name 'OVERWEIGHT FREIGHT' (0.753) is nearer than the tenant label 'Freight charges' (0.663).
+    ['Freight', 'accessorial', 0.753, false, 'OVERWEIGHT FREIGHT', 'seed', 'gsa_2021'],
     ['Wait time', null, 0.271, true, 'DETENTION - DRIVER WAIT', 'seed', 'gardewine_2025'],
   ];
   it('CI-S13 fixed table + oracle', () => {
@@ -161,7 +165,7 @@ describe('T3 tenant labels (C3 example order, C5)', () => {
       const s = L.classify(q);
       expect([s.category, s.similarity, s.abstained, s.nearest.text, s.nearest.origin], q).toEqual([cat, sim, abst, nt, origin]);
       if (origin === 'tenant') expect([s.nearest.source, s.nearest.sourceLabel, s.nearest.labelId], q).toEqual([null, "Your team's label", idOf[nt]]);
-      else expect([s.nearest.source, s.nearest.sourceLabel, s.nearest.labelId], q).toEqual([src, C.SEED_SOURCES[src!].label, null]);
+      else expect([s.nearest.source, s.nearest.sourceLabel, s.nearest.labelId], q).toEqual([src, C.SEED_V2_SOURCES[src!].label, null]);
       expect(plainSug(s), `${q} = oracle`).toEqual(oracle(q, labels));
     }
   });
@@ -236,7 +240,7 @@ describe('T17 query cap and performance (C3 featureText, fix round 1)', () => {
     const ms = performance.now() - t0;
     console.log(`[CI-S25] build + 250 classifications: ${ms.toFixed(0)} ms (bound 20000 ms)`);
     expect(ms).toBeLessThan(20000);
-    const ex = oExamples(C.SEED_V1, labels);
-    for (let i = 0; i < 250; i += 10) expect(plainSug(out[i]), `line ${i}`).toEqual(oSuggest(ex, qs[i]!, C.SEED_SOURCES));
+    const ex = oExamples(C.SEED_V2, labels);
+    for (let i = 0; i < 250; i += 10) expect(plainSug(out[i]), `line ${i}`).toEqual(oSuggest(ex, qs[i]!, C.SEED_V2_SOURCES));
   }, 180000);
 });

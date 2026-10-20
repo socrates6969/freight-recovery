@@ -668,14 +668,16 @@ user view is in [README, charge suggestions](../README.md#charge-suggestions-and
 
 **Honesty.** A suggestion is the category of the nearest labelled example when the similarity is at least
 0.30. It is not verified and not a probability. Learned findings have a fixed confidence of 0.5 and
-always need human review. The CI evaluation runs leave-one-carrier-out on the 175 seed names: it is a
+always need human review. The CI evaluation runs leave-one-carrier-out on the 256 seed names: it is a
 regression check on that seed set, not an accuracy measure on invoices (`CHARGE_EVAL_NOTE`). No trained
 model, no LLM call and no network call is involved. The shared and acceptance tests scan the copy for
 accuracy wording.
 
-**Data provenance.** The seed (`packages/shared/src/charge-intel/seed-v1.ts`) holds 175 charge names
-copied from six public carrier rules tariffs (XPO, Estes, Dohrn, Magnum, Gardewine, States Logistics), with
-the document, effective date, URL and retrieval date (2026-10-11) of each. It holds no rates, tariff text,
+**Data provenance.** The seed (`packages/shared/src/charge-intel/seed-v1.ts` and `seed-v2.ts`) holds 256 charge
+names copied from six public carrier rules tariffs (XPO, Estes, Dohrn, Magnum, Gardewine, States Logistics; 175
+names, retrieved 2026-10-11), the U.S. GSA Uniform Rules Tariff 200-A and the FedEx Freight accessorial sheet (81
+names, retrieved 2026-10-19, archive sha256 and reuse terms recorded in `SEED_V2_PROVENANCE`), with the document,
+effective date, URL and retrieval date of each. It holds no rates, tariff text,
 customers, shipments, invoices, secrets or e-mail addresses (security review S8: a search found only the
 six tariff URLs). Using real public names is an **owner decision** of 2026-10-10/11, recorded in the run
 request. It is in tension with the wording of CLAUDE.md hard rule 4 ("synthetic data only"), which was not

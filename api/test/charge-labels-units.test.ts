@@ -161,7 +161,7 @@ describe('deleteLabel, listLabels, chargeLines', () => {
     await expect(chargeLines(db as never, 'x')).rejects.toMatchObject({ statusCode: 404 });
     await expect(chargeLines(db as never, '77777777-7777-4777-8777-777777777777')).rejects.toMatchObject({ statusCode: 404 });
     const r = await chargeLines(db as never, CLAIM);
-    expect(r).toMatchObject({ claimId: CLAIM, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v1', threshold: 0.3 });
+    expect(r).toMatchObject({ claimId: CLAIM, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v2', threshold: 0.3 });
     expect(r.lines.map((l) => [l.index, l.description, l.ruleCategory, l.label?.category ?? null])).toEqual([
       [0, 'Lumper fee', 'accessorial', 'other'],
       [1, 'Linehaul', 'linehaul', null],

@@ -8,7 +8,7 @@ export const CHARGE_NOTE =
   "Suggestions compare each charge name with labelled examples: public carrier tariff charge names and your team's labels. They are not verified. A suggestion only adds items for human review; it never confirms an amount.";
 
 export const CHARGE_EVAL_NOTE =
-  'Leave-one-carrier-out check on 175 public tariff charge names from 6 carriers. It is a regression check on this seed set, not an accuracy measure on invoices.';
+  'Leave-one-carrier-out check on 256 public tariff charge names from 8 sources (7 carriers and the U.S. GSA uniform rules tariff). It is a regression check on this seed set, not an accuracy measure on invoices.';
 
 export const CATEGORY_LABELS: Readonly<Record<ChargeCategory, string>> = Object.freeze({
   detention: 'Detention',

@@ -1,10 +1,11 @@
 import { classifyLine } from '@fr/shared/analysis';
-import { CATEGORY_LABELS, CHARGE_NOTE, SEED_VERSION, buildChargeClassifier, formatSimilarity } from '@fr/shared/charge-intel';
+import { CATEGORY_LABELS, CHARGE_NOTE, SEED_V2, SEED_V2_SOURCES, SEED_VERSION, buildChargeClassifier, formatSimilarity } from '@fr/shared/charge-intel';
 import { useMemo, useState } from 'react';
 
 import { SafeText, TextArea } from '../ui';
 
 const MAX_NAMES = 200;
+const SEED_SUMMARY = `${SEED_V2.length} charge names from ${Object.keys(SEED_V2_SOURCES).length} public tariffs`;
 const EXAMPLE = 'Detention - Delivery\nTONU\nDriver Assist\nFSC\nLiftgate Service\nLumper fee\nLayover\nStop-off charge\nRedelivery';
 
 export function ChargeNames() {
@@ -23,7 +24,7 @@ export function ChargeNames() {
         <button type="button" className="btn" onClick={() => setText(EXAMPLE)}>Load examples</button>
         <button type="button" className="btn" onClick={() => setText('')}>Clear</button>
       </div>
-      <TextArea label="Charge names from your invoices" value={text} onChange={setText} rows={8} placeholder={EXAMPLE} hint={`One name per line, up to ${MAX_NAMES}. Compared with ${SEED_VERSION}: 175 charge names from six public carrier tariffs.`} />
+      <TextArea label="Charge names from your invoices" value={text} onChange={setText} rows={8} placeholder={EXAMPLE} hint={`One name per line, up to ${MAX_NAMES}. Compared with ${SEED_VERSION}: ${SEED_SUMMARY}.`} />
       {rows.length > 0 ? (
         <div className="scroll">
           <table className="stack" aria-label="Charge name suggestions">

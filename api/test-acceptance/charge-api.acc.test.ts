@@ -37,8 +37,8 @@ let seq0 = 0;
 const putLabel = (s: Session, body: unknown, o: any = {}) => I.put(s, '/charge-labels', body, o);
 const lines = (s: Session, id: string) => s.get(`/claims/${id}/charge-lines`);
 const oracleFor = async (labels: any[] = []) => {
-  const ex = oExamples(C.SEED_V1, labels);
-  return (q: string) => oSuggest(ex, q, C.SEED_SOURCES);
+  const ex = oExamples(C.SEED_V2, labels);
+  return (q: string) => oSuggest(ex, q, C.SEED_V2_SOURCES);
 };
 async function clearLabels(tenantId: string) {
   await withAdmin(async (c) => { await c.query('delete from charge_labels where tenant_id = $1', [tenantId]); });
@@ -74,7 +74,7 @@ describe('T7 charge lines (C5, C6)', () => {
     // REQ-20261012-hardening C3 (additive): required `influence`, null for a claim without a claim.analyzed event (HD-C01).
     expect(Object.keys(r.body).sort()).toEqual(['claimId', 'classifierVersion', 'influence', 'lines', 'seedVersion', 'threshold']);
     expect(r.body.influence).toBeNull();
-    expect([r.body.claimId, r.body.classifierVersion, r.body.seedVersion, r.body.threshold]).toEqual([k1.claimId, 'charge-knn-v1', 'tariff-seed-v1', 0.3]);
+    expect([r.body.claimId, r.body.classifierVersion, r.body.seedVersion, r.body.threshold]).toEqual([k1.claimId, 'charge-knn-v1', 'tariff-seed-v2', 0.3]);
     const o = await oracleFor();
     expect(r.body.lines.map((l: any) => [l.index, l.description, l.amount, l.ruleCategory, l.label])).toEqual([
       [0, 'Linehaul', '1500.00', 'linehaul', null], [1, 'Fuel surcharge', '300.00', 'fuel', null], [2, 'Sort and segregate', '85.00', 'other', null],

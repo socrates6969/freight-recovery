@@ -11,7 +11,9 @@ let rep: any;
 beforeAll(async () => {
   R = await import('@fr/shared');
   C = await import('@fr/shared/charge-intel');
-  rep = C.evaluateLeaveOneCarrierOut();
+  // REQ-20261019-seed-v2: the T5 numbers are the tariff-seed-v1 numbers, reproduced on an explicit SEED_V1 run; the
+  // default (SEED_V2) report is checked against the oracle in T5b below.
+  rep = C.evaluateLeaveOneCarrierOut(C.SEED_V1);
 });
 
 const PER = [
@@ -31,7 +33,7 @@ describe('T5 leave-one-carrier-out report (C11)', () => {
   it('CI-S16 header', () => {
     expect(rep.evaluation).toBe('leave-one-carrier-out');
     expect(rep.classifierVersion).toBe('charge-knn-v1');
-    expect(rep.seedVersion).toBe('tariff-seed-v1');
+    expect(rep.seedVersion).toBe('tariff-seed-v2');
     expect(rep.threshold).toBe(0.3);
     expect(rep.note).toBe(R.CHARGE_EVAL_NOTE);
     expect(rep.examples).toBe(175);
@@ -71,11 +73,32 @@ describe('T5 leave-one-carrier-out report (C11)', () => {
     expect(schema, 'ChargeEvalReport schema exported').toBeTruthy();
     const parsed = schema.parse(rep);
     expect(parsed).toEqual(rep);
-    expect(C.evaluateLeaveOneCarrierOut()).toEqual(rep);
+    expect(C.evaluateLeaveOneCarrierOut(C.SEED_V1)).toEqual(rep);
     expect(JSON.parse(JSON.stringify(rep))).toEqual(rep);
   });
   it('the report is honest: note wording and no accuracy claim', () => {
     expect(rep.note).toContain('not an accuracy measure');
     expect(JSON.stringify(rep)).not.toMatch(/accuracy"|"accuracy|guarantee/i);
+  });
+});
+
+// REQ-20261019-seed-v2: the default report is over tariff-seed-v2 (256 names, 8 sources); the oracle reproduces it.
+describe('T5b leave-one-carrier-out over tariff-seed-v2 (default)', () => {
+  let v2: any;
+  beforeAll(() => { v2 = C.evaluateLeaveOneCarrierOut(); });
+  it('header and the measured seed-v2 numbers (the CI gate: top-1 254, accessorial top-1 233, accessorial recognised 215, wrong 1)', () => {
+    expect([v2.seedVersion, v2.examples, v2.carriers, v2.note]).toEqual(['tariff-seed-v2', 256, 8, R.CHARGE_EVAL_NOTE]);
+    expect([v2.top1.correct, v2.top1.total, v2.top1.byCategory.accessorial.correct]).toEqual([254, 256, 233]);
+    expect([v2.atThreshold.suggested, v2.atThreshold.correct, v2.atThreshold.wrong, v2.atThreshold.abstained, v2.atThreshold.byCategory.accessorial.recognised]).toEqual([236, 235, 1, 20, 215]);
+    expect(v2.distinctName).toEqual({ top1Correct: 254, suggested: 236, correct: 235, wrong: 1, abstained: 20, accessorialRecognised: 215 });
+    expect(v2.keywordBaseline).toEqual({ correct: 49, accessorialRecognised: 28 });
+    expect(v2.perCarrier.map((p: any) => p.source)).toEqual(Object.keys(C.SEED_V2_SOURCES));
+    expect(v2.errors.map((e: any) => e.text)).toEqual(['INTERNATIONAL SECURITY SURCHARGE', 'Base Rates']);
+  });
+  it('the oracle reproduces every number of the seed-v2 report; deterministic', () => {
+    const o = oLoco(C.SEED_V2, Object.keys(C.SEED_V2_SOURCES), C.SEED_V2_SOURCES, (t) => R.classifyLine(t));
+    for (const k of ['examples', 'carriers', 'top1', 'atThreshold', 'distinctName', 'keywordBaseline', 'pipelineAccessorialCovered', 'perCarrier', 'errors'] as const) expect(v2[k], `oracle `).toEqual(JSON.parse(JSON.stringify(o[k])));
+    expect((R.ChargeEvalReport ?? C.ChargeEvalReport).parse(v2)).toEqual(v2);
+    expect(C.evaluateLeaveOneCarrierOut()).toEqual(v2);
   });
 });
