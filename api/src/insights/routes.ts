@@ -11,12 +11,15 @@ import {
   InsightsDeadlinesQuery,
   InsightsLeakage,
   InsightsLeakageQuery,
+  InsightsRecovery,
+  InsightsRecoveryQuery,
   InsightsStages,
   InsightsStagesQuery,
   InsightsSummary,
   InsightsSummaryQuery,
   InsightsThroughput,
   InsightsThroughputQuery,
+  OUTCOME_REVIEWER_HOURS_CAP,
 } from '@fr/shared';
 import type { FastifyInstance } from 'fastify';
 
@@ -36,12 +39,14 @@ import {
   type InsightsPeriod,
 } from '../db/insights.js';
 import { carrierHeader, carrierLeakage, ruleLeakage } from '../db/insights-leakage.js';
+import { auditedNoFindingCount, recoveryByResponse, recoveryByRule, reviewerSpan } from '../db/insights-recovery.js';
 import { defineRoute, requireTenant } from '../http/route.js';
 import { strictBody } from '../http/strict-body.js';
 
-import { carrierBody, deadlinesBody, ruleBody, stagesBody, summaryBody, throughputBody } from './service.js';
+import { carrierBody, deadlinesBody, recoveryBody, ruleBody, stagesBody, summaryBody, throughputBody } from './service.js';
 
 const P = '/api/v1';
+const HOUR_MS = 3_600_000;
 
 export interface InsightsDeps {
   now: () => Date;
@@ -159,6 +164,29 @@ export function registerInsightsRoutes(app: FastifyInstance, deps: InsightsDeps)
         return throughputBody(now, period, f, weekRows, first, send);
       });
       return strictBody(InsightsThroughput, body);
+    },
+  });
+
+  // REQ-20261020-claim-outcomes: the Recovery section (recorded outcomes in the period; human-entered basis).
+  defineRoute(app, {
+    method: 'GET',
+    url: `${P}/insights/recovery`,
+    access: { kind: 'permission', permission: 'insights:read' },
+    rateGroup: 'intelligence',
+    schema: { query: InsightsRecoveryQuery },
+    handler: async (req, _reply, { query }) => {
+      const ctx = requireTenant(req);
+      const now = deps.now();
+      const f = filterOf(query);
+      const period: InsightsPeriod = { from: query.from, to: query.to };
+      const body = await insightsRead(ctx.db, async (tx) => {
+        const responses = await recoveryByResponse(tx, f, period);
+        const rules = await recoveryByRule(tx, f, period);
+        const span = await reviewerSpan(tx, f, period, OUTCOME_REVIEWER_HOURS_CAP * HOUR_MS);
+        const noFinding = await auditedNoFindingCount(tx, f, period);
+        return recoveryBody(now, period, f, responses, rules, span, noFinding);
+      });
+      return strictBody(InsightsRecovery, body);
     },
   });
 }
