@@ -40,3 +40,5 @@ export * from './ocean-dd/index.js';
 export * from './ocean-dd-dto.js';
 // REQ-20261018-exec-dashboard: executive insights contract (read-only aggregates).
 export * from './insights-dto.js';
+// REQ-20261020-dd-deadline: D&D dispute deadline (pure, clock-free) and the reviewer-routing shadow contract.
+export * from './dd-deadline.js';
