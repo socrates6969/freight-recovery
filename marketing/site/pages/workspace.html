@@ -1,0 +1,288 @@
+<!--meta {"title":"Team workspace, feature by feature","description":"Each feature of the scoup.ai team workspace prototype: what it does, what you enter and get, and what it does not do. Not offered yet; early access on request.","path":"/workspace/","crumb":"Workspace","updated":"2026-10-20"} -->
+<section class="band page-head">
+<div class="container narrow">
+<p class="tag proto">Prototype, early access</p>
+<h1>The team workspace, <span class="hl">feature by feature</span></h1>
+<p class="lead">The hosted workspace runs the same rules engine as the free browser tools, with saved claims and a team around them. It is built and tested in our own environment, has processed no customer data and is not hosted for customers. Every feature below says what it does, what you enter, what you get and what it does not do.</p>
+<p class="actions"><a class="cta" href="/contact/">Request early access</a><a class="cta secondary" href="/app/">Open the browser app</a></p>
+</div>
+</section>
+
+<section>
+<div class="container">
+<h2>What runs where</h2>
+<p class="lead">Two labels appear on this site. <span class="tag live">Live in the browser app</span> marks the three tools you can use today, free and without an account. <span class="tag proto">Prototype, early access</span> marks everything in the hosted workspace.</p>
+<div class="tabs">
+<ul class="tablist">
+<li><a href="#in-browser">In your browser today</a></li>
+<li><a href="#in-workspace">In the workspace prototype</a></li>
+<li><a href="#not-yet">In neither yet</a></li>
+</ul>
+<div class="panel" id="in-browser">
+<ul class="grid">
+<li><h3>Freight invoice check</h3><p class="tag live">Live in the browser app</p><p>Accessorial, detention, linehaul and fuel lines against the rate confirmation and the time records, with every calculation shown.</p><a class="more" href="/platform/#freight-check">The rules, one by one</a></li>
+<li><h3>Ocean D&amp;D audit</h3><p class="tag live">Live in the browser app</p><p>Eight checks on a demurrage or detention invoice, entered by hand or imported from CSV, with the clause quoted next to each finding.</p><a class="more" href="/platform/#ocean-dd">The eight checks</a></li>
+<li><h3>Charge names</h3><p class="tag live">Live in the browser app</p><p>How each pasted charge name is classed by the fixed rules and which public tariff charge name it most resembles.</p><a class="more" href="/platform/#charge-names">How names are matched</a></li>
+</ul>
+<p><a class="cta" href="/app/">Open the app</a></p>
+</div>
+<div class="panel" id="in-workspace">
+<p>Twelve features, each described below with its status label. The workspace keeps the browser tools' rule: it never decides what is owed, never sends anything, and keeps a person in charge of every approval.</p>
+<ul class="linklist">
+<li><a class="more" href="#saved-claims">Saved claims with revisions and timelines</a></li>
+<li><a class="more" href="#document-import">Document import, every field confirmed by a person</a></li>
+<li><a class="more" href="#ocean-dd-claims">Ocean D&amp;D audit inside a claim</a></li>
+<li><a class="more" href="#four-eyes">Four-eyes approval</a></li>
+<li><a class="more" href="#fuel">Fuel surcharge checks against the weekly diesel price</a></li>
+<li><a class="more" href="#charge-intelligence">Charge intelligence</a></li>
+<li><a class="more" href="#charge-labels">Team charge labels</a></li>
+<li><a class="more" href="#exports">CSV and XLSX exports</a></li>
+<li><a class="more" href="#api">API with scoped keys</a></li>
+<li><a class="more" href="#quickbooks">QuickBooks Online reference data</a></li>
+<li><a class="more" href="#audit-log">Hash-linked audit log</a></li>
+<li><a class="more" href="#sign-in">Sign-in protection</a></li>
+</ul>
+</div>
+<div class="panel" id="not-yet">
+<p>Neither the browser tools nor the workspace prototype has these, and this site does not claim them.</p>
+<ul>
+<li>An independent security assessment or penetration test, and any compliance certification or attestation.</li>
+<li>Production hosting, a tested incident response plan, malware scanning of uploads, and a data retention and deletion policy.</li>
+<li>Reading scanned images: an uploaded image yields no fields, because there is no OCR.</li>
+<li>Taking documents from a mailbox, or a connection to a TMS, ERP or accounting system beyond the read-only QuickBooks Online reference data.</li>
+<li>Service terms and a privacy notice reviewed for real customer data. See <a href="/security/">security and privacy</a>.</li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+
+<section class="surface">
+<div class="container">
+<h2 id="claims">Claims and documents</h2>
+<div class="grid">
+<div class="card feature" id="saved-claims">
+<h3>Saved claims with revisions and timelines</h3>
+<p class="tag proto">Prototype, early access</p>
+<p>Each check becomes a claim with a number, an assignee and a status. Every edit creates a new packet revision and keeps the previous one as superseded, so the timeline shows who changed what, when, and why. A revision moves from pending review to approved or rejected; an approved one can be marked send-ready, and an edit at any point starts a new revision.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>The same figures as the browser tool, or documents accepted from the import queue; a reason with every revision.</dd>
+<dt>You get</dt><dd>A claim list to filter, sort and assign; the revision history of each claim; a content-hashed evidence packet per revision.</dd>
+<dt>It does not</dt><dd>Send anything. Marking a demand send-ready is the last step; the API imports no mailer or HTTP client, and a test asserts that.</dd>
+</dl>
+</details>
+</div>
+<div class="card feature" id="document-import">
+<h3>Document import</h3>
+<p class="tag proto">Prototype, early access</p>
+<p>PDF text, CSV and plain-text files are parsed in a separate worker process with time, memory and size limits and no network access. The file type comes from its bytes, never from the name the client sends. Every extracted field goes to a review queue; nothing reaches a claim until a person has confirmed or corrected it. Accepted documents are frozen by a database trigger and grouped by load number into claims.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>Files in batches, the document type when the detection is wrong, and a correction with its reason for any field.</dd>
+<dt>You get</dt><dd>A review queue, the accepted documents linked to each claim, and an append-only record of every review decision that stores only hashes of the values before and after.</dd>
+<dt>It does not</dt><dd>Accept a value on its own, read scanned images (no OCR), take attachments from a mailbox, or connect to a TMS.</dd>
+</dl>
+</details>
+</div>
+<div class="card feature" id="ocean-dd-claims">
+<h3>Ocean D&amp;D audit inside a claim</h3>
+<p class="tag proto">Prototype, early access</p>
+<p>The same eight checks as the browser tool, run on a demurrage or detention invoice entered in a claim: the content 46 CFR 541.6 requires, the 30-day issuance rule in 541.7, invoice and line arithmetic, and a recomputation against a public carrier tariff. The person who entered the invoice is recorded and cannot approve the claim.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>The invoice fields, each container's charged periods, your own clock evidence and, optionally, a tariff preset.</dd>
+<dt>You get</dt><dd>Findings with the clause quoted and the cited values, inside the claim's packet and timeline.</dd>
+<dt>It does not</dt><dd>Decide whether a charge is legally owed. Confirm current rules and any dispute with counsel or your customs broker.</dd>
+</dl>
+<p class="source">Source: Electronic Code of Federal Regulations, 46 CFR Part 541, current through 2026-10-15, https://www.ecfr.gov/current/title-46/chapter-IV/subchapter-B/part-541.</p>
+</details>
+</div>
+</div>
+</div>
+</section>
+
+<section class="band" id="four-eyes">
+<div class="container two-col">
+<div>
+<svg class="diagram" viewBox="0 0 360 300" role="img" aria-labelledby="fe-title">
+<title id="fe-title">The four-eyes rule: the author edits a claim revision; a second person approves it; the author's own approval is blocked, in the application and by database triggers</title>
+<defs><marker id="fe-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="dg-fill"/></marker></defs>
+<circle cx="70" cy="34" r="15" class="dg-person"/><path d="M48 70c0-13 10-20 22-20s22 7 22 20" class="dg-person"/>
+<text x="70" y="88" text-anchor="middle" class="dg-small">Author</text>
+<circle cx="290" cy="34" r="15" class="dg-person"/><path d="M268 70c0-13 10-20 22-20s22 7 22 20" class="dg-person"/>
+<text x="290" y="88" text-anchor="middle" class="dg-small">Second person</text>
+<rect x="8" y="108" width="150" height="54" rx="10" class="dg-box"/>
+<text x="83" y="131" text-anchor="middle" class="dg-text">Claim revision</text>
+<text x="83" y="150" text-anchor="middle" class="dg-small">edited, with a reason</text>
+<rect x="202" y="108" width="150" height="54" rx="10" class="dg-box accent"/>
+<text x="277" y="131" text-anchor="middle" class="dg-text">Approve or reject</text>
+<text x="277" y="150" text-anchor="middle" class="dg-small">by someone else</text>
+<path d="M70 92v14" class="dg-line" marker-end="url(#fe-arrow)"/>
+<path d="M290 92v14" class="dg-line" marker-end="url(#fe-arrow)"/>
+<path d="M160 135h40" class="dg-line" marker-end="url(#fe-arrow)"/>
+<path d="M112 62c40 0 70 20 88 48" class="dg-line no"/>
+<circle cx="160" cy="80" r="13" class="dg-stop"/><path d="M154 74l12 12M166 74l-12 12" class="dg-stop-x"/>
+<text x="160" y="110" text-anchor="middle" class="dg-small">own approval blocked</text>
+<path d="M277 164v26" class="dg-line" marker-end="url(#fe-arrow)"/>
+<rect x="202" y="192" width="150" height="54" rx="10" class="dg-box soft"/>
+<text x="277" y="215" text-anchor="middle" class="dg-text">Approved</text>
+<text x="277" y="234" text-anchor="middle" class="dg-small">send-ready, still not sent</text>
+<text x="8" y="276" class="dg-small">Checked by the application and again</text>
+<text x="8" y="292" class="dg-small">by database triggers.</text>
+</svg>
+</div>
+<div class="feature">
+<h2>Four-eyes approval</h2>
+<p class="tag proto">Prototype, early access</p>
+<p>A revision is approved by someone other than the people who shaped it. The author of the current revision, the person who accepted its source documents, the person who entered its ocean D&amp;D invoice and anyone whose charge label influenced its findings cannot approve it. The rule is checked in the application and again by database triggers, so a request that skips the application still fails.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>An approval or a rejection, with a reason, on a revision in the queue; pending findings must be acknowledged before approval.</dd>
+<dt>You get</dt><dd>An approval queue, a status on every revision and an audit event for every decision.</dd>
+<dt>It does not</dt><dd>Choose the reviewer, send the letter after approval, or work for a workspace of one: a second account is required to approve.</dd>
+</dl>
+</details>
+</div>
+</div>
+</section>
+
+<section>
+<div class="container">
+<h2 id="checks">Checks and intelligence</h2>
+<div class="grid">
+<div class="card feature" id="fuel">
+<h3>Fuel surcharge checks</h3>
+<p class="tag proto">Prototype, early access</p>
+<p>Store a carrier's fuel surcharge schedule as a table of diesel-price tiers. For a claim with a ship date and miles, the check reads the weekly U.S. diesel price for that week from the workspace's imported public price series (U.S. EIA data), looks up the table rate and compares it with the fuel line billed. The result is a preview computed on request; it never changes a stored packet.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>The carrier's table (versioned, archived rather than deleted) and each claim's ship date, miles and table.</dd>
+<dt>You get</dt><dd>The expected surcharge, the billed line and the difference, with the price observation and table version used. A cost outlook with ranges, built from bundled public price history (EIA and BLS data via FRED) and checked by walk-forward backtest, is a regression check of the outlook rules, not a promise about prices.</dd>
+<dt>It does not</dt><dd>Fetch anything during a request: price series are imported separately with their provenance. It does not know your contract's fuel clause unless you enter it as a table.</dd>
+</dl>
+</details>
+</div>
+<div class="card feature" id="charge-intelligence">
+<h3>Charge intelligence</h3>
+<p class="tag proto">Prototype, early access</p>
+<p>For each invoice line, the nearest of 175 charge names copied from six public carrier tariffs, with a similarity score. A suggestion appears only above a fixed threshold and only adds an item for review. Two more fixed scores order the work: a documented work-order score over stored amounts, and an explainable similarity between claims from carrier, shared rule ids, amount and perspective, with stated weights. No model is trained on your data; the only memory is your team's own labels.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>Nothing beyond the claim; a label when a suggestion is wrong.</dd>
+<dt>You get</dt><dd>Suggested charge names with scores, a stated order for the claim list, and similar claims with the points behind each match.</dd>
+<dt>It does not</dt><dd>Confirm an amount. The leave-one-carrier-out check on the 175 seed names is a regression check on that set, not an accuracy measure on invoices.</dd>
+</dl>
+</details>
+</div>
+<div class="card feature" id="charge-labels">
+<h3>Team charge labels</h3>
+<p class="tag proto">Prototype, early access</p>
+<p>Label a charge description once (detention, linehaul, fuel, accessorial or other) and the label applies to every line in your workspace with the same normalised text. A label that marks a line for review routes it to a person. The label memory is capped per workspace and every change is audited.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>One label per charge description, with its category.</dd>
+<dt>You get</dt><dd>For each line of a claim's accepted documents: the keyword class the rules use, the classifier's suggestion and your team's label, side by side.</dd>
+<dt>It does not</dt><dd>Change an amount, share labels between workspaces, or write the description itself into the audit metadata.</dd>
+</dl>
+</details>
+</div>
+</div>
+</div>
+</section>
+
+<section class="surface">
+<div class="container">
+<h2 id="out">Out and across</h2>
+<div class="grid">
+<div class="card feature" id="exports">
+<h3>CSV and XLSX exports</h3>
+<p class="tag proto">Prototype, early access</p>
+<p>Claims, packets and outcomes stream out as CSV or XLSX batch by batch, so memory stays bounded whatever the size. Text cells are normalised and neutralised against spreadsheet formulas; the XLSX holds inline strings and numbers only, with no formulas, links, macros, drawings or document properties, so a cell can never run anything when opened.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>The same filters as the claim list, and the format.</dd>
+<dt>You get</dt><dd>A file created on request, with an audit event that records its row count and the hash of the exact bytes sent; an interrupted download is recorded as aborted so a truncated file cannot pass as complete.</dd>
+<dt>It does not</dt><dd>Push data into another system; the API is the way to pull it.</dd>
+</dl>
+</details>
+</div>
+<div class="card feature" id="api">
+<h3>API with scoped keys</h3>
+<p class="tag proto">Prototype, early access</p>
+<p>Keys are stored as keyed hashes, each with scopes limited to what its creator may do (read claims, export claims, run imports), a rate limit, an optional expiry and a revocation with a reason. Key management itself requires a signed-in user: a key cannot create, list or revoke keys.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>A name, the scopes and an expiry.</dd>
+<dt>You get</dt><dd>The key once, at creation; a list with each key's status (active, expired or revoked); access to claims, exports and imports within the scopes.</dd>
+<dt>It does not</dt><dd>Act as a user. A key cannot approve a revision, manage users or manage keys.</dd>
+</dl>
+</details>
+</div>
+<div class="card feature" id="quickbooks">
+<h3>QuickBooks Online reference data</h3>
+<p class="tag proto">Prototype, early access</p>
+<p>A read-only snapshot of the chart of accounts and the vendor list of a connected QuickBooks Online company, replaced on each sync and stored per workspace. The access token is used for the request and never stored.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>A connection through Intuit's own sign-in, then a sync when you want a fresh snapshot.</dd>
+<dt>You get</dt><dd>Accounts and vendors as reference values in the workspace, with the time of the snapshot.</dd>
+<dt>It does not</dt><dd>Write anything to QuickBooks: no bills, no vendors, no journal entries. It has been tested with recorded responses, not yet against a live Intuit sandbox.</dd>
+</dl>
+</details>
+</div>
+</div>
+</div>
+</section>
+
+<section>
+<div class="container">
+<h2 id="controls">Controls</h2>
+<div class="grid">
+<div class="card feature" id="audit-log">
+<h3>Hash-linked audit log</h3>
+<p class="tag proto">Prototype, early access</p>
+<p>Every change appends an event to a chain per workspace. Each event's SHA-256 hash covers the previous hash and the event itself, so a row that is altered, removed or reordered breaks the chain, and a verifier reports the first break. The event is written in the same database transaction as the change it records. Metadata never carries invoice text, descriptions or file names.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>Nothing; it is written with every change.</dd>
+<dt>You get</dt><dd>A readable log per claim and per workspace with actor, role, action and time, and a chain verification result.</dd>
+<dt>It does not</dt><dd>Replace an external timestamp or signature. It shows order and integrity inside the database; it is not proof against someone who controls the database itself.</dd>
+</dl>
+</details>
+</div>
+<div class="card feature" id="sign-in">
+<h3>Sign-in protection</h3>
+<p class="tag proto">Prototype, early access</p>
+<p>Passwords are hashed with Argon2id. Owners, administrators and platform staff must use a second factor (an authenticator app, with recovery codes). Sessions use rotating refresh tokens with reuse detection, and repeated failures lock the account for a period. Roles are read from the database on every request, never from a token or header.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>Email and password, and the authenticator code for a privileged role.</dd>
+<dt>You get</dt><dd>Six workspace roles from owner to viewer, invitations limited to roles below your own, and a session that ends when a refresh token is reused.</dd>
+<dt>It does not</dt><dd>Offer single sign-on or passkeys, and it has had no independent assessment.</dd>
+</dl>
+</details>
+</div>
+<div class="card feature" id="tenants">
+<h3>Workspace isolation</h3>
+<p class="tag proto">Prototype, early access</p>
+<p>Every workspace is a tenant. Tenant tables carry forced row-level security in the database and every request runs in a tenant-scoped transaction, designed to limit cross-tenant reads from any query path, including a bug in the application.</p>
+<details><summary>What you enter, what you get, what it does not do</summary>
+<dl class="spec">
+<dt>You enter</dt><dd>Nothing; it is the shape of the database.</dd>
+<dt>You get</dt><dd>Claims, documents, labels, keys and the audit chain scoped to your workspace.</dd>
+<dt>It does not</dt><dd>Stand on an independent audit or on production hosting; neither exists yet.</dd>
+</dl>
+</details>
+</div>
+</div>
+</div>
+</section>
+
+<section class="band gradient">
+<div class="container narrow center">
+<h2>Early access</h2>
+<p class="lead">The workspace is not priced and not hosted for customers. If you want to be an early-access team, write to us with your volume of invoices and the systems you use.</p>
+<p class="actions"><a class="cta" href="/contact/">Request early access</a><a class="cta secondary" href="/pricing/">Pricing</a></p>
+</div>
+</section>

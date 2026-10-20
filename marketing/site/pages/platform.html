@@ -1,4 +1,4 @@
-<!--meta {"title":"Product: the rules behind each check","description":"Every rule the scoup.ai browser tools apply to freight invoices, ocean D&D invoices and charge names, and what the team workspace prototype adds.","path":"/platform/","crumb":"Product","updated":"2026-10-19"} -->
+<!--meta {"title":"Product: the rules behind each check","description":"Every rule the scoup.ai browser tools apply to freight invoices, ocean D&D invoices and charge names, and what the team workspace prototype adds.","path":"/platform/","crumb":"Product","updated":"2026-10-20"} -->
 <section class="band page-head">
 <div class="container narrow">
 <h1>The product, rule by rule</h1>
@@ -9,7 +9,8 @@
 
 <section>
 <div class="container prose">
-<h2>Freight invoice check</h2>
+<h2 id="freight-check">Freight invoice check</h2>
+<p class="tag live">Live in the browser app</p>
 <p>Inputs: the invoice lines (description and amount), the rate confirmation terms (linehaul, fuel surcharge, detention free hours, hourly rate and cap, authorized accessorials) and, optionally, the appointment, arrival and departure times from the bill of lading or gate record. Choose the shipper's or the carrier's perspective.</p>
 <div class="scroll"><table>
 <thead><tr><th>Rule</th><th>What it flags</th></tr></thead>
@@ -24,7 +25,8 @@
 </table></div>
 <p>Findings are split into <strong>confirmed</strong> (counted in the pre-review estimate) and <strong>needs human review</strong> (listed, never counted). Each finding carries its rule, its fixed confidence setting and its calculation steps. The packet (Markdown), the findings file (JSON) and the draft letter (text) are created on your device.</p>
 
-<h2>Ocean D&amp;D audit</h2>
+<h2 id="ocean-dd">Ocean D&amp;D audit</h2>
+<p class="tag live">Live in the browser app</p>
 <p>Inputs: the invoice fields 46 CFR 541.6 requires, each container with its charged periods, your own evidence (clock dates, cargo availability, dates a return was refused), and optionally a public carrier tariff preset to recompute against. A CSV import with the same columns loads a whole invoice at once.</p>
 <div class="scroll"><table>
 <thead><tr><th>Check</th><th>What it does</th></tr></thead>
@@ -42,11 +44,14 @@
 <p>Tariff presets are public figures from carriers' US tariff documents as published on the retrieval date shown in the app, with their source and verification level; your service contract or a newer tariff may differ. The audit surfaces dates and required fields for review; it does not decide whether a charge is legally owed. Confirm current rules and any dispute with counsel or your customs broker.</p>
 <p class="source">Sources: Electronic Code of Federal Regulations, 46 CFR Part 541, current through 2026-10-15, https://www.ecfr.gov/current/title-46/chapter-IV/subchapter-B/part-541; Federal Maritime Commission, "U.S. Court of Appeals Issues Decision in Case on Demurrage and Detention Billing Practices", https://www.fmc.gov/articles/u-s-court-of-appeals-issues-decision-in-case-on-demurrage-and-detention-billing-practices/, accessed 2026-10-19.</p>
 
-<h2>Charge names</h2>
+<h2 id="charge-names">Charge names</h2>
+<p class="tag live">Live in the browser app</p>
 <p>Carriers name the same charge in many ways, and a charge under an unfamiliar name is easy to skip. The tool shows two views of each name you paste: the fixed-rule class the invoice check uses (detention, linehaul, fuel, accessorial, other) and the nearest of 175 charge names from six public carrier tariffs, with a similarity score. A suggestion is only shown above a fixed threshold, and it only adds an item for review; it never confirms an amount.</p>
 
-<h2>Team workspace (prototype, not offered yet)</h2>
-<p>The hosted workspace runs the same engine with saved claims and a team around them: document import parsed in an isolated worker with every extracted field confirmed by a person, revisions and timelines, a four-eyes approval rule enforced in the application and by database triggers, a hash-linked audit log, team charge labels that route lines to review, fuel surcharge checks against the weekly EIA diesel price, CSV and XLSX exports, an API with scoped keys, and QuickBooks Online chart-of-accounts and vendor reference data. It is built and tested in our own environment, has processed no customer data, and is not hosted for customers. <a href="/pricing/">Early access</a>.</p>
+<h2 id="workspace">Team workspace</h2>
+<p class="tag proto">Prototype, early access</p>
+<p>The hosted workspace runs the same engine with saved claims and a team around them: document import with every extracted field confirmed by a person, revisions and timelines, four-eyes approval, a hash-linked audit log, team charge labels, fuel surcharge checks, exports, an API with scoped keys and QuickBooks Online reference data. It is built and tested in our own environment, has processed no customer data, and is not hosted for customers.</p>
+<p><a class="more" href="/workspace/">Every workspace feature, with what it does and does not do</a></p>
 
 <h2>Limits</h2>
 <ul>
