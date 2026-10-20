@@ -1,8 +1,8 @@
 # Security + cache headers for hosts that honour a Netlify/Cloudflare-style _headers file.
 # On any other host, set the same headers in that host's config. The site loads no script and
-# no third-party resource, so the CSP can stay this strict.
+# no third-party resource (the two web fonts are self-hosted under /fonts/), so the CSP can stay this strict.
 /*
-  Content-Security-Policy: default-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; style-src 'self'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
   Referrer-Policy: no-referrer
@@ -13,5 +13,7 @@
   Cache-Control: public, max-age=3600
 /brand/*
   Cache-Control: public, max-age=86400
+/fonts/*
+  Cache-Control: public, max-age=604800
 /favicon.svg
   Cache-Control: public, max-age=86400

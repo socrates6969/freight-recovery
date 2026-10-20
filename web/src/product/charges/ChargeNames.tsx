@@ -26,18 +26,18 @@ export function ChargeNames() {
       <TextArea label="Charge names from your invoices" value={text} onChange={setText} rows={8} placeholder={EXAMPLE} hint={`One name per line, up to ${MAX_NAMES}. Compared with ${SEED_VERSION}: 175 charge names from six public carrier tariffs.`} />
       {rows.length > 0 ? (
         <div className="scroll">
-          <table aria-label="Charge name suggestions">
+          <table className="stack" aria-label="Charge name suggestions">
             <thead>
               <tr><th>Charge name</th><th>Fixed-rule class</th><th>Suggested category</th><th>Similarity</th><th>Nearest public tariff name</th></tr>
             </thead>
             <tbody>
               {rows.map((r, i) => (
                 <tr key={i}>
-                  <td><SafeText value={r.name} /></td>
-                  <td>{CATEGORY_LABELS[r.rule]}</td>
-                  <td>{r.suggestion.category ? CATEGORY_LABELS[r.suggestion.category] : <span className="muted">No suggestion{r.suggestion.reason === 'below_threshold' ? ' (below threshold)' : ''}</span>}</td>
-                  <td className="num">{formatSimilarity(r.suggestion.similarity)}</td>
-                  <td className="text-sm">{r.suggestion.nearest ? <><SafeText value={r.suggestion.nearest.text} /> <span className="muted">({r.suggestion.nearest.sourceLabel})</span></> : <span className="muted">none</span>}</td>
+                  <td data-label="Charge name"><SafeText value={r.name} /></td>
+                  <td data-label="Fixed-rule class">{CATEGORY_LABELS[r.rule]}</td>
+                  <td data-label="Suggested category">{r.suggestion.category ? CATEGORY_LABELS[r.suggestion.category] : <span className="muted">No suggestion{r.suggestion.reason === 'below_threshold' ? ' (below threshold)' : ''}</span>}</td>
+                  <td className="num" data-label="Similarity">{formatSimilarity(r.suggestion.similarity)}</td>
+                  <td className="text-sm" data-label="Nearest public tariff name">{r.suggestion.nearest ? <><SafeText value={r.suggestion.nearest.text} /> <span className="muted">({r.suggestion.nearest.sourceLabel})</span></> : <span className="muted">none</span>}</td>
                 </tr>
               ))}
             </tbody>

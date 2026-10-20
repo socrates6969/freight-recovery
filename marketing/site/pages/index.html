@@ -1,10 +1,28 @@
 <!--meta {"title":"Check freight invoices in your browser","description":"Free browser-based checks of accessorial, detention and ocean D&D invoices against the rate confirmation, tariff and FMC billing rule. Nothing is uploaded.","path":"/","updated":"2026-10-19","faq":[["Is it free?","Yes. The browser tools are free to use, with no account and no sign-up. A hosted team workspace is a prototype and is not offered yet."],["Where does my data go?","Nowhere. The app runs in your browser, makes no network requests after it loads, sets no cookies and keeps nothing after you close the page. Downloads are created on your device."],["What does it check?","Accessorial and detention lines on carrier and broker invoices against the rate confirmation; ocean demurrage and detention invoices against 46 CFR Part 541 and public carrier tariffs; and charge names across carriers. Every finding shows its arithmetic."],["Does it tell me what I owe?","No. It applies fixed, published rules to the figures you enter and lists findings for a person to review. Whether a charge is owed depends on your contract and the facts; confirm with counsel or your customs broker."],["Can it read my PDFs?","Not in the browser tools: you type or paste the figures, or import a CSV for ocean D&D invoices. Document parsing is part of the team workspace prototype."],["Is there a team version?","A hosted workspace with saved claims, document import, four-eyes approval and accounting reference data exists as a prototype. It is not offered yet; contact us for early access."],["Is this legal advice?","No. The rules, sources and arithmetic are shown so you and your counsel can decide."],["Who is behind it?","See the About page."]]} -->
-<h1>Check freight invoices in your browser.</h1>
-<p class="lead">scoup.ai compares every accessorial and detention line with the rate confirmation that should have authorized it, audits ocean demurrage and detention invoices against 46 CFR Part 541 and the carrier's tariff, and shows each step of the arithmetic. It runs entirely in your browser: nothing you enter is uploaded, stored or sent to anyone.</p>
-<p><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/how-it-works/">See how it works</a></p>
-<p class="draft">Free, no account. The checks are fixed rules on the figures you enter; the findings are drafts for a person to review, not a decision about what is owed and not legal advice.</p>
 
-<h2>Three tools, one evidence trail</h2>
+<section class="band hero">
+<div class="container hero-inner">
+<p class="pill">Free, no account, runs in your browser</p>
+<h1>Check freight invoices in your browser. <span class="hl">Nothing uploaded.</span></h1>
+<p class="lead">scoup.ai compares every accessorial and detention line with the rate confirmation that should have authorized it, audits ocean demurrage and detention invoices against 46 CFR Part 541 and the carrier's tariff, and shows each step of the arithmetic. It runs entirely in your browser: nothing you enter is uploaded, stored or sent to anyone.</p>
+<p class="actions"><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/how-it-works/">See how it works</a></p>
+<p class="draft">Free, no account. The checks are fixed rules on the figures you enter; the findings are drafts for a person to review, not a decision about what is owed and not legal advice.</p>
+<div class="preview" role="figure" aria-label="What a check looks like: the synthetic example load LD-5001">
+<div class="preview-head"><span class="preview-title">Freight invoice check</span><span class="preview-tag">Synthetic example, load LD-5001</span></div>
+<ul class="preview-lines">
+<li><span class="preview-name">Linehaul</span><span class="preview-amount">$1,500.00</span><span class="flag over">$100.00 over the agreed $1,400.00</span></li>
+<li><span class="preview-name">Fuel surcharge</span><span class="preview-amount">$168.00</span><span class="flag ok">matches the rate confirmation</span></li>
+<li><span class="preview-name">Detention</span><span class="preview-amount">$300.00</span><span class="flag over">$225.00 over 1 h 30 min at $50.00 per hour</span></li>
+<li><span class="preview-name">Lumper</span><span class="preview-amount">$150.00</span><span class="flag review">not authorized; needs human review</span></li>
+</ul>
+<div class="preview-foot"><span>Confirmed findings, pre-review estimate</span><strong class="preview-total">$325.00</strong></div>
+</div>
+</div>
+</section>
+
+<section>
+<div class="container">
+<h2 class="center">Three tools, one evidence trail</h2>
 <div class="grid">
 <div class="card">
 <h3>Freight invoice check</h3>
@@ -19,7 +37,11 @@
 <p>Paste the charge names from your invoices and see how each is classed by the fixed rules and which public tariff charge name it most resembles, so a charge under an unfamiliar name is not skipped.</p>
 </div>
 </div>
+</div>
+</section>
 
+<section class="surface">
+<div class="container">
 <h2>How it works</h2>
 <ol class="steps">
 <li><strong>Enter the figures.</strong> Type or paste them from the invoice, the rate confirmation and the bill of lading or gate record. A synthetic example is one click away if you want to see the output first.</li>
@@ -27,17 +49,27 @@
 <li><strong>Review the findings.</strong> Confirmed findings are separated from items that need a person's judgement; each shows its calculation and, for ocean invoices, the cited values and the clause.</li>
 <li><strong>Download the packet and the draft letter.</strong> Markdown and JSON files are created in your browser. The letter is marked DRAFT and is never sent by the app.</li>
 </ol>
+</div>
+</section>
 
+<section>
+<div class="container">
 <h2>Built for the people who pay the invoices</h2>
-<ul>
+<ul class="grid">
 <li><strong>Shippers and brokers:</strong> transportation, logistics and AP teams checking carrier and broker invoices against the rate confirmation before paying or short-paying.</li>
 <li><strong>Importers and exporters:</strong> logistics managers checking container demurrage and detention invoices against the FMC billing rule and the carrier tariff within the dispute window the invoice allows.</li>
 <li><strong>Carriers:</strong> the same freight check, run from the carrier's side, lists detention and accessorials that were under-billed.</li>
 </ul>
+</div>
+</section>
 
+<section class="band">
+<div class="container two-col">
+<div>
 <h2>Privacy by design</h2>
 <p>The app is a static bundle served from this site. Once loaded, its content security policy forbids every network connection, so it cannot send what you enter anywhere. It sets no cookies, uses no browser storage and includes no analytics. Downloads are built on your device from the values on screen. See <a href="/security/">security and privacy</a> for the details and the limits.</p>
-
+</div>
+<div>
 <h2>What it does not do</h2>
 <ul>
 <li>It does not decide whether a charge is owed, and it does not give legal advice. Contracts and facts differ; confirm with counsel or your customs broker.</li>
@@ -45,15 +77,28 @@
 <li>It publishes no accuracy figures, because none have been measured on real customer documents. The rules are fixed and shown, so you can check every result by hand.</li>
 <li>It does not read PDFs or connect to a TMS, ERP or accounting system. Those belong to the team workspace, which is a prototype and not offered yet.</li>
 </ul>
+</div>
+</div>
+</section>
 
+<section class="surface">
+<div class="container prose">
 <h2>Ocean D&amp;D invoices and the FMC rule</h2>
 <p>46 CFR Part 541 sets the information a demurrage or detention invoice must contain, requires issuance within 30 calendar days of the charge last incurred, and gives the billed party at least 30 calendar days from issuance to request mitigation, refund or waiver (section 541.8). Section 541.4 is reserved following a court decision. The audit surfaces these fields and dates for review; deadlines and requirements depend on the billing party and the facts, so confirm current rules and any dispute with counsel or your customs broker.</p>
 <p class="source">Sources: Electronic Code of Federal Regulations, 46 CFR Part 541, current through 2026-10-15, https://www.ecfr.gov/current/title-46/chapter-IV/subchapter-B/part-541; Federal Maritime Commission, "U.S. Court of Appeals Issues Decision in Case on Demurrage and Detention Billing Practices", https://www.fmc.gov/articles/u-s-court-of-appeals-issues-decision-in-case-on-demurrage-and-detention-billing-practices/, accessed 2026-10-19; Federal Maritime Commission, Detention and Demurrage, https://www.fmc.gov/detention-and-demurrage/, accessed 2026-10-19.</p>
+</div>
+</section>
 
+<section class="band gradient">
+<div class="container narrow center">
 <h2>Pricing</h2>
-<p>The browser tools are free, without an account or a limit on how often you use them. A hosted team workspace, with saved claims, document import, four-eyes approval and QuickBooks reference data, exists as a prototype and is not offered yet. <a href="/pricing/">Pricing and early access</a>.</p>
-<p><a class="cta" href="/app/">Open the app</a></p>
+<p class="lead">The browser tools are free, without an account or a limit on how often you use them. A hosted team workspace, with saved claims, document import, four-eyes approval and QuickBooks reference data, exists as a prototype and is not offered yet. <a href="/pricing/">Pricing and early access</a>.</p>
+<p class="actions"><a class="cta" href="/app/">Open the app</a></p>
+</div>
+</section>
 
+<section>
+<div class="container prose">
 <h2>Questions</h2>
 <details><summary>Is it free?</summary><p>Yes. The browser tools are free to use, with no account and no sign-up. A hosted team workspace is a prototype and is not offered yet.</p></details>
 <details><summary>Where does my data go?</summary><p>Nowhere. The app runs in your browser, makes no network requests after it loads, sets no cookies and keeps nothing after you close the page. Downloads are created on your device.</p></details>
@@ -63,3 +108,5 @@
 <details><summary>Is there a team version?</summary><p>A hosted workspace with saved claims, document import, four-eyes approval and accounting reference data exists as a prototype. It is not offered yet; <a href="/contact/">contact us</a> for early access.</p></details>
 <details><summary>Is this legal advice?</summary><p>No. The rules, sources and arithmetic are shown so you and your counsel can decide.</p></details>
 <details><summary>Who is behind it?</summary><p>See the <a href="/about/">About</a> page.</p></details>
+</div>
+</section>

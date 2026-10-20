@@ -36,7 +36,7 @@ export function DdResults({ outcome }: { outcome: DdOutcome }) {
       <p className="warn">{DD_PACKET_DISCLAIMER}</p>
 
       <div className="scroll">
-        <table aria-label="Checks">
+        <table className="stack" aria-label="Checks">
           <caption className="muted py-1 text-left text-sm">Checks</caption>
           <thead>
             <tr><th>Check</th><th>Container</th><th>Status</th><th>Reason</th></tr>
@@ -44,10 +44,10 @@ export function DdResults({ outcome }: { outcome: DdOutcome }) {
           <tbody>
             {result.checks.map((c, i) => (
               <tr key={i}>
-                <td>{DD_CHECK_LABELS[c.id]}</td>
-                <td>{c.containerIndex === null ? 'invoice' : `#${c.containerIndex + 1}`}</td>
-                <td>{DD_CHECK_STATUS_LABELS[c.status]}</td>
-                <td className="text-sm"><SafeText value={reasonText(c.reason)} /></td>
+                <td data-label="Check">{DD_CHECK_LABELS[c.id]}</td>
+                <td data-label="Container">{c.containerIndex === null ? 'invoice' : `#${c.containerIndex + 1}`}</td>
+                <td data-label="Status">{DD_CHECK_STATUS_LABELS[c.status]}</td>
+                <td className="text-sm" data-label="Reason"><SafeText value={reasonText(c.reason)} /></td>
               </tr>
             ))}
           </tbody>
@@ -55,7 +55,7 @@ export function DdResults({ outcome }: { outcome: DdOutcome }) {
       </div>
 
       <div className="scroll">
-        <table aria-label="Containers">
+        <table className="stack" aria-label="Containers">
           <caption className="muted py-1 text-left text-sm">Containers</caption>
           <thead>
             <tr><th>#</th><th>Container</th><th>Type</th><th>Size</th><th>Charged</th><th>Tariff expected</th><th>Free time end</th><th>Chargeable days</th></tr>
@@ -63,14 +63,14 @@ export function DdResults({ outcome }: { outcome: DdOutcome }) {
           <tbody>
             {result.containers.map((c) => (
               <tr key={c.index}>
-                <td className="num">{c.index + 1}</td>
-                <td><SafeText value={c.label} /></td>
-                <td>{c.chargeType}</td>
-                <td className="mono">{c.sizeType}</td>
-                <td className="num">{cents(c.chargedCents)}</td>
-                <td className="num">{cents(c.expectedCents)}</td>
-                <td>{c.freeTimeEnd ?? 'n/a'}</td>
-                <td className="num">{c.chargeableDays ?? 'n/a'}</td>
+                <td className="num" data-label="#">{c.index + 1}</td>
+                <td data-label="Container"><SafeText value={c.label} /></td>
+                <td data-label="Type">{c.chargeType}</td>
+                <td className="mono" data-label="Size">{c.sizeType}</td>
+                <td className="num" data-label="Charged">{cents(c.chargedCents)}</td>
+                <td className="num" data-label="Tariff expected">{cents(c.expectedCents)}</td>
+                <td data-label="Free time end">{c.freeTimeEnd ?? 'n/a'}</td>
+                <td className="num" data-label="Chargeable days">{c.chargeableDays ?? 'n/a'}</td>
               </tr>
             ))}
           </tbody>

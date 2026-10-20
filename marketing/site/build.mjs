@@ -9,7 +9,7 @@
  * pages/*.html   fragments; first line is `<!--meta {json} -->` (title, description, path, crumb, updated?, noindex?, faq?)
  *                updated = "YYYY-MM-DD" of the page's last content change; it becomes the sitemap lastmod and
  *                the WebPage dateModified. Without it no lastmod is written (never the build date).
- * static/*       copied as-is (style.css, _headers)
+ * static/*       copied as-is (style.css, _headers, fonts/: self-hosted Inter and Space Grotesk, SIL OFL)
  * ../../brand/   logo files (single source of truth) -> dist/favicon.svg, dist/brand/*.svg
  * -> dist/<path>/index.html, sitemap.xml, robots.txt, 404.html
  *
@@ -154,17 +154,20 @@ function layout(meta, body) {
 <script type="application/ld+json">${jsonLd(meta, url)}</script>
 </head>
 <body>
-<header class="site">${lockup(28, "brand")}
-<nav aria-label="Main">${NAV.map(([h, t]) => `<a href="${h}"${h === meta.path ? ' aria-current="page"' : ""}>${t}</a>`).join("")}<a class="cta nav-cta" href="/app/">Open the app</a></nav></header>
+<header class="site"><div class="container">${lockup(28, "brand")}
+<nav aria-label="Main">${NAV.map(([h, t]) => `<a href="${h}"${h === meta.path ? ' aria-current="page"' : ""}>${t}</a>`).join("")}</nav><a class="cta nav-cta" href="/app/">Open the app</a></div></header>
 <main>
 ${body}
 </main>
-<footer class="site">
-${lockup(20, "brand brand-footer")}
-<p>${SITE_NAME} checks freight invoices with fixed, published rules and shows its arithmetic. It does not decide what is owed and does not give legal advice; outputs are drafts for a person to review.</p>
-<p><a href="/app/">Open the app</a> | <a href="/privacy/">Privacy</a> | <a href="/terms/">Terms</a> | <a href="/cookies/">Cookies</a> | <a href="mailto:${esc(EMAIL)}">Contact</a></p>
-<p>These pages set no cookies, run no scripts and load no third-party resources. The app runs in your browser and sends nothing anywhere.</p>
-</footer>
+<footer class="site"><div class="container">
+<div class="foot-grid">
+<div>${lockup(20, "brand brand-footer")}
+<p>${SITE_NAME} checks freight invoices with fixed, published rules and shows its arithmetic. It does not decide what is owed and does not give legal advice; outputs are drafts for a person to review.</p></div>
+<nav aria-label="Footer">${NAV.map(([h, t]) => `<a href="${h}">${t}</a>`).join("")}</nav>
+<div><p>These pages set no cookies, run no scripts and load no third-party resources. The app runs in your browser and sends nothing anywhere.</p></div>
+</div>
+<p class="legal"><a href="/app/">Open the app</a> | <a href="/privacy/">Privacy</a> | <a href="/terms/">Terms</a> | <a href="/cookies/">Cookies</a> | <a href="mailto:${esc(EMAIL)}">Contact</a></p>
+</div></footer>
 </body>
 </html>
 `;
