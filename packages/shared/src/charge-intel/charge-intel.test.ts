@@ -12,6 +12,10 @@ import {
   CHARGE_TEXT,
   SEED_SOURCES,
   SEED_V1,
+  SEED_V2,
+  SEED_V2_ADDED,
+  SEED_V2_PROVENANCE,
+  SEED_V2_SOURCES,
   accepts,
   buildChargeClassifier,
   chargeFeatures,
@@ -164,10 +168,39 @@ describe('seed set and attribution (C2)', () => {
   });
 });
 
-describe('leave-one-carrier-out evaluation (C11)', () => {
-  const r = evaluateLeaveOneCarrierOut();
+describe('seed-v2 (REQ-20261019-seed-v2)', () => {
+  it('is v1 (same objects, same order) followed by 81 checked names from two more public tariffs', () => {
+    expect(SEED_V2).toHaveLength(256);
+    expect(SEED_V2_ADDED).toHaveLength(81);
+    expect(Object.isFrozen(SEED_V2) && Object.isFrozen(SEED_V2_ADDED)).toBe(true);
+    SEED_V1.forEach((s, i) => expect(SEED_V2[i]).toBe(s));
+    const counts: Record<string, number> = {};
+    for (const s of SEED_V2) counts[s.label] = (counts[s.label] ?? 0) + 1;
+    expect(counts).toEqual({ detention: 17, fuel: 4, linehaul: 1, accessorial: 234 });
+    const bySource: Record<string, number> = {};
+    for (const s of SEED_V2_ADDED) bySource[s.source] = (bySource[s.source] ?? 0) + 1;
+    expect(bySource).toEqual({ gsa_2021: 64, fedex_2026: 17 });
+    for (const s of SEED_V2_ADDED) expect(Object.keys(s)).toEqual(['text', 'label', 'source']);
+  });
 
-  it('matches the report schema and the recorded seed-set numbers', () => {
+  it('has eight sources in first-appearance order, the v1 six by reference, with provenance for the two added', () => {
+    expect(Object.keys(SEED_V2_SOURCES)).toEqual([...Object.keys(SEED_SOURCES), 'gsa_2021', 'fedex_2026']);
+    for (const k of Object.keys(SEED_SOURCES) as (keyof typeof SEED_SOURCES)[]) expect(SEED_V2_SOURCES[k]).toBe(SEED_SOURCES[k]);
+    const firstSeen: string[] = [];
+    for (const s of SEED_V2) if (!firstSeen.includes(s.source)) firstSeen.push(s.source);
+    expect(firstSeen).toEqual(Object.keys(SEED_V2_SOURCES));
+    for (const k of ['gsa_2021', 'fedex_2026'] as const) {
+      expect(Object.keys(SEED_V2_SOURCES[k])).toEqual(['label', 'document', 'effective', 'url', 'retrieved']);
+      expect(SEED_V2_SOURCES[k].retrieved).toBe('2026-10-19');
+      expect(SEED_V2_PROVENANCE[k].sha256).toMatch(/^[0-9a-f]{64}$/u);
+    }
+  });
+});
+
+describe('leave-one-carrier-out evaluation (C11)', () => {
+  const r = evaluateLeaveOneCarrierOut(SEED_V1);
+
+  it('matches the report schema and the recorded tariff-seed-v1 numbers (explicit SEED_V1)', () => {
     expect(ChargeEvalReport.parse(r)).toEqual(r);
     expect(r.note).toBe(CHARGE_EVAL_NOTE);
     expect([r.examples, r.carriers]).toEqual([175, 6]);
@@ -184,7 +217,20 @@ describe('leave-one-carrier-out evaluation (C11)', () => {
   });
 
   it('is deterministic', () => {
-    expect(evaluateLeaveOneCarrierOut()).toEqual(r);
+    expect(evaluateLeaveOneCarrierOut(SEED_V1)).toEqual(r);
+  });
+
+  it('defaults to tariff-seed-v2 with the measured numbers behind the CI gate (254 / 233 / 215 / 1)', () => {
+    const v2 = evaluateLeaveOneCarrierOut();
+    expect(ChargeEvalReport.parse(v2)).toEqual(v2);
+    expect([v2.seedVersion, v2.examples, v2.carriers]).toEqual(['tariff-seed-v2', 256, 8]);
+    expect([v2.top1.correct, v2.top1.byCategory.accessorial.correct, v2.atThreshold.byCategory.accessorial.recognised, v2.atThreshold.wrong]).toEqual([254, 233, 215, 1]);
+    expect([v2.atThreshold.suggested, v2.atThreshold.correct, v2.atThreshold.abstained]).toEqual([236, 235, 20]);
+    expect(v2.distinctName).toEqual({ top1Correct: 254, suggested: 236, correct: 235, wrong: 1, abstained: 20, accessorialRecognised: 215 });
+    expect(v2.keywordBaseline).toEqual({ correct: 49, accessorialRecognised: 28 });
+    expect(v2.perCarrier.map((p) => p.source)).toEqual(Object.keys(SEED_V2_SOURCES));
+    expect(v2.perCarrier.reduce((a, p) => a + p.examples, 0)).toBe(256);
+    expect(v2.errors.map((e) => e.text)).toEqual(['INTERNATIONAL SECURITY SURCHARGE', 'Base Rates']);
   });
 });
 
@@ -203,10 +249,12 @@ describe('package root exports (C1)', () => {
   it('the root exports every C1 constant, including the fix-round constants', async () => {
     const root = await import('../index.js');
     expect([root.LEARNED_LABEL_IDS_MAX, root.CHARGE_QUERY_TEXT_MAX, root.CHARGE_LABELS_MAX, root.CHARGE_CLASSIFIER_VERSION, root.SEED_VERSION, root.SUGGESTION_THRESHOLD]).toEqual([
-      50, 200, 2000, 'charge-knn-v1', 'tariff-seed-v1', 0.3,
+      50, 200, 2000, 'charge-knn-v1', 'tariff-seed-v2', 0.3,
     ]);
     expect(root.LEARNED_RULE_IDS).toEqual(['LRN-ACCESSORIAL-REVIEW']);
     expect('SEED_V1' in root).toBe(false);
+    expect('SEED_V2' in root).toBe(false);
+    expect('learningCurve' in root).toBe(false);
     expect('buildChargeClassifier' in root).toBe(false);
   });
 });
@@ -215,7 +263,7 @@ describe('package root isolation', () => {
   const importsOf = (file: string): string[] => [...readFileSync(file, 'utf8').matchAll(/^(?:import|export)[^;]*?from\s+'([^']+)'/gmu)].map((m) => m[1] ?? '');
 
   it('the root never reaches the seed, classifier, learned layer or evaluation (transitively)', () => {
-    const forbidden = ['seed-v1.ts', 'classifier.ts', 'learned.ts', 'evaluate.ts', 'features.ts', path.join('charge-intel', 'index.ts')].map((f) =>
+    const forbidden = ['seed-v1.ts', 'seed-v2.ts', 'curve.ts', 'classifier.ts', 'learned.ts', 'evaluate.ts', 'features.ts', path.join('charge-intel', 'index.ts')].map((f) =>
       f.includes(path.sep) ? path.join(srcRoot, f) : path.join(srcRoot, 'charge-intel', f),
     );
     const seen = new Set<string>();

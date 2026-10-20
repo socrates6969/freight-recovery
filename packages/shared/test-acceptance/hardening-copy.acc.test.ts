@@ -129,7 +129,7 @@ describe('HD-S07 DTO schemas (C1, C3, C4, C5, C8.2)', () => {
   });
   it('ChargeLinesResponse requires influence and stays strict', async () => {
     const m = await load();
-    const base = { claimId: U, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v1', threshold: 0.3, lines: [] };
+    const base = { claimId: U, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v2', threshold: 0.3, lines: [] };
     expect(m.ChargeLinesResponse.safeParse({ ...base, influence: null }).success).toBe(true);
     expect(m.ChargeLinesResponse.safeParse({ ...base, influence: { labels: [] } }).success).toBe(true);
     expect(m.ChargeLinesResponse.safeParse({ ...base, influence: { labels: [{ labelId: U, description: 'Pallet jack rental', category: 'accessorial' }, { labelId: U, description: null, category: null }] } }).success).toBe(true);

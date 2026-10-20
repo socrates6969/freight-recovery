@@ -11,12 +11,12 @@ function run(argv: string[]): { code: number; out: string; err: string } {
   return { code, out: out.join(''), err: err.join('') };
 }
 
-const CI_BOUNDS = ['--min-top1', '173', '--min-accessorial-top1', '158', '--min-accessorial-recognised', '145', '--max-wrong-suggested', '1'];
+const CI_BOUNDS = ['--min-top1', '254', '--min-accessorial-top1', '233', '--min-accessorial-recognised', '215', '--max-wrong-suggested', '1'];
 
 describe('eval:charges arguments', () => {
   it('parses flags', () => {
     expect(parseArgs([])).toEqual({ json: false, minTop1: null, minAccessorialTop1: null, minAccessorialRecognised: null, maxWrongSuggested: null });
-    expect(parseArgs(['--json', ...CI_BOUNDS])).toEqual({ json: true, minTop1: 173, minAccessorialTop1: 158, minAccessorialRecognised: 145, maxWrongSuggested: 1 });
+    expect(parseArgs(['--json', ...CI_BOUNDS])).toEqual({ json: true, minTop1: 254, minAccessorialTop1: 233, minAccessorialRecognised: 215, maxWrongSuggested: 1 });
   });
 
   it('rejects unknown flags, missing and non-integer values', () => {
@@ -32,7 +32,7 @@ describe('eval:charges exit codes', () => {
     expect(r.code).toBe(0);
     expect(r.err).toBe('');
     const lines = r.out.split('\n');
-    expect(lines[0]).toBe('Charge classifier evaluation (leave-one-carrier-out), seed tariff-seed-v1, classifier charge-knn-v1, threshold 0.30');
+    expect(lines[0]).toBe('Charge classifier evaluation (leave-one-carrier-out), seed tariff-seed-v2, classifier charge-knn-v1, threshold 0.30');
     expect(lines[1]).toBe(CHARGE_EVAL_NOTE);
   });
 
@@ -45,9 +45,9 @@ describe('eval:charges exit codes', () => {
   });
 
   it('exit 1 names every failing bound', () => {
-    const r = run(['--min-top1', '174', '--max-wrong-suggested', '0', '--min-accessorial-top1', '158']);
+    const r = run(['--min-top1', '255', '--max-wrong-suggested', '0', '--min-accessorial-top1', '233']);
     expect(r.code).toBe(1);
-    expect(r.err).toBe('bound not met: --min-top1 (173 vs 174)\nbound not met: --max-wrong-suggested (1 vs 0)\n');
+    expect(r.err).toBe('bound not met: --min-top1 (254 vs 255)\nbound not met: --max-wrong-suggested (1 vs 0)\n');
   });
 
   it('exit 2 on a usage error, nothing on stdout', () => {

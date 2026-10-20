@@ -23,7 +23,7 @@ const sug = (category: string | null, similarity: number, nearest: any, reason: 
 const seedNearest = (text: string, category: string, source: string, sourceLabel: string) => ({ text, category, origin: 'seed', source, sourceLabel, labelId: null });
 function chargeLines(claimId: string, labelled = false, hostile = false) {
   return {
-    claimId, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v1', threshold: 0.3,
+    claimId, classifierVersion: 'charge-knn-v1', seedVersion: 'tariff-seed-v2', threshold: 0.3,
     influence: null, // REQ-20261012-hardening C3 (additive; the strict client schema requires the key)
     lines: [
       { index: 0, description: 'Linehaul', amount: '1500.00', ruleCategory: 'linehaul', suggestion: sug(null, 0.043, seedNearest('HYDRAULIC LIFTGATE SERVICE', 'accessorial', 'dohrn_2025', DOHRN)), label: null },

@@ -7,8 +7,8 @@
 /** Version of the nearest-example charge classifier (char 3-5-grams + word tokens, cosine, 1-NN). */
 export const CHARGE_CLASSIFIER_VERSION = 'charge-knn-v1';
 
-/** Version of the seed label set (public carrier tariff charge names). */
-export const SEED_VERSION = 'tariff-seed-v1';
+/** Version of the seed label set (public tariff charge names; v2 = v1 plus the GSA 200-A and FedEx Freight names). */
+export const SEED_VERSION = 'tariff-seed-v2';
 
 /** Suggestion threshold tau = 3/10 (shown as 0.30). Decisions use the exact rational below. */
 export const SUGGESTION_THRESHOLD = 0.3;

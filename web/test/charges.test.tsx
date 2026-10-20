@@ -45,7 +45,7 @@ const claim = {
 const lines = {
   claimId: claim.id,
   classifierVersion: 'charge-knn-v1',
-  seedVersion: 'tariff-seed-v1',
+  seedVersion: 'tariff-seed-v2',
   threshold: 0.3,
   influence: null,
   lines: [

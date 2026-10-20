@@ -10,6 +10,7 @@ export * from '../charge-intel-dto.js';
 /** The step-5 `normText` (label keys are `normText(description)`). */
 export { normText } from '../analysis/py-text.js';
 export { SEED_SOURCES, SEED_V1, type SeedExample, type SeedSource, type SeedSourceId } from './seed-v1.js';
+export { SEED_V2, SEED_V2_ADDED, SEED_V2_PROVENANCE, SEED_V2_SOURCES, type SeedExampleV2, type SeedProvenance, type SeedSourceIdV2 } from './seed-v2.js';
 export { chargeFeatures, featureDot, featureNorm2, featureText, type ChargeFeatures } from './features.js';
 export {
   TENANT_LABEL_SOURCE_LABEL,
@@ -28,6 +29,17 @@ export {
   type TenantLabelInput,
 } from './classifier.js';
 export { evaluateLeaveOneCarrierOut, type ChargeEvalReportData } from './evaluate.js';
+export {
+  CURVE_FRACTIONS,
+  CURVE_RESAMPLES,
+  CURVE_RNG_SEED,
+  learningCurve,
+  type CurveFractionPoint,
+  type CurveReport,
+  type CurveSourceCountPoint,
+  type CurveSourceDetail,
+  type CurveStat,
+} from './curve.js';
 export {
   LEARNED_CONFIDENCE,
   applyLearning,
