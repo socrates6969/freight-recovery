@@ -15,14 +15,16 @@ import { FlagChangeBody, LogsQuery, PipelineHealth, PipelineQuery, Telemetry } f
 import { can } from './rbac.js';
 
 describe('feature flag registry (Q4)', () => {
-  it('contains exactly the seven intelligence flags, ordered by key, default on, tenant-visible', () => {
-    // Step 7 (REQ-20261011-fuel-outlook) adds cost_outlook and fuel_check; step 8 (REQ-20261011-ocean-dd) ocean_dd.
+  it('contains exactly the eight intelligence flags, ordered by key, tenant-visible, default on except the routing shadow', () => {
+    // Step 7 (REQ-20261011-fuel-outlook) adds cost_outlook and fuel_check; step 8 (REQ-20261011-ocean-dd) ocean_dd;
+    // REQ-20261020-dd-deadline adds routing_shadow (the only default-OFF flag: a shadow appears only after a deliberate switch).
     expect(FEATURE_FLAG_KEYS).toEqual([
       'intelligence.charge_suggestions',
       'intelligence.cost_outlook',
       'intelligence.fuel_check',
       'intelligence.ocean_dd',
       'intelligence.provenance',
+      'intelligence.routing_shadow',
       'intelligence.similar_claims',
       'intelligence.worklist',
     ]);
@@ -32,10 +34,12 @@ describe('feature flag registry (Q4)', () => {
       'Fuel tables and fuel-surcharge check',
       'Ocean demurrage and detention invoice audit',
       'Provenance summary on the claim sheet',
+      'Reviewer-routing shadow on the insights page',
       'Similar past claims on the claim sheet',
       'Prioritised worklist page',
     ]);
-    expect(FEATURE_FLAGS.every((f) => f.defaultEnabled && f.tenantVisible)).toBe(true);
+    expect(FEATURE_FLAGS.every((f) => f.tenantVisible)).toBe(true);
+    expect(FEATURE_FLAGS.filter((f) => !f.defaultEnabled).map((f) => f.key)).toEqual(['intelligence.routing_shadow']);
     expect(Object.isFrozen(FEATURE_FLAGS)).toBe(true);
     expect(isKnownFlag('intelligence.worklist')).toBe(true);
     expect(isKnownFlag('auth.csrf')).toBe(false);

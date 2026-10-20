@@ -74,8 +74,8 @@ export const insightsInstant = z.string().transform((v, ctx) => {
 const kind = z.enum(CLAIM_KINDS).optional();
 const perspective = z.enum(PERSPECTIVES).optional();
 
-/** Period refinement: from < to and at most INSIGHTS_PERIOD_MAX_DAYS long (issues on `to`). */
-function checkPeriod(from: Date, to: Date, ctx: z.RefinementCtx): void {
+/** Period refinement: from < to and at most INSIGHTS_PERIOD_MAX_DAYS long (issues on `to`). Shared with routing-dto.ts. */
+export function checkInsightsPeriod(from: Date, to: Date, ctx: z.RefinementCtx): void {
   if (from.getTime() >= to.getTime()) {
     ctx.addIssue({ code: 'custom', path: ['to'], message: 'to must be after from' });
     return;
@@ -91,7 +91,7 @@ function checkPeriod(from: Date, to: Date, ctx: z.RefinementCtx): void {
 
 export const InsightsSummaryQuery = z
   .strictObject({ from: insightsInstant, to: insightsInstant, kind, perspective })
-  .superRefine((q, ctx) => checkPeriod(q.from, q.to, ctx));
+  .superRefine((q, ctx) => checkInsightsPeriod(q.from, q.to, ctx));
 export type InsightsSummaryQueryInput = z.output<typeof InsightsSummaryQuery>;
 
 export const InsightsStagesQuery = z
@@ -99,7 +99,7 @@ export const InsightsStagesQuery = z
   .superRefine((q, ctx) => {
     if (q.from === undefined && q.to !== undefined) ctx.addIssue({ code: 'custom', path: ['from'], message: 'from and to go together' });
     else if (q.from !== undefined && q.to === undefined) ctx.addIssue({ code: 'custom', path: ['to'], message: 'from and to go together' });
-    else if (q.from !== undefined && q.to !== undefined) checkPeriod(q.from, q.to, ctx);
+    else if (q.from !== undefined && q.to !== undefined) checkInsightsPeriod(q.from, q.to, ctx);
   });
 export type InsightsStagesQueryInput = z.output<typeof InsightsStagesQuery>;
 
@@ -117,14 +117,14 @@ export const InsightsLeakageQuery = z
     limit: z.coerce.number().int().min(1).max(INSIGHTS_LIMIT_MAX).default(INSIGHTS_LIMIT_DEFAULT),
   })
   .superRefine((q, ctx) => {
-    checkPeriod(q.from, q.to, ctx);
+    checkInsightsPeriod(q.from, q.to, ctx);
     if (q.carrier !== undefined && q.by === 'carrier') ctx.addIssue({ code: 'custom', path: ['carrier'], message: 'carrier applies to by=rule only' });
   });
 export type InsightsLeakageQueryInput = z.output<typeof InsightsLeakageQuery>;
 
 export const InsightsThroughputQuery = z
   .strictObject({ from: insightsInstant, to: insightsInstant, kind, perspective })
-  .superRefine((q, ctx) => checkPeriod(q.from, q.to, ctx));
+  .superRefine((q, ctx) => checkInsightsPeriod(q.from, q.to, ctx));
 export type InsightsThroughputQueryInput = z.output<typeof InsightsThroughputQuery>;
 
 // ---------------------------------------------------------------------------------------------

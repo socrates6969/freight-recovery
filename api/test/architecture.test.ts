@@ -301,7 +301,17 @@ describe('architecture', () => {
   });
 
   it('hardening (H10): the raw-SQL helpers of this run live in src/audit or src/db', () => {
-    const helpers = ['src/audit/label-authors.ts', 'src/audit/label-influence.ts', 'src/audit/analysis-failures.ts', 'src/db/analysis-candidates.ts', 'src/db/insights.ts', 'src/db/insights-leakage.ts'];
+    const helpers = [
+      'src/audit/label-authors.ts',
+      'src/audit/label-influence.ts',
+      'src/audit/analysis-failures.ts',
+      'src/db/analysis-candidates.ts',
+      'src/db/insights.ts',
+      'src/db/insights-leakage.ts',
+      // REQ-20261020-dd-deadline: D&D dispute terms per claim and the reviewer-routing shadow reads.
+      'src/db/dd-dispute-terms.ts',
+      'src/db/routing.ts',
+    ];
     for (const h of helpers) {
       const f = files.find((x) => x.path === h);
       expect([h, f !== undefined && /\.\$queryRaw\s*[(<`]/u.test(f.text)]).toEqual([h, true]);

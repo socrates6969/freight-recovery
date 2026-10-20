@@ -146,7 +146,7 @@ describe('C14-C16 shared registries (additive)', () => {
   it('flag registry entry intelligence.ocean_dd (C16), key order', () => {
     const F = M.FEATURE_FLAGS as { key: string }[];
     expect({ ...F.find((f) => f.key === 'intelligence.ocean_dd') }).toEqual({ key: 'intelligence.ocean_dd', description: 'Ocean demurrage and detention invoice audit', defaultEnabled: true, tenantVisible: true });
-    expect(F.map((f) => f.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+    expect(F.map((f) => f.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.routing_shadow', 'intelligence.similar_claims', 'intelligence.worklist'] /* REQ-20261020-dd-deadline: routing_shadow added (default OFF) */);
   });
 });
 

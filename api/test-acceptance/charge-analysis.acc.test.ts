@@ -70,10 +70,11 @@ afterAll(async () => { try { await I.setFlag(dev, 'intelligence.charge_suggestio
 describe('T10 flag (C10)', () => {
   // REQ-20261011-fuel-outlook F14 (additive): six flags (cost_outlook and fuel_check added, ordered by key).
   // REQ-20261011-ocean-dd C16/C20 (additive): seven flags (intelligence.ocean_dd added, ordered by key).
-  it('CI-F01 /features returns exactly seven flags including intelligence.charge_suggestions: true', async () => {
+  // REQ-20261020-dd-deadline (additive): eight flags (intelligence.routing_shadow added, ordered by key).
+  it('CI-F01 /features returns exactly eight flags including intelligence.charge_suggestions: true', async () => {
     const r = await vw.get('/features');
     expect(r.status, r.text).toBe(200);
-    expect(Object.keys(r.body.flags).sort()).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+    expect(Object.keys(r.body.flags).sort()).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.routing_shadow', 'intelligence.similar_claims', 'intelligence.worklist']);
     expect(r.body.flags['intelligence.charge_suggestions']).toBe(true);
   });
 });

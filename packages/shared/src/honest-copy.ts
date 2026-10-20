@@ -56,6 +56,24 @@ export const INSIGHTS_TEXT = Object.freeze({
   intakeScopeNote: 'Document counts cover all imported documents; the claim type and perspective filters do not apply.',
 } as const);
 
+// ---------------------------------------------------------------------------------------------
+// REQ-20261020-dd-deadline: reviewer-routing shadow. Rendered verbatim by the web and returned as the API
+// `label`/policy texts. The shadow changes no assignment and stores nothing.
+// ---------------------------------------------------------------------------------------------
+
+export const ROUTING_SHADOW_NOTE =
+  "Shadow only: this section shows which reviewer two fixed rules would have chosen for each open claim, computed on every request from your team's own past decisions. It changes no assignment, stores nothing and is not a measure of anyone's performance.";
+
+export const ROUTING_POLICY_TEXT = Object.freeze({
+  fastest_for_rule:
+    'Fastest so far for the finding rule: the reviewer with the lowest median time from a packet revision to its first approve or reject decision, among past decisions in the period on packets carrying the same finding rule (at least one such decision; ties go to more decisions, then the lower id). A claim with several rules takes the lowest median across them.',
+  least_loaded:
+    'Least loaded now: the eligible reviewer (a role that may approve packets, an active account, not the author of the revision) with the fewest open claims assigned at this moment (ties go to the lower id).',
+} as const);
+
+export const ROUTING_PREQUENTIAL_NOTE =
+  "Prequential replay of the period's decisions in time order: before each decision, the fastest-for-rule pick is computed from the earlier decisions only and compared with who actually decided. When they differ, the pick's median at that moment is compared with the actual time taken. Computed from history on every request; nothing is stored, so this is bookkeeping for a later scoring, not a result.";
+
 export interface InsightsNotTracked {
   readonly id: string;
   readonly title: string;

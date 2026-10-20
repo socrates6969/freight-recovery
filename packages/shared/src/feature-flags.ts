@@ -1,5 +1,5 @@
 /**
- * Feature flag registry v1 (Q4; step 6 adds the charge-suggestions flag). Plain data: the ONLY flags that exist. A flag can only gate a Recovery
+ * Feature flag registry v1 (Q4; step 6 adds the charge-suggestions flag; REQ-20261020-dd-deadline adds the routing shadow, the only default-OFF flag). Plain data: the ONLY flags that exist. A flag can only gate a Recovery
  * Intelligence feature; no flag gates authentication, CSRF, tenant isolation, rate limits or audit.
  * Adding a key is a deliberate change (registry test + migration row).
  */
@@ -22,6 +22,9 @@ export const FEATURE_FLAGS = Object.freeze([
   // Step 8 (REQ-20261011-ocean-dd): kill switch of the ocean D&D routes (existing OCEAN_DD claims stay usable).
   Object.freeze({ key: 'intelligence.ocean_dd', description: 'Ocean demurrage and detention invoice audit', defaultEnabled: true, tenantVisible: true }),
   Object.freeze({ key: 'intelligence.provenance', description: 'Provenance summary on the claim sheet', defaultEnabled: true, tenantVisible: true }),
+  // REQ-20261020-dd-deadline: reviewer-routing shadow on the insights page. Read-only, changes no assignment;
+  // OFF by default (the first registry flag that is), so the section appears only after a deliberate switch.
+  Object.freeze({ key: 'intelligence.routing_shadow', description: 'Reviewer-routing shadow on the insights page', defaultEnabled: false, tenantVisible: true }),
   Object.freeze({ key: 'intelligence.similar_claims', description: 'Similar past claims on the claim sheet', defaultEnabled: true, tenantVisible: true }),
   Object.freeze({ key: 'intelligence.worklist', description: 'Prioritised worklist page', defaultEnabled: true, tenantVisible: true }),
 ] as const satisfies readonly FlagDefinition[]);

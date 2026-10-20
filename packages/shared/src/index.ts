@@ -42,3 +42,4 @@ export * from './ocean-dd-dto.js';
 export * from './insights-dto.js';
 // REQ-20261020-dd-deadline: D&D dispute deadline (pure, clock-free) and the reviewer-routing shadow contract.
 export * from './dd-deadline.js';
+export * from './routing-dto.js';

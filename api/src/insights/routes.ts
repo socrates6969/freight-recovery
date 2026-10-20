@@ -4,6 +4,8 @@
  * reads through ONE read-only REPEATABLE READ tenant transaction, assembles the body in service.ts and
  * returns it parsed with the strict shared schema. Reads are not audited (like GET /api/v1/claims), and no
  * handler writes anything. Tenant and role come only from the request context.
+ * REQ-20261020-dd-deadline adds `GET /insights/routing`, the reviewer-routing SHADOW: the same access and
+ * transaction rules, gated by the `intelligence.routing_shadow` flag (OFF -> the standard 404 before any read).
  */
 import {
   DD_DISPUTE_MIN_DAYS,
@@ -17,6 +19,10 @@ import {
   InsightsSummaryQuery,
   InsightsThroughput,
   InsightsThroughputQuery,
+  ROUTING_DECISIONS_MAX,
+  ROUTING_OPEN_CLAIMS_MAX,
+  RoutingShadow,
+  RoutingShadowQuery,
 } from '@fr/shared';
 import type { FastifyInstance } from 'fastify';
 
@@ -36,8 +42,12 @@ import {
   type InsightsPeriod,
 } from '../db/insights.js';
 import { carrierHeader, carrierLeakage, ruleLeakage } from '../db/insights-leakage.js';
+import { firstDecisionEvents, importDecisionStats, openClaimsForRouting, openLoadByAssignee, reviewerPool } from '../db/routing.js';
+import { errors } from '../http/errors.js';
 import { defineRoute, requireTenant } from '../http/route.js';
 import { strictBody } from '../http/strict-body.js';
+import { buildRoutingShadow } from '../intelligence/routing.js';
+import type { FlagService } from '../platform/flags.js';
 
 import { carrierBody, deadlinesBody, ruleBody, stagesBody, summaryBody, throughputBody } from './service.js';
 
@@ -45,6 +55,7 @@ const P = '/api/v1';
 
 export interface InsightsDeps {
   now: () => Date;
+  flags: FlagService;
 }
 
 function filterOf(q: { kind?: InsightsFilter['kind'] | undefined; perspective?: InsightsFilter['perspective'] | undefined }): InsightsFilter {
@@ -159,6 +170,40 @@ export function registerInsightsRoutes(app: FastifyInstance, deps: InsightsDeps)
         return throughputBody(now, period, f, weekRows, first, send);
       });
       return strictBody(InsightsThroughput, body);
+    },
+  });
+
+  // REQ-20261020-dd-deadline: reviewer-routing SHADOW. Read-only; changes no assignment; stores nothing.
+  defineRoute(app, {
+    method: 'GET',
+    url: `${P}/insights/routing`,
+    access: { kind: 'permission', permission: 'insights:read' },
+    rateGroup: 'intelligence',
+    schema: { query: RoutingShadowQuery },
+    handler: async (req, _reply, { query }) => {
+      const ctx = requireTenant(req);
+      if (!(await deps.flags.isEnabled('intelligence.routing_shadow'))) throw errors.notFound();
+      const now = deps.now();
+      const period = { from: query.from, to: query.to };
+      const body = await insightsRead(ctx.db, async (tx) => {
+        const decisions = await firstDecisionEvents(tx, period, ROUTING_DECISIONS_MAX);
+        const imports = await importDecisionStats(tx, period);
+        const open = await openClaimsForRouting(tx, ROUTING_OPEN_CLAIMS_MAX);
+        const load = await openLoadByAssignee(tx);
+        const pool = await reviewerPool(tx);
+        return buildRoutingShadow({
+          now,
+          period,
+          decisions: decisions.rows,
+          decisionsTruncated: decisions.truncated,
+          imports,
+          open: open.rows,
+          openTruncated: open.truncated,
+          load,
+          pool,
+        });
+      });
+      return strictBody(RoutingShadow, body);
     },
   });
 }

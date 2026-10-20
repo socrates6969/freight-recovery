@@ -16,6 +16,8 @@ const NEW_DIR = '20261018000000_hardening';
  *  committed migrations are immutable (CLAUDE.md rule 8), so the guard change needs exactly one further folder. Interpretation
  *  reported to the planner (mailbox); its content is whitelisted in FR2-S01 below. */
 const FR2_DIR = '20261019000000_hardening_fr2';
+/** REQ-20261020-dd-deadline: one further folder, a flag row only (INSERT of intelligence.routing_shadow, OFF); no schema change. */
+const DD_DIR = '20261020000000_routing_shadow_flag';
 /** Raw sha256 of 20261018000000_hardening/migration.sql as committed in cd596c3 (stays byte-identical from now on). */
 const HARDENING_COMMITTED = '41b7a7df0deb80b1bd9eb704420a4418499decce7a461408ac502b7498e6b4eb';
 /** Review R-7: LF-normalised sha256 of 20261019000000_hardening_fr2/migration.sql as committed in c3f131b (immutable from
@@ -57,9 +59,11 @@ const OCEAN_DD_BASE: Record<string, string> = {
 };
 /** HD-S09: LF sha256 at BASE. */
 /** Amended for REQ-20261018-exec-dashboard: rbac.ts gained insights:read (OWNER, ADMIN, MANAGER, VIEWER); the pin moves to
- *  that content (LF sha256 of packages/shared/src/rbac.ts after the dashboard change). feature-flags.ts is unchanged. */
+ *  that content (LF sha256 of packages/shared/src/rbac.ts after the dashboard change). feature-flags.ts is unchanged there.
+ *  Amended for REQ-20261020-dd-deadline: feature-flags.ts gained the registry entry intelligence.routing_shadow (default OFF,
+ *  tenant-visible); the pin moves to that content (LF sha256 after the change). rbac.ts is unchanged. */
 const RBAC_BASE = 'e7d9108de9362007c33b007bb1293da0b91a5c8aea747223e7d73e1739ade970';
-const FLAGS_BASE = 'a0ed0ae52ebeeead7cd21a68f4a471b0c94a485cc3d573cb507a326271b64d2b';
+const FLAGS_BASE = 'ef854213500b14faebe7022d1b0ca785da0c8cfeacb05b0f0fbf4f2908acb4bc';
 const ENV_EXAMPLE_BASE = '7ae40ea33086e10a58c74fb538e378b01ff9bedfde07ff4be3ca566d988c6c0b';
 /** HD-S09 (review R-1): sha256 of each BASE .env.example line in order (LF text split on LF, 74 entries incl. the empty
  *  tail after the final newline), generated once from `git show bcc23bb:.env.example`. Embedded so the check runs in a
@@ -114,9 +118,13 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe('HD-S01 migrations (C0.2)', () => {
-  it('the nine BASE folders plus exactly 20261018000000_hardening and (fix round 2) 20261019000000_hardening_fr2, sorted last; each folder holds only migration.sql; BASE files and the committed hardening file byte-identical', () => {
+  it('the nine BASE folders plus exactly 20261018000000_hardening, (fix round 2) 20261019000000_hardening_fr2 and (dd-deadline) 20261020000000_routing_shadow_flag, sorted last; each folder holds only migration.sql; BASE files and the committed hardening file byte-identical', () => {
     const dirs = readdirSync(MIG).filter((d) => statSync(join(MIG, d)).isDirectory()).sort();
-    expect(dirs).toEqual([...Object.keys(BASE_MIGRATIONS).sort(), NEW_DIR, FR2_DIR]);
+    expect(dirs).toEqual([...Object.keys(BASE_MIGRATIONS).sort(), NEW_DIR, FR2_DIR, DD_DIR]);
+    // The flag-row migration holds exactly one INSERT of the OFF routing-shadow flag and nothing else.
+    expect(statements(stripComments(readFileSync(join(MIG, DD_DIR, 'migration.sql'), 'utf8')))).toEqual([
+      `INSERT INTO "feature_flags" ("key", "enabled", "version") VALUES ('intelligence.routing_shadow', false, 1)`,
+    ]);
     expect(sha(readFileSync(join(MIG, NEW_DIR, 'migration.sql'))), `${NEW_DIR} is committed: immutable`).toBe(HARDENING_COMMITTED);
     expect(shaLf(join(MIG, FR2_DIR, 'migration.sql')), `${FR2_DIR} is committed: immutable (review R-7)`).toBe(FR2_COMMITTED_LF);
     for (const d of dirs) expect(readdirSync(join(MIG, d)), d).toEqual(['migration.sql']);
@@ -202,7 +210,7 @@ describe('HD-S03 / HD-S04 / HD-S09 byte pins against BASE (C0.3, C0.4, C11)', ()
     expect(files, 'no ocean-dd file added or removed').toEqual(Object.keys(OCEAN_DD_BASE).sort());
     for (const [f, h] of Object.entries(OCEAN_DD_BASE)) expect(shaLf(join(dir, f)), f).toBe(h);
   });
-  it('HD-S09 rbac.ts and feature-flags.ts are byte-identical to BASE (amended: insights:read added by the exec dashboard; no new flag)', () => {
+  it('HD-S09 rbac.ts and feature-flags.ts are byte-identical to BASE (amended: insights:read added by the exec dashboard; routing_shadow flag added by dd-deadline)', () => {
     expect(shaLf(resolve(ROOT, 'packages', 'shared', 'src', 'rbac.ts'))).toBe(RBAC_BASE);
     expect(shaLf(resolve(ROOT, 'packages', 'shared', 'src', 'feature-flags.ts'))).toBe(FLAGS_BASE);
   });
