@@ -17,6 +17,7 @@ import {
   ImportDocumentDetail,
   InsightsDeadlines,
   InsightsLeakage,
+  InsightsRecovery,
   InsightsStages,
   InsightsSummary,
   InsightsThroughput,
@@ -302,6 +303,10 @@ export class ApiClient {
 
   insightsThroughput(q: InsightsRequest) {
     return this.get(`/api/v1/insights/throughput?${insightsParams(q)}`, InsightsThroughput);
+  }
+
+  insightsRecovery(q: InsightsRequest) {
+    return this.get(`/api/v1/insights/recovery?${insightsParams(q)}`, InsightsRecovery);
   }
 
   similar(claimId: string, limit = 5) {
