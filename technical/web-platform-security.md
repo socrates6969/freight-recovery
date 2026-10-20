@@ -22,7 +22,9 @@ tables and their owner-only importer, and the cost outlook with its backtest gat
 [section 11](#11-step-7-fuel-check-public-price-data-and-cost-outlook). Step 8 (the ocean demurrage and
 detention invoice audit against 46 CFR Part 541 and 545.5, its three tenant tables, the `OCEAN_DD` claim kind and
 the four-eyes rule for the invoice's editors) is covered in
-[section 12](#12-step-8-ocean-demurrage-and-detention-audit). The hardening run (database backstops for four-eyes,
+[section 12](#12-step-8-ocean-demurrage-and-detention-audit). Claim outcomes (the human-entered, append-only
+record of what happened after a demand was marked ready, and the Recovery section) are covered in
+[section 14](#14-claim-outcomes). The hardening run (database backstops for four-eyes,
 the label-author rule, failure transparency, the CloudFront client address and the authentication fixes of the
 platform audit) is covered in [section 13](#13-hardening-run). Every secret, its rotation and
 the buyer handover checklist are in [docs/secrets.md](../docs/secrets.md). The structure is in [ARCHITECTURE.md](../ARCHITECTURE.md#web-platform-typescript-steps-1-2). The
@@ -1331,3 +1333,45 @@ PostgreSQL 16.15 (fresh cluster per session, `freight_app` without BYPASSRLS con
 
 Not run: GitHub CI, `terraform fmt`/`validate` (no binary; CI runs both), `prisma migrate diff` against a shadow
 database (schema unchanged), container images, the compose stack, Playwright, any AWS deployment.
+
+## 14. Claim outcomes
+
+Run `REQ-20261020-claim-outcomes` (branch `feat/outcomes` from `0830f01`, the launch-readiness merge). It closes
+the "nothing is recorded after SEND_READY" gap with one **human-entered, append-only** tenant table and a read-only
+Recovery section on the executive dashboard. No reconciliation with payments exists and no outbound network path was
+added; the design and its limits are in [docs/design/claim-outcomes.md](../docs/design/claim-outcomes.md).
+
+### 14.1 New assets, permission and trust boundaries
+
+| Item | Detail |
+| --- | --- |
+| Permissions | New `outcomes:record` (OWNER, ADMIN, MANAGER, REVIEWER: the roles that may approve). Reads need `claims:read`; the Recovery section needs `insights:read`. ANALYST, VIEWER, PLATFORM_DEV and SUPER_ADMIN cannot record. **No API-key scope** grants either route, so API keys get 403. |
+| Routes | `GET /api/v1/claims/:id/outcomes` (newest first, at most 200 rows), `POST /api/v1/claims/:id/outcomes` (201; mutating, cookie session + Origin + CSRF; strict body `ClaimOutcomeBody`, a discriminated union on `kind`), `GET /api/v1/insights/recovery` (read-only, `intelligence` bucket, READ ONLY REPEATABLE READ transaction like the other insights routes). An unknown id and another tenant's id answer byte-identical 404s on both claim routes. |
+| New tenant table | `claim_outcomes`: `ENABLE` + `FORCE ROW LEVEL SECURITY`, one `FOR ALL` policy `claim_outcomes_tenant_isolation` (`USING`/`WITH CHECK tenant_id = fr_current_tenant()`), `REVOKE ALL FROM PUBLIC`; `freight_app` gets **SELECT and INSERT only** (no UPDATE, DELETE or TRUNCATE). Composite FK `(claim_id, tenant_id) -> claims(id, tenant_id)` `ON DELETE RESTRICT`, FKs to `tenants` and `users`. CHECKs on `kind`, `channel`, `carrier_response`, the 500-character note, non-negative cents, `version >= 1` and the kind consistency of an `AUDITED_NO_FINDING` row. In `TENANT_MODELS` and `TenantTx`. |
+| Triggers | `claim_outcomes_append_only` / `claim_outcomes_no_truncate` (`fr_append_only`, every role). `claim_outcomes_guard` (`BEFORE INSERT`, `SECURITY DEFINER`, `SET search_path = public, pg_temp`, `EXECUTE` revoked from `PUBLIC`, tenant matched explicitly): `OUTCOME` needs a `SEND_READY` claim of the same tenant, `AUDITED_NO_FINDING` an analysed claim (`status <> 'AWAITING_ANALYSIS'`); raises P0001 `claim_outcome_state_invalid` / `claim_outcome_claim_invalid`, mapped to 409 `invalid_state` (never 500). The service applies the same rule first, under the claim row lock. |
+| New writes | one `claim_outcomes` row per POST and the tenant audit event `claim.outcome_recorded` with `{ claimId, outcomeId, kind, channel, carrierResponse, creditedCents, paidCents, sentAt, closedAt }` (new allow-listed keys `outcomeId`, `channel`, `carrierResponse`, `creditedCents`, `paidCents`, `sentAt`, `closedAt`); the note text is never audited. Both commit together. |
+| Untrusted input | the outcome body (fixed enumerations, integer cents within the INTEGER bound, UTC instants of years 2000-2100 with `closedAt >= sentAt`, a single-line note of at most 500 characters without control or bidi characters); the insights query (same period rules as the other insights routes). Everything is a bound parameter; the Recovery SQL interpolates nothing from a request or a tenant row (unit-checked). |
+| Outbound network | None. |
+| Database | Migration `20261020000000_claim_outcomes` (the table, CHECKs, triggers, policy, grants). Earlier migrations unchanged; `schema.prisma` gains the `ClaimOutcome` model and its relation lists. Pins amended in `hardening-static.acc.test.ts` (migration list, `SCHEMA_BASE`, `RBAC_BASE`) and the audit-action tail oracles. |
+| Fixed copy | `OUTCOME_TEXT`, `OUTCOME_CHANNEL_TEXT`, `CARRIER_RESPONSE_TEXT`, `OUTCOME_KIND_TEXT` in `packages/shared/src/outcomes-dto.ts`; `INSIGHTS_OUTCOME_DISCLAIMER` and the G1/G4/G9 "not tracked" entries reworded. The Recovery section states its basis (`human_entered`) and the reviewer-hour approximation (packet creation to SEND_READY, capped at 8 h per claim). No string claims accuracy, savings or recovery. |
+
+### 14.2 Threats and mitigations (claim outcomes)
+
+| Threat | Mitigation | Verified by |
+| --- | --- | --- |
+| A user records an outcome on another tenant's claim, or reads one | RLS (`FORCE`) on `claim_outcomes` and on `claims`; the service loads the claim through the tenant transaction, so the id is "not found"; the trigger matches `tenant_id` explicitly; the 404 body is byte-identical to the unknown-id case | `outcomes.int` (cross-tenant SELECT 0 rows, INSERT refused by RLS, byte-identical 404s) |
+| A recorded outcome is altered or removed to change a recovery figure | no UPDATE/DELETE grant for `freight_app`; `fr_append_only` refuses UPDATE, DELETE and TRUNCATE for every role; a correction is a new row and the latest row counts | `outcomes.int` (permission denied as `freight_app`; `append_only` as the owner) |
+| An outcome is recorded on a claim that was never sent | state rule in the service under the claim row lock, repeated by the guard trigger; 409 `invalid_state` | `outcomes.int`, `outcomes-units` |
+| A lower role records outcomes | `outcomes:record` only for OWNER, ADMIN, MANAGER, REVIEWER; API keys never; CSRF and Origin on the POST | `outcomes.int` (matrix row, 401/403, `csrf_failed`, `origin_not_allowed`), `rbac.acc` and the three oracles |
+| The note carries injected text into audit, exports or the UI | single-line, length-capped, control/bidi-free at the API; never written to `audit_events`; rendered as text nodes (`SafeText`); not exported | `outcomes-dto.test`, `outcomes.int` (audit metadata contains no note), eslint `react/no-danger` |
+| Recovery figures read as reconciled money | `basis: 'human_entered'` on the wire; intro, disclaimer and reviewer-hour note state the basis; MoneyFigure labels `credited` and `paid` are visible next to each amount; the "not tracked" list keeps the reconciliation gap | `outcomes-dto.test` (copy scan), `insights-dto.test` |
+| Recovery SQL leaks across tenants or interpolates input | every reader runs in the caller's READ ONLY tenant transaction, filters `tenant_id = fr_current_tenant()` on the outcome rows and the claims, and binds every value | `outcomes-units` (SQL shape), `outcomes.int` (other tenant's outcome not counted) |
+
+### 14.3 What was run
+
+Local runs on Windows, Node 24, `CI=true`, **not GitHub CI**. Embedded PostgreSQL 18.4 (the hosted-platform recipe:
+`freight_app` without BYPASSRLS, random role passwords), no object store (none needed by these tests). `npm run lint`,
+`npm run typecheck`, `npm test` (shared, api, web unit) and `migrate deploy` (12 migrations) pass; `prisma migrate diff`
+against the live database shows no drift for `claim_outcomes`. `outcomes.int` 9/9. Acceptance: the static pins, RBAC,
+the shared copy/contract files and the touched claims/approvals/audit files. Not run: the full integration and
+acceptance suites (parity needs Python), container images, Playwright, any deployment.
