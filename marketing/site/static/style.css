@@ -63,7 +63,10 @@ section.band.gradient { background: linear-gradient(180deg, var(--n1000) 0%, #1f
 section.gradient .lead, section.gradient p { color: var(--n0); }
 section.gradient a:not(.cta) { color: var(--n0); text-decoration: underline; }
 section.hero { padding: 4rem 0 5rem; }
-.hero-inner { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.5rem; }
+/* Hero mesh: soft violet and teal orbs drawn with radial gradients behind the hero text; they drift slowly under the
+   motion block. The layer fills the section exactly (inset 0), so nothing overflows or needs clipping. */
+section.hero { position: relative; isolation: isolate; }
+section.hero::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; background-image: radial-gradient(40% 50% at 22% 30%, rgba(107, 62, 255, 0.5), transparent 70%), radial-gradient(36% 48% at 80% 70%, rgba(94, 231, 228, 0.2), transparent 70%), radial-gradient(30% 40% at 55% 10%, rgba(150, 144, 248, 0.3), transparent 70%); background-size: 130% 130%; background-position: 0% 0%, 100% 100%, 50% 0%; background-repeat: no-repeat; }.hero-inner { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 0.5rem; }
 .hero-inner h1 { max-width: 48rem; }
 .hero-inner .lead { max-width: 42rem; }
 .page-head { padding: 3rem 0; }
@@ -107,7 +110,12 @@ section.band .eyebrow { color: var(--teal); }
 section.band .tag.live { background: rgba(94, 231, 228, 0.14); color: var(--teal); }
 section.band .tag.proto { background: #1d2240; color: var(--violet-light); }
 h3 + .tag { margin-top: -0.25rem; }
-
+.tag.plan { background: var(--surface); color: var(--muted); border: 1px solid var(--line-strong); }
+.tag.data { background: var(--warnbg); color: var(--warn); }
+section.band .tag.plan { background: var(--band-card); color: var(--band-muted); border-color: var(--band-line); }
+section.band .tag.data { background: #2b2113; color: #ffcf99; }
+/* The live label carries a status dot; it pulses under the motion block. */
+.tag.live::before { content: ""; flex: none; width: 0.5rem; height: 0.5rem; border-radius: 999px; background: currentColor; margin-right: 0.45rem; }
 /* Buttons: pills, at least 40px tall. .cta is the violet gradient primary; .secondary the outlined one. */
 .cta { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 2.75rem; padding: 0.6rem 1.75rem; border-radius: 999px; border: 1px solid var(--violet-light); background-color: var(--violet); background-image: radial-gradient(at 0 0, #8556ff, #6b3eff 60%); color: #fff; font-weight: 600; font-size: 1rem; line-height: 1.25; text-decoration: none; box-shadow: 0 3px 3px rgba(18, 25, 217, 0.3), inset 0 -3px 4px rgba(91, 18, 217, 0.3); margin: 0.5rem 0.75rem 0.5rem 0; transition: background-color 0.15s ease-out, border-color 0.15s ease-out, color 0.15s ease-out; }
 .cta:hover { background-image: none; background-color: var(--violet-deep); border-color: var(--violet-deep); color: #fff; }
@@ -212,8 +220,49 @@ section.band .dg-person { fill: var(--band-card); stroke: var(--n500); }
 section.band .dg-stop { fill: #2b2113; stroke: #ffcf99; }
 section.band .dg-stop-x { stroke: #ffcf99; }
 
-/* Footer. */
-footer.site { background: var(--surface); border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; padding: 3rem 0 2.5rem; }
+/* Headline figures (home Labs band): a number on a card, revealed as it scrolls into view under the motion block. */
+.stats { list-style: none; padding: 0; margin: 1.5rem 0; display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); }
+.stats li { margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); padding: 1.25rem 1.5rem; }
+.stat-num { display: block; font-family: var(--font-heading); font-weight: 700; font-size: 2.5rem; line-height: 1.1; letter-spacing: -0.05rem; color: var(--accent); font-variant-numeric: tabular-nums; margin-bottom: 0.35rem; }
+.stat-num.v2 { color: var(--tag-live-fg); }
+.stats li p { margin: 0; font-size: 0.95rem; color: var(--muted); }
+
+/* Learning-curve chart (Labs): an inline SVG line chart with no script. Each point is a link to its caption in the
+   list; :target marks the caption and, through :has(), the point, and hover or focus on either side marks both. */
+.lc { margin: 0; display: grid; gap: 1.5rem; align-items: center; view-timeline-name: --lc; }
+.lc svg { display: block; width: 100%; max-width: 34rem; height: auto; margin: 0 auto; font-family: var(--font-sans); }
+.lc-list { list-style: none; padding: 0; margin: 0 0 0.75rem; display: grid; gap: 0.4rem; font-size: 0.95rem; }
+.lc-list li { margin: 0; display: flex; gap: 0.75rem; align-items: center; padding: 0.3rem 0.5rem; border-radius: var(--r-sm); border: 1px solid transparent; scroll-margin-top: 1rem; }
+.lc-list li strong { font-variant-numeric: tabular-nums; }
+.lc-list a { flex: none; display: inline-flex; align-items: center; justify-content: center; min-height: 2.5rem; min-width: 6.5rem; padding: 0 0.85rem; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--fg); font-weight: 700; font-size: 0.875rem; text-decoration: none; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lc-list a:hover { border-color: var(--accent); color: var(--accent); }
+.lc-list a.v2 { border-color: var(--tag-live-fg); color: var(--tag-live-fg); background: var(--tag-live-bg); }
+.lc-grid { fill: none; stroke: var(--line); stroke-width: 1; }
+.lc-axis { fill: none; stroke: var(--line-strong); stroke-width: 1.5; }
+.lc-tick { fill: var(--muted); font-size: 12px; font-weight: 500; }
+.lc-axis-t { fill: var(--muted); font-size: 12px; font-weight: 600; }
+.lc-label { fill: var(--fg); font-size: 12px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.lc-line { fill: none; stroke: var(--accent); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+.lc-base { fill: none; stroke: var(--n500); stroke-width: 1.5; stroke-dasharray: 5 5; }
+.lc-seg { fill: none; stroke: var(--tag-live-fg); stroke-width: 2; stroke-dasharray: 4 4; stroke-linecap: round; }
+.lc-band { fill: var(--warnbg); stroke: var(--warn); stroke-width: 0.5; }
+.lc-hit { fill: transparent; }
+.lc-dot { fill: var(--accent); stroke: var(--bg); stroke-width: 2; }
+.lc-ring { fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0; }
+.lc-pts a.v2 .lc-dot { fill: var(--tag-live-fg); }
+.lc-pts a.v2 .lc-ring { stroke: var(--tag-live-fg); }
+.lc-pts a:focus-visible { outline-offset: -0.45rem; } /* the site focus ring, pulled in from the edge of the hit area towards the dot */
+.lc-pts a:hover .lc-ring, .lc-pts a:focus-visible .lc-ring { opacity: 1; }
+.lc-pts a:hover .lc-dot, .lc-pts a:focus-visible .lc-dot { r: 7px; }
+.lc:has(#lc-1:target) [href="#lc-1"] .lc-ring, .lc:has(li a[href="#lc-1"]:hover) [href="#lc-1"] .lc-ring { opacity: 1; }
+.lc:has(#lc-2:target) [href="#lc-2"] .lc-ring, .lc:has(li a[href="#lc-2"]:hover) [href="#lc-2"] .lc-ring { opacity: 1; }
+.lc:has(#lc-3:target) [href="#lc-3"] .lc-ring, .lc:has(li a[href="#lc-3"]:hover) [href="#lc-3"] .lc-ring { opacity: 1; }
+.lc:has(#lc-4:target) [href="#lc-4"] .lc-ring, .lc:has(li a[href="#lc-4"]:hover) [href="#lc-4"] .lc-ring { opacity: 1; }
+.lc:has(#lc-5:target) [href="#lc-5"] .lc-ring, .lc:has(li a[href="#lc-5"]:hover) [href="#lc-5"] .lc-ring { opacity: 1; }
+.lc:has(#lc-6:target) [href="#lc-6"] .lc-ring, .lc:has(li a[href="#lc-6"]:hover) [href="#lc-6"] .lc-ring { opacity: 1; }
+.lc-list li:target, .lc:has(svg [href="#lc-1"]:hover) #lc-1, .lc:has(svg [href="#lc-2"]:hover) #lc-2, .lc:has(svg [href="#lc-3"]:hover) #lc-3, .lc:has(svg [href="#lc-4"]:hover) #lc-4, .lc:has(svg [href="#lc-5"]:hover) #lc-5, .lc:has(svg [href="#lc-6"]:hover) #lc-6 { background: var(--accent-soft); border-color: var(--accent); }
+
+/* Footer. */footer.site { background: var(--surface); border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; padding: 3rem 0 2.5rem; }
 .foot-grid { display: grid; gap: 2rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); align-items: start; margin-bottom: 1.5rem; }
 .foot-grid nav { justify-content: flex-start; flex: none; }
 footer.site p a { display: inline-block; padding: 0.6rem 0.1rem; }
@@ -227,8 +276,35 @@ footer.site p a { display: inline-block; padding: 0.6rem 0.1rem; }
 @keyframes march-x { to { background-position: 16px 0; } }
 @keyframes march-y { to { background-position: 0 16px; } }
 @keyframes dash { to { stroke-dashoffset: -12; } }
+@keyframes draw { to { stroke-dashoffset: 0; } }
+@keyframes draw-now { to { stroke-dashoffset: 0; } } /* same as draw: a new name under #curve:target starts a fresh time-based run */
+@keyframes fade-now { from { opacity: 0; } to { opacity: 1; } }
+@keyframes float { to { transform: translateY(-8px); } }
+@keyframes drift { to { background-position: 100% 100%, 0% 0%, 50% 100%; } }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(94, 231, 228, 0.7); } 70%, 100% { box-shadow: 0 0 0 0.5rem rgba(94, 231, 228, 0); } }
 @media (prefers-reduced-motion: no-preference) {
-  .preview { animation: rise 0.6s ease-out both; }
+  .preview { animation: rise 0.6s ease-out both, float 7s ease-in-out 0.6s infinite alternate; }
+  section.hero::before { animation: drift 30s ease-in-out infinite alternate; }
+  .tag.live::before { animation: pulse 2.4s ease-out infinite; }
+  /* Scroll-driven where animation-timeline is supported; elsewhere the same animations play once on load. */
+  .stats li { animation: rise 0.7s ease-out both; animation-timeline: view(); animation-range: entry 0% entry 60%; }
+  .stats li:nth-child(2) { animation-range: entry 15% entry 75%; }
+  .stats li:nth-child(3) { animation-range: entry 30% entry 90%; }
+  .lc-line { stroke-dasharray: 236; stroke-dashoffset: 236; animation: draw 1.6s ease-out both; animation-timeline: --lc; animation-range: entry 0% entry 85%; }
+  .lc-pts a, .lc-seg, .lc-note { animation: fade 0.5s ease-out both; animation-timeline: --lc; animation-range: entry 60% entry 95%; }
+  .lc-pts a:nth-child(1) { animation-range: entry 10% entry 45%; }
+  .lc-pts a:nth-child(2) { animation-range: entry 20% entry 55%; }
+  .lc-pts a:nth-child(3) { animation-range: entry 30% entry 65%; }
+  .lc-pts a:nth-child(4) { animation-range: entry 40% entry 75%; }
+  .lc-pts a:nth-child(5) { animation-range: entry 50% entry 85%; }
+  /* Landing on #curve (the home page link) plays the draw-in over time instead of on scroll. The animation names change so a new animation starts; switching only the timeline of a running one leaves its start time wrong. */
+  #curve:target .lc-pts a, #curve:target .lc-seg, #curve:target .lc-note { animation-name: fade-now; animation-timeline: auto; animation-delay: 2s; }
+  #curve:target .lc-line { animation-name: draw-now; animation-timeline: auto; animation-delay: 0.2s; }
+  #curve:target .lc-pts a:nth-child(1) { animation-delay: 0.45s; }
+  #curve:target .lc-pts a:nth-child(2) { animation-delay: 0.8s; }
+  #curve:target .lc-pts a:nth-child(3) { animation-delay: 1.1s; }
+  #curve:target .lc-pts a:nth-child(4) { animation-delay: 1.4s; }
+  #curve:target .lc-pts a:nth-child(5) { animation-delay: 1.7s; }
   .preview-lines li, .preview-foot { animation: fade 0.5s ease-out both; }
   .preview-lines li:nth-child(1) { animation-delay: 0.4s; }
   .preview-lines li:nth-child(2) { animation-delay: 0.65s; }
@@ -262,12 +338,14 @@ footer.site p a { display: inline-block; padding: 0.6rem 0.1rem; }
   .steps li::after { left: calc(1.25rem + 1rem - 1px); top: calc(1.25rem + 2rem + 0.25rem); bottom: calc(-1rem - 1.25rem + 0.25rem); }
   .spec { grid-template-columns: 1fr; gap: 0.1rem; }
   .spec dd { margin-bottom: 0.5rem; }
+  .card .lc svg { width: calc(100% + 1.5rem); max-width: none; margin: 0 -0.75rem; } /* a little wider than the card padding, for larger chart text and targets */
 }
 @media (min-width: 40rem) {
   .preview-lines li { grid-template-columns: 1fr auto 1fr; }
   .flag { grid-column: auto; text-align: right; }
 }
 @media (min-width: 60rem) {
+  .lc { grid-template-columns: minmax(16rem, 2fr) 3fr; }
   h1 { font-size: 3.5rem; }
   h2 { font-size: 2.5rem; }
   section.hero { padding: 6rem 0 7rem; }

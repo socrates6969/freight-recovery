@@ -1,0 +1,157 @@
+<!--meta {"title":"scoup Labs: measured learning, not promises","description":"Recall, the charge-name suggester in scoup.ai, measured on public tariff charge names: the learning curve, what failed, what is planned and what is not known.","path":"/labs/","crumb":"Labs","updated":"2026-10-20"} -->
+<section class="band page-head">
+<div class="container narrow">
+<p class="pill">scoup Labs, research notes</p>
+<h1>Measured learning, <span class="hl">not promises</span></h1>
+<p class="lead">scoup Labs is where we measure whether the learning parts of scoup.ai improve with data, publish the curve and the method, and say plainly what failed and what has not been measured. Everything on this page was measured on public tariff charge names with a held-out test, not on invoices.</p>
+<p class="actions"><a class="cta" href="#curve">See the measured curve</a><a class="cta secondary" href="/app/">Open the app</a></p>
+</div>
+</section>
+
+<section>
+<div class="container two-col">
+<div>
+<h2>What Recall is</h2>
+<p class="tag live">Live in the browser app</p>
+<p>Recall is the charge-name suggester behind the <a href="/platform/#charge-names">Charge names</a> tool and the workspace's <a href="/workspace/#charge-intelligence">charge intelligence</a>. It is memory-based: it keeps labelled charge names as examples, turns a name into character and word fragments, and suggests the class of the nearest example when the similarity clears a fixed threshold. Below the threshold it abstains. There is no training step and there are no model weights; the memory is public tariff charge names and, in the workspace, a team's own labels.</p>
+<p>It learns in two ways. Every public tariff we add gives it more examples to match against. In the workspace prototype, a label a team gives a charge description becomes an example for that team alone; labels are never shared between workspaces.</p>
+<p>Recall is review-only. A suggestion adds an item for a person to check; it never changes an amount, confirms a charge or decides what is owed.</p>
+</div>
+<svg class="diagram" viewBox="0 0 360 334" role="img" aria-labelledby="rc-title">
+<title id="rc-title">How Recall works: a charge name on an invoice line is compared with a memory of labelled examples, public tariff names and the team's own labels; if the nearest example is similar enough, a suggestion is added for a person to review; otherwise Recall abstains and nothing is added</title>
+<defs><marker id="rc-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="dg-fill"/></marker></defs>
+<rect x="4" y="4" width="352" height="52" rx="10" class="dg-box"/><text x="180" y="35" text-anchor="middle" class="dg-text">Charge name on an invoice line</text>
+<path d="M180 56v24" class="dg-line dash" marker-end="url(#rc-arrow)"/>
+<rect x="30" y="84" width="300" height="64" rx="10" class="dg-box accent"/>
+<text x="180" y="110" text-anchor="middle" class="dg-text">Memory of labelled examples</text>
+<text x="180" y="130" text-anchor="middle" class="dg-small">public tariff names and your team's labels</text>
+<path d="M180 148v24" class="dg-line dash" marker-end="url(#rc-arrow)"/>
+<rect x="30" y="176" width="300" height="60" rx="10" class="dg-box"/>
+<text x="180" y="200" text-anchor="middle" class="dg-text">Nearest example</text>
+<text x="180" y="220" text-anchor="middle" class="dg-small">is it similar enough?</text>
+<path d="M180 236v14M100 250h160" class="dg-line dash"/>
+<path d="M100 250v22" class="dg-line dash" marker-end="url(#rc-arrow)"/>
+<path d="M260 250v22" class="dg-line no" marker-end="url(#rc-arrow)"/>
+<text x="92" y="268" text-anchor="end" class="dg-small">yes</text>
+<text x="268" y="268" class="dg-small">no</text>
+<rect x="16" y="276" width="168" height="52" rx="10" class="dg-box soft"/>
+<text x="100" y="298" text-anchor="middle" class="dg-text">Suggestion</text>
+<text x="100" y="316" text-anchor="middle" class="dg-small">for a person to review</text>
+<rect x="176" y="276" width="168" height="52" rx="10" class="dg-box soft"/>
+<text x="260" y="298" text-anchor="middle" class="dg-text">Abstain</text>
+<text x="260" y="316" text-anchor="middle" class="dg-small">nothing is added</text>
+</svg>
+</div>
+</section>
+
+<section class="surface" id="curve">
+<div class="container">
+<h2>The learning curve</h2>
+<p class="lead">Training names in, held-out names recognised out. Every point is the same test: one public carrier's charge names are held out and recognised only from the other carriers' names, with an exact copy of the query never allowed to count. Hover over a point, or select one, for its figures.</p>
+<div class="card">
+<figure class="lc">
+<figcaption>
+<ol class="lc-list">
+<li id="lc-1"><a href="#lc-1">15 names</a><span><strong>36.3%</strong> of held-out names recognised</span></li>
+<li id="lc-2"><a href="#lc-2">37 names</a><span><strong>60.2%</strong> recognised</span></li>
+<li id="lc-3"><a href="#lc-3">73 names</a><span><strong>76.6%</strong> recognised</span></li>
+<li id="lc-4"><a href="#lc-4">110 names</a><span><strong>84.5%</strong> recognised</span></li>
+<li id="lc-5"><a href="#lc-5">146 names</a><span><strong>89.1%</strong> recognised: the shipped public seed, 175 names from six carriers</span></li>
+<li id="lc-6"><a class="v2" href="#lc-6">146 + 99 names</a><span><strong>93.1%</strong> recognised after 99 newly fetched public names: 7 names gained, 0 lost</span></li>
+</ol>
+</figcaption>
+<svg viewBox="-8 0 410 308" role="img" aria-labelledby="lc-title lc-desc">
+<title id="lc-title">Learning curve of Recall: held-out names recognised against training names</title>
+<desc id="lc-desc">Recognition rises from 36.3% with 15 training names to 60.2% with 37, 76.6% with 73, 84.5% with 110 and 89.1% with 146; a further 99 public names raise it to 93.1%. Keyword rules alone recognise 19.4%, shown as a dashed line. Wrong suggestions stayed between 0.6% and 2.5%, shown as a band at the bottom.</desc>
+<path class="lc-grid" d="M46 212.8H380M46 163.6H380M46 114.4H380M46 65.2H380M46 16H380"/>
+<rect class="lc-band" x="46" y="255.9" width="334" height="4.6"/>
+<path class="lc-axis" d="M46 16V262H380"/>
+<g class="lc-tick">
+<text x="40" y="266" text-anchor="end">0%</text><text x="40" y="216.8" text-anchor="end">20%</text><text x="40" y="167.6" text-anchor="end">40%</text><text x="40" y="118.4" text-anchor="end">60%</text><text x="40" y="69.2" text-anchor="end">80%</text><text x="40" y="20" text-anchor="end">100%</text>
+<text x="46" y="278" text-anchor="middle">0</text><text x="112.8" y="278" text-anchor="middle">50</text><text x="179.6" y="278" text-anchor="middle">100</text><text x="246.4" y="278" text-anchor="middle">150</text><text x="313.2" y="278" text-anchor="middle">200</text><text x="380" y="278" text-anchor="middle">250</text>
+<text x="50" y="209">keyword rules alone 19.4%</text>
+<text x="376" y="250" text-anchor="end">wrong suggestions 0.6% to 2.5%</text>
+</g>
+<text class="lc-axis-t" x="213" y="298" text-anchor="middle">training names (public tariff charge names)</text>
+<text class="lc-axis-t" x="4" y="139" text-anchor="middle" transform="rotate(-90 4 139)">held-out names recognised</text>
+<path class="lc-base" d="M46 214.3H380"/>
+<path class="lc-seg" d="M241.1 42.8L373.3 33"/>
+<g class="lc-note lc-tick"><text x="307" y="62" text-anchor="middle">+99 public names</text><text x="307" y="77" text-anchor="middle">7 gained, 0 lost</text></g>
+<path class="lc-line" d="M66 172.7L95.4 113.9L143.5 73.6L193 54.1L241.1 42.8"/>
+<g class="lc-pts">
+<a href="#lc-1"><title>15 training names: 36.3% of held-out names recognised</title><circle class="lc-hit" cx="66" cy="172.7" r="27.5"/><circle class="lc-ring" cx="66" cy="172.7" r="11"/><circle class="lc-dot" cx="66" cy="172.7" r="5.5"/><text class="lc-label" x="72" y="185">36.3%</text></a>
+<a href="#lc-2"><title>37 training names: 60.2% of held-out names recognised</title><circle class="lc-hit" cx="95.4" cy="113.9" r="27.5"/><circle class="lc-ring" cx="95.4" cy="113.9" r="11"/><circle class="lc-dot" cx="95.4" cy="113.9" r="5.5"/><text class="lc-label" x="102" y="127">60.2%</text></a>
+<a href="#lc-3"><title>73 training names: 76.6% of held-out names recognised</title><circle class="lc-hit" cx="143.5" cy="73.6" r="27.5"/><circle class="lc-ring" cx="143.5" cy="73.6" r="11"/><circle class="lc-dot" cx="143.5" cy="73.6" r="5.5"/><text class="lc-label" x="150" y="87">76.6%</text></a>
+<a href="#lc-4"><title>110 training names: 84.5% of held-out names recognised</title><circle class="lc-hit" cx="193" cy="54.1" r="27.5"/><circle class="lc-ring" cx="193" cy="54.1" r="11"/><circle class="lc-dot" cx="193" cy="54.1" r="5.5"/><text class="lc-label" x="200" y="68">84.5%</text></a>
+<a href="#lc-5"><title>146 training names, the shipped seed: 89.1% of held-out names recognised</title><circle class="lc-hit" cx="241.1" cy="42.8" r="27.5"/><circle class="lc-ring" cx="241.1" cy="42.8" r="11"/><circle class="lc-dot" cx="241.1" cy="42.8" r="5.5"/><text class="lc-label" x="234" y="37" text-anchor="end">89.1%</text></a>
+<a href="#lc-6" class="v2"><title>146 + 99 newly fetched public names: 93.1% of held-out names recognised, 7 gained, 0 lost</title><circle class="lc-hit" cx="373.3" cy="33" r="27.5"/><circle class="lc-ring" cx="373.3" cy="33" r="11"/><circle class="lc-dot" cx="373.3" cy="33" r="5.5"/><text class="lc-label" x="366" y="24" text-anchor="end">93.1%</text></a>
+</g>
+</svg>
+</figure>
+<p class="source">Keyword rules alone recognise 19.4% of the same held-out names. Wrong suggestions stayed between 0.6% and 2.5% at every point. Measured 2026-10-19 on public tariff charge names held out by carrier; not on invoices.</p>
+</div>
+</div>
+</section>
+
+<section>
+<div class="container">
+<h2>Three results from the same run</h2>
+<div class="grid">
+<div class="card">
+<h3>99 more public names: 89.1% to 93.1%</h3>
+<p>On 2026-10-19 we fetched 99 charge names from three further public sources (the GSA Uniform Rules Tariff 200-A, the FedEx Freight 2026 accessorial sheet and the J.B. Hunt LTL accessorials guide), labelled them and added them to the memory. On the unchanged held-out test, recognition went from 89.1% to 93.1%: 7 names gained, 0 lost, exact McNemar p = 0.016, wrong suggestions unchanged. The names were labelled by one person and are not yet in the shipped seed.</p>
+</div>
+<div class="card">
+<h3>Two candidates failed and were not adopted</h3>
+<p>Every candidate is written down before it runs, with the held-out test and the pass mark it must reach. An IDF reweighting of the same features, meant to discount generic words such as "charge" and "fee", fell from 89.1% to 76.6% recognised (0 names gained, 22 lost): with the threshold fixed in advance, fewer names cleared it. A vote that added a sentence-embedding model next to the character match did not pass its gate either. Neither shipped. The product changes only when a candidate beats the incumbent on the same held-out names, and what fails is reported, not quietly dropped.</p>
+</div>
+<div class="card">
+<h3>The cost outlook is at its ceiling on public data</h3>
+<p>The workspace's cost outlook fits an AR(2) model to public price history: the weekly U.S. diesel price from EIA and the monthly truckload PPI from BLS, both via FRED. Over every forecast origin of the last ten years, its error is 0.882 times that of a no-change forecast for diesel one week ahead and 0.846 for PPI one month ahead. Fitting on more than eight years of history changes these by less than a point: more public history will not move it, and a lane-level outlook would need other data.</p>
+</div>
+</div>
+</div>
+</section>
+
+<section class="band">
+<div class="container two-col">
+<div>
+<h2>What it means when you use scoup.ai</h2>
+<p>A charge under a name your rules have never seen is the one most likely to slip through. Recall's job is to route it to a person: when an unfamiliar name resembles a labelled one closely enough, the line is marked for review with the name it resembles and the similarity score. When it does not, Recall says nothing and the fixed rules still apply.</p>
+<p>A suggestion never changes an amount, never confirms a charge and never decides what is owed. The arithmetic in every finding comes from the fixed rules, and a person approves every claim.</p>
+</div>
+<div>
+<h2>What is not known</h2>
+<ul>
+<li>How Recall performs on customer invoice lines. Tariff names are clean; invoice text carries carrier codes, abbreviations and typos, a different distribution. Nothing has been measured on it.</li>
+<li>Nothing has been measured on customer documents of any kind, and no accuracy figure is published for invoices.</li>
+<li>The results on this page come from one internal run on 2026-10-19 and have not been independently reproduced.</li>
+<li>The 99 added names were labelled by one person; a second check is planned before they ship.</li>
+</ul>
+</div>
+</div>
+</section>
+
+<section class="surface">
+<div class="container">
+<h2>What is next, and what it needs</h2>
+<p class="lead">Each item carries a label. <span class="tag plan">Planned</span> means it can be done with public data and is scheduled. <span class="tag data">Needs customer data</span> means it cannot be measured until pilot teams share files or outcomes under NDA, and its gain is unknown until then.</p>
+<ul class="grid">
+<li><h3>More public tariff names</h3><p class="tag plan">Planned</p><p>A second seed with names from more public tariffs, each label checked by a second person before it ships, measured on the same held-out test. The curve is flattening: 99 names added 4.0 points, and 4 of the 7 names gained were the same storage concept, so public names alone will not settle how Recall does on invoices.</p></li>
+<li><h3>Recall on real invoice lines</h3><p class="tag data">Needs customer data</p><p>Labelled invoice lines from pilot files, shared under NDA. Carrier codes, abbreviations and free text are a different distribution from tariff names, and nothing has been measured on them. This is the measurement that decides whether the public curve carries over.</p></li>
+<li><h3>Dispute outcomes feeding suggestion precision</h3><p class="tag data">Needs customer data</p><p>Today nothing is recorded after a demand is marked send-ready, so no one can say how many review items became captured dollars. With outcomes (paid, denied, partial) recorded per finding, the precision of each suggestion rule can be measured and the rules tuned against it.</p></li>
+<li><h3>A learned review-priority ranker</h3><p class="tag data">Needs customer data</p><p>The claim list is ordered by a stated policy with fixed weights. A ranker fitted on outcomes would be compared with that policy on captured dollars per hour of review, on held-out claims, and adopted only if it wins.</p></li>
+<li><h3>Lane-level cost forecasting</h3><p class="tag data">Needs customer data</p><p>The public outlook is national and at its ceiling. A lane-level forecast needs a customer's lane rate history or purchased benchmarks, and it ships only if it beats a seasonal baseline on held-out months.</p></li>
+<li><h3>Agent-orchestration research</h3><p class="tag plan">Tooling, not in the product</p><p>The neural mesh of coding agents and the Hebbwise learner we also write about are tooling for building scoup.ai. No agent or learned router runs in the browser app or the workspace, and no model decides an amount.</p></li>
+</ul>
+</div>
+</section>
+
+<section>
+<div class="container prose">
+<h2>Method and sources</h2>
+<p>Held-out test: leave-one-carrier-out over the 175 public tariff charge names in the shipped seed, from six carriers. Each carrier's names are held out in turn and classified only from the other carriers' names; a candidate whose normalised text equals the query is excluded, so an exact copy can never count as recognised. A name counts as recognised when the nearest example's class is correct and the similarity clears the fixed threshold; below it, Recall abstains. For the smaller training sizes the other carriers' names are randomly subsampled 50 times and the rates averaged. Recognition is pooled over all 175 names; 159 of them are accessorial names, so the test says most about that class.</p>
+<p class="source">Experiment run 2026-10-19 by the scoup.ai team on public data: charge names copied from six public carrier tariffs (retrieved 2026-10-11) plus 99 names from the GSA Uniform Rules Tariff 200-A, the FedEx Freight 2026 accessorial sheet and the J.B. Hunt LTL accessorials guide (retrieved 2026-10-19); diesel and PPI series from FRED (EIA series GASDESW, BLS series PCU4841214841212). The run is being turned into a repository script, api/eval/curve.ts (npm run eval:curve), so the curve can be regenerated from the seed; until that lands, the run outputs are internal. These are internal results on public tariff charge names, not a benchmark on invoices, and they have not been independently reproduced.</p>
+<p class="actions"><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/workspace/#charge-intelligence">Charge intelligence in the workspace</a></p>
+</div>
+</section>

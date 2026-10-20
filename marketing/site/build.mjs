@@ -90,6 +90,7 @@ const NAV = [
   ["/platform/", "Product"],
   ["/workspace/", "Workspace"],
   ["/docs/", "Developers"],
+  ["/labs/", "Labs"],
   ["/how-it-works/", "How it works"],
   ["/pricing/", "Pricing"],
   ["/security/", "Security and privacy"],
