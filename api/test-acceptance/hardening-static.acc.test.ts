@@ -56,7 +56,9 @@ const OCEAN_DD_BASE: Record<string, string> = {
   'tariff.ts': '073bd0e7d4b85860ff505fc5535877dfdfd43274e31e4767b9b3388bd7f45d3e',
 };
 /** HD-S09: LF sha256 at BASE. */
-const RBAC_BASE = '0671d28cb9522001216fb34312d4073aab42478f107297b30c4bdc554e902b07';
+/** Amended for REQ-20261018-exec-dashboard: rbac.ts gained insights:read (OWNER, ADMIN, MANAGER, VIEWER); the pin moves to
+ *  that content (LF sha256 of packages/shared/src/rbac.ts after the dashboard change). feature-flags.ts is unchanged. */
+const RBAC_BASE = 'e7d9108de9362007c33b007bb1293da0b91a5c8aea747223e7d73e1739ade970';
 const FLAGS_BASE = 'a0ed0ae52ebeeead7cd21a68f4a471b0c94a485cc3d573cb507a326271b64d2b';
 const ENV_EXAMPLE_BASE = '7ae40ea33086e10a58c74fb538e378b01ff9bedfde07ff4be3ca566d988c6c0b';
 /** HD-S09 (review R-1): sha256 of each BASE .env.example line in order (LF text split on LF, 74 entries incl. the empty
@@ -200,7 +202,7 @@ describe('HD-S03 / HD-S04 / HD-S09 byte pins against BASE (C0.3, C0.4, C11)', ()
     expect(files, 'no ocean-dd file added or removed').toEqual(Object.keys(OCEAN_DD_BASE).sort());
     for (const [f, h] of Object.entries(OCEAN_DD_BASE)) expect(shaLf(join(dir, f)), f).toBe(h);
   });
-  it('HD-S09 rbac.ts and feature-flags.ts are byte-identical to BASE (no new permission or flag)', () => {
+  it('HD-S09 rbac.ts and feature-flags.ts are byte-identical to BASE (amended: insights:read added by the exec dashboard; no new flag)', () => {
     expect(shaLf(resolve(ROOT, 'packages', 'shared', 'src', 'rbac.ts'))).toBe(RBAC_BASE);
     expect(shaLf(resolve(ROOT, 'packages', 'shared', 'src', 'feature-flags.ts'))).toBe(FLAGS_BASE);
   });
