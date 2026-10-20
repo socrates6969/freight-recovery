@@ -205,6 +205,7 @@ model Tenant {
   ddTariffs       DdTariff[]
   ddCalendars     DdCalendar[]
   ddInvoices      DdInvoice[]
+  claimOutcomes   ClaimOutcome[]
 
   @@map("tenants")
 }
@@ -250,6 +251,7 @@ model User {
   ddCalendarsUpdated  DdCalendar[]           @relation("DdCalendarUpdatedBy")
   ddInvoicesCreated   DdInvoice[]            @relation("DdInvoiceCreatedBy")
   ddInvoicesUpdated   DdInvoice[]            @relation("DdInvoiceUpdatedBy")
+  outcomesRecorded    ClaimOutcome[]         @relation("ClaimOutcomeRecordedBy")
 
   @@map("users")
 }
@@ -416,6 +418,7 @@ model Claim {
   documents  ClaimDocument[]
   fuelInputs ClaimFuelInput[]
   ddInvoice  DdInvoice?
+  outcomes   ClaimOutcome[]
 
   @@unique([tenantId, claimNumber])
   @@unique([id, tenantId])
@@ -999,4 +1002,34 @@ model DdInvoice {
   @@unique([claimId, tenantId])
   @@index([tenantId, updatedAt])
   @@map("dd_invoices")
+}
+
+// REQ-20261020-claim-outcomes: what happened after a claim was marked ready to demand. Human-entered,
+// append-only (fr_append_only triggers; no UPDATE/DELETE grant), one row per recorded event. `kind`
+// OUTCOME needs a SEND_READY claim; AUDITED_NO_FINDING (invoice audited, nothing found) any analysed
+// claim. channel / carrierResponse / kind are TEXT with CHECK constraints (like dd_invoices.status).
+model ClaimOutcome {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenantId        String    @map("tenant_id") @db.Uuid
+  claimId         String    @map("claim_id") @db.Uuid
+  kind            String    @default("OUTCOME")
+  recordedById    String    @map("recorded_by_id") @db.Uuid
+  recordedAt      DateTime  @default(now()) @map("recorded_at") @db.Timestamptz(3)
+  sentAt          DateTime? @map("sent_at") @db.Timestamptz(3)
+  channel         String
+  carrierResponse String    @map("carrier_response")
+  creditedCents   Int?      @map("credited_cents")
+  paidCents       Int?      @map("paid_cents")
+  closedAt        DateTime? @map("closed_at") @db.Timestamptz(3)
+  note            String    @default("")
+  version         Int       @default(1)
+
+  tenant     Tenant @relation(fields: [tenantId], references: [id])
+  claim      Claim  @relation(fields: [claimId, tenantId], references: [id, tenantId], onDelete: Restrict)
+  recordedBy User   @relation("ClaimOutcomeRecordedBy", fields: [recordedById], references: [id])
+
+  @@unique([id, tenantId])
+  @@index([tenantId, claimId, recordedAt])
+  @@index([tenantId, recordedAt])
+  @@map("claim_outcomes")
 }
