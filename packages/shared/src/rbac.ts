@@ -58,6 +58,8 @@ export const PERMISSIONS = [
   'dd_tariffs:manage',
   // REQ-20261018-exec-dashboard: executive insights (read-only aggregates).
   'insights:read',
+  // REQ-20261020-claim-outcomes: record what happened after a claim was marked ready to demand.
+  'outcomes:record',
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number];
@@ -89,6 +91,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'dd_invoices:manage',
     'dd_tariffs:manage',
     'insights:read',
+    'outcomes:record',
   ] as const),
   ADMIN: Object.freeze([
     'claims:read',
@@ -112,6 +115,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'dd_invoices:manage',
     'dd_tariffs:manage',
     'insights:read',
+    'outcomes:record',
   ] as const),
   MANAGER: Object.freeze([
     'claims:read',
@@ -129,6 +133,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'dd_invoices:manage',
     'dd_tariffs:manage',
     'insights:read',
+    'outcomes:record',
   ] as const),
   REVIEWER: Object.freeze([
     'claims:read',
@@ -143,6 +148,7 @@ export const PERMISSION_MATRIX: Readonly<Record<Role, readonly Permission[]>> = 
     'charge_labels:manage',
     'dd_invoices:manage',
     'dd_tariffs:manage',
+    'outcomes:record',
   ] as const),
   // Step 5 policy D1: ANALYST may run the analysis (creates a draft only; cannot approve).
   // Step 8 policy D7: ANALYST may enter D&D invoices (not tariffs/calendars).

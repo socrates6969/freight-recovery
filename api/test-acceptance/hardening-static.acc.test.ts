@@ -21,6 +21,10 @@ const HARDENING_COMMITTED = '41b7a7df0deb80b1bd9eb704420a4418499decce7a461408ac5
 /** Review R-7: LF-normalised sha256 of 20261019000000_hardening_fr2/migration.sql as committed in c3f131b (immutable from
  *  now on, CLAUDE.md rule 8); pinned in addition to the FR2-S01 content whitelist. */
 const FR2_COMMITTED_LF = '07df58c0906c4f3b8fdb458d14bfb01d548e2487da6abba657a016ae8e7537d9';
+/** REQ-20261020-claim-outcomes: one further committed folder (claim_outcomes table, guard trigger, RLS, grants); LF sha256 of
+ *  its migration.sql as committed in this run (immutable from now on, CLAUDE.md rule 8). Earlier folders unchanged. */
+const OUTCOMES_DIR = '20261020000000_claim_outcomes';
+const OUTCOMES_COMMITTED_LF = 'd6d986c934a9644a9b81bc980652eaba53484772c3a1cffa791c91e827acdf53';
 const sha = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
 /** LF-normalised sha256 (Windows checkouts may convert to CRLF; CI checks out LF). */
 const shaLf = (p: string) => sha(Buffer.from(readFileSync(p, 'latin1').replace(/\r\n/g, '\n'), 'latin1'));
@@ -40,7 +44,9 @@ const BASE_MIGRATIONS: Record<string, string> = {
   '20261017000000_audit_target_index': 'd4782f35f97e137f2daa9a6a882f618b1d47e43a15c336ec80e4614487baefe8',
 };
 /** HD-S03: LF sha256 of api/prisma/schema.prisma at BASE (equals the test-spec value; BASE includes fix round 4). */
-const SCHEMA_BASE = '565b7394ae85d41ffdece84c8194fd6518f6390ded5c96b2121134dfe720b62f';
+/** Amended for REQ-20261020-claim-outcomes: schema.prisma gained the ClaimOutcome model (table claim_outcomes) and its three
+ *  relation lists; the pin moves to that content (LF sha256 after the outcomes change). Nothing else in the schema changed. */
+const SCHEMA_BASE = '6833c8df10d688468e7202119ac8d11478ebbfaf4b5768153b1f83faefb27e7b';
 /** HD-S04 new pin: LF sha256 of every file under packages/shared/src/ocean-dd/ at BASE (file list exact). */
 const OCEAN_DD_BASE: Record<string, string> = {
   'audit.ts': '05dd241dec2e64ce15ef00c504a2885169ff573be2fe84dff33baddab0fdf5f1',
@@ -58,7 +64,8 @@ const OCEAN_DD_BASE: Record<string, string> = {
 /** HD-S09: LF sha256 at BASE. */
 /** Amended for REQ-20261018-exec-dashboard: rbac.ts gained insights:read (OWNER, ADMIN, MANAGER, VIEWER); the pin moves to
  *  that content (LF sha256 of packages/shared/src/rbac.ts after the dashboard change). feature-flags.ts is unchanged. */
-const RBAC_BASE = 'e7d9108de9362007c33b007bb1293da0b91a5c8aea747223e7d73e1739ade970';
+/** Amended again for REQ-20261020-claim-outcomes: rbac.ts gained outcomes:record (OWNER, ADMIN, MANAGER, REVIEWER). */
+const RBAC_BASE = 'c3755590783d272c380268a8d4db34db0c9bbfa7fd6a282727243fc8021c5cc7';
 const FLAGS_BASE = 'a0ed0ae52ebeeead7cd21a68f4a471b0c94a485cc3d573cb507a326271b64d2b';
 const ENV_EXAMPLE_BASE = '7ae40ea33086e10a58c74fb538e378b01ff9bedfde07ff4be3ca566d988c6c0b';
 /** HD-S09 (review R-1): sha256 of each BASE .env.example line in order (LF text split on LF, 74 entries incl. the empty
@@ -114,11 +121,12 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe('HD-S01 migrations (C0.2)', () => {
-  it('the nine BASE folders plus exactly 20261018000000_hardening and (fix round 2) 20261019000000_hardening_fr2, sorted last; each folder holds only migration.sql; BASE files and the committed hardening file byte-identical', () => {
+  it('the nine BASE folders plus exactly 20261018000000_hardening, (fix round 2) 20261019000000_hardening_fr2 and (claim outcomes) 20261020000000_claim_outcomes, sorted last; each folder holds only migration.sql; BASE files and the committed files byte-identical', () => {
     const dirs = readdirSync(MIG).filter((d) => statSync(join(MIG, d)).isDirectory()).sort();
-    expect(dirs).toEqual([...Object.keys(BASE_MIGRATIONS).sort(), NEW_DIR, FR2_DIR]);
+    expect(dirs).toEqual([...Object.keys(BASE_MIGRATIONS).sort(), NEW_DIR, FR2_DIR, OUTCOMES_DIR]);
     expect(sha(readFileSync(join(MIG, NEW_DIR, 'migration.sql'))), `${NEW_DIR} is committed: immutable`).toBe(HARDENING_COMMITTED);
     expect(shaLf(join(MIG, FR2_DIR, 'migration.sql')), `${FR2_DIR} is committed: immutable (review R-7)`).toBe(FR2_COMMITTED_LF);
+    expect(shaLf(join(MIG, OUTCOMES_DIR, 'migration.sql')), `${OUTCOMES_DIR} is committed: immutable`).toBe(OUTCOMES_COMMITTED_LF);
     for (const d of dirs) expect(readdirSync(join(MIG, d)), d).toEqual(['migration.sql']);
     for (const [d, h] of Object.entries(BASE_MIGRATIONS)) expect(sha(readFileSync(join(MIG, d, 'migration.sql'))), d).toBe(h);
   });
@@ -193,7 +201,7 @@ describe('HD-S02 statement whitelist of the hardening migration (C2)', () => {
 });
 
 describe('HD-S03 / HD-S04 / HD-S09 byte pins against BASE (C0.3, C0.4, C11)', () => {
-  it('HD-S03 api/prisma/schema.prisma is unchanged (LF sha256 = BASE)', () => {
+  it('HD-S03 api/prisma/schema.prisma equals the pinned content (amended: ClaimOutcome model added by claim outcomes; LF sha256)', () => {
     expect(shaLf(resolve(ROOT, 'api', 'prisma', 'schema.prisma'))).toBe(SCHEMA_BASE);
   });
   it('HD-S04 new pin: packages/shared/src/ocean-dd/ equals BASE (file list exact, LF sha256)', () => {
@@ -202,7 +210,7 @@ describe('HD-S03 / HD-S04 / HD-S09 byte pins against BASE (C0.3, C0.4, C11)', ()
     expect(files, 'no ocean-dd file added or removed').toEqual(Object.keys(OCEAN_DD_BASE).sort());
     for (const [f, h] of Object.entries(OCEAN_DD_BASE)) expect(shaLf(join(dir, f)), f).toBe(h);
   });
-  it('HD-S09 rbac.ts and feature-flags.ts are byte-identical to BASE (amended: insights:read added by the exec dashboard; no new flag)', () => {
+  it('HD-S09 rbac.ts and feature-flags.ts are byte-identical to BASE (amended: insights:read by the exec dashboard, outcomes:record by claim outcomes; no new flag)', () => {
     expect(shaLf(resolve(ROOT, 'packages', 'shared', 'src', 'rbac.ts'))).toBe(RBAC_BASE);
     expect(shaLf(resolve(ROOT, 'packages', 'shared', 'src', 'feature-flags.ts'))).toBe(FLAGS_BASE);
   });

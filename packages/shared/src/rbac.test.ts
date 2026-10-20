@@ -51,6 +51,8 @@ const Y: Record<Permission, readonly Role[]> = {
   'dd_tariffs:manage': ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER'],
   // REQ-20261018-exec-dashboard: no REVIEWER, ANALYST or platform role.
   'insights:read': ['OWNER', 'ADMIN', 'MANAGER', 'VIEWER'],
+  // REQ-20261020-claim-outcomes: the approver roles record outcomes; no ANALYST, VIEWER or platform role.
+  'outcomes:record': ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER'],
 };
 
 describe('permission matrix', () => {

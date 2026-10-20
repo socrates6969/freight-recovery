@@ -85,6 +85,8 @@ export const AUDIT_ACTIONS = [
   // another tenant's account (platform chain).
   'auth.password.change_failed',
   'invite.existing_account',
+  // REQ-20261020-claim-outcomes: a recorded outcome (kind, channel, response, cents and dates; no note text).
+  'claim.outcome_recorded',
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

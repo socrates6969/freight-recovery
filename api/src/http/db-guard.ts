@@ -12,6 +12,8 @@ export const ANALYSIS_DB_MESSAGES: ReadonlySet<string> = new Set(['claim_transit
 export const DD_DB_MESSAGES: ReadonlySet<string> = new Set(['dd_invoice_immutable', 'dd_invoice_claim_invalid', 'dd_invoice_insert_invalid', 'claim_kind_immutable']);
 /** Hardening (REQ-20261012-hardening, migration 20261018000000_hardening): deferred packet decision guard (FE-S2). */
 export const PACKET_DECISION_DB_MESSAGES: ReadonlySet<string> = new Set(['packet_decision_unrecorded']);
+/** REQ-20261020-claim-outcomes (migration 20261020000000_claim_outcomes): the claim-state guard of claim_outcomes. */
+export const OUTCOME_DB_MESSAGES: ReadonlySet<string> = new Set(['claim_outcome_state_invalid', 'claim_outcome_claim_invalid']);
 
 /** Bound on how far the error chain is followed (cause / meta / driverAdapterError links). */
 const MAX_ERROR_CHAIN_DEPTH = 5;
@@ -61,4 +63,9 @@ export function isDdDbError(err: unknown): boolean {
  */
 export function isPacketDecisionDbError(err: unknown): boolean {
   return isTriggerRaise(err, GUARD_SQLSTATE, PACKET_DECISION_DB_MESSAGES);
+}
+
+/** The claim-outcome guard raise (exact message match): the service state check was bypassed. */
+export function isOutcomeDbError(err: unknown): boolean {
+  return isTriggerRaise(err, GUARD_SQLSTATE, OUTCOME_DB_MESSAGES);
 }

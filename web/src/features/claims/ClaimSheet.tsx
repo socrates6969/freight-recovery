@@ -29,8 +29,11 @@ import { ProvenancePanel, SimilarPanel } from '../intelligence/ClaimIntelligence
 import { useFeatures } from '../intelligence/use-features';
 
 import { AnalyzeClaimSection, analyzeErrorText } from './AnalyzeClaimSection';
+import { Field, HistoryPanel } from './claim-panels';
+import { OutcomesPanel } from './OutcomesPanel';
 
-const ALL_TABS = ['Summary', 'Evidence', 'History', 'Documents', 'Similar', 'Provenance', 'Charges', 'Fuel'] as const;
+// REQ-20261020-claim-outcomes: the Outcomes tab (last) appears only on a SEND_READY claim.
+const ALL_TABS = ['Summary', 'Evidence', 'History', 'Documents', 'Similar', 'Provenance', 'Charges', 'Fuel', 'Outcomes'] as const;
 export const NO_PACKET_TEXT = 'No evidence packet yet. Analysis has not run for this claim.';
 const DOC_TYPE_LABEL: Record<string, string> = { INVOICE: 'Invoice', RATE_CONFIRMATION: 'Rate confirmation', BILL_OF_LADING: 'Bill of lading', OTHER: 'Other' };
 type Tab = (typeof ALL_TABS)[number];
@@ -44,14 +47,6 @@ export const VERIFIER_TEXT: Record<string, { text: string; tone: string }> = {
   NEEDS_REVIEW: { text: 'Verifier needs review', tone: 'badge badge-warn' },
 };
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="grid grid-cols-[160px_1fr] gap-3 py-1">
-      <dt className="muted">{label}</dt>
-      <dd className="min-w-0">{children}</dd>
-    </div>
-  );
-}
 
 export function EvidencePanel({ packet }: { packet: PacketDto }) {
   const verifier = VERIFIER_TEXT[packet.verifier.status] ?? VERIFIER_TEXT['NOT_RUN'];
@@ -217,12 +212,6 @@ export function ClaimSheet() {
     setHidden((h) => (h.includes('Fuel') ? h : [...h, 'Fuel']));
     setTab('Summary');
   }, []);
-  // Similar/Provenance/Charges appear only when their flag is on (fail closed) and the feature call did not 404.
-  const TABS = ALL_TABS.filter(
-    (t) =>
-      !hidden.includes(t) &&
-      (t === 'Similar' ? features.similar : t === 'Provenance' ? features.provenance : t === 'Charges' ? features.charges : t === 'Fuel' ? features.fuel : true),
-  );
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
   const tabIds = useId();
@@ -234,6 +223,12 @@ export function ClaimSheet() {
 
   const claim = useQuery({ queryKey: ['claim', id], queryFn: () => api.get(`/api/v1/claims/${encodeURIComponent(id)}`, ClaimDetail), retry: false });
   const hasPacket = claim.data ? claim.data.latestPacket !== null : false;
+  // Similar/Provenance/Charges appear only when their flag is on (fail closed) and the feature call did not 404.
+  const TABS = ALL_TABS.filter(
+    (t) =>
+      !hidden.includes(t) &&
+      (t === 'Similar' ? features.similar : t === 'Provenance' ? features.provenance : t === 'Charges' ? features.charges : t === 'Fuel' ? features.fuel : t === 'Outcomes' ? claim.data?.status === 'SEND_READY' : true),
+  );
   const packet = useQuery({
     queryKey: ['packet', id],
     queryFn: () => api.get(`/api/v1/claims/${encodeURIComponent(id)}/packet`, Packet),
@@ -424,41 +419,12 @@ export function ClaimSheet() {
                     <div className="skeleton h-40" aria-hidden="true" />
                   )
                 ) : null}
-                {tab === 'History' ? (
-                  !hasPacket ? (
-                    <p className="muted">No review actions yet.</p>
-                  ) : packet.data ? (
-                    packet.data.approvals.length === 0 ? (
-                      <p className="muted">No review actions yet.</p>
-                    ) : (
-                      <ol className="flex flex-col gap-3">
-                        {packet.data.approvals.map((a) => (
-                          <li key={a.id} className="rounded-md border border-[var(--color-border)] p-3 text-sm">
-                            <div className="flex flex-wrap justify-between gap-2">
-                              <span className="font-medium">
-                                {a.action.replace('_', ' ').toLowerCase()} - revision <span className="num">{a.packetRevision}</span>
-                              </span>
-                              <span className="muted num">{formatDateTime(a.createdAt)}</span>
-                            </div>
-                            <p className="muted text-xs">
-                              <SafeText value={a.actor.name} /> ({a.actor.role.toLowerCase()}) - {STATUS_LABEL[a.fromStatus] ?? a.fromStatus} to{' '}
-                              {STATUS_LABEL[a.toStatus] ?? a.toStatus}
-                            </p>
-                            <p className="mt-1">
-                              <SafeText value={a.reason} />
-                            </p>
-                          </li>
-                        ))}
-                      </ol>
-                    )
-                  ) : (
-                    <div className="skeleton h-24" aria-hidden="true" />
-                  )
-                ) : null}
+                {tab === 'History' ? <HistoryPanel hasPacket={hasPacket} packet={packet.data} /> : null}
                 {tab === 'Similar' && TABS.includes('Similar') ? <SimilarPanel claimId={id} onUnavailable={hideSimilar} /> : null}
                 {tab === 'Provenance' && TABS.includes('Provenance') ? <ProvenancePanel claimId={id} onUnavailable={hideProvenance} /> : null}
                 {tab === 'Charges' && TABS.includes('Charges') ? <ChargeLinesPanel claimId={id} onUnavailable={hideCharges} /> : null}
                 {tab === 'Fuel' && TABS.includes('Fuel') ? <FuelPanel claimId={id} claimStatus={c?.status ?? null} onUnavailable={hideFuel} /> : null}
+                {tab === 'Outcomes' && TABS.includes('Outcomes') ? <OutcomesPanel claimId={id} /> : null}
                 {tab === 'Documents' ? (
                   documents.isError ? (
                     <p role="alert">The documents could not be loaded.</p>

@@ -12,6 +12,8 @@ import {
   INSIGHTS_REVIEW_WAIT_DAYS,
   INSIGHTS_STATUS_ORDER,
   INSIGHTS_TEXT,
+  OUTCOME_REVIEWER_HOURS_CAP,
+  OUTCOME_TEXT,
   type InsightsAgeBucketsDto,
   type InsightsCountCentsDto,
   type InsightsDdShareDto,
@@ -20,6 +22,8 @@ import {
   type InsightsLeakageByCarrierDto,
   type InsightsLeakageByRuleDto,
   type InsightsMetaDto,
+  type InsightsRecoveryClaimsDto,
+  type InsightsRecoveryDto,
   type InsightsStageRowDto,
   type InsightsStagesDto,
   type InsightsSummaryDto,
@@ -41,6 +45,7 @@ import type {
   WeekActionRow,
 } from '../db/insights.js';
 import type { CarrierRow, CarrierTotals, RuleRow } from '../db/insights-leakage.js';
+import type { RecoveryResponseRow, RecoveryRuleRow, ReviewerSpan } from '../db/insights-recovery.js';
 
 const DAY_MS = 86_400_000;
 const WEEK_MS = 7 * DAY_MS;
@@ -361,5 +366,87 @@ export function throughputBody(
       w.reduce((s, x) => s + x.approve, 0),
       w.reduce((s, x) => s + x.reject, 0),
     ),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Recovery (REQ-20261020-claim-outcomes)
+// ---------------------------------------------------------------------------------------------
+
+const HOUR_MS = 3_600_000;
+const RESPONSE_FIELD: Readonly<Record<string, keyof InsightsRecoveryDto['responses']>> = Object.freeze({
+  NONE_YET: 'noneYet',
+  ACCEPTED: 'accepted',
+  PARTIAL: 'partial',
+  REJECTED: 'rejected',
+  DISPUTED: 'disputed',
+  WITHDRAWN: 'withdrawn',
+});
+
+/** Floor of credited cents per hour of the given span; null without a span. */
+export function creditedPerHour(creditedCents: number, totalMs: number): number | null {
+  if (!Number.isSafeInteger(creditedCents) || !Number.isSafeInteger(totalMs) || creditedCents < 0 || totalMs <= 0) return null;
+  return Number((BigInt(creditedCents) * BigInt(HOUR_MS)) / BigInt(totalMs));
+}
+
+/** credited / identified in floored basis points; null when nothing was identified. */
+function rate(creditedCents: number, identifiedCents: number): number | null {
+  return identifiedCents > 0 ? basisPoints(creditedCents, identifiedCents) : null;
+}
+
+export function recoveryBody(
+  now: Date,
+  period: InsightsPeriod,
+  f: InsightsFilter,
+  responses: readonly RecoveryResponseRow[],
+  rules: readonly RecoveryRuleRow[],
+  span: ReviewerSpan,
+  auditedNoFindingClaims: number,
+): InsightsRecoveryDto {
+  const zero = (): InsightsRecoveryClaimsDto => ({ claimCount: 0, identifiedCents: 0 });
+  const byResponse: InsightsRecoveryDto['responses'] = { noneYet: zero(), accepted: zero(), partial: zero(), rejected: zero(), disputed: zero(), withdrawn: zero() };
+  const sent = zero();
+  const credited = { claimCount: 0, cents: 0 };
+  const paid = { claimCount: 0, cents: 0 };
+  for (const r of responses) {
+    const field = RESPONSE_FIELD[r.response];
+    if (field === undefined) continue;
+    byResponse[field] = { claimCount: byResponse[field].claimCount + r.claimCount, identifiedCents: byResponse[field].identifiedCents + r.identifiedCents };
+    sent.claimCount += r.claimCount;
+    sent.identifiedCents += r.identifiedCents;
+    credited.claimCount += r.creditedClaimCount;
+    credited.cents += r.creditedCents;
+    paid.claimCount += r.paidClaimCount;
+    paid.cents += r.paidCents;
+  }
+  return {
+    meta: meta(now, period, f),
+    basis: 'human_entered',
+    sent,
+    responses: byResponse,
+    credited,
+    paid,
+    recoveryRate: { claimCount: sent.claimCount, creditedCents: credited.cents, identifiedCents: sent.identifiedCents, rateBasisPoints: rate(credited.cents, sent.identifiedCents) },
+    reviewerHours: {
+      claimCount: span.claimCount,
+      hours: hours(span.totalMs),
+      capHoursPerClaim: OUTCOME_REVIEWER_HOURS_CAP,
+      creditedPerHourCents: creditedPerHour(credited.cents, span.totalMs),
+      approximation: OUTCOME_TEXT.reviewerHoursNote,
+    },
+    byRule: rules.map((r) => ({
+      ruleId: r.mixed ? '' : r.ruleId,
+      title: r.mixed ? OUTCOME_TEXT.mixedRule : r.title,
+      mixed: r.mixed,
+      claimCount: r.claimCount,
+      findingsSent: r.findingsSent,
+      findingsAccepted: r.findingsAccepted,
+      findingsPartial: r.findingsPartial,
+      findingsRejected: r.findingsRejected,
+      identifiedCents: r.identifiedCents,
+      creditedCents: r.creditedCents,
+      rateBasisPoints: rate(r.creditedCents, r.identifiedCents),
+    })),
+    auditedNoFinding: { claimCount: auditedNoFindingClaims },
   };
 }
