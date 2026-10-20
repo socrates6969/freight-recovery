@@ -389,13 +389,15 @@ export async function loadOClaims(tenantId: string): Promise<OClaim[]> {
 // REQ-20261011-charge-intelligence C10: intelligence.charge_suggestions added (registry is ordered by key).
 // REQ-20261011-fuel-outlook F14 (additive): intelligence.cost_outlook and intelligence.fuel_check added.
 // REQ-20261011-ocean-dd C16 (additive): intelligence.ocean_dd added.
-export const FLAG_KEYS = ['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist'] as const;
+// REQ-20261020-dd-deadline (additive): intelligence.routing_shadow, the only default-OFF flag (resetFlags turns every flag on).
+export const FLAG_KEYS = ['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.routing_shadow', 'intelligence.similar_claims', 'intelligence.worklist'] as const;
 export const FLAG_DESCRIPTIONS: Record<string, string> = {
   'intelligence.charge_suggestions': 'Charge-line suggestions and team labels',
   'intelligence.cost_outlook': 'Cost outlook from public price data',
   'intelligence.fuel_check': 'Fuel tables and fuel-surcharge check',
   'intelligence.ocean_dd': 'Ocean demurrage and detention invoice audit',
   'intelligence.provenance': 'Provenance summary on the claim sheet',
+  'intelligence.routing_shadow': 'Reviewer-routing shadow on the insights page',
   'intelligence.similar_claims': 'Similar past claims on the claim sheet',
   'intelligence.worklist': 'Prioritised worklist page',
 };

@@ -42,6 +42,8 @@ export const TENANT_MODELS: ReadonlySet<string> = new Set([
   'DdTariff',
   'DdCalendar',
   'DdInvoice',
+  // REQ-20261020-claim-outcomes: recorded claim outcomes (append-only).
+  'ClaimOutcome',
 ]);
 
 const TENANT_READ_OPS: ReadonlySet<string> = new Set(['findUnique', 'findUniqueOrThrow', 'findFirst', 'findFirstOrThrow']);
@@ -167,6 +169,7 @@ export type TenantTx = Pick<
   | 'ddTariff'
   | 'ddCalendar'
   | 'ddInvoice'
+  | 'claimOutcome'
 >;
 
 const RAW = Symbol('fr.rawTx');

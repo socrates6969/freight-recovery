@@ -22,7 +22,11 @@ tables and their owner-only importer, and the cost outlook with its backtest gat
 [section 11](#11-step-7-fuel-check-public-price-data-and-cost-outlook). Step 8 (the ocean demurrage and
 detention invoice audit against 46 CFR Part 541 and 545.5, its three tenant tables, the `OCEAN_DD` claim kind and
 the four-eyes rule for the invoice's editors) is covered in
-[section 12](#12-step-8-ocean-demurrage-and-detention-audit). The hardening run (database backstops for four-eyes,
+[section 12](#12-step-8-ocean-demurrage-and-detention-audit). Claim outcomes (the human-entered, append-only
+record of what happened after a demand was marked ready, and the Recovery section) are covered in
+[section 14](#14-claim-outcomes). Ocean D&D dispute deadlines (deadline-first worklist ordering, the dispute
+window on claims) and the reviewer-routing shadow behind `intelligence.routing_shadow` are covered in
+[section 15](#15-ocean-dd-dispute-deadlines-and-the-reviewer-routing-shadow). The hardening run (database backstops for four-eyes,
 the label-author rule, failure transparency, the CloudFront client address and the authentication fixes of the
 platform audit) is covered in [section 13](#13-hardening-run). Every secret, its rotation and
 the buyer handover checklist are in [docs/secrets.md](../docs/secrets.md). The structure is in [ARCHITECTURE.md](../ARCHITECTURE.md#web-platform-typescript-steps-1-2). The
@@ -1333,3 +1337,102 @@ PostgreSQL 16.15 (fresh cluster per session, `freight_app` without BYPASSRLS con
 
 Not run: GitHub CI, `terraform fmt`/`validate` (no binary; CI runs both), `prisma migrate diff` against a shadow
 database (schema unchanged), container images, the compose stack, Playwright, any AWS deployment.
+
+## 14. Claim outcomes
+
+Run `REQ-20261020-claim-outcomes` (branch `feat/outcomes` from `0830f01`, the launch-readiness merge). It closes
+the "nothing is recorded after SEND_READY" gap with one **human-entered, append-only** tenant table and a read-only
+Recovery section on the executive dashboard. No reconciliation with payments exists and no outbound network path was
+added; the design and its limits are in [docs/design/claim-outcomes.md](../docs/design/claim-outcomes.md).
+
+### 14.1 New assets, permission and trust boundaries
+
+| Item | Detail |
+| --- | --- |
+| Permissions | New `outcomes:record` (OWNER, ADMIN, MANAGER, REVIEWER: the roles that may approve). Reads need `claims:read`; the Recovery section needs `insights:read`. ANALYST, VIEWER, PLATFORM_DEV and SUPER_ADMIN cannot record. **No API-key scope** grants either route, so API keys get 403. |
+| Routes | `GET /api/v1/claims/:id/outcomes` (newest first, at most 200 rows), `POST /api/v1/claims/:id/outcomes` (201; mutating, cookie session + Origin + CSRF; strict body `ClaimOutcomeBody`, a discriminated union on `kind`), `GET /api/v1/insights/recovery` (read-only, `intelligence` bucket, READ ONLY REPEATABLE READ transaction like the other insights routes). An unknown id and another tenant's id answer byte-identical 404s on both claim routes. |
+| New tenant table | `claim_outcomes`: `ENABLE` + `FORCE ROW LEVEL SECURITY`, one `FOR ALL` policy `claim_outcomes_tenant_isolation` (`USING`/`WITH CHECK tenant_id = fr_current_tenant()`), `REVOKE ALL FROM PUBLIC`; `freight_app` gets **SELECT and INSERT only** (no UPDATE, DELETE or TRUNCATE). Composite FK `(claim_id, tenant_id) -> claims(id, tenant_id)` `ON DELETE RESTRICT`, FKs to `tenants` and `users`. CHECKs on `kind`, `channel`, `carrier_response`, the 500-character note, non-negative cents, `version >= 1` and the kind consistency of an `AUDITED_NO_FINDING` row. In `TENANT_MODELS` and `TenantTx`. |
+| Triggers | `claim_outcomes_append_only` / `claim_outcomes_no_truncate` (`fr_append_only`, every role). `claim_outcomes_guard` (`BEFORE INSERT`, `SECURITY DEFINER`, `SET search_path = public, pg_temp`, `EXECUTE` revoked from `PUBLIC`, tenant matched explicitly): `OUTCOME` needs a `SEND_READY` claim of the same tenant, `AUDITED_NO_FINDING` an analysed claim (`status <> 'AWAITING_ANALYSIS'`); raises P0001 `claim_outcome_state_invalid` / `claim_outcome_claim_invalid`, mapped to 409 `invalid_state` (never 500). The service applies the same rule first, under the claim row lock. |
+| New writes | one `claim_outcomes` row per POST and the tenant audit event `claim.outcome_recorded` with `{ claimId, outcomeId, kind, channel, carrierResponse, creditedCents, paidCents, sentAt, closedAt }` (new allow-listed keys `outcomeId`, `channel`, `carrierResponse`, `creditedCents`, `paidCents`, `sentAt`, `closedAt`); the note text is never audited. Both commit together. |
+| Untrusted input | the outcome body (fixed enumerations, integer cents within the INTEGER bound, UTC instants of years 2000-2100 with `closedAt >= sentAt`, a single-line note of at most 500 characters without control or bidi characters); the insights query (same period rules as the other insights routes). Everything is a bound parameter; the Recovery SQL interpolates nothing from a request or a tenant row (unit-checked). |
+| Outbound network | None. |
+| Database | Migration `20261020000000_claim_outcomes` (the table, CHECKs, triggers, policy, grants). Earlier migrations unchanged; `schema.prisma` gains the `ClaimOutcome` model and its relation lists. Pins amended in `hardening-static.acc.test.ts` (migration list, `SCHEMA_BASE`, `RBAC_BASE`) and the audit-action tail oracles. |
+| Fixed copy | `OUTCOME_TEXT`, `OUTCOME_CHANNEL_TEXT`, `CARRIER_RESPONSE_TEXT`, `OUTCOME_KIND_TEXT` in `packages/shared/src/outcomes-dto.ts`; `INSIGHTS_OUTCOME_DISCLAIMER` and the G1/G4/G9 "not tracked" entries reworded. The Recovery section states its basis (`human_entered`) and the reviewer-hour approximation (packet creation to SEND_READY, capped at 8 h per claim). No string claims accuracy, savings or recovery. |
+
+### 14.2 Threats and mitigations (claim outcomes)
+
+| Threat | Mitigation | Verified by |
+| --- | --- | --- |
+| A user records an outcome on another tenant's claim, or reads one | RLS (`FORCE`) on `claim_outcomes` and on `claims`; the service loads the claim through the tenant transaction, so the id is "not found"; the trigger matches `tenant_id` explicitly; the 404 body is byte-identical to the unknown-id case | `outcomes.int` (cross-tenant SELECT 0 rows, INSERT refused by RLS, byte-identical 404s) |
+| A recorded outcome is altered or removed to change a recovery figure | no UPDATE/DELETE grant for `freight_app`; `fr_append_only` refuses UPDATE, DELETE and TRUNCATE for every role; a correction is a new row and the latest row counts | `outcomes.int` (permission denied as `freight_app`; `append_only` as the owner) |
+| An outcome is recorded on a claim that was never sent | state rule in the service under the claim row lock, repeated by the guard trigger; 409 `invalid_state` | `outcomes.int`, `outcomes-units` |
+| A lower role records outcomes | `outcomes:record` only for OWNER, ADMIN, MANAGER, REVIEWER; API keys never; CSRF and Origin on the POST | `outcomes.int` (matrix row, 401/403, `csrf_failed`, `origin_not_allowed`), `rbac.acc` and the three oracles |
+| The note carries injected text into audit, exports or the UI | single-line, length-capped, control/bidi-free at the API; never written to `audit_events`; rendered as text nodes (`SafeText`); not exported | `outcomes-dto.test`, `outcomes.int` (audit metadata contains no note), eslint `react/no-danger` |
+| Recovery figures read as reconciled money | `basis: 'human_entered'` on the wire; intro, disclaimer and reviewer-hour note state the basis; MoneyFigure labels `credited` and `paid` are visible next to each amount; the "not tracked" list keeps the reconciliation gap | `outcomes-dto.test` (copy scan), `insights-dto.test` |
+| Recovery SQL leaks across tenants or interpolates input | every reader runs in the caller's READ ONLY tenant transaction, filters `tenant_id = fr_current_tenant()` on the outcome rows and the claims, and binds every value | `outcomes-units` (SQL shape), `outcomes.int` (other tenant's outcome not counted) |
+
+### 14.3 What was run
+
+Local runs on Windows, Node 24, `CI=true`, **not GitHub CI**. Embedded PostgreSQL 18.4 (the hosted-platform recipe:
+`freight_app` without BYPASSRLS, random role passwords), no object store (none needed by these tests). `npm run lint`,
+`npm run typecheck`, `npm test` (shared, api, web unit) and `migrate deploy` (12 migrations) pass; `prisma migrate diff`
+against the live database shows no drift for `claim_outcomes`. `outcomes.int` 9/9. Acceptance: the static pins, RBAC,
+the shared copy/contract files and the touched claims/approvals/audit files. Not run: the full integration and
+acceptance suites (parity needs Python), container images, Playwright, any deployment.
+
+## 15. Ocean D&D dispute deadlines and the reviewer-routing shadow
+
+Run `REQ-20261020-dd-deadline` (branch `feat/dd-deadline` from `0830f01`) adds (1) deadline-first ordering of the
+review worklist for ocean D&D claims, with the dispute window shown on the claim card, the claims list and the
+worklist and a count of windows closing within 7 days on the insights page, and (2) a read-only reviewer-routing
+**shadow** on the insights page. Nothing learns, nothing is stored and no assignment changes.
+
+**The dispute window.** 46 CFR 541.8(a) gives the billed party at least 30 calendar days from invoice issuance to
+request mitigation, refund or waiver. The window applied everywhere is `invoice date (UTC) + max(request window the
+D&D invoice states, 30)`; the 30 days are the floor and apply when the invoice states less or nothing. The pure rule
+lives in `packages/shared/src/dd-deadline.ts` (outside the byte-pinned `ocean-dd/` directory; it reuses its date
+arithmetic), the SQL in `api/src/db/intelligence.ts` (worklist order), `api/src/db/insights.ts` (D1 buckets) and
+`api/src/db/dd-dispute-terms.ts` (claim lists) applies the same formula, and the worklist service checks that the
+SQL days equal the TypeScript days (a mismatch is a 500, never a wrong rank). The copy says the window is computed
+from the invoice date and the stated terms, that the rule's days are the floor, and "confirm ... with counsel or
+your customs broker" (the site's wording). Days left are counted from the API's UTC date on the worklist and from
+the browser's UTC date on the claim card and list; the API states only clock-free facts there.
+
+**Ordering rule `deadline-first-v1`** (`api/src/intelligence/priority.ts`, mirrored in SQL): an OCEAN_DD claim
+with 0..14 days left ranks ahead of every other claim, soonest first; ties and everything else follow priority-v1.
+A claim whose floor date has passed is not moved up (whether a longer tariff window is still open is for
+counsel); it is marked as closed in red. The worklist body states the rule (`formula.deadlineFirst`).
+
+### 15.1 New assets, permission and trust boundaries
+
+| Item | Detail |
+| --- | --- |
+| Permissions | None new. The worklist and claim lists keep `claims:read`; the routing shadow uses the existing `insights:read` (OWNER, ADMIN, MANAGER, VIEWER). **No API-key scope** grants the new route, so API keys get 403. |
+| Routes | `GET /api/v1/insights/routing` (query `from`, `to`; strict). `insights:read`, per-user `intelligence` rate bucket, one read-only REPEATABLE READ tenant transaction (`insightsRead`), not audited (like the other insights reads), nothing written. The `intelligence.routing_shadow` flag is checked after auth, rate limit, permission and schema; OFF gives the standard 404. `GET /api/v1/intelligence/worklist` and the claim list/detail/assign/approval-queue responses gain additive fields (`disputeWindow`, `claim.kind`, `formula.deadlineFirst`). |
+| Reads | Worklist and insights D1 join `dd_invoices` on `(claim_id, tenant_id)` and read one JSON-path value (`data->>'disputeRequestDays'`, only when it is a JSON number); the invoice document is never loaded. The routing shadow reads `approvals`, `evidence_packets`, `packet_findings.rule_id`, `import_review_decisions`, `import_documents.created_at`, `claims.assignee_id` and `memberships` with the users' names, all in the tenant transaction with explicit `tenant_id` matches; capped at 5,000 first decisions and 500 open claims per request (the body says when a cap was hit). |
+| Writes | None at runtime. Migration `20261020000000_routing_shadow_flag` inserts the flag row only (OFF); no schema change. |
+| Person-level data | The routing shadow names the tenant's own reviewers and shows per-reviewer counts and medians. This is the one insights section that carries actors; it is behind a default-OFF flag and its copy says it is a shadow and not a measure of anyone's performance. No data of another tenant is reachable (RLS FORCE). |
+| Untrusted input | `from`/`to` (the insights instant parser, period at most 366 days); nothing else. Rule ids and names from the database are rendered as text (`SafeText`). |
+| Outbound network | None. |
+| Kill switch | `intelligence.routing_shadow`, the registry's only default-OFF flag (`packages/shared/src/feature-flags.ts`; the HD-S09 pin moves to the new content). Off: the route is 404 and the web hides the section. The deadline ordering has no flag: it is a stated rule of the worklist, which the `intelligence.worklist` flag already gates. |
+
+### 15.2 Threats and mitigations
+
+| # | Threat | Mitigation (where) | Verified by | Residual risk |
+| --- | --- | --- | --- | --- |
+| T90 | A wrong deadline misleads a reviewer (counting from the wrong date, applying a stated window shorter than the regulation, SQL and TypeScript disagreeing) | One formula in the shared pure module with the 30-day floor; SQL mirrors it; the worklist service throws on a days mismatch; the copy states the basis and that the days are the floor, not legal advice | `dd-deadline.test.ts` (no invoice date, shorter than 30, exactly 30, longer, past, range edge), `dd-deadline-order.test.ts` (rule, strict total order on random inputs, why line) | A tariff or contract window longer than the stated one is not known to the product (copy says so) |
+| T91 | The shadow changes an assignment or stores a judgement | The route is GET, runs in a READ ONLY transaction, writes nothing, carries `shadow: true` and the fixed label; the web section is labelled a shadow | `routing-shadow.test.ts` (shape, policies, four-eyes exclusion of the revision author, prequential replay, determinism), `architecture.test.ts` (insights code uses no raw SQL; the new SQL helpers are allow-listed under `src/db/`) | None known |
+| T92 | The shadow "recommends" the revision's author (four-eyes) or a user who may not approve | Both policies exclude the current revision's `created_by_id`; the least-loaded pool is members whose role holds `packets:approve` with an active account | `routing-shadow.test.ts` | D&D invoice editors and label authors are not excluded from a shadow pick (the real approval path still refuses them) |
+| T93 | Person-level figures read as a performance measure | Default-OFF flag; the label says it is not a performance measure; medians over few decisions are shown with their counts | code review; copy in `honest-copy.ts` | Deliberate: the owner switches the flag on knowing the section names reviewers |
+
+### 15.3 What was run
+
+Local runs on Windows, Node 24.21.0, **not GitHub CI**.
+
+| Step | Result |
+| --- | --- |
+| `npm run typecheck`, `npm run lint` | clean |
+| `npm test` (shared, api, web unit projects) | shared 300, api 489 (+ the new `dd-deadline-order.test.ts`, `routing-shadow.test.ts`), web 141 passed; `dd-deadline.test.ts` covers no date, shorter than 30, exactly 30, longer, past and the range edge |
+| integration against a private embedded PostgreSQL 18.4 (UTF8) on 127.0.0.1:5434, 12 migrations deployed, seeded | `dd-deadline.int` 5/5 (worklist order and windows, claims list, D1 buckets, routing helpers, route on/off); `insights.int`, `intelligence.int`, `intelligence-db.int`, `platform-dashboard.int`, `ocean-dd.int`, `hardening.int`, `charge-labels.int`, `fuel-outlook.int`, `apikeys.int`, `audit-failclosed.int`, `auth-hardening.int` green after the additive flag-list amendments; `analysis`, `four-eyes`, `review-commit`, `eval-record` skipped (need the built worker / Python) |
+
+Not run: GitHub CI, the acceptance suites (their flag and key-set pins were amended additively), the object-store suites (no MinIO/moto here), container images, Playwright, any AWS deployment.

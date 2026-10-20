@@ -5,6 +5,7 @@
 import { z } from 'zod';
 
 import { ANALYSIS_FAILURE_REASONS } from './analysis-failure.js';
+import { DdDisputeWindow } from './dd-deadline.js';
 import { FOUR_EYES_CLAIM_BASES } from './four-eyes.js';
 import { PLATFORM_ROLES, ROLES, TENANT_ROLES } from './rbac.js';
 import { hasUnsafeChars, stripUnsafeMultiline } from './text.js';
@@ -293,6 +294,10 @@ export const ClaimSummary = z.object({
   latestPacket: z.object({ revision: z.int(), status: z.enum(PACKET_STATUSES) }).nullable(),
   createdAt: isoDate,
   updatedAt: isoDate,
+  // REQ-20261020-dd-deadline: the D&D dispute window (OCEAN_DD claims with a stored invoice date; null otherwise).
+  // Clock-free facts only; the web counts the days left from its own date. Defaults to null on input so older
+  // fixtures remain valid; the API always sets it.
+  disputeWindow: DdDisputeWindow.nullable().default(null),
 });
 export type ClaimSummaryDto = z.infer<typeof ClaimSummary>;
 /**

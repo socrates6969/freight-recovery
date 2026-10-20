@@ -252,6 +252,15 @@ const METADATA_KEYS = new Set([
   'knownDevice',
   // Fix round 2 (C-FR2.2): the analysis' learnedLabelIds list (capped at 50) may omit an influencing label.
   'learnedLabelIdsTruncated',
+  // REQ-20261020-claim-outcomes: outcome id, fixed enumerations, cents and instants. Never the note text.
+  // Already listed: claimId, kind.
+  'outcomeId',
+  'channel',
+  'carrierResponse',
+  'creditedCents',
+  'paidCents',
+  'sentAt',
+  'closedAt',
 ]);
 const MAX_STRING = 2000;
 

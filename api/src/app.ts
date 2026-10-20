@@ -39,7 +39,7 @@ import { registerImportRoutes } from './imports/routes.js';
 import { ChildProcessExecutor, type ParseExecutor } from './imports/sandbox/executor.js';
 import { KeyedGate } from './imports/sandbox/semaphore.js';
 import { TenantScopeError } from './db/errors.js';
-import { isAnalysisDbError, isDdDbError, isFourEyesDbError, isPacketDecisionDbError } from './http/db-guard.js';
+import { isAnalysisDbError, isDdDbError, isFourEyesDbError, isOutcomeDbError, isPacketDecisionDbError } from './http/db-guard.js';
 import { AnalysisFailure, ERROR_MESSAGES, FourEyesRefusal, HttpError, errors } from './http/errors.js';
 import { registerClientIp } from './http/client-ip.js';
 import { enforceRouteAccess, requireTenant, zodDetails } from './http/route.js';
@@ -114,6 +114,8 @@ export function toHttpError(err: unknown): HttpError {
   }
   // Step 8 D&D guards (AUDITED invoice immutable, claim kind fixed): plain 409 invalid_state.
   if (isDdDbError(err)) return errors.invalidState();
+  // REQ-20261020-claim-outcomes: the claim-state guard of claim_outcomes reached the API: plain 409 invalid_state.
+  if (isOutcomeDbError(err)) return errors.invalidState();
   // Hardening (C2.2): a packet decision without a decision row reached COMMIT. Plain 409 invalid_state.
   if (isPacketDecisionDbError(err)) {
     const mapped = errors.invalidState();
@@ -432,7 +434,7 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     toHttpError,
   });
   // REQ-20261018-exec-dashboard: executive insights (read-only aggregates, tenant data only, no API keys).
-  registerInsightsRoutes(app, { now });
+  registerInsightsRoutes(app, { now, flags });
   // Step 6 (REQ-20261011-charge-intelligence): charge lines and tenant charge labels (flag-gated).
   registerChargeRoutes(app, { flags });
   // Step 7 (REQ-20261011-fuel-outlook): fuel tables, claim fuel inputs, fuel-check view and the cost outlook.

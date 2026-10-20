@@ -41,7 +41,7 @@ export const PIPELINE_NOTE =
 // ---------------------------------------------------------------------------------------------
 
 export const INSIGHTS_OUTCOME_DISCLAIMER =
-  'Recovery outcomes are not tracked yet. Every amount on this page was identified in carrier or terminal invoices, is pending your review, or was approved for a demand by your team. None of it is money recovered, saved or won.';
+  'Credited and paid amounts are outcomes your team typed in by hand; nothing is reconciled against payments. Every other amount on this page was identified in carrier or terminal invoices, is pending your review, or was approved for a demand by your team. None of it is money recovered, saved or won.';
 
 export const INSIGHTS_TEXT = Object.freeze({
   title: 'Insights',
@@ -56,6 +56,24 @@ export const INSIGHTS_TEXT = Object.freeze({
   intakeScopeNote: 'Document counts cover all imported documents; the claim type and perspective filters do not apply.',
 } as const);
 
+// ---------------------------------------------------------------------------------------------
+// REQ-20261020-dd-deadline: reviewer-routing shadow. Rendered verbatim by the web and returned as the API
+// `label`/policy texts. The shadow changes no assignment and stores nothing.
+// ---------------------------------------------------------------------------------------------
+
+export const ROUTING_SHADOW_NOTE =
+  "Shadow only: this section shows which reviewer two fixed rules would have chosen for each open claim, computed on every request from your team's own past decisions. It changes no assignment, stores nothing and is not a measure of anyone's performance.";
+
+export const ROUTING_POLICY_TEXT = Object.freeze({
+  fastest_for_rule:
+    'Fastest so far for the finding rule: the reviewer with the lowest median time from a packet revision to its first approve or reject decision, among past decisions in the period on packets carrying the same finding rule (at least one such decision; ties go to more decisions, then the lower id). A claim with several rules takes the lowest median across them.',
+  least_loaded:
+    'Least loaded now: the eligible reviewer (a role that may approve packets, an active account, not the author of the revision) with the fewest open claims assigned at this moment (ties go to the lower id).',
+} as const);
+
+export const ROUTING_PREQUENTIAL_NOTE =
+  "Prequential replay of the period's decisions in time order: before each decision, the fastest-for-rule pick is computed from the earlier decisions only and compared with who actually decided. When they differ, the pick's median at that moment is compared with the actual time taken. Computed from history on every request; nothing is stored, so this is bookkeeping for a later scoring, not a result.";
+
 export interface InsightsNotTracked {
   readonly id: string;
   readonly title: string;
@@ -63,10 +81,10 @@ export interface InsightsNotTracked {
 }
 
 export const INSIGHTS_NOT_TRACKED: readonly InsightsNotTracked[] = Object.freeze([
-  Object.freeze({ id: 'G1', title: 'Money paid or credited by carriers', reason: 'Nothing is recorded after a claim is marked ready to demand.' }),
+  Object.freeze({ id: 'G1', title: 'Money paid or credited by carriers, reconciled', reason: 'Only outcomes typed in by your team are recorded; no remittance or payment data is matched to claims.' }),
   Object.freeze({ id: 'G2', title: 'Freight dispute windows', reason: 'No contract or tariff dispute window is stored for truck freight.' }),
   Object.freeze({ id: 'G3', title: 'Leakage by lane', reason: 'Claims have no origin or destination.' }),
-  Object.freeze({ id: 'G4', title: 'Carrier acceptance rate and response time', reason: 'Needs carrier outcomes, which are not recorded yet.' }),
+  Object.freeze({ id: 'G4', title: 'Carrier response time', reason: 'Outcomes carry the dates your team entered, not when the carrier actually answered.' }),
   Object.freeze({ id: 'G5', title: 'Cost and return of using this service', reason: 'No billing or fee data is held in the product.' }),
   Object.freeze({ id: 'G6', title: 'Breakdown by business unit, site or team', reason: 'Claims are not assigned to teams.' }),
   Object.freeze({ id: 'G7', title: 'Exact history of the open backlog', reason: 'Amounts are current values; past amounts are not stored.' }),
@@ -74,7 +92,7 @@ export const INSIGHTS_NOT_TRACKED: readonly InsightsNotTracked[] = Object.freeze
   Object.freeze({
     id: 'G9',
     title: 'Overcharge as a share of audited freight spend',
-    reason: 'Invoices without a finding are not recorded, and invoice totals are not stored on claims.',
+    reason: 'Invoices audited with no finding are counted only when your team records them, and invoice totals are not stored on claims.',
   }),
   Object.freeze({ id: 'G10', title: 'Invoice payment due dates', reason: 'Freight invoices are read without a payment due date.' }),
 ]);

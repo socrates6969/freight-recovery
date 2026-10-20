@@ -34,8 +34,9 @@ describe('T-WEB-05 flags screen', () => {
     const table = await screen.findByRole('table', { name: 'Feature flags' }, WAIT);
     expect(headers(table)).toEqual(['Flag', 'Description', 'State', 'Version', 'Last change']);
     // REQ-20261011-ocean-dd C16 (additive): intelligence.ocean_dd is the seventh flag.
-    expect(within(table).getAllByRole('row').length).toBe(8); // header + 7 flags
-    expect(screen.getAllByRole('switch').length).toBe(7);
+    // REQ-20261020-dd-deadline (additive): intelligence.routing_shadow is the eighth (the stub serves it enabled like the rest).
+    expect(within(table).getAllByRole('row').length).toBe(9); // header + 8 flags
+    expect(screen.getAllByRole('switch').length).toBe(8);
     for (const k of ['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.provenance', 'intelligence.similar_claims', KEY]) expect(sw(k).getAttribute('aria-checked')).toBe('true');
     await user.click(sw());
     const dlg = await screen.findByRole('dialog', { name: `Change ${KEY}` }, WAIT);

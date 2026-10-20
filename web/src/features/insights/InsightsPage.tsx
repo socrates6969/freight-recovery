@@ -2,8 +2,8 @@
  * REQ-20261018-exec-dashboard: the executive insights page. Read-only aggregates over this tenant's own
  * claims for users holding `insights:read`. Filters live in the URL; every request includes them and the
  * default perspective is SHIPPER. Each section handles its own request state, so one failed request never
- * hides the others. Money is shown only as identified, pending review, approved, ready to demand or (for
- * the D&D invoice total) invoiced; recovery outcomes are not tracked and the page says so.
+ * hides the others. Money is shown only as identified, pending review, approved, ready to demand, (for
+ * the D&D invoice total) invoiced, or, from outcomes the team typed in, credited and paid; the page says so.
  */
 import { INSIGHTS_LIMIT_DEFAULT, INSIGHTS_NOT_TRACKED, INSIGHTS_OUTCOME_DISCLAIMER, INSIGHTS_TEXT } from '@fr/shared';
 import { useQuery } from '@tanstack/react-query';
@@ -11,11 +11,14 @@ import { useId, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { useApi, useCan } from '../../app-context';
+import { useFeatures } from '../intelligence/use-features';
 
 import { AgeingSection, DisputeWindowSection, MoneySection, StagesSection } from './money-sections';
 import { IntakeSection, ThroughputSection } from './activity-sections';
 import { apiFilters, parseInsightsParams, periodValid } from './insights-params';
 import { CarrierLeakageSection, RuleLeakageSection } from './leakage-sections';
+import { RecoverySection } from './recovery-section';
+import { RoutingShadowSection } from './routing-section';
 import { Section } from './section';
 
 export function InsightsPage() {
@@ -56,6 +59,11 @@ function InsightsContent() {
     queryFn: () => api.insightsLeakage({ ...period, kind, perspective, by: 'rule', carrier: p.carrier }),
   });
   const throughput = useQuery({ ...common, queryKey: ['insights', 'throughput', p.from, p.to, kind ?? 'ALL', perspective ?? 'ALL'], queryFn: () => api.insightsThroughput({ ...period, kind, perspective }) });
+  // REQ-20261020-claim-outcomes: the Recovery section (outcomes typed in by the team).
+  const recovery = useQuery({ ...common, queryKey: ['insights', 'recovery', p.from, p.to, kind ?? 'ALL', perspective ?? 'ALL'], queryFn: () => api.insightsRecovery({ ...period, kind, perspective }) });
+  // REQ-20261020-dd-deadline: the routing shadow is requested only while its flag is on (fail closed; a 404 hides it).
+  const features = useFeatures();
+  const routing = useQuery({ ...common, enabled: valid && features.routingShadow, queryKey: ['insights', 'routing', p.from, p.to], queryFn: () => api.insightsRouting(period) });
 
   const setParam = (k: string, v: string | null) => {
     const next = new URLSearchParams(params);
@@ -108,6 +116,7 @@ function InsightsContent() {
       ) : (
         <>
           <MoneySection q={summary} />
+          <RecoverySection q={recovery} />
           <StagesSection q={summary} />
           <AgeingSection q={stages} />
           <DisputeWindowSection q={windows} />
@@ -115,6 +124,7 @@ function InsightsContent() {
           <RuleLeakageSection q={rules} carrier={p.carrier} onClear={() => setParam('carrier', null)} />
           <ThroughputSection q={throughput} />
           <IntakeSection q={stages} />
+          {features.routingShadow ? <RoutingShadowSection q={routing} /> : null}
         </>
       )}
       <Section title={INSIGHTS_TEXT.notTrackedHeading}>

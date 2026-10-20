@@ -4,7 +4,8 @@
  */
 import { z } from 'zod';
 
-import { CLAIM_STATUSES, DOC_TYPES, PACKET_STATUSES, PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX, PERSPECTIVES, commaList } from './dto.js';
+import { DD_DEADLINE_URGENT_DAYS, DdDisputeWindow } from './dd-deadline.js';
+import { CLAIM_KINDS, CLAIM_STATUSES, DOC_TYPES, PACKET_STATUSES, PAGE_SIZE_DEFAULT, PAGE_SIZE_MAX, PERSPECTIVES, commaList } from './dto.js';
 import { FIELD_STATUSES, IMPORT_DOC_STATUSES, IMPORT_DOC_TYPES } from './import-fields.js';
 
 const intFromQuery = z.coerce.number().int();
@@ -17,6 +18,12 @@ const cents = z.int().min(0);
 // ---------------------------------------------------------------------------------------------
 
 export const PRIORITY_VERSION = 'priority-v1';
+/**
+ * REQ-20261020-dd-deadline: deadline-first ordering, applied before priority-v1. An OCEAN_DD claim whose
+ * dispute window closes within DD_DEADLINE_URGENT_DAYS (0..14 days left) ranks ahead of every other claim,
+ * soonest first; ties and everything else follow priority-v1. No learning: a stated rule (api priority.ts).
+ */
+export const DEADLINE_FIRST_VERSION = 'deadline-first-v1';
 export const SIMILAR_VERSION = 'similar-v1';
 export const WORKLIST_STATUSES = ['PENDING_REVIEW', 'APPROVED'] as const;
 export type WorklistStatus = (typeof WORKLIST_STATUSES)[number];
@@ -56,11 +63,16 @@ export const ScorePart = z.strictObject({
   contributionCents: cents,
 });
 
+/** The D&D dispute window of a worklist item with the days left as counted by the API clock (UTC date). */
+export const WorklistDisputeWindow = DdDisputeWindow.extend({ daysLeft: z.int(), urgent: z.boolean() });
+export type WorklistDisputeWindowDto = z.infer<typeof WorklistDisputeWindow>;
+
 export const WorklistItem = z.strictObject({
   rank: z.int().min(1),
   claim: z.strictObject({
     id: z.string(),
     claimNumber: z.string(),
+    kind: z.enum(CLAIM_KINDS),
     loadNumber: z.string().nullable(),
     carrierName: z.string(),
     perspective: z.enum(PERSPECTIVES),
@@ -72,6 +84,8 @@ export const WorklistItem = z.strictObject({
     latestPacket: z.strictObject({ revision: z.int().min(1), status: z.enum(PACKET_STATUSES) }),
   }),
   score: z.strictObject({ version: z.literal(PRIORITY_VERSION), valueCents: cents, parts: z.array(ScorePart).length(2) }),
+  /** REQ-20261020-dd-deadline: null for FREIGHT claims and for OCEAN_DD claims without a stored invoice date. */
+  disputeWindow: WorklistDisputeWindow.nullable(),
   why: z.array(z.string()),
   nextAction: z.enum(NEXT_ACTIONS),
   pendingFindingsCount: count,
@@ -82,7 +96,11 @@ export type WorklistItemDto = z.infer<typeof WorklistItem>;
 
 export const Worklist = z.strictObject({
   generatedAt: iso,
-  formula: z.strictObject({ version: z.literal(PRIORITY_VERSION), pendingWeightPercent: z.int().min(0).max(100) }),
+  formula: z.strictObject({
+    version: z.literal(PRIORITY_VERSION),
+    pendingWeightPercent: z.int().min(0).max(100),
+    deadlineFirst: z.strictObject({ version: z.literal(DEADLINE_FIRST_VERSION), kind: z.literal('OCEAN_DD'), urgentWithinDays: z.literal(DD_DEADLINE_URGENT_DAYS) }),
+  }),
   label: z.string(),
   notRanked: z.strictObject({ awaitingAnalysis: count }),
   items: z.array(WorklistItem),

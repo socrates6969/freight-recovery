@@ -106,9 +106,17 @@ describe('DD-DB05 migrations (C11)', () => {
   it('exactly one new folder *_ocean_dd after every earlier one, then (fix round 4) exactly one index-only folder 20261017000000_audit_target_index, then (hardening) 20261018000000_hardening', () => {
     const dirs = readdirSync(MIG).filter((d) => statSync(join(MIG, d)).isDirectory()).sort();
     const dd = ddDir();
-    expect(dirs).toEqual([...new Set(Object.keys(FROZEN_CE107D0).map((f) => f.split('/')[0] ?? ''))].sort().concat([dd, INDEX_DIR, HARDENING_DIR, HARDENING_FR2_DIR]));
+    // REQ-20261020-claim-outcomes (additive): plus exactly one folder 20261020000000_claim_outcomes (pinned in
+    // hardening-static.acc.test.ts).
+    // REQ-20261020-dd-deadline (additive): plus exactly one flag-row folder 20261020000000_routing_shadow_flag, sorted last
+    // (same date prefix; Prisma orders by the full name, so claim_outcomes applies first; content checked in HD-S01).
+    const OUTCOMES_DIR = '20261020000000_claim_outcomes';
+    const ROUTING_DIR = '20261020000000_routing_shadow_flag';
+    expect(dirs).toEqual([...new Set(Object.keys(FROZEN_CE107D0).map((f) => f.split('/')[0] ?? ''))].sort().concat([dd, INDEX_DIR, HARDENING_DIR, HARDENING_FR2_DIR, OUTCOMES_DIR, ROUTING_DIR]));
     expect(readdirSync(join(MIG, HARDENING_DIR))).toEqual(['migration.sql']);
     expect(readdirSync(join(MIG, HARDENING_FR2_DIR))).toEqual(['migration.sql']);
+    expect(readdirSync(join(MIG, OUTCOMES_DIR))).toEqual(['migration.sql']);
+    expect(readdirSync(join(MIG, ROUTING_DIR))).toEqual(['migration.sql']);
     expect(dd > '20261014000000_fuel_outlook').toBe(true);
     expect(readdirSync(join(MIG, dd))).toEqual(['migration.sql']);
     expect(readdirSync(join(MIG, INDEX_DIR))).toEqual(['migration.sql']);

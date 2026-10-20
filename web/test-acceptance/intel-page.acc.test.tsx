@@ -2,7 +2,7 @@
 // T-WEB-08 Intelligence page, T-WEB-09 claim sheet tabs (Similar, Provenance).
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { devStub, json, provenance, similar, simItem, wlItem, worklist } from './helpers/dev-stub.js';
+import { DEADLINE_FIRST, devStub, json, provenance, similar, simItem, wlItem, worklist } from './helpers/dev-stub.js';
 import { renderApp, setupDom, signedIn } from './helpers/render.js';
 import type { RoleName } from './helpers/stub.js';
 
@@ -30,7 +30,7 @@ describe('T-WEB-08 Intelligence page', () => {
       wlItem(2, 'CLM-0002', { nextAction: 'REVIEW_AND_APPROVE' }),
       wlItem(3, 'CLM-0003', { nextAction: 'MARK_SEND_READY' }),
     ];
-    await open('MANAGER', '/intelligence', (s) => s.on('GET', /\/intelligence\/worklist$/, () => json(200, worklist(items, { formula: { version: 'priority-v1', pendingWeightPercent: 40 }, label: WL(40), notRanked: { awaitingAnalysis: 2 } }))));
+    await open('MANAGER', '/intelligence', (s) => s.on('GET', /\/intelligence\/worklist$/, () => json(200, worklist(items, { formula: { version: 'priority-v1', pendingWeightPercent: 40, deadlineFirst: DEADLINE_FIRST /* REQ-20261020-dd-deadline (additive) */ }, label: WL(40), notRanked: { awaitingAnalysis: 2 } }))));
     await screen.findByRole('heading', { name: 'Recovery intelligence' }, WAIT);
     const region = await screen.findByRole('region', { name: 'How this works' }, WAIT);
     expect(region.textContent).toContain(WL(40));

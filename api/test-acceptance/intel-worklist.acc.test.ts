@@ -61,7 +61,8 @@ describe('T-WORK-01 exact order and values (W=25)', () => {
     expect(b.items.map((x: any) => x.rank)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(b.notRanked).toEqual({ awaitingAnalysis: 2 });
     for (const n of ['INT-F', 'INT-G', 'INT-I', 'INT-J']) expect(nums(b)).not.toContain(n);
-    expect(b.formula).toEqual({ version: 'priority-v1', pendingWeightPercent: 25 });
+    // REQ-20261020-dd-deadline (additive): the formula carries the stated deadline-first rule next to priority-v1.
+    expect(b.formula).toEqual({ version: 'priority-v1', pendingWeightPercent: 25, deadlineFirst: { version: 'deadline-first-v1', kind: 'OCEAN_DD', urgentWithinDays: 14 } });
     expect(b.label).toBe(I.WORKLIST_NOTE(25));
     expect(b.items[0].claim.id).toBe(C1);
     expect(b.items[1].claim.id).toBe(C2);
@@ -91,7 +92,10 @@ describe('T-WORK-02 explanations', () => {
     expect(Object.fromEntries(b.items.map((x: any) => [x.claim.claimNumber, x.pendingFindingsCount]))).toEqual({ 'INT-B': 2, 'INT-D': 1, 'INT-E': 1, 'INT-A': 0, 'INT-C': 0, 'INT-H': 0 });
     expect(Object.fromEntries(b.items.map((x: any) => [x.claim.claimNumber, x.waitingDays]))).toEqual({ 'INT-B': 0, 'INT-D': 0, 'INT-E': 0, 'INT-A': 1, 'INT-C': 3, 'INT-H': 3 });
     for (const x of b.items) {
-      expect(Object.keys(x).sort()).toEqual(['claim', 'nextAction', 'pendingFindingsCount', 'rank', 'score', 'waitingDays', 'waitingSince', 'why']);
+      // REQ-20261020-dd-deadline (additive): disputeWindow (null for FREIGHT claims) and claim.kind.
+      expect(Object.keys(x).sort()).toEqual(['claim', 'disputeWindow', 'nextAction', 'pendingFindingsCount', 'rank', 'score', 'waitingDays', 'waitingSince', 'why']);
+      expect(x.disputeWindow).toBeNull();
+      expect(x.claim.kind).toBe('FREIGHT');
       expect(x.claim.currency).toBe('USD');
       expect(x.score.version).toBe('priority-v1');
       expect(x.waitingSince).toBe(x.claim.updatedAt ?? x.waitingSince);
@@ -335,7 +339,7 @@ describe('T-WORK-12 honesty', () => {
         const withoutScore: any = { ...it };
         delete withoutScore.score;
         expect(I.allKeys(withoutScore).has('score'), 'score only as the documented object').toBe(false);
-        expect(Object.keys(it.claim).sort()).toEqual(['assignee', 'carrierName', 'claimNumber', 'currency', 'id', 'latestPacket', 'loadNumber', 'perspective', 'pendingReviewCents', 'recoverableCents', 'status'].sort());
+        expect(Object.keys(it.claim).sort()).toEqual(['assignee', 'carrierName', 'claimNumber', 'currency', 'id', 'kind', 'latestPacket', 'loadNumber', 'perspective', 'pendingReviewCents', 'recoverableCents', 'status'].sort());
       }
     }
   });

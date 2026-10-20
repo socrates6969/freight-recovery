@@ -8,6 +8,9 @@ import {
   ApprovalsQuery,
   BulkAnalyzeBody,
   AssignBody,
+  ClaimOutcomeBody,
+  ClaimOutcomeList,
+  ClaimOutcomeView,
   ClaimsQuery,
   IdParams,
   PacketQuery,
@@ -17,10 +20,12 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { defineRoute, requireTenant, userRole } from '../http/route.js';
+import { strictBody } from '../http/strict-body.js';
 
 import { dieselSeriesOrNull } from '../platform/price-store.js';
 
 import { analyzeAwaiting, analyzeClaim, type AnalysisFuelOptions } from './analysis.js';
+import { listOutcomes, recordOutcome } from './outcomes.js';
 import { assignClaim, createRevision, getClaim, getPacket, listApprovalQueue, listClaims, transition, type Actor } from './service.js';
 
 const P = '/api/v1';
@@ -135,6 +140,27 @@ export function registerClaimRoutes(app: FastifyInstance): void {
       const fuel = await analysisFuel(app);
       const r = await requireTenant(req).db.tx((tx) => analyzeClaim(tx, params.id, actorOf(req), { bulk: false, learning, fuel }));
       return reply.code(201).send(r);
+    },
+  });
+
+  // REQ-20261020-claim-outcomes: human-entered outcomes after SEND_READY (list: claims:read; record:
+  // outcomes:record). Tenant users only (no API-key scope); POST goes through the Origin and CSRF checks.
+  defineRoute(app, {
+    method: 'GET',
+    url: `${P}/claims/:id/outcomes`,
+    access: { kind: 'permission', permission: 'claims:read' },
+    schema: { params: IdParams },
+    handler: async (req, _reply, { params }) => strictBody(ClaimOutcomeList, await requireTenant(req).db.tx((tx) => listOutcomes(tx, params.id))),
+  });
+
+  defineRoute(app, {
+    method: 'POST',
+    url: `${P}/claims/:id/outcomes`,
+    access: { kind: 'permission', permission: 'outcomes:record' },
+    schema: { params: IdParams, body: ClaimOutcomeBody },
+    handler: async (req, reply, { params, body }) => {
+      const view = strictBody(ClaimOutcomeView, await requireTenant(req).db.tx((tx) => recordOutcome(tx, params.id, body, actorOf(req))));
+      return reply.code(201).send(view);
     },
   });
 

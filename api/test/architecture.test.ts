@@ -185,8 +185,8 @@ describe('architecture', () => {
   it('platform dashboard modules never touch tenant models or tables (only fr_platform_pipeline_stats)', () => {
     const platformFiles = files.filter((f) => ['src/platform/pipeline.ts', 'src/platform/flags.ts', 'src/platform/eval-read.ts', 'src/platform/dashboard-routes.ts'].includes(f.path));
     expect(platformFiles).toHaveLength(4);
-    const tenantModels = /\.(claim|evidencePacket|packetFinding|packetSource|packetTimelineEvent|approval|importDocument|importBatch|extractedField|importReviewDecision|claimDocument|membership|invite|apiKey|chargeLabel|ddTariff|ddCalendar|ddInvoice|tenant)\s*\.(find|count|aggregate|group|create|update|delete|upsert)/u;
-    const tenantTables = /\b(FROM|JOIN|INTO|UPDATE)\s+"?(claims|evidence_packets|packet_findings|packet_sources|approvals|import_documents|import_batches|extracted_fields|claim_documents|memberships|invites|api_keys|charge_labels|dd_tariffs|dd_calendars|dd_invoices)\b/iu;
+    const tenantModels = /\.(claim|evidencePacket|packetFinding|packetSource|packetTimelineEvent|approval|importDocument|importBatch|extractedField|importReviewDecision|claimDocument|membership|invite|apiKey|chargeLabel|ddTariff|ddCalendar|ddInvoice|claimOutcome|tenant)\s*\.(find|count|aggregate|group|create|update|delete|upsert)/u;
+    const tenantTables = /\b(FROM|JOIN|INTO|UPDATE)\s+"?(claims|evidence_packets|packet_findings|packet_sources|approvals|import_documents|import_batches|extracted_fields|claim_documents|memberships|invites|api_keys|charge_labels|dd_tariffs|dd_calendars|dd_invoices|claim_outcomes)\b/iu;
     for (const f of platformFiles) {
       expect([f.path, tenantModels.test(f.text)]).toEqual([f.path, false]);
       expect([f.path, tenantTables.test(f.text)]).toEqual([f.path, false]);
@@ -301,7 +301,19 @@ describe('architecture', () => {
   });
 
   it('hardening (H10): the raw-SQL helpers of this run live in src/audit or src/db', () => {
-    const helpers = ['src/audit/label-authors.ts', 'src/audit/label-influence.ts', 'src/audit/analysis-failures.ts', 'src/db/analysis-candidates.ts', 'src/db/insights.ts', 'src/db/insights-leakage.ts'];
+    const helpers = [
+      'src/audit/label-authors.ts',
+      'src/audit/label-influence.ts',
+      'src/audit/analysis-failures.ts',
+      'src/db/analysis-candidates.ts',
+      'src/db/insights.ts',
+      'src/db/insights-leakage.ts',
+      // REQ-20261020-claim-outcomes: the insights Recovery section reads.
+      'src/db/insights-recovery.ts',
+      // REQ-20261020-dd-deadline: D&D dispute terms per claim and the reviewer-routing shadow reads.
+      'src/db/dd-dispute-terms.ts',
+      'src/db/routing.ts',
+    ];
     for (const h of helpers) {
       const f = files.find((x) => x.path === h);
       expect([h, f !== undefined && /\.\$queryRaw\s*[(<`]/u.test(f.text)]).toEqual([h, true]);

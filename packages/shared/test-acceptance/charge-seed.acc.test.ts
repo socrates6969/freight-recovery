@@ -201,7 +201,9 @@ describe('C8-C10 shared registries (additive)', () => {
       // REQ-20261011-ocean-dd C15 (additive): the eight step-8 actions follow price_data.imported.
       'dd_tariff.created', 'dd_tariff.updated', 'dd_calendar.created', 'dd_calendar.updated', 'dd_invoice.created', 'dd_invoice.updated', 'dd_invoice.deleted', 'dd_invoice.audited',
       // REQ-20261012-hardening C9/C15 (additive): the three hardening actions follow dd_invoice.audited.
-      'claim.analysis_failed', 'auth.password.change_failed', 'invite.existing_account']);
+      'claim.analysis_failed', 'auth.password.change_failed', 'invite.existing_account',
+      // REQ-20261020-claim-outcomes (additive): one action for a recorded outcome, appended last.
+      'claim.outcome_recorded']);
     expect(new Set(R.AUDIT_ACTIONS).size).toBe(R.AUDIT_ACTIONS.length);
   });
   it('C10 flag registry entry', () => {
@@ -209,6 +211,6 @@ describe('C8-C10 shared registries (additive)', () => {
     expect({ ...f }).toEqual({ key: 'intelligence.charge_suggestions', description: 'Charge-line suggestions and team labels', defaultEnabled: true, tenantVisible: true });
     // REQ-20261011-fuel-outlook F14 (additive): two step-7 flags, registry ordered by key.
     // REQ-20261011-ocean-dd C16 (additive): intelligence.ocean_dd, registry ordered by key.
-    expect(R.FEATURE_FLAGS.map((x: any) => x.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+    expect(R.FEATURE_FLAGS.map((x: any) => x.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.routing_shadow', 'intelligence.similar_claims', 'intelligence.worklist'] /* REQ-20261020-dd-deadline: routing_shadow added (default OFF) */);
   });
 });

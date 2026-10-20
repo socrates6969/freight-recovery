@@ -140,13 +140,14 @@ describe('C14-C16 shared registries (additive)', () => {
     const i = a.indexOf('price_data.imported');
     expect(i).toBeGreaterThan(0);
     // REQ-20261012-hardening C9/C15 (additive): the three hardening actions follow the C15 step-8 actions.
-    expect(a.slice(i + 1)).toEqual([...DD_AUDIT_ACTIONS, 'claim.analysis_failed', 'auth.password.change_failed', 'invite.existing_account']);
+    // REQ-20261020-claim-outcomes (additive): claim.outcome_recorded is appended after the hardening actions.
+    expect(a.slice(i + 1)).toEqual([...DD_AUDIT_ACTIONS, 'claim.analysis_failed', 'auth.password.change_failed', 'invite.existing_account', 'claim.outcome_recorded']);
     expect(new Set(a).size).toBe(a.length);
   });
   it('flag registry entry intelligence.ocean_dd (C16), key order', () => {
     const F = M.FEATURE_FLAGS as { key: string }[];
     expect({ ...F.find((f) => f.key === 'intelligence.ocean_dd') }).toEqual({ key: 'intelligence.ocean_dd', description: 'Ocean demurrage and detention invoice audit', defaultEnabled: true, tenantVisible: true });
-    expect(F.map((f) => f.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+    expect(F.map((f) => f.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.routing_shadow', 'intelligence.similar_claims', 'intelligence.worklist'] /* REQ-20261020-dd-deadline: routing_shadow added (default OFF) */);
   });
 });
 

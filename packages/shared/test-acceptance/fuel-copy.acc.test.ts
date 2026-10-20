@@ -118,10 +118,10 @@ describe('T8 copy (F15)', () => {
     const i = a.indexOf('charge_label.deleted');
     expect(i).toBeGreaterThan(0);
     // REQ-20261011-ocean-dd C15 (additive): the step-8 actions are appended after the step-7 ones.
-    expect(a.slice(i + 1)).toEqual([...NEW_AUDIT, 'dd_tariff.created', 'dd_tariff.updated', 'dd_calendar.created', 'dd_calendar.updated', 'dd_invoice.created', 'dd_invoice.updated', 'dd_invoice.deleted', 'dd_invoice.audited', 'claim.analysis_failed', 'auth.password.change_failed', 'invite.existing_account']); // hardening C9/C15 (additive)
+    expect(a.slice(i + 1)).toEqual([...NEW_AUDIT, 'dd_tariff.created', 'dd_tariff.updated', 'dd_calendar.created', 'dd_calendar.updated', 'dd_invoice.created', 'dd_invoice.updated', 'dd_invoice.deleted', 'dd_invoice.audited', 'claim.analysis_failed', 'auth.password.change_failed', 'invite.existing_account', 'claim.outcome_recorded']); // hardening C9/C15 (additive); claim outcomes (additive): claim.outcome_recorded last
     expect(new Set(a).size).toBe(a.length);
     // REQ-20261011-ocean-dd C16 (additive): intelligence.ocean_dd, registry ordered by key.
-    expect(R.FEATURE_FLAGS.map((f) => f.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+    expect(R.FEATURE_FLAGS.map((f) => f.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.routing_shadow', 'intelligence.similar_claims', 'intelligence.worklist'] /* REQ-20261020-dd-deadline: routing_shadow added (default OFF) */);
     expect({ ...R.FEATURE_FLAGS.find((f) => f.key === 'intelligence.cost_outlook') }).toEqual({ key: 'intelligence.cost_outlook', description: 'Cost outlook from public price data', defaultEnabled: true, tenantVisible: true });
     expect({ ...R.FEATURE_FLAGS.find((f) => f.key === 'intelligence.fuel_check') }).toEqual({ key: 'intelligence.fuel_check', description: 'Fuel tables and fuel-surcharge check', defaultEnabled: true, tenantVisible: true });
   });

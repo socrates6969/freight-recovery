@@ -134,7 +134,7 @@ describe('AN-D08 migrations', () => {
     }
     expect(/CREATE\s+(OR\s+REPLACE\s+)?(CONSTRAINT\s+)?TRIGGER/i.test(sql), 'adds triggers').toBe(true);
   });
-  it('schema.prisma has no model change besides the step-6 ChargeLabel model (normalized content equals d678827)', () => {
+  it('schema.prisma has no model change besides the step-6 ChargeLabel model and the later additive models (normalized content equals d678827)', () => {
     // REQ-20261011-charge-intelligence (C10, additive pin update): step 6 adds `model ChargeLabel { ... }` and its
     // relation fields on Tenant/User. Only those are removed before hashing; everything else must equal d678827.
     const raw = readFileSync(resolve(ROOT, 'api', 'prisma', 'schema.prisma'), 'utf8');
@@ -180,6 +180,18 @@ describe('AN-D08 migrations', () => {
     expect(auditBlock.split(/\r?\n/).filter((l) => idxLine.test(l)), 'exactly one AuditEvent target index').toHaveLength(1);
     expect(s.split(/\r?\n/).filter((l) => idxLine.test(l)), 'the target index appears only in AuditEvent').toHaveLength(1);
     s = s.split(/\r?\n/).filter((l) => !idxLine.test(l)).join('\n');
+    // REQ-20261020-claim-outcomes (additive pin update): the model mapped to claim_outcomes (migration
+    // 20261020000000_claim_outcomes) and its relation fields on Tenant, User and Claim. Exactly that block and the lines
+    // naming the model are removed; everything else must still equal d678827 (REQ-20261020-dd-deadline changes no model).
+    const outcomes = new Set<string>();
+    s = s.replace(/^model (\w+) \{[\s\S]*?^\}[ \t]*$/gm, (block, name: string) => {
+      if (!/@@map\("claim_outcomes"\)/.test(block)) return block;
+      outcomes.add(name);
+      return '';
+    });
+    expect(raw.includes('@@map("claim_outcomes")'), 'schema maps claim_outcomes').toBe(true);
+    expect(outcomes, 'exactly one claim-outcomes model').toHaveProperty('size', 1);
+    for (const name of outcomes) s = s.split(/\r?\n/).filter((l) => !new RegExp(`\\b${name}\\b`).test(l)).join('\n');
     // `prisma format` re-aligns columns when a field is added, so internal whitespace runs are collapsed too. The
     // pinned value below was computed with this normalization from `git show d678827:api/prisma/schema.prisma`.
     const n = s.split(/\r?\n/).map((l) => l.replace(/\/\/.*$/, '').trim().replace(/\s+/g, ' ')).filter(Boolean).join('\n');
