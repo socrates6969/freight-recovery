@@ -204,8 +204,8 @@ are done:
   packet revision 1 for human review; a bulk action analyzes up to 10 at a time. See
   [Claim analysis (step 5)](#claim-analysis-step-5).
 - **Step 6:** **charge suggestions and team labels**. A Charges tab suggests a category for each invoice
-  charge line by comparing it with labelled examples (175 charge names from six public carrier tariffs,
-  plus your team's labels); reviewers confirm or correct it, and later analyses use the labels. The
+  charge line by comparing it with labelled examples (256 charge names from seven public carrier tariffs and the U.S. GSA
+  uniform rules tariff, plus your team's labels); reviewers confirm or correct it, and later analyses use the labels. The
   analysis can add review-only findings for possible unauthorized accessorials, and moves detention
   findings to review when a line looks like detention under another name. Suggestions are not verified
   and never confirm an amount. See [Charge suggestions and team labels (step 6)](#charge-suggestions-and-team-labels-step-6).
@@ -854,20 +854,22 @@ memory for your team, and review-only findings in the analysis. Architecture:
 model and residual risks:
 [technical/web-platform-security.md, section 10](technical/web-platform-security.md#10-step-6-charge-intelligence).
 
-**Why.** The fixed rules recognise a charge line by keywords. On 175 charge names from six public carrier
-tariffs, they recognised 19 of the 159 accessorial names. A line the rules do not recognise is never
+**Why.** The fixed rules recognise a charge line by keywords. On 256 charge names from seven public carrier
+tariffs and the U.S. GSA uniform rules tariff, they recognised 28 of the 234 accessorial names. A line the rules do not recognise is never
 checked against the rate confirmation's authorized accessorials.
 
 **What a suggestion is, and what it is not.** The classifier compares a charge name with labelled examples
 (character and word overlap, nearest example) and suggests that example's category when the similarity
-is at least 0.30. Below that it shows "No suggestion". The examples are 175 charge names from six public
-carrier tariffs (names only, with attribution) and your team's labels. There is no trained model, no LLM
+is at least 0.30. Below that it shows "No suggestion". The examples are 256 charge names from seven public
+carrier tariffs and the U.S. GSA uniform rules tariff (names only, with attribution) and your team's labels. There is no trained model, no LLM
 call and no network call. A suggestion is not verified. It can only add an item for human review and
 never confirms an amount. The evaluation in CI is a regression check on the public tariff names, not an
 accuracy measure on invoices.
 
-**Data provenance.** The 175 names are copied from public rules tariffs of XPO, Estes, Dohrn, Magnum,
-Gardewine and States Logistics; the sources and URLs are in `packages/shared/src/charge-intel/seed-v1.ts`.
+**Data provenance.** The names are copied from public rules tariffs of XPO, Estes, Dohrn, Magnum,
+Gardewine and States Logistics (175 names, `packages/shared/src/charge-intel/seed-v1.ts`), the U.S. GSA Uniform
+Rules Tariff 200-A and the FedEx Freight accessorial sheet (81 names, `seed-v2.ts`, with the archive digest and
+reuse terms of each); the sources and URLs are in those files.
 No rates, customers, shipments or invoices are stored. Using these real public names is an owner decision
 of 2026-10-10/11. The rule "synthetic data only" in `CLAUDE.md` has not been changed; adding a dated
 exception there is an open question for the owner (OQ1).
@@ -957,13 +959,13 @@ is switched back on.
 
 ```bash
 npm run build
-npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1
+npm run eval:charges -- --min-top1 254 --min-accessorial-top1 233 --min-accessorial-recognised 215 --max-wrong-suggested 1
 ```
 
-It classifies each of the 175 public tariff names using only the other five carriers' names (no
-database, no network, nothing recorded). Today: nearest example right for 173 of 175; at the 0.30
-threshold 161 suggested (160 right, 1 wrong) and 14 without a suggestion; accessorial names recognised 145
-of 159, against 19 of 159 for the keyword rules. CI runs exactly this command; the bounds equal today's
+It classifies each of the 256 public tariff names using only the other seven sources' names (no
+database, no network, nothing recorded). Today: nearest example right for 254 of 256; at the 0.30
+threshold 236 suggested (235 right, 1 wrong) and 20 without a suggestion; accessorial names recognised 215
+of 234, against 28 of 234 for the keyword rules. CI runs exactly this command; the bounds equal today's
 numbers, so a change that lowers them fails the build. `--json` prints the full report. These numbers are
 about tariff names, not invoices: they are a regression check on this seed set, not an accuracy measure.
 
@@ -1485,7 +1487,8 @@ npm run test:integration     # api, against a migrated + seeded test DB (TEST_DA
                              # parity suites (step 3 extraction, step 5 rules); see the env block in .github/workflows/web-ci.yml
 npm run test:acceptance      # black-box acceptance suites under */test-acceptance/ (when present)
 npm run eval -- --set api/eval/sets/extraction-v1 --k 3 --min-pass-hat-k 1   # step 4: after npm run build
-npm run eval:charges -- --min-top1 173 --min-accessorial-top1 158 --min-accessorial-recognised 145 --max-wrong-suggested 1   # step 6: after npm run build
+npm run eval:charges -- --min-top1 254 --min-accessorial-top1 233 --min-accessorial-recognised 215 --max-wrong-suggested 1   # step 6: after npm run build
+npm run eval:curve -- --seed v2 --out curve.json   # learning curve of the charge classifier (deterministic; writes JSON)
 npm run eval:outlook -- --min-coverage 0.70 --max-coverage 0.90 --require-model diesel_us:1,diesel_us:4,ppi_tl:1   # step 7: after npm run build
 npm run prices:import -- --list   # step 7: owner connection (MIGRATE_DATABASE_URL); the seed imports the bundled prices
 npm run audit && npm audit signatures
