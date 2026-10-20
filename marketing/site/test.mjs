@@ -26,6 +26,12 @@ const pages = [];
 const appIndex = join(dist, "app", "index.html");
 const appPages = pages.filter((p) => p.startsWith(join(dist, "app")));
 pages.splice(0, pages.length, ...pages.filter((p) => !appPages.includes(p)));
+// The developer portal under dist/docs is an MkDocs build with its own strict build (developer-portal/build.py);
+// here its presence, that it is the real portal when SITE_DOCS_DIR is set, and the site's no-network rule are checked.
+const docsDir = join(dist, "docs");
+const docsIndex = join(docsDir, "index.html");
+const docsPages = pages.filter((p) => p.startsWith(docsDir));
+pages.splice(0, pages.length, ...pages.filter((p) => !docsPages.includes(p)));
 
 let failed = 0;
 const check = (ok, msg) => { if (!ok) { failed++; console.error("FAIL:", msg); } };
@@ -37,6 +43,30 @@ if (process.env.SITE_APP_DIR) {
   check(existsSync(join(dist, "app", "assets")), "SITE_APP_DIR set: dist/app/assets must hold the built app");
   check(appHtml.includes('type="module"') && appHtml.includes("connect-src 'none'"), "SITE_APP_DIR set: dist/app/index.html must be the real app with its CSP");
   check(!appHtml.includes("not built"), "SITE_APP_DIR set: dist/app must not be the placeholder");
+}
+check(existsSync(docsIndex), "dist/docs/index.html exists (developer portal or local placeholder)");
+if (process.env.SITE_DOCS_DIR) {
+  const docsHtml = existsSync(docsIndex) ? readFileSync(docsIndex, "utf8") : "";
+  check(existsSync(join(docsDir, "assets", "stylesheets")) && existsSync(join(docsDir, "api", "openapi.json")), "SITE_DOCS_DIR set: dist/docs must hold the built portal (assets and api/openapi.json)");
+  check(/<meta name="generator" content="mkdocs-/.test(docsHtml) && !docsHtml.includes("<title>scoup.ai developer portal (not built)</title>"), "SITE_DOCS_DIR set: dist/docs/index.html must be the MkDocs portal, not the placeholder");
+  const docsText = docsHtml.replace(/<script[\s\S]*?<\/script>/g, "").toLowerCase();
+  check(docsText.includes("prototype") && docsText.includes("early-access teams"), "SITE_DOCS_DIR set: the portal landing page must say the workspace API is a prototype with keys for early-access teams only");
+}
+// No HTML or CSS under dist/docs may load or link anything from the network: no http(s) URL in src/href/url().
+// The canonical link (the portal's own published address) is the one exception.
+const docsFiles = [];
+(function walk(d) {
+  if (!existsSync(d)) return;
+  for (const n of readdirSync(d)) {
+    const p = join(d, n);
+    if (statSync(p).isDirectory()) walk(p);
+    else if (/\.(?:html|css)$/.test(n)) docsFiles.push(p);
+  }
+})(docsDir);
+for (const p of docsFiles) {
+  const body = readFileSync(p, "utf8").replace(/<link rel="canonical"[^>]*>/g, "");
+  const hits = [...body.matchAll(/(?:\b(?:src|href)=["']|url\(\s*["']?)(https?:\/\/[^"') ]*)/g)].map((m) => m[1]);
+  check(hits.length === 0, `${p.slice(dist.length)}: external URL under dist/docs: ${hits.slice(0, 3).join(", ")}`);
 }
 for (const p of pages) {
   const h = readFileSync(p, "utf8");
