@@ -15,6 +15,8 @@ export interface Features {
   outlook: boolean;
   /** Step 8: ocean D&D invoice audit page. */
   oceanDd: boolean;
+  /** REQ-20261020-dd-deadline: reviewer-routing shadow section on the insights page (default off). */
+  routingShadow: boolean;
 }
 
 /** Tenant feature flags, loaded once per session; any failure hides every intelligence feature (fail closed). */
@@ -41,5 +43,6 @@ export function useFeatures(): Features {
     fuel: flags['intelligence.fuel_check'] === true,
     outlook: flags['intelligence.cost_outlook'] === true,
     oceanDd: flags['intelligence.ocean_dd'] === true,
+    routingShadow: flags['intelligence.routing_shadow'] === true,
   };
 }

@@ -3,6 +3,8 @@
  * amount goes through MoneyFigure, and its label word is visible next to it.
  */
 import {
+  DD_DEADLINE_RED_DAYS,
+  DD_DISPUTE_WINDOW_NOTE,
   INSIGHTS_TEXT,
   type InsightsCountCentsDto,
   type InsightsDeadlinesDto,
@@ -198,6 +200,13 @@ export function DisputeWindowSection({ q }: { q: UseQueryResult<InsightsDeadline
       <QueryState q={q}>
         {(d) => (
           <>
+            <p className="mb-3 text-sm" data-testid="dd-closing-soon">
+              <span className={d.ddMitigationWindow.d0to7.claimCount > 0 ? 'font-medium text-[var(--color-danger)]' : 'font-medium'}>
+                {`${claimsText(d.ddMitigationWindow.d0to7.claimCount)} with a D&D dispute window closing within ${DD_DEADLINE_RED_DAYS} days`}
+              </span>
+              {d.ddMitigationWindow.past.claimCount > 0 ? <span className="muted">{` (${claimsText(d.ddMitigationWindow.past.claimCount)} already past the floor date)`}</span> : null}
+            </p>
+            <p className="muted mb-3 text-xs">{DD_DISPUTE_WINDOW_NOTE}</p>
             <BucketTable
               label={INSIGHTS_TEXT.ddWindowLabel}
               rows={[

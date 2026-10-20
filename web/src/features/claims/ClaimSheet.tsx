@@ -29,6 +29,7 @@ import { ProvenancePanel, SimilarPanel } from '../intelligence/ClaimIntelligence
 import { useFeatures } from '../intelligence/use-features';
 
 import { AnalyzeClaimSection, analyzeErrorText } from './AnalyzeClaimSection';
+import { DisputeWindowBasis, DisputeWindowLine, todayUtc } from './DisputeWindow';
 
 const ALL_TABS = ['Summary', 'Evidence', 'History', 'Documents', 'Similar', 'Provenance', 'Charges', 'Fuel'] as const;
 export const NO_PACKET_TEXT = 'No evidence packet yet. Analysis has not run for this claim.';
@@ -199,6 +200,7 @@ export function ClaimSheet() {
   const canAnalyze = useCan('claims:analyze');
   const me = useSession((s) => s.user);
   const [tab, setTab] = useState<Tab>('Summary');
+  const [today] = useState(todayUtc);
   const features = useFeatures();
   const [hidden, setHidden] = useState<readonly Tab[]>([]);
   const hideSimilar = useCallback(() => {
@@ -373,6 +375,12 @@ export function ClaimSheet() {
                     <Field label="Shipper">
                       <SafeText value={c.shipperName} />
                     </Field>
+                    {c.disputeWindow ? (
+                      <Field label="Dispute window">
+                        <DisputeWindowLine window={c.disputeWindow} today={today} />
+                        <DisputeWindowBasis window={c.disputeWindow} />
+                      </Field>
+                    ) : null}
                     <Field label="Perspective">{c.perspective === 'SHIPPER' ? 'Shipper' : 'Carrier'}</Field>
                     <Field label="Status">
                       <span className="badge">{STATUS_LABEL[c.status] ?? c.status}</span>
