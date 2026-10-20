@@ -10,6 +10,7 @@ import { unwrapRawTx, type TenantTx } from './tenant.js';
 export interface WorklistRow {
   id: string;
   claimNumber: string;
+  kind: 'FREIGHT' | 'OCEAN_DD';
   loadNumber: string | null;
   carrierName: string;
   perspective: 'SHIPPER' | 'CARRIER';
@@ -22,6 +23,12 @@ export interface WorklistRow {
   packetStatus: string;
   pendingFindingsCount: number;
   valueCents: number;
+  /** REQ-20261020-dd-deadline: the claim's invoice date as a UTC `YYYY-MM-DD`, or null. */
+  invoiceDate: string | null;
+  /** The request window the linked D&D invoice states (`data.disputeRequestDays`), or null. */
+  disputeRequestDays: number | null;
+  /** Whole days from `today` to the deadline (invoice date + max(stated, minDays)); null without an invoice date. */
+  deadlineDaysLeft: number | null;
 }
 
 export interface WorklistFilter {
@@ -30,6 +37,12 @@ export interface WorklistFilter {
   weightPercent: number;
   limit: number;
   offset: number;
+  /** REQ-20261020-dd-deadline: the API clock; the deadline is counted from its UTC date. */
+  now: Date;
+  /** DD_DISPUTE_MIN_DAYS: the floor applied when the invoice states less or nothing. */
+  minDays: number;
+  /** DD_DEADLINE_URGENT_DAYS: OCEAN_DD claims with 0..urgentDays days left rank first. */
+  urgentDays: number;
 }
 
 const ALLOWED_WORKLIST_STATUSES = new Set(['PENDING_REVIEW', 'APPROVED']);
@@ -39,12 +52,18 @@ function checkFilter(f: WorklistFilter): void {
   if (f.perspective !== null && f.perspective !== 'SHIPPER' && f.perspective !== 'CARRIER') throw new RangeError('invalid perspective');
   if (!Number.isInteger(f.weightPercent) || f.weightPercent < 0 || f.weightPercent > 100) throw new RangeError('invalid weight');
   if (!Number.isInteger(f.limit) || f.limit < 1 || f.limit > 100 || !Number.isInteger(f.offset) || f.offset < 0) throw new RangeError('invalid page');
+  if (!(f.now instanceof Date) || Number.isNaN(f.now.getTime())) throw new RangeError('invalid now');
+  if (!Number.isInteger(f.minDays) || f.minDays < 0 || !Number.isInteger(f.urgentDays) || f.urgentDays < 0) throw new RangeError('invalid deadline policy');
 }
 
 /**
- * One page of eligible claims (status in the set, latest packet exists) in priority-v1 order. The SQL
- * order is value desc, recoverable desc, updated_at asc, id asc, with value computed in integer
- * arithmetic exactly as `scoreClaim` does (integer division of a non-negative bigint = floor).
+ * One page of eligible claims (status in the set, latest packet exists) in deadline-first-v1 then priority-v1
+ * order (REQ-20261020-dd-deadline; the rule is stated in intelligence/priority.ts `compareDeadlineFirst` and
+ * mirrored here so pages are consistent): urgent OCEAN_DD claims first (invoice date known and
+ * 0 <= days left <= urgentDays), soonest first; then value desc, recoverable desc, updated_at asc, id asc, with
+ * value computed in integer arithmetic exactly as `scoreClaim` does (integer division of a non-negative
+ * bigint = floor). The deadline is the UTC invoice date plus max(stated request window, minDays); the stated
+ * window is read from the linked D&D invoice's JSON only when it is a JSON number.
  */
 export async function worklistPage(tx: TenantTx, f: WorklistFilter): Promise<{ rows: WorklistRow[]; total: number; awaitingAnalysis: number }> {
   checkFilter(f);
@@ -67,25 +86,47 @@ export async function worklistPage(tx: TenantTx, f: WorklistFilter): Promise<{ r
       packet_status: string;
       pending_findings: bigint;
       value_cents: bigint;
+      kind: 'FREIGHT' | 'OCEAN_DD';
+      invoice_day: string | null;
+      stated_days: number | null;
+      days_left: number | null;
+      urgent: boolean;
     }[]
   >`
-    SELECT c.id, c.claim_number, c.load_number, c.carrier_name, c.perspective::text AS perspective, c.status::text AS status,
-           c.recoverable_cents, c.pending_review_cents, c.updated_at, c.assignee_id, u.name AS assignee_name,
-           l.revision AS packet_revision, l.status::text AS packet_status,
-           (SELECT count(*) FROM packet_findings pf
-             WHERE pf.packet_id = l.id AND pf.tenant_id = c.tenant_id AND pf.needs_human_review) AS pending_findings,
-           (c.recoverable_cents::bigint + (c.pending_review_cents::bigint * ${f.weightPercent}::bigint) / 100) AS value_cents
-    FROM claims c
-    JOIN LATERAL (
-      SELECT p.id, p.revision, p.status FROM evidence_packets p
-      WHERE p.claim_id = c.id AND p.tenant_id = c.tenant_id
-      ORDER BY p.revision DESC LIMIT 1
-    ) l ON true
-    LEFT JOIN users u ON u.id = c.assignee_id
-    WHERE c.tenant_id = fr_current_tenant()
-      AND c.status = ANY(${statuses}::text[]::"ClaimStatus"[])
-      AND (${f.perspective}::text IS NULL OR c.perspective = ${f.perspective}::text::"Perspective")
-    ORDER BY value_cents DESC, c.recoverable_cents DESC, c.updated_at ASC, c.id ASC
+    SELECT y.*, (y.kind = 'OCEAN_DD' AND y.days_left IS NOT NULL AND y.days_left >= 0 AND y.days_left <= ${f.urgentDays}::int) AS urgent
+    FROM (
+      SELECT c.id, c.claim_number, c.load_number, c.carrier_name, c.perspective::text AS perspective, c.status::text AS status,
+             c.recoverable_cents, c.pending_review_cents, c.updated_at, c.assignee_id, u.name AS assignee_name,
+             l.revision AS packet_revision, l.status::text AS packet_status,
+             (SELECT count(*) FROM packet_findings pf
+               WHERE pf.packet_id = l.id AND pf.tenant_id = c.tenant_id AND pf.needs_human_review) AS pending_findings,
+             (c.recoverable_cents::bigint + (c.pending_review_cents::bigint * ${f.weightPercent}::bigint) / 100) AS value_cents,
+             c.kind::text AS kind,
+             to_char((c.invoice_date AT TIME ZONE 'UTC')::date, 'YYYY-MM-DD') AS invoice_day,
+             d.stated_days,
+             CASE WHEN c.invoice_date IS NULL THEN NULL
+                  ELSE ((c.invoice_date AT TIME ZONE 'UTC')::date + GREATEST(COALESCE(d.stated_days, 0), ${f.minDays}::int))
+                       - (${f.now}::timestamptz AT TIME ZONE 'UTC')::date END AS days_left
+      FROM claims c
+      JOIN LATERAL (
+        SELECT p.id, p.revision, p.status FROM evidence_packets p
+        WHERE p.claim_id = c.id AND p.tenant_id = c.tenant_id
+        ORDER BY p.revision DESC LIMIT 1
+      ) l ON true
+      LEFT JOIN LATERAL (
+        SELECT CASE WHEN jsonb_typeof(i.data->'disputeRequestDays') = 'number' THEN (i.data->>'disputeRequestDays')::int END AS stated_days
+        FROM dd_invoices i
+        WHERE i.claim_id = c.id AND i.tenant_id = c.tenant_id
+        LIMIT 1
+      ) d ON true
+      LEFT JOIN users u ON u.id = c.assignee_id
+      WHERE c.tenant_id = fr_current_tenant()
+        AND c.status = ANY(${statuses}::text[]::"ClaimStatus"[])
+        AND (${f.perspective}::text IS NULL OR c.perspective = ${f.perspective}::text::"Perspective")
+    ) y
+    ORDER BY urgent DESC,
+             CASE WHEN y.kind = 'OCEAN_DD' AND y.days_left >= 0 AND y.days_left <= ${f.urgentDays}::int THEN y.days_left END ASC NULLS LAST,
+             y.value_cents DESC, y.recoverable_cents DESC, y.updated_at ASC, y.id ASC
     LIMIT ${f.limit} OFFSET ${f.offset}`;
   const counts = await raw.$queryRaw<{ total: bigint; awaiting: bigint }[]>`
     SELECT
@@ -100,6 +141,7 @@ export async function worklistPage(tx: TenantTx, f: WorklistFilter): Promise<{ r
     rows: rows.map((r) => ({
       id: r.id,
       claimNumber: r.claim_number,
+      kind: r.kind,
       loadNumber: r.load_number,
       carrierName: r.carrier_name,
       perspective: r.perspective,
@@ -112,6 +154,9 @@ export async function worklistPage(tx: TenantTx, f: WorklistFilter): Promise<{ r
       packetStatus: r.packet_status,
       pendingFindingsCount: Number(r.pending_findings),
       valueCents: Number(r.value_cents),
+      invoiceDate: r.invoice_day,
+      disputeRequestDays: r.stated_days === null ? null : Number(r.stated_days),
+      deadlineDaysLeft: r.days_left === null ? null : Number(r.days_left),
     })),
     total: Number(c?.total ?? 0n),
     awaitingAnalysis: Number(c?.awaiting ?? 0n),
