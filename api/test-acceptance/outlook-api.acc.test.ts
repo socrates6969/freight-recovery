@@ -114,12 +114,14 @@ describe('T11 outlook API (F7, F10)', () => {
 });
 
 describe('T13 flags (F14)', () => {
-  // Step 8 (ocean D&D) added intelligence.ocean_dd, so the platform now has 7 flags; the exact key list above is the pin.
-  it('CI-X01 /features returns all flags (6 in step 7, 7 since step 8) including cost_outlook and fuel_check, both on', async () => {
+  // Step 8 (ocean D&D) added intelligence.ocean_dd, so the platform had 7 flags; the exact key list (I.FLAG_KEYS) is the pin.
+  // REQ-20261020-dd-deadline (additive): intelligence.routing_shadow makes it 8; it is the one default-OFF registry flag
+  // (its row is OFF after migrate; the acceptance resetFlags turns every flag on). cost_outlook and fuel_check stay on.
+  it('CI-X01 /features returns all flags (6 in step 7, 7 since step 8, 8 with the routing shadow) including cost_outlook and fuel_check, both on', async () => {
     const r = await SS.VIEWER.get('/features');
     expect(r.status, r.text).toBe(200);
     expect(Object.keys(r.body.flags).sort()).toEqual([...I.FLAG_KEYS]);
-    expect(Object.keys(r.body.flags)).toHaveLength(7);
+    expect(Object.keys(r.body.flags)).toHaveLength(8);
     expect([r.body.flags['intelligence.cost_outlook'], r.body.flags['intelligence.fuel_check']]).toEqual([true, true]);
   });
   it('CI-X03 cost_outlook off: outlook 404 (after 401/403/400); fuel routes unaffected', async () => {
