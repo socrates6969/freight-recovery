@@ -48,6 +48,7 @@ import { registerChargeRoutes } from './intelligence/charge-routes.js';
 import { registerFuelRoutes } from './intelligence/fuel-routes.js';
 import { registerOutlookRoutes } from './intelligence/outlook-routes.js';
 import { registerOceanDdRoutes } from './ocean-dd/routes.js';
+import { registerInsightsRoutes } from './insights/routes.js';
 import { registerIntelligenceRoutes } from './intelligence/routes.js';
 import { createLogger } from './logging.js';
 import { MetricsRegistry, UNMATCHED_ROUTE, ZERO_PARSER_COUNTERS } from './observability/metrics.js';
@@ -430,6 +431,8 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     now,
     toHttpError,
   });
+  // REQ-20261018-exec-dashboard: executive insights (read-only aggregates, tenant data only, no API keys).
+  registerInsightsRoutes(app, { now });
   // Step 6 (REQ-20261011-charge-intelligence): charge lines and tenant charge labels (flag-gated).
   registerChargeRoutes(app, { flags });
   // Step 7 (REQ-20261011-fuel-outlook): fuel tables, claim fuel inputs, fuel-check view and the cost outlook.

@@ -38,3 +38,5 @@ export * from './outlook-dto.js';
 // text, copy) and its DTOs, exported from the root (Part C C1).
 export * from './ocean-dd/index.js';
 export * from './ocean-dd-dto.js';
+// REQ-20261018-exec-dashboard: executive insights contract (read-only aggregates).
+export * from './insights-dto.js';

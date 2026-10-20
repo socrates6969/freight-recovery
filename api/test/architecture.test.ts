@@ -228,6 +228,18 @@ describe('architecture', () => {
     }
   });
 
+  it('insights code reads only through the tenant transaction (REQ-20261018-exec-dashboard)', () => {
+    const ins = files.filter((f) => f.path.startsWith('src/insights/'));
+    expect(ins.map((f) => f.path).sort()).toEqual(['src/insights/routes.ts', 'src/insights/service.ts']);
+    for (const f of ins) {
+      for (const spec of imports(f.text)) {
+        const target = resolves(f.path, spec);
+        expect([f.path, spec, /db\/(system|client)(\.js)?$/u.test(target) || /generated\/prisma|@prisma\//u.test(spec)]).toEqual([f.path, spec, false]);
+      }
+      expect([f.path, /\b(PrismaClient|BaseClient|withSystemTx|withTenantTx\s*\(|\$queryRaw|\$executeRaw|unwrapRawTx)\b/u.test(f.text)]).toEqual([f.path, false]);
+    }
+  });
+
   it('no learning, speed-up or accuracy claims appear in source (honest labeling, Q8)', () => {
     const FORBIDDEN = [
       /neural mesh/iu,
@@ -289,7 +301,7 @@ describe('architecture', () => {
   });
 
   it('hardening (H10): the raw-SQL helpers of this run live in src/audit or src/db', () => {
-    const helpers = ['src/audit/label-authors.ts', 'src/audit/label-influence.ts', 'src/audit/analysis-failures.ts', 'src/db/analysis-candidates.ts'];
+    const helpers = ['src/audit/label-authors.ts', 'src/audit/label-influence.ts', 'src/audit/analysis-failures.ts', 'src/db/analysis-candidates.ts', 'src/db/insights.ts', 'src/db/insights-leakage.ts'];
     for (const h of helpers) {
       const f = files.find((x) => x.path === h);
       expect([h, f !== undefined && /\.\$queryRaw\s*[(<`]/u.test(f.text)]).toEqual([h, true]);
