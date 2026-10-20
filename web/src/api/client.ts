@@ -15,6 +15,11 @@ import {
   FeatureFlagList,
   FeaturesResponse,
   ImportDocumentDetail,
+  InsightsDeadlines,
+  InsightsLeakage,
+  InsightsStages,
+  InsightsSummary,
+  InsightsThroughput,
   LogRecord,
   LogView,
   PipelineHealth,
@@ -25,8 +30,10 @@ import {
   SimilarResponse,
   Telemetry,
   Worklist,
+  type ClaimKind,
   type ImportDocumentDetailDto,
   type LogLevelName,
+  type Perspective,
   type PipelineWindow,
 } from '@fr/shared';
 import { z } from 'zod';
@@ -107,6 +114,27 @@ interface RawResult {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 /** Only our own export/download names are honored from Content-Disposition. */
 const SAFE_DOWNLOAD_NAME = /^attachment; filename="((?:freight-recovery-[a-z]+-\d{8}T\d{6}Z|document-[0-9a-f]{8})\.(?:csv|xlsx|pdf|png|jpg|txt))"$/u;
+
+/** Query of the executive insights routes (REQ-20261018-exec-dashboard); undefined values are not sent. */
+export interface InsightsRequest {
+  from?: string | undefined;
+  to?: string | undefined;
+  kind?: ClaimKind | undefined;
+  perspective?: Perspective | undefined;
+  by?: 'carrier' | 'rule' | undefined;
+  carrier?: string | undefined;
+  limit?: number | undefined;
+}
+
+/** URLSearchParams from the defined values only, in a fixed key order. */
+export function insightsParams(q: InsightsRequest): string {
+  const params = new URLSearchParams();
+  for (const key of ['from', 'to', 'kind', 'perspective', 'by', 'carrier', 'limit'] as const) {
+    const v = q[key];
+    if (v !== undefined) params.set(key, String(v));
+  }
+  return params.toString();
+}
 
 export class ApiClient {
   private csrfFallback: string | null = null;
@@ -254,6 +282,26 @@ export class ApiClient {
     const params = new URLSearchParams({ page: String(q.page), pageSize: String(q.pageSize ?? 25) });
     if (q.perspective) params.set('perspective', q.perspective);
     return this.get(`/api/v1/intelligence/worklist?${params.toString()}`, Worklist);
+  }
+
+  insightsSummary(q: InsightsRequest) {
+    return this.get(`/api/v1/insights/summary?${insightsParams(q)}`, InsightsSummary);
+  }
+
+  insightsStages(q: InsightsRequest) {
+    return this.get(`/api/v1/insights/stages?${insightsParams(q)}`, InsightsStages);
+  }
+
+  insightsDeadlines(q: InsightsRequest) {
+    return this.get(`/api/v1/insights/deadlines?${insightsParams(q)}`, InsightsDeadlines);
+  }
+
+  insightsLeakage(q: InsightsRequest) {
+    return this.get(`/api/v1/insights/leakage?${insightsParams(q)}`, InsightsLeakage);
+  }
+
+  insightsThroughput(q: InsightsRequest) {
+    return this.get(`/api/v1/insights/throughput?${insightsParams(q)}`, InsightsThroughput);
   }
 
   similar(claimId: string, limit = 5) {

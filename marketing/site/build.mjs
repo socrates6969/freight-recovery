@@ -3,6 +3,8 @@
  * Zero-dependency static site builder (Node >= 18). No framework, no bundler, no runtime JS on these pages.
  * The product app (web/dist-product, a separate Vite build) is copied to dist/app when SITE_APP_DIR points at it;
  * without it a plain placeholder page is written so links resolve in local checks (the Pages workflow always sets it).
+ * The developer portal (developer-portal/site, an MkDocs build) is copied to dist/docs the same way when SITE_DOCS_DIR
+ * points at it; without it a placeholder page is written.
  *
  *   SITE_URL=https://www.example.no CONTACT_EMAIL=you@example.no node build.mjs
  *
@@ -38,6 +40,7 @@ const MAX_DESCRIPTION = 160;
 const OG_IMAGE = `${SITE_URL}/og-card.png`;
 const OG_IMAGE_ALT = "scoup.ai: check freight invoices in your browser. Accessorials, detention and ocean D&D against the rate confirmation and the tariff, with the arithmetic shown.";
 const APP_DIR = process.env.SITE_APP_DIR ? join(process.cwd(), process.env.SITE_APP_DIR) : null;
+const DOCS_DIR = process.env.SITE_DOCS_DIR ? join(process.cwd(), process.env.SITE_DOCS_DIR) : null;
 const brandDir = join(root, "..", "..", "brand");
 // Horizontal lockup: viewBox 873.32 x 162.97. Header 28px tall, footer 20px (the minimum on screen).
 const LOCKUP_RATIO = 873.32 / 162.97;
@@ -85,6 +88,8 @@ function lockup(heightPx, cls) {
 
 const NAV = [
   ["/platform/", "Product"],
+  ["/workspace/", "Workspace"],
+  ["/docs/", "Developers"],
   ["/how-it-works/", "How it works"],
   ["/pricing/", "Pricing"],
   ["/security/", "Security and privacy"],
@@ -204,6 +209,18 @@ if (APP_DIR) {
   mkdirSync(appDist, { recursive: true });
   writeFileSync(join(appDist, "index.html"), `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>scoup.ai app (not built)</title><meta name="robots" content="noindex"></head><body><p>The app bundle is built separately (npm run build:product -w web) and copied here by the Pages workflow.</p><p><a href="${BASE}/">Back to the site</a></p></body></html>\n`);
   console.warn("WARN: SITE_APP_DIR not set; dist/app holds a placeholder, not the product app.");
+}
+
+// The developer portal: an MkDocs build (developer-portal/site, `python developer-portal/build.py`) copied under
+// /docs/. Same contract as the app: a placeholder without SITE_DOCS_DIR, and test.mjs refuses the placeholder when
+// the variable is set and fails if anything under dist/docs loads or links a resource from outside the site.
+const docsDist = join(dist, "docs");
+if (DOCS_DIR) {
+  cpSync(DOCS_DIR, docsDist, { recursive: true });
+} else {
+  mkdirSync(docsDist, { recursive: true });
+  writeFileSync(join(docsDist, "index.html"), `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>scoup.ai developer portal (not built)</title><meta name="robots" content="noindex"></head><body><p>The developer portal is built separately (python developer-portal/build.py) and copied here by the Pages workflow.</p><p><a href="${BASE}/">Back to the site</a></p></body></html>\n`);
+  console.warn("WARN: SITE_DOCS_DIR not set; dist/docs holds a placeholder, not the developer portal.");
 }
 
 // lastmod comes only from each page's own "updated" date: one build date on every URL teaches crawlers to

@@ -1,15 +1,16 @@
 // Test-owned oracle for the permission matrix (C2) and canonical DTO examples (C3/C4).
 // REQ-20261011-charge-intelligence C8: charge_labels:manage added for OWNER, ADMIN, MANAGER, REVIEWER (additive).
 // REQ-20261011-ocean-dd C14 (additive): dd_invoices:manage for OWNER, ADMIN, MANAGER, REVIEWER, ANALYST; dd_tariffs:manage for OWNER, ADMIN, MANAGER, REVIEWER.
+// REQ-20261018-exec-dashboard (additive): insights:read for OWNER, ADMIN, MANAGER, VIEWER (read-only aggregates).
 export const ROLES = ['OWNER', 'ADMIN', 'MANAGER', 'REVIEWER', 'ANALYST', 'VIEWER', 'PLATFORM_DEV', 'SUPER_ADMIN'] as const;
 export type Role = (typeof ROLES)[number];
 export const EXPECTED: Record<Role, string[]> = {
-  OWNER: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'admins:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'billing:manage', 'tenant:delete', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage', 'charge_labels:manage', 'dd_invoices:manage', 'dd_tariffs:manage'],
-  ADMIN: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage', 'charge_labels:manage', 'dd_invoices:manage', 'dd_tariffs:manage'],
-  MANAGER: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'charge_labels:manage', 'dd_invoices:manage', 'dd_tariffs:manage'],
+  OWNER: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'admins:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'billing:manage', 'tenant:delete', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage', 'charge_labels:manage', 'dd_invoices:manage', 'dd_tariffs:manage', 'insights:read'],
+  ADMIN: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'users:read', 'users:manage', 'audit:read', 'settings:manage', 'integrations:manage', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'apikeys:manage', 'charge_labels:manage', 'dd_invoices:manage', 'dd_tariffs:manage', 'insights:read'],
+  MANAGER: ['claims:read', 'claims:analyze', 'claims:assign', 'packets:edit', 'packets:approve', 'demands:send', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'charge_labels:manage', 'dd_invoices:manage', 'dd_tariffs:manage', 'insights:read'],
   REVIEWER: ['claims:read', 'claims:analyze', 'packets:edit', 'packets:approve', 'import:run', 'import:review', 'export:claims', 'export:packets', 'export:outcomes', 'charge_labels:manage', 'dd_invoices:manage', 'dd_tariffs:manage'],
   ANALYST: ['claims:read', 'claims:analyze', 'import:run', 'export:claims', 'dd_invoices:manage'],
-  VIEWER: ['claims:read'],
+  VIEWER: ['claims:read', 'insights:read'],
   PLATFORM_DEV: ['platform:health', 'platform:flags', 'platform:logs', 'platform:eval'],
   SUPER_ADMIN: ['platform:health', 'platform:tenants:list', 'platform:cross_tenant_read', 'platform:audit'],
 };

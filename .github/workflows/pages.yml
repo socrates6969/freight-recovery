@@ -1,4 +1,5 @@
-# Builds the static marketing site (marketing/site) and deploys it to GitHub Pages.
+# Builds the static marketing site (marketing/site), the browser app (/app/) and the developer portal
+# (/docs/, developer-portal/) and deploys them to GitHub Pages.
 # Served at https://socrates6969.github.io/freight-recovery/ ; build.mjs derives the base path
 # from SITE_URL. Requires Settings > Pages > Source = "GitHub Actions".
 name: pages
@@ -11,6 +12,7 @@ on:
       - "brand/**"
       - "web/**"
       - "packages/shared/**"
+      - "developer-portal/**"
       - "package-lock.json"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
@@ -46,12 +48,26 @@ jobs:
         run: npm run build -w packages/shared
       - name: Build and check the app bundle
         run: npm run build:product -w web
-      # Zero-dependency site builder. `npm test` builds the pages, copies the app bundle to dist/app, then
-      # runs the SEO, honesty, security, brand, link and base-path checks; a failing check stops the deploy.
+      # The developer portal is an MkDocs build (developer-portal/site) served under /docs/. Both installs are
+      # hash-locked (pip refuses anything not in a lock file); --check fails if the committed openapi.json no
+      # longer matches the code, then `mkdocs build --strict` fails on any broken link or nav entry.
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install developer portal build tooling
+        run: |
+          pip install --require-hashes --no-deps -r requirements.txt
+          pip install --require-hashes --no-deps -r developer-portal/requirements.txt
+      - name: Build and check the developer portal
+        run: python developer-portal/build.py --check
+      # Zero-dependency site builder. `npm test` builds the pages, copies the app bundle to dist/app and the
+      # portal to dist/docs, then runs the SEO, honesty, security, brand, link, base-path and no-network checks;
+      # a failing check stops the deploy.
       - name: Build and check site
         working-directory: marketing/site
         env:
           SITE_APP_DIR: ../../web/dist-product
+          SITE_DOCS_DIR: ../../developer-portal/site
         run: npm test
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

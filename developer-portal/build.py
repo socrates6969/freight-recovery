@@ -6,7 +6,7 @@
     python developer-portal/build.py --check  # fail if openapi.json is stale (CI)
 
 Steps: (1) export openapi.json from the FastAPI app (or just verify it with --check),
-(2) render the Markdown reference, (3) copy the spec next to the Redoc page,
+(2) render the Markdown reference, (3) copy the spec into docs/api for the reference to link,
 (4) ``mkdocs build --strict``.
 """
 

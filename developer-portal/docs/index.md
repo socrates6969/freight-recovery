@@ -1,11 +1,15 @@
 # scoup.ai API
 
-!!! warning "Pre-product software"
-    This documents the **real, current** API of a pre-product codebase. Nothing here has been
-    validated on real customer data, no customer is using it, and no hosted service exists yet
-    (there is no public base URL). Rules and thresholds are illustrative and unmeasured. Treat
-    every dollar figure as an unreviewed estimate that a person must check before any dispute
-    is sent. Anything not described as "implemented" below is **planned, not built**.
+!!! warning "Prototype: not offered to customers yet"
+    The hosted workspace API this portal documents is a **prototype**. It is not offered to
+    customers, there is no public base URL, and nothing here has been validated on real customer
+    data. **API keys are issued only to early-access teams**, by an operator; there is no
+    self-serve signup. The scoup.ai product today is the browser app on the main site, which runs
+    the same rules locally and needs no key.
+
+    This portal documents the **real, current** API. Rules and thresholds are illustrative and
+    unmeasured. Treat every dollar figure as an unreviewed estimate that a person must check before
+    any dispute is sent. Anything not described as "implemented" below is **planned, not built**.
 
 ## What the API does today
 
@@ -34,16 +38,16 @@ Every analysis is stored per tenant and can be listed and fetched again.
 | Asynchronous jobs and webhooks | **Planned**; analyses are synchronous today |
 | Rate limiting (`429`) | **Planned** ([Rate limits](rate-limits.md)) |
 | Official SDKs | **None exist** (see [examples](sdk.md) using plain HTTP) |
-| Self-serve signup / key management | **None**; keys are issued by an operator with a CLI |
-| Uptime or latency commitments, SLA, hosted environment | **None** |
+| Self-serve signup / key management | **None**; keys are issued by an operator with a CLI, to early-access teams only |
+| Hosted environment, uptime or latency commitments, SLA | **Prototype only**, not offered to customers; no SLA |
 | Security audit and compliance sign-off | **Not done**; required before real customer data |
 
 ## Where to start
 
 1. [Authentication](authentication.md): how a key is issued, sent, rotated and what 401 vs 403 mean.
 2. [Quickstart](quickstart.md): run the service locally and `curl` the real endpoints.
-3. [API reference](api/reference.md) (generated from the application's OpenAPI document; also
-   [Redoc](api/redoc.html)).
+3. [API reference](api/reference.md) (generated from the application's OpenAPI document; the raw
+   spec is [openapi.json](api/openapi.json)).
 4. [Errors](errors.md), [Rate limits](rate-limits.md), [Changelog](changelog.md).
 
 ## Perspective

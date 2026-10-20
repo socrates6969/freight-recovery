@@ -5,7 +5,8 @@ The launch site of scoup.ai plus the public app under `/app/`: the shared rules 
 runs in the visitor's browser (no API, no network after load, no storage). The site itself is built from
 `../seo-and-growth.md` and `../landing/outline.md`.
 **Deployed to GitHub Pages** at https://socrates6969.github.io/freight-recovery/ by
-`.github/workflows/pages.yml` on every push to `master` that touches `marketing/site/` or `brand/`.
+`.github/workflows/pages.yml` on every push to `master` that touches `marketing/site/`, `brand/`, the app or
+`developer-portal/`.
 The workflow builds with `npm test`, so a failing check blocks the deploy. When the site is served under
 a sub-path, `SITE_URL`'s path becomes the base path and every root-absolute link is prefixed with it.
 GitHub Pages ignores `static/_headers` (only the meta tags apply there), and crawlers read
@@ -17,7 +18,10 @@ Hand-rolled HTML/CSS plus a zero-dependency Node build script (`build.mjs`, Node
 framework, no bundler, no client-side JavaScript, no `node_modules`. The app is the one exception: it is a
 Vite build of the web workspace (`npm run build:product -w web`, output `web/dist-product`) that `build.mjs`
 copies to `dist/app/` when `SITE_APP_DIR` points at it. Without `SITE_APP_DIR` a plain placeholder page is
-written so local link checks still resolve; `test.mjs` refuses the placeholder when the variable is set. The script adds the shared layout, per-page SEO tags, JSON-LD,
+written so local link checks still resolve; `test.mjs` refuses the placeholder when the variable is set. The developer
+portal (`developer-portal/`, an MkDocs build; see its README) is copied to `dist/docs/` the same way when `SITE_DOCS_DIR`
+points at its `site/` output, with the same placeholder contract; `test.mjs` also fails if any HTML or CSS under
+`dist/docs` loads or links anything from outside the site. The script adds the shared layout, per-page SEO tags, JSON-LD,
 `sitemap.xml` and `robots.txt`. Pages are fragments in `pages/` (first line `<!--meta {json} -->`).
 The header/footer logo and favicon are copied at build time from the repo-root `brand/` folder (see
 `brand/README.md` for the name and logo rules: always lowercase "scoup.ai").
@@ -27,9 +31,11 @@ The header/footer logo and favicon are copied at build time from the repo-root `
 ```bash
 # App bundle (from the repository root; needs npm ci --ignore-scripts once)
 SITE_URL=https://www.your-domain.example npm run build -w packages/shared && npm run build:product -w web
+# Developer portal (from the repository root; a venv with requirements.txt and developer-portal/requirements.txt)
+python developer-portal/build.py
 # Pages (from marketing/site)
 cd marketing/site
-SITE_URL=https://www.your-domain.example CONTACT_EMAIL=you@your-domain.example SITE_APP_DIR=../../web/dist-product npm test
+SITE_URL=https://www.your-domain.example CONTACT_EMAIL=you@your-domain.example SITE_APP_DIR=../../web/dist-product SITE_DOCS_DIR=../../developer-portal/site npm test
 npx --yes serve dist   # or: python -m http.server -d dist 8080
 ```
 
