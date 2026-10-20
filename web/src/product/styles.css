@@ -4,34 +4,78 @@
 @source "../../product";
 @source "../../src/product";
 
-/* Same palette and type as marketing/site/static/style.css so the app reads as one site. */
+/* Self-hosted fonts (SIL OFL, from @fontsource-variable); latin subsets only, emitted as hashed assets. */
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url('../../../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2') format('woff2-variations');
+}
+@font-face {
+  font-family: 'Space Grotesk Variable';
+  font-style: normal;
+  font-weight: 300 700;
+  font-display: swap;
+  src: url('../../../node_modules/@fontsource-variable/space-grotesk/files/space-grotesk-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+/* Same design system as marketing/site/static/style.css so the app reads as one site: neutral blue-grey
+   scale, one violet accent, teal highlight on dark bands, Space Grotesk headings on Inter body text. */
 :root {
-  --fg: #1b1f24;
-  --bg: #fff;
-  --muted: #4a525a;
-  --accent: #0f766e;
+  --n0: #fff;
+  --n100: #eff4f8;
+  --n200: #dbe4eb;
+  --n300: #bfcbd4;
+  --n400: #a3b4c2;
+  --n600: #65717b;
+  --n700: #464e56;
+  --n800: #363d44;
+  --n900: #262b30;
+  --n1000: #071013;
+  --dark-surface: #131921;
+  --violet: #6b3eff;
+  --violet-deep: #5b12d9;
+  --violet-light: #9690f8;
+  --teal: #5ee7e4;
+  --fg: var(--n900);
+  --bg: var(--n0);
+  --muted: var(--n600);
+  --accent: var(--violet);
+  --accent-hover: var(--violet-deep);
   --accent-ink: #fff;
+  --accent-soft: #f5f3fc;
   --warn: #7a4200;
   --warnbg: #fff4e0;
-  --okbg: #ecfdf5;
-  --ok: #065f46;
-  --line: #d5d9dd;
-  --surface: #f6f7f8;
+  --okbg: #e3fcec;
+  --ok: #0a6148;
+  --line: var(--n200);
+  --line-strong: var(--n300);
+  --surface: var(--n100);
+  --band-bg: var(--n1000);
+  --band-fg: var(--n0);
+  --band-muted: var(--n300);
+  --font-sans: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-heading: 'Space Grotesk Variable', 'Space Grotesk', var(--font-sans);
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --fg: #e6e8ea;
-    --bg: #14171a;
-    --muted: #aab2ba;
-    --accent: #2dd4bf;
-    --accent-ink: #0b1210;
+    --fg: var(--n100);
+    --bg: var(--n1000);
+    --muted: var(--n400);
+    --accent: var(--violet-light);
+    --accent-hover: #b9b5f5;
+    --accent-ink: var(--n1000);
+    --accent-soft: #1d2240;
     --warn: #ffcf99;
     --warnbg: #2b2113;
     --okbg: #0f2a22;
     --ok: #a7f3d0;
-    --line: #3a4046;
-    --surface: #1b1f24;
+    --line: var(--n800);
+    --line-strong: var(--n700);
+    --surface: var(--dark-surface);
+    --band-bg: var(--dark-surface);
   }
 }
 
@@ -41,10 +85,21 @@
     margin: 0;
     background: var(--bg);
     color: var(--fg);
-    font: 16px/1.55 system-ui, -apple-system, 'Segoe UI', sans-serif;
+    font: 16px/1.5 var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-heading);
+    letter-spacing: -0.016rem;
   }
   a {
     color: var(--accent);
+  }
+  header,
+  footer {
+    border-color: var(--line);
   }
   *:focus-visible {
     outline: 2px solid var(--accent);
@@ -75,25 +130,26 @@
   th,
   td {
     border: 1px solid var(--line);
-    padding: 0.35rem 0.55rem;
+    padding: 0.4rem 0.55rem;
     text-align: left;
     vertical-align: top;
   }
   th {
     background: var(--surface);
+    font-weight: 600;
   }
 }
 
 @layer components {
   .wrap {
-    max-width: 64rem;
+    max-width: 73rem;
     margin: 0 auto;
-    padding: 0 1rem;
+    padding: 0 1.5rem;
   }
   .card {
     border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 1rem;
+    border-radius: 16px;
+    padding: 1.5rem;
     background: var(--bg);
   }
   .muted {
@@ -107,31 +163,53 @@
   }
   .input {
     width: 100%;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    padding: 0.45rem 0.7rem;
     min-height: 2.5rem;
     background: var(--bg);
     color: var(--fg);
     font: inherit;
   }
+  .input:hover {
+    border-color: var(--n400);
+  }
+  /* Buttons: pills. .btn-primary is the violet gradient; .btn the outlined neutral one. */
   .btn {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 0.4rem;
     border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 0.5rem 0.9rem;
+    border-radius: 999px;
+    padding: 0.5rem 1.4rem;
     min-height: 2.5rem;
     background: var(--bg);
     color: var(--fg);
     font: inherit;
+    font-size: 0.9375rem;
     font-weight: 600;
+    transition:
+      background-color 0.15s ease-out,
+      border-color 0.15s ease-out;
+  }
+  .btn:hover {
+    background: var(--surface);
+    border-color: var(--line-strong);
   }
   .btn-primary {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--accent-ink);
+    background-color: var(--violet);
+    background-image: radial-gradient(at 0 0, #8556ff, #6b3eff 60%);
+    border-color: var(--violet-light);
+    color: #fff;
+    box-shadow:
+      0 3px 3px rgba(18, 25, 217, 0.3),
+      inset 0 -3px 4px rgba(91, 18, 217, 0.3);
+  }
+  .btn-primary:hover {
+    background-image: none;
+    background-color: var(--violet-deep);
+    border-color: var(--violet-deep);
   }
   .btn-link {
     display: inline-flex;
@@ -148,38 +226,45 @@
     border: 1px solid var(--line);
     border-left: 4px solid var(--accent);
     background: var(--surface);
-    padding: 0.6rem 0.9rem;
-    border-radius: 6px;
+    padding: 0.7rem 1rem;
+    border-radius: 8px;
     font-size: 0.92rem;
   }
   .warn {
-    border: 2px solid var(--warn);
+    border: 1px solid var(--warn);
     background: var(--warnbg);
     color: var(--warn);
-    padding: 0.6rem 0.9rem;
-    border-radius: 6px;
+    padding: 0.7rem 1rem;
+    border-radius: 8px;
     font-weight: 600;
   }
   .ok {
     background: var(--okbg);
     color: var(--ok);
     padding: 0.6rem 0.9rem;
-    border-radius: 6px;
+    border-radius: 8px;
+  }
+  /* Tabs: an underline rail, the selected tab in the accent colour. */
+  .tabs {
+    border-bottom: 1px solid var(--line);
   }
   .tab {
-    border: 1px solid var(--line);
-    border-bottom: 0;
-    border-radius: 8px 8px 0 0;
-    padding: 0.55rem 0.9rem;
-    background: var(--surface);
-    color: var(--fg);
+    border: 0;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 0.6rem 0.9rem;
+    min-height: 2.75rem;
+    background: none;
+    color: var(--muted);
     font: inherit;
     font-weight: 600;
   }
+  .tab:hover {
+    color: var(--fg);
+  }
   .tab[aria-selected='true'] {
-    background: var(--bg);
     color: var(--accent);
-    box-shadow: inset 0 -3px 0 var(--accent);
+    border-bottom-color: var(--accent);
   }
   .num {
     font-variant-numeric: tabular-nums;
@@ -211,6 +296,42 @@
     min-height: 2.5rem;
     padding: 0 0.25rem;
   }
+  header nav a {
+    padding: 0 0.75rem;
+    border-radius: 999px;
+    color: var(--fg);
+    font-weight: 500;
+    text-decoration: none;
+  }
+  header nav a:hover {
+    background: var(--surface);
+  }
+  /* On phones the site links form one scrolling row under the logo, as on the site header. */
+  header nav {
+    scrollbar-width: none;
+  }
+  header nav a {
+    white-space: nowrap;
+  }
+  /* The dark title band under the header, as on the site's pages. */
+  .band {
+    background: var(--band-bg);
+    color: var(--band-fg);
+  }
+  .band .muted {
+    color: var(--band-muted);
+  }
+  pre.doc {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 0.8rem;
+    background: var(--surface);
+    font-size: 0.85rem;
+    max-height: 28rem;
+    overflow: auto;
+  }
   /* Result tables (table.stack, cells carry data-label): on narrow screens each row becomes a labelled
      card instead of a table that scrolls sideways; the header row stays for assistive technology. */
   @media (max-width: 40rem) {
@@ -229,7 +350,7 @@
     }
     table.stack tr {
       border: 1px solid var(--line);
-      border-radius: 6px;
+      border-radius: 8px;
       margin: 0 0 0.6rem;
     }
     table.stack td {
@@ -252,16 +373,5 @@
     table.stack td.num {
       white-space: normal;
     }
-  }
-  pre.doc {
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-    border: 1px solid var(--line);
-    border-radius: 6px;
-    padding: 0.8rem;
-    background: var(--surface);
-    font-size: 0.85rem;
-    max-height: 28rem;
-    overflow: auto;
   }
 }
