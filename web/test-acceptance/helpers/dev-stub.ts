@@ -70,14 +70,18 @@ export const auditEvent = (seq: number, o: Record<string, any> = {}) => ({
   seq, id: U(900 + seq), actor: { id: U(1), role: 'PLATFORM_DEV' }, action: 'platform.dashboard_viewed', targetType: null, targetId: null, metadata: { section: 'pipeline', window: '24h' }, ip: null, requestId: `req-${seq}`,
   createdAt: '2026-10-09T11:00:00.000Z', prevHash: '0'.repeat(64), hash: 'f'.repeat(64), ...o,
 });
+// REQ-20261020-dd-deadline (additive): the worklist contract gained claim.kind, disputeWindow (null for FREIGHT) and
+// formula.deadlineFirst; the strict shared schema refuses the old shape, so the stub serves the new one.
+export const DEADLINE_FIRST = { version: 'deadline-first-v1', kind: 'OCEAN_DD', urgentWithinDays: 14 } as const;
 export const wlItem = (rank: number, num: string, o: Record<string, any> = {}) => ({
   rank,
-  claim: { id: U(100 + rank), claimNumber: num, loadNumber: `LD-${5000 + rank}`, carrierName: `Carrier ${rank}`, perspective: 'SHIPPER', status: 'PENDING_REVIEW', recoverableCents: 123456, pendingReviewCents: 0, currency: 'USD', assignee: null, latestPacket: { revision: 1, status: 'PENDING_REVIEW' } },
+  claim: { id: U(100 + rank), claimNumber: num, kind: 'FREIGHT', loadNumber: `LD-${5000 + rank}`, carrierName: `Carrier ${rank}`, perspective: 'SHIPPER', status: 'PENDING_REVIEW', recoverableCents: 123456, pendingReviewCents: 0, currency: 'USD', assignee: null, latestPacket: { revision: 1, status: 'PENDING_REVIEW' } },
   score: { version: 'priority-v1', valueCents: 123456, parts: [{ key: 'confirmed_recoverable', inputCents: 123456, weightPercent: 100, contributionCents: 123456 }, { key: 'pending_review', inputCents: 0, weightPercent: 25, contributionCents: 0 }] },
+  disputeWindow: null,
   why: ['Confirmed recoverable $1,234.56 (counted at 100%)', 'Waiting 2 days (not part of the score)'], nextAction: 'REVIEW_AND_APPROVE', pendingFindingsCount: 0, waitingSince: '2026-10-07T12:00:00.000Z', waitingDays: 2, ...o,
 });
 export const worklist = (items: any[], o: Record<string, any> = {}) => ({
-  generatedAt: NOW_ISO, formula: { version: 'priority-v1', pendingWeightPercent: 25 },
+  generatedAt: NOW_ISO, formula: { version: 'priority-v1', pendingWeightPercent: 25, deadlineFirst: DEADLINE_FIRST },
   label: "Ranked by a fixed formula over this tenant's own claim data: confirmed recoverable amount plus 25% of the amount still pending human review. This is a work-order aid, not a forecast of what will be recovered.",
   notRanked: { awaitingAnalysis: 0 }, items, page: 1, pageSize: 25, total: items.length, ...o,
 });

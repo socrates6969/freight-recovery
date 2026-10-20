@@ -44,9 +44,11 @@ describe('CI-D04 migrations (F14)', () => {
     // REQ-20261012-hardening C0.2 (additive): plus exactly one folder 20261018000000_hardening, sorted after the step-8 ones.
     // fix round 2 (C-FR2.2 DB guard; additive): plus exactly one folder 20261019000000_hardening_fr2 after it.
     // REQ-20261020-claim-outcomes (additive): plus exactly one folder 20261020000000_claim_outcomes after the hardening ones.
-    const later = ['20261018000000_hardening', '20261019000000_hardening_fr2', '20261020000000_claim_outcomes'];
+    // REQ-20261020-dd-deadline (additive): plus exactly one folder 20261020000000_routing_shadow_flag after it (same date prefix,
+    // ordered by the full name).
+    const later = ['20261018000000_hardening', '20261019000000_hardening_fr2', '20261020000000_claim_outcomes', '20261020000000_routing_shadow_flag'];
     expect(dirs.filter((d) => !step8.includes(d) && !later.includes(d))).toEqual([...new Set(Object.keys(FROZEN_5F7EB7E).map((f) => f.split('/')[0] ?? ''))].sort().concat(['20261014000000_fuel_outlook']));
-    expect(dirs.slice(-5), 'the step-8 folders, then the hardening and outcomes folders, sort last').toEqual([...step8, ...later]);
+    expect(dirs.slice(-6), 'the step-8 folders, then the hardening, outcomes and routing-flag folders, sort last').toEqual([...step8, ...later]);
     const sql = readFileSync(join(MIG, '20261014000000_fuel_outlook', 'migration.sql'), 'utf8');
     for (const t of ['fsc_tables', 'claim_fuel_inputs', 'price_imports', 'price_observations']) {
       expect(sql, `${t} RLS enabled`).toMatch(new RegExp(`ALTER\\s+TABLE\\s+"?${t}"?\\s+ENABLE\\s+ROW\\s+LEVEL\\s+SECURITY`, 'i'));

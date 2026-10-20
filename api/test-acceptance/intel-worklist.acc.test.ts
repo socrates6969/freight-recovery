@@ -61,7 +61,8 @@ describe('T-WORK-01 exact order and values (W=25)', () => {
     expect(b.items.map((x: any) => x.rank)).toEqual([1, 2, 3, 4, 5, 6]);
     expect(b.notRanked).toEqual({ awaitingAnalysis: 2 });
     for (const n of ['INT-F', 'INT-G', 'INT-I', 'INT-J']) expect(nums(b)).not.toContain(n);
-    expect(b.formula).toEqual({ version: 'priority-v1', pendingWeightPercent: 25 });
+    // REQ-20261020-dd-deadline (additive): the formula carries the stated deadline-first rule next to priority-v1.
+    expect(b.formula).toEqual({ version: 'priority-v1', pendingWeightPercent: 25, deadlineFirst: { version: 'deadline-first-v1', kind: 'OCEAN_DD', urgentWithinDays: 14 } });
     expect(b.label).toBe(I.WORKLIST_NOTE(25));
     expect(b.items[0].claim.id).toBe(C1);
     expect(b.items[1].claim.id).toBe(C2);
