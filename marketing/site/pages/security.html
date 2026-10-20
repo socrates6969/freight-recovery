@@ -1,4 +1,4 @@
-<!--meta {"title":"Security and privacy: what runs where","description":"How the scoup.ai browser tools keep your figures on your device, the limits of a static site, and the status of the team workspace prototype's controls.","path":"/security/","crumb":"Security and privacy","updated":"2026-10-19"} -->
+<!--meta {"title":"Security and privacy: what runs where","description":"How the scoup.ai browser tools keep your figures on your device, the limits of a static site, and the status of the team workspace prototype's controls.","path":"/security/","crumb":"Security and privacy","updated":"2026-10-20"} -->
 <section class="band page-head">
 <div class="container narrow">
 <h1>Security and privacy</h1>
@@ -26,6 +26,7 @@
 
 <h2>The team workspace prototype</h2>
 <p class="draft">The controls below describe code and configuration in the repository. They are not a deployed service, an independent audit or a guarantee; the workspace is not hosted for customers and has processed no customer data.</p>
+<p><a class="more" href="/workspace/">Every workspace feature, with what it does and does not do</a></p>
 <ul>
 <li><strong>Tenant isolation in the database.</strong> Forced row-level security on tenant tables and tenant-scoped transactions, designed to limit cross-tenant reads from any query path. Not independently audited.</li>
 <li><strong>Roles re-checked on every request</strong> from the database, never from a token or header.</li>

@@ -1,6 +1,7 @@
 /* scoup.ai site stylesheet. Design system: a neutral blue-grey scale, one violet accent, a teal highlight
    on dark bands, Space Grotesk headings on Inter body text, pill buttons and 16px cards. The logo lockup
-   is never recoloured (brand/README.md). Fonts are self-hosted under /fonts/ (SIL OFL, licences there). */
+   is never recoloured (brand/README.md). Fonts are self-hosted under /fonts/ (SIL OFL, licences there).
+   Motion is CSS only and every animation and transition is off under prefers-reduced-motion. */
 @font-face { font-family: "Inter Variable"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("/fonts/inter-latin-wght-normal.woff2") format("woff2-variations"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 @font-face { font-family: "Space Grotesk Variable"; font-style: normal; font-weight: 300 700; font-display: swap; src: url("/fonts/space-grotesk-latin-wght-normal.woff2") format("woff2-variations"); unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD; }
 
@@ -12,6 +13,7 @@
   --accent: var(--violet); --accent-hover: var(--violet-deep); --accent-ink: #fff; --accent-soft: var(--violet-soft);
   --band-bg: var(--n1000); --band-fg: var(--n0); --band-muted: var(--n300); --band-line: var(--n800); --band-card: #1e232e;
   --warn: #7a4200; --warnbg: #fff4e0;
+  --tag-live-bg: #dff7f5; --tag-live-fg: #0b5e5b; --tag-proto-bg: var(--violet-soft); --tag-proto-fg: var(--violet-deep);
   --font-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-heading: "Space Grotesk Variable", "Space Grotesk", var(--font-sans);
   --r-xs: 4px; --r-sm: 8px; --r-md: 16px; --r-lg: 24px;
@@ -23,6 +25,7 @@
     --bg: var(--n1000); --surface: var(--dark-surface); --fg: var(--n100); --muted: var(--n400); --line: var(--n800); --line-strong: var(--n700);
     --accent: var(--violet-light); --accent-hover: #b9b5f5; --accent-ink: var(--n1000); --accent-soft: #1d2240;
     --band-bg: var(--dark-surface); --warn: #ffcf99; --warnbg: #2b2113;
+    --tag-live-bg: rgba(94, 231, 228, 0.14); --tag-live-fg: var(--teal); --tag-proto-bg: #1d2240; --tag-proto-fg: var(--violet-light);
   }
 }
 
@@ -37,6 +40,7 @@ h1, h2, h3 { font-family: var(--font-heading); font-weight: 700; line-height: 1.
 h1 { font-size: 2.5rem; letter-spacing: -0.047rem; }
 h2 { font-size: 2rem; margin-top: 0; }
 h3 { font-size: 1.25rem; letter-spacing: 0; margin-bottom: 0.5rem; }
+h2[id], h3[id], .panel[id], .card[id] { scroll-margin-top: 1rem; }
 p { margin: 0 0 1rem; }
 ul, ol { margin: 0 0 1rem; padding-left: 1.25rem; }
 li { margin: 0.35rem 0; }
@@ -96,6 +100,13 @@ section.band .eyebrow { color: var(--teal); }
 .source { font-size: 0.85rem; color: var(--muted); overflow-wrap: anywhere; }
 .price { font-family: var(--font-heading); font-size: 2rem; font-weight: 700; letter-spacing: -0.031rem; margin: 0.25rem 0 0.75rem; }
 .status { margin: 0; padding: 0.5rem 1rem; text-align: center; background: var(--warnbg); color: var(--warn); font-size: 0.9rem; }
+/* Status labels: every feature says whether it is live in the browser app or a prototype. */
+.tag { display: inline-flex; align-items: center; min-height: 1.75rem; padding: 0 0.75rem; border-radius: 999px; font-size: 0.8125rem; font-weight: 600; line-height: 1.2; margin: 0 0 0.75rem; }
+.tag.live { background: var(--tag-live-bg); color: var(--tag-live-fg); }
+.tag.proto { background: var(--tag-proto-bg); color: var(--tag-proto-fg); }
+section.band .tag.live { background: rgba(94, 231, 228, 0.14); color: var(--teal); }
+section.band .tag.proto { background: #1d2240; color: var(--violet-light); }
+h3 + .tag { margin-top: -0.25rem; }
 
 /* Buttons: pills, at least 40px tall. .cta is the violet gradient primary; .secondary the outlined one. */
 .cta { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; min-height: 2.75rem; padding: 0.6rem 1.75rem; border-radius: 999px; border: 1px solid var(--violet-light); background-color: var(--violet); background-image: radial-gradient(at 0 0, #8556ff, #6b3eff 60%); color: #fff; font-weight: 600; font-size: 1rem; line-height: 1.25; text-decoration: none; box-shadow: 0 3px 3px rgba(18, 25, 217, 0.3), inset 0 -3px 4px rgba(91, 18, 217, 0.3); margin: 0.5rem 0.75rem 0.5rem 0; transition: background-color 0.15s ease-out, border-color 0.15s ease-out, color 0.15s ease-out; }
@@ -106,8 +117,18 @@ section.band .cta.secondary { background-color: transparent; color: var(--band-f
 section.band .cta.secondary:hover { background-color: var(--n0); color: var(--n900); border-color: var(--n0); }
 section.gradient .cta { background-image: none; background-color: var(--n0); color: var(--n900); border-color: var(--n0); box-shadow: none; }
 section.gradient .cta:hover { background-color: var(--n100); }
+section.gradient .cta.secondary { background-color: rgba(7, 16, 19, 0.55); color: #fff; border-color: #fff; }
+section.gradient .cta.secondary:hover { background-color: var(--n1000); color: #fff; border-color: #fff; }
 .nav-cta { min-height: 2.5rem; margin: 0; padding: 0.35rem 1.4rem; font-size: 0.8125rem; }
 .actions { margin: 0.5rem 0 1rem; }
+/* A plain text link with a 40px hit area, for "read more" links inside cards. */
+.more { display: inline-flex; align-items: center; min-height: 2.5rem; font-weight: 600; text-decoration: none; }
+.more::after { content: " \2192"; white-space: pre; }
+.more:hover { text-decoration: underline; }
+.lead .tag { margin: 0 0.1rem; vertical-align: 0.1em; }
+.linklist { list-style: none; padding: 0; margin: 0 0 1rem; display: grid; gap: 0 1.5rem; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); }
+.linklist li { margin: 0; }
+.two-col + .steps { margin-top: 2.5rem; }
 
 /* Header: logo, link rail, primary button. On phones the rail scrolls sideways in one row. */
 header.site { background: var(--bg); border-bottom: 1px solid var(--line); }
@@ -127,27 +148,100 @@ nav a[aria-current="page"] { font-weight: 700; color: var(--accent); }
 .grid .card { margin: 0; }
 .card > :last-child, .grid > li > :last-child { margin-bottom: 0; }
 section.band .card, section.band .grid > li { background: var(--band-card); border-color: var(--band-line); }
-.steps { list-style: none; counter-reset: step; display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); padding: 0; margin: 0 0 1rem; }
-.steps li { counter-increment: step; margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); padding: 1.5rem 1.75rem; }
+/* Numbered steps: one column with a vertical connector, four columns with a horizontal one on wide screens.
+   The connector is a dashed line from each number to the next; the last step has none. */
+.steps { list-style: none; counter-reset: step; display: grid; gap: 1rem; grid-template-columns: 1fr; padding: 0; margin: 0 0 1rem; }
+.steps li { counter-increment: step; position: relative; margin: 0; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r-md); padding: 1.5rem 1.75rem; }
 .steps li::before { content: counter(step); display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font: 700 0.95rem var(--font-heading); margin-bottom: 0.75rem; }
+.steps li::after { content: ""; position: absolute; z-index: 1; width: 2px; left: calc(1.75rem + 1rem - 1px); top: calc(1.5rem + 2rem + 0.25rem); bottom: calc(-1rem - 1.5rem + 0.25rem); background-image: linear-gradient(180deg, var(--accent) 0 50%, transparent 50% 100%); background-size: 2px 16px; background-repeat: repeat-y; }
+.steps li:last-child::after { display: none; }
 .draft { border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--surface); color: var(--fg); padding: 0.85rem 1.25rem; border-radius: var(--r-sm); font-size: 0.95rem; max-width: var(--narrow); }
 section.band .draft { background: var(--band-card); border-color: var(--band-line); border-left-color: var(--teal); color: var(--band-muted); }
 details { margin: 0 0 0.75rem; border: 1px solid var(--line); border-radius: var(--r-md); padding: 0.5rem 1.5rem; background: var(--bg); }
 details[open] { padding-bottom: 1rem; }
 summary { cursor: pointer; font-family: var(--font-heading); font-weight: 600; font-size: 1.05rem; padding: 0.5rem 0; min-height: 2.5rem; }
 details > p:last-child { margin-bottom: 0; }
+/* Feature cards: a heading, a status label, one paragraph, then the detail folded under a summary. */
+.feature details { margin: 0.75rem 0 0; padding: 0.25rem 1rem; background: var(--surface); border-color: transparent; }
+.feature summary { font-size: 0.95rem; }
+section.band .feature details { background: rgba(255, 255, 255, 0.04); }
+.spec { display: grid; gap: 0.35rem 1rem; grid-template-columns: 7.5rem 1fr; margin: 0.5rem 0 0.25rem; font-size: 0.95rem; }
+.spec dt { font-weight: 600; color: var(--muted); }
+section.band .spec dt { color: var(--band-muted); }
+.spec dd { margin: 0; }
+.spec dd > :last-child { margin-bottom: 0; }
 table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
 th, td { border: 1px solid var(--line); padding: 0.6rem 0.8rem; text-align: left; vertical-align: top; }
 th { background: var(--surface); font-weight: 600; }
 .scroll { overflow-x: auto; } /* two-column tables wrap on phones; the wrapper only scrolls if a cell cannot wrap */
 
+/* Tab panels without script: each tab is a link to its panel's id and :target shows that panel. Browsers
+   without :has() show every panel, which still reads correctly. */
+.tablist { display: flex; flex-wrap: wrap; gap: 0.5rem; list-style: none; padding: 0; margin: 0 0 1.25rem; }
+.tablist li { margin: 0; }
+.tablist a { display: inline-flex; align-items: center; min-height: 2.5rem; padding: 0 1.1rem; border-radius: 999px; border: 1px solid var(--line-strong); background: var(--bg); color: var(--fg); font-weight: 600; font-size: 0.9rem; text-decoration: none; }
+.tablist a:hover { background: var(--surface); color: var(--fg); }
+.tabs:has(.panel:target) .panel:not(:target) { display: none; }
+.tabs:not(:has(.panel:target)) .panel ~ .panel { display: none; }
+.tabs:not(:has(.panel:target)) .tablist li:first-child a, .tabs:has(#in-browser:target) a[href="#in-browser"], .tabs:has(#in-workspace:target) a[href="#in-workspace"], .tabs:has(#not-yet:target) a[href="#not-yet"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.panel > :last-child { margin-bottom: 0; }
+
+/* Inline SVG diagrams: every colour is a token, so they follow the scheme and the band they sit on. */
+.diagram { display: block; width: 100%; max-width: 26rem; height: auto; margin: 0 auto 1rem; font-family: var(--font-sans); }
+.dg-box { fill: var(--bg); stroke: var(--line-strong); stroke-width: 1.5; }
+.dg-box.accent { fill: var(--accent-soft); stroke: var(--accent); }
+.dg-box.soft { fill: var(--surface); }
+.dg-text { fill: var(--fg); font-size: 14px; font-weight: 600; }
+.dg-small { fill: var(--muted); font-size: 12.5px; font-weight: 500; }
+.dg-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.dg-line.dash { stroke-dasharray: 6 6; }
+.dg-line.no { stroke: var(--n500); stroke-dasharray: 4 5; }
+.dg-fill { fill: var(--accent); }
+.dg-person { fill: var(--surface); stroke: var(--line-strong); stroke-width: 1.5; }
+.dg-stop { fill: var(--warnbg); stroke: var(--warn); stroke-width: 1.5; }
+.dg-stop-x { fill: none; stroke: var(--warn); stroke-width: 2; stroke-linecap: round; }
+section.band .dg-box { fill: var(--band-card); stroke: var(--band-line); }
+section.band .dg-box.accent { fill: #2a2155; stroke: var(--violet-light); }
+section.band .dg-box.soft { fill: var(--n950); }
+section.band .dg-text { fill: var(--band-fg); }
+section.band .dg-small { fill: var(--band-muted); }
+section.band .dg-line { stroke: var(--teal); }
+section.band .dg-line.no { stroke: var(--n500); }
+section.band .dg-fill { fill: var(--teal); }
+section.band .dg-person { fill: var(--band-card); stroke: var(--n500); }
+section.band .dg-stop { fill: #2b2113; stroke: #ffcf99; }
+section.band .dg-stop-x { stroke: #ffcf99; }
+
 /* Footer. */
 footer.site { background: var(--surface); border-top: 1px solid var(--line); color: var(--muted); font-size: 0.9rem; padding: 3rem 0 2.5rem; }
 .foot-grid { display: grid; gap: 2rem; grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr)); align-items: start; margin-bottom: 1.5rem; }
 .foot-grid nav { justify-content: flex-start; flex: none; }
-footer.site p a { display: inline-block; padding: 0.55rem 0.1rem; }
+footer.site p a { display: inline-block; padding: 0.6rem 0.1rem; }
 .foot-grid nav a { padding-left: 0.6rem; padding-right: 0.6rem; }
 .legal { border-top: 1px solid var(--line); padding-top: 1rem; margin: 0; }
+
+/* Motion, CSS only. Nothing in this block runs when the visitor prefers reduced motion. */
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes sweep { from { background-position: 0% 50%; } to { background-position: 100% 50%; } }
+@keyframes march-x { to { background-position: 16px 0; } }
+@keyframes march-y { to { background-position: 0 16px; } }
+@keyframes dash { to { stroke-dashoffset: -12; } }
+@media (prefers-reduced-motion: no-preference) {
+  .preview { animation: rise 0.6s ease-out both; }
+  .preview-lines li, .preview-foot { animation: fade 0.5s ease-out both; }
+  .preview-lines li:nth-child(1) { animation-delay: 0.4s; }
+  .preview-lines li:nth-child(2) { animation-delay: 0.65s; }
+  .preview-lines li:nth-child(3) { animation-delay: 0.9s; }
+  .preview-lines li:nth-child(4) { animation-delay: 1.15s; }
+  .preview-foot { animation-delay: 1.5s; }
+  .hl { background-image: linear-gradient(100deg, #8a5cff 0%, var(--teal) 25%, #8a5cff 50%, var(--teal) 75%, #8a5cff 100%); background-size: 300% 100%; animation: sweep 8s ease-in-out infinite alternate; }
+  .card, .grid > li, .steps li { transition: transform 0.2s ease-out, box-shadow 0.2s ease-out; }
+  .card:hover, .grid > li:hover, .steps li:hover { transform: translateY(-3px); box-shadow: 0 12px 28px rgba(7, 16, 19, 0.12); }
+  .steps li::after { animation: march-y 1.2s linear infinite; }
+  .dg-line.dash { animation: dash 1.2s linear infinite; }
+  details summary { transition: color 0.15s ease-out; }
+}
 
 @media (max-width: 60rem) {
   header.site .container { gap: 0.25rem 1rem; }
@@ -165,6 +259,9 @@ footer.site p a { display: inline-block; padding: 0.55rem 0.1rem; }
   .cta { width: 100%; margin-right: 0; }
   .nav-cta { width: auto; }
   .card, .grid > li, .steps li { padding: 1.25rem; }
+  .steps li::after { left: calc(1.25rem + 1rem - 1px); top: calc(1.25rem + 2rem + 0.25rem); bottom: calc(-1rem - 1.25rem + 0.25rem); }
+  .spec { grid-template-columns: 1fr; gap: 0.1rem; }
+  .spec dd { margin-bottom: 0.5rem; }
 }
 @media (min-width: 40rem) {
   .preview-lines li { grid-template-columns: 1fr auto 1fr; }
@@ -174,4 +271,11 @@ footer.site p a { display: inline-block; padding: 0.55rem 0.1rem; }
   h1 { font-size: 3.5rem; }
   h2 { font-size: 2.5rem; }
   section.hero { padding: 6rem 0 7rem; }
+}
+@media (min-width: 64rem) {
+  .steps { grid-template-columns: repeat(4, 1fr); }
+  .steps li::after { width: auto; height: 2px; top: calc(1.5rem + 1rem - 1px); bottom: auto; left: calc(1.75rem + 2rem + 0.25rem); right: calc(-1rem - 1.75rem + 0.25rem); background-image: linear-gradient(90deg, var(--accent) 0 50%, transparent 50% 100%); background-size: 16px 2px; background-repeat: repeat-x; }
+}
+@media (min-width: 64rem) and (prefers-reduced-motion: no-preference) {
+  .steps li::after { animation-name: march-x; }
 }
