@@ -1,4 +1,4 @@
-<!--meta {"title":"Check freight invoices in your browser","description":"Free browser-based checks of accessorial, detention and ocean D&D invoices against the rate confirmation, tariff and FMC billing rule. Nothing is uploaded.","path":"/","updated":"2026-10-19","faq":[["Is it free?","Yes. The browser tools are free to use, with no account and no sign-up. A hosted team workspace is a prototype and is not offered yet."],["Where does my data go?","Nowhere. The app runs in your browser, makes no network requests after it loads, sets no cookies and keeps nothing after you close the page. Downloads are created on your device."],["What does it check?","Accessorial and detention lines on carrier and broker invoices against the rate confirmation; ocean demurrage and detention invoices against 46 CFR Part 541 and public carrier tariffs; and charge names across carriers. Every finding shows its arithmetic."],["Does it tell me what I owe?","No. It applies fixed, published rules to the figures you enter and lists findings for a person to review. Whether a charge is owed depends on your contract and the facts; confirm with counsel or your customs broker."],["Can it read my PDFs?","Not in the browser tools: you type or paste the figures, or import a CSV for ocean D&D invoices. Document parsing is part of the team workspace prototype."],["Is there a team version?","A hosted workspace with saved claims, document import, four-eyes approval and accounting reference data exists as a prototype. It is not offered yet; contact us for early access."],["Is this legal advice?","No. The rules, sources and arithmetic are shown so you and your counsel can decide."],["Who is behind it?","See the About page."]]} -->
+<!--meta {"title":"Check freight invoices in your browser","description":"Free browser-based checks of accessorial, detention and ocean D&D invoices against the rate confirmation, tariff and FMC billing rule. Nothing is uploaded.","path":"/","updated":"2026-10-20","faq":[["Is it free?","Yes. The browser tools are free to use, with no account and no sign-up. A hosted team workspace is a prototype and is not offered yet."],["Where does my data go?","Nowhere. The app runs in your browser, makes no network requests after it loads, sets no cookies and keeps nothing after you close the page. Downloads are created on your device."],["What does it check?","Accessorial and detention lines on carrier and broker invoices against the rate confirmation; ocean demurrage and detention invoices against 46 CFR Part 541 and public carrier tariffs; and charge names across carriers. Every finding shows its arithmetic."],["Does it tell me what I owe?","No. It applies fixed, published rules to the figures you enter and lists findings for a person to review. Whether a charge is owed depends on your contract and the facts; confirm with counsel or your customs broker."],["Can it read my PDFs?","Not in the browser tools: you type or paste the figures, or import a CSV for ocean D&D invoices. Document parsing is part of the team workspace prototype."],["Is there a team version?","A hosted workspace with saved claims, document import, four-eyes approval and accounting reference data exists as a prototype. It is not offered yet; contact us for early access."],["Is this legal advice?","No. The rules, sources and arithmetic are shown so you and your counsel can decide."],["Who is behind it?","See the About page."]]} -->
 
 <section class="band hero">
 <div class="container hero-inner">
@@ -26,15 +26,21 @@
 <div class="grid">
 <div class="card">
 <h3>Freight invoice check</h3>
+<p class="tag live">Live in the browser app</p>
 <p>Enter the invoice lines, the rate confirmation terms and the time records. The rules flag linehaul and fuel lines that differ from the agreed rate, accessorials the rate confirmation never authorized, duplicate lines, a total that does not add up, and detention billed above or below what the free time, hourly rate and cap allow.</p>
+<a class="more" href="/platform/#freight-check">The rules, one by one</a>
 </div>
 <div class="card">
 <h3>Ocean D&amp;D audit</h3>
+<p class="tag live">Live in the browser app</p>
 <p>Enter a demurrage or detention invoice, or import a CSV. Eight checks cover the content 46 CFR 541.6 requires, the 30-day issuance rule in 541.7, the invoice arithmetic, and a recomputation against a public carrier tariff you choose, with the clause quoted next to each finding.</p>
+<a class="more" href="/platform/#ocean-dd">The eight checks</a>
 </div>
 <div class="card">
 <h3>Charge names</h3>
+<p class="tag live">Live in the browser app</p>
 <p>Paste the charge names from your invoices and see how each is classed by the fixed rules and which public tariff charge name it most resembles, so a charge under an unfamiliar name is not skipped.</p>
+<a class="more" href="/platform/#charge-names">How names are matched</a>
 </div>
 </div>
 </div>
@@ -42,7 +48,38 @@
 
 <section class="surface">
 <div class="container">
+<div class="two-col">
+<div>
 <h2>How it works</h2>
+<p class="lead">Three inputs, fixed rules, findings with their arithmetic, and two files you download. The whole path runs on your device.</p>
+<p><a class="more" href="/how-it-works/">The worked example, step by step</a></p>
+</div>
+<svg class="diagram" viewBox="0 0 360 384" role="img" aria-labelledby="df-title">
+<title id="df-title">Data flow: the invoice, the rate confirmation and the time records go into fixed rules on your device; the rules produce findings with their arithmetic; the findings become an evidence packet and a draft letter</title>
+<defs><marker id="df-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="dg-fill"/></marker></defs>
+<rect x="4" y="4" width="108" height="56" rx="10" class="dg-box"/><text x="58" y="37" text-anchor="middle" class="dg-text">Invoice</text>
+<rect x="126" y="4" width="108" height="56" rx="10" class="dg-box"/><text x="180" y="29" text-anchor="middle" class="dg-text">Rate</text><text x="180" y="47" text-anchor="middle" class="dg-text">confirmation</text>
+<rect x="248" y="4" width="108" height="56" rx="10" class="dg-box"/><text x="302" y="29" text-anchor="middle" class="dg-text">Time</text><text x="302" y="47" text-anchor="middle" class="dg-text">records</text>
+<path d="M58 62v22M180 62v22M302 62v22M58 84h244" class="dg-line dash"/>
+<path d="M180 84v26" class="dg-line dash" marker-end="url(#df-arrow)"/>
+<rect x="50" y="112" width="260" height="64" rx="10" class="dg-box accent"/>
+<text x="180" y="138" text-anchor="middle" class="dg-text">Fixed rules</text>
+<text x="180" y="158" text-anchor="middle" class="dg-small">exact decimal arithmetic, on your device</text>
+<path d="M180 178v28" class="dg-line dash" marker-end="url(#df-arrow)"/>
+<rect x="50" y="208" width="260" height="64" rx="10" class="dg-box"/>
+<text x="180" y="234" text-anchor="middle" class="dg-text">Findings, each with its calculation</text>
+<text x="180" y="254" text-anchor="middle" class="dg-small">confirmed, or needs human review</text>
+<path d="M180 274v18M90 292h180" class="dg-line dash"/>
+<path d="M90 292v24" class="dg-line dash" marker-end="url(#df-arrow)"/>
+<path d="M270 292v24" class="dg-line dash" marker-end="url(#df-arrow)"/>
+<rect x="20" y="318" width="140" height="56" rx="10" class="dg-box soft"/>
+<text x="90" y="342" text-anchor="middle" class="dg-text">Evidence packet</text>
+<text x="90" y="361" text-anchor="middle" class="dg-small">Markdown and JSON</text>
+<rect x="200" y="318" width="140" height="56" rx="10" class="dg-box soft"/>
+<text x="270" y="342" text-anchor="middle" class="dg-text">Draft letter</text>
+<text x="270" y="361" text-anchor="middle" class="dg-small">DRAFT, never sent</text>
+</svg>
+</div>
 <ol class="steps">
 <li><strong>Enter the figures.</strong> Type or paste them from the invoice, the rate confirmation and the bill of lading or gate record. A synthetic example is one click away if you want to see the output first.</li>
 <li><strong>The rules run on your device.</strong> Exact decimal arithmetic, fixed rule settings and public regulation text; no model decides an amount.</li>
@@ -68,6 +105,23 @@
 <div>
 <h2>Privacy by design</h2>
 <p>The app is a static bundle served from this site. Once loaded, its content security policy forbids every network connection, so it cannot send what you enter anywhere. It sets no cookies, uses no browser storage and includes no analytics. Downloads are built on your device from the values on screen. See <a href="/security/">security and privacy</a> for the details and the limits.</p>
+<svg class="diagram" viewBox="0 0 360 236" role="img" aria-labelledby="nl-title">
+<title id="nl-title">Runs in your browser, nothing leaves: the figures you enter, the rules and the findings all stay inside the browser window; the connection to any server, including ours, is blocked after the page loads</title>
+<defs><marker id="nl-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="dg-fill"/></marker></defs>
+<rect x="4" y="4" width="228" height="228" rx="12" class="dg-box soft"/>
+<path d="M4 34h228" class="dg-person"/>
+<circle cx="20" cy="19" r="4" class="dg-fill"/><circle cx="33" cy="19" r="4" class="dg-fill"/><circle cx="46" cy="19" r="4" class="dg-fill"/>
+<text x="60" y="24" class="dg-small">Your browser</text>
+<rect x="20" y="48" width="196" height="44" rx="8" class="dg-box"/><text x="118" y="76" text-anchor="middle" class="dg-text">Figures you enter</text>
+<path d="M118 94v16" class="dg-line" marker-end="url(#nl-arrow)"/>
+<rect x="20" y="112" width="196" height="44" rx="8" class="dg-box accent"/><text x="118" y="140" text-anchor="middle" class="dg-text">Rules run here</text>
+<path d="M118 158v16" class="dg-line" marker-end="url(#nl-arrow)"/>
+<rect x="20" y="176" width="196" height="44" rx="8" class="dg-box"/><text x="118" y="195" text-anchor="middle" class="dg-text">Findings and downloads</text><text x="118" y="212" text-anchor="middle" class="dg-small">built on this device</text>
+<rect x="276" y="104" width="80" height="60" rx="10" class="dg-box"/><text x="316" y="130" text-anchor="middle" class="dg-text">Any</text><text x="316" y="148" text-anchor="middle" class="dg-text">server</text>
+<path d="M234 134h40" class="dg-line no"/>
+<circle cx="254" cy="134" r="12" class="dg-stop"/><path d="M248.5 128.5l11 11M259.5 128.5l-11 11" class="dg-stop-x"/>
+<text x="296" y="186" text-anchor="middle" class="dg-small">no network after load</text>
+</svg>
 </div>
 <div>
 <h2>What it does not do</h2>
@@ -77,6 +131,7 @@
 <li>It publishes no accuracy figures, because none have been measured on real customer documents. The rules are fixed and shown, so you can check every result by hand.</li>
 <li>It does not read PDFs or connect to a TMS, ERP or accounting system. Those belong to the team workspace, which is a prototype and not offered yet.</li>
 </ul>
+<a class="more" href="/workspace/">What the team workspace does, feature by feature</a>
 </div>
 </div>
 </section>
@@ -93,7 +148,7 @@
 <div class="container narrow center">
 <h2>Pricing</h2>
 <p class="lead">The browser tools are free, without an account or a limit on how often you use them. A hosted team workspace, with saved claims, document import, four-eyes approval and QuickBooks reference data, exists as a prototype and is not offered yet. <a href="/pricing/">Pricing and early access</a>.</p>
-<p class="actions"><a class="cta" href="/app/">Open the app</a></p>
+<p class="actions"><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/workspace/">See the workspace</a></p>
 </div>
 </section>
 
@@ -105,7 +160,7 @@
 <details><summary>What does it check?</summary><p>Accessorial and detention lines on carrier and broker invoices against the rate confirmation; ocean demurrage and detention invoices against 46 CFR Part 541 and public carrier tariffs; and charge names across carriers. Every finding shows its arithmetic. The <a href="/platform/">Product</a> page lists each rule.</p></details>
 <details><summary>Does it tell me what I owe?</summary><p>No. It applies fixed, published rules to the figures you enter and lists findings for a person to review. Whether a charge is owed depends on your contract and the facts; confirm with counsel or your customs broker.</p></details>
 <details><summary>Can it read my PDFs?</summary><p>Not in the browser tools: you type or paste the figures, or import a CSV for ocean D&amp;D invoices. Document parsing is part of the team workspace prototype.</p></details>
-<details><summary>Is there a team version?</summary><p>A hosted workspace with saved claims, document import, four-eyes approval and accounting reference data exists as a prototype. It is not offered yet; <a href="/contact/">contact us</a> for early access.</p></details>
+<details><summary>Is there a team version?</summary><p>A hosted workspace with saved claims, document import, four-eyes approval and accounting reference data exists as a prototype. It is not offered yet; the <a href="/workspace/">Workspace</a> page lists every feature, and you can <a href="/contact/">contact us</a> for early access.</p></details>
 <details><summary>Is this legal advice?</summary><p>No. The rules, sources and arithmetic are shown so you and your counsel can decide.</p></details>
 <details><summary>Who is behind it?</summary><p>See the <a href="/about/">About</a> page.</p></details>
 </div>
