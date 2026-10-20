@@ -91,7 +91,10 @@ describe('T-WORK-02 explanations', () => {
     expect(Object.fromEntries(b.items.map((x: any) => [x.claim.claimNumber, x.pendingFindingsCount]))).toEqual({ 'INT-B': 2, 'INT-D': 1, 'INT-E': 1, 'INT-A': 0, 'INT-C': 0, 'INT-H': 0 });
     expect(Object.fromEntries(b.items.map((x: any) => [x.claim.claimNumber, x.waitingDays]))).toEqual({ 'INT-B': 0, 'INT-D': 0, 'INT-E': 0, 'INT-A': 1, 'INT-C': 3, 'INT-H': 3 });
     for (const x of b.items) {
-      expect(Object.keys(x).sort()).toEqual(['claim', 'nextAction', 'pendingFindingsCount', 'rank', 'score', 'waitingDays', 'waitingSince', 'why']);
+      // REQ-20261020-dd-deadline (additive): disputeWindow (null for FREIGHT claims) and claim.kind.
+      expect(Object.keys(x).sort()).toEqual(['claim', 'disputeWindow', 'nextAction', 'pendingFindingsCount', 'rank', 'score', 'waitingDays', 'waitingSince', 'why']);
+      expect(x.disputeWindow).toBeNull();
+      expect(x.claim.kind).toBe('FREIGHT');
       expect(x.claim.currency).toBe('USD');
       expect(x.score.version).toBe('priority-v1');
       expect(x.waitingSince).toBe(x.claim.updatedAt ?? x.waitingSince);
@@ -335,7 +338,7 @@ describe('T-WORK-12 honesty', () => {
         const withoutScore: any = { ...it };
         delete withoutScore.score;
         expect(I.allKeys(withoutScore).has('score'), 'score only as the documented object').toBe(false);
-        expect(Object.keys(it.claim).sort()).toEqual(['assignee', 'carrierName', 'claimNumber', 'currency', 'id', 'latestPacket', 'loadNumber', 'perspective', 'pendingReviewCents', 'recoverableCents', 'status'].sort());
+        expect(Object.keys(it.claim).sort()).toEqual(['assignee', 'carrierName', 'claimNumber', 'currency', 'id', 'kind', 'latestPacket', 'loadNumber', 'perspective', 'pendingReviewCents', 'recoverableCents', 'status'].sort());
       }
     }
   });

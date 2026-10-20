@@ -246,7 +246,11 @@ export interface DeadlineRow {
   cents: number;
 }
 
-/** Open claims by kind and calendar-day bucket (UTC dates). `minDays` is DD_DISPUTE_MIN_DAYS. */
+/**
+ * Open claims by kind and calendar-day bucket (UTC dates). `minDays` is DD_DISPUTE_MIN_DAYS. REQ-20261020-dd-deadline:
+ * the D&D window is max(stated request window, minDays), the stated window read from the linked invoice's JSON
+ * (the same rule as the worklist and the claim lists); the floor alone applies when nothing is stated.
+ */
 export async function deadlineRows(tx: TenantTx, f: InsightsFilter, now: Date, minDays: number): Promise<DeadlineRow[]> {
   checkNow(now);
   if (!Number.isSafeInteger(minDays) || minDays < 0) throw new RangeError('invalid minDays');
@@ -255,9 +259,9 @@ export async function deadlineRows(tx: TenantTx, f: InsightsFilter, now: Date, m
            CASE
              WHEN x.inv IS NULL THEN 'dateMissing'
              WHEN x.kind = 'OCEAN_DD' THEN
-               CASE WHEN (x.inv + ${minDays}::int) - x.today < 0 THEN 'past'
-                    WHEN (x.inv + ${minDays}::int) - x.today <= 7 THEN 'd0to7'
-                    WHEN (x.inv + ${minDays}::int) - x.today <= 14 THEN 'd8to14'
+               CASE WHEN (x.inv + x.window_days) - x.today < 0 THEN 'past'
+                    WHEN (x.inv + x.window_days) - x.today <= 7 THEN 'd0to7'
+                    WHEN (x.inv + x.window_days) - x.today <= 14 THEN 'd8to14'
                     ELSE 'over14' END
              ELSE
                CASE WHEN GREATEST(0, x.today - x.inv) <= 30 THEN 'd0to30'
@@ -270,8 +274,15 @@ export async function deadlineRows(tx: TenantTx, f: InsightsFilter, now: Date, m
     FROM (
       SELECT c.kind::text AS kind, c.recoverable_cents AS rec,
              (c.invoice_date AT TIME ZONE 'UTC')::date AS inv,
-             (${now}::timestamptz AT TIME ZONE 'UTC')::date AS today
+             (${now}::timestamptz AT TIME ZONE 'UTC')::date AS today,
+             GREATEST(COALESCE(d.stated_days, 0), ${minDays}::int) AS window_days
       FROM claims c
+      LEFT JOIN LATERAL (
+        SELECT CASE WHEN jsonb_typeof(i.data->'disputeRequestDays') = 'number' THEN (i.data->>'disputeRequestDays')::int END AS stated_days
+        FROM dd_invoices i
+        WHERE i.claim_id = c.id AND i.tenant_id = c.tenant_id
+        LIMIT 1
+      ) d ON true
       WHERE ${claimFilter(f)} AND c.status IN ('AWAITING_ANALYSIS', 'PENDING_REVIEW', 'APPROVED')
     ) x
     GROUP BY 1, 2`;

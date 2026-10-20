@@ -284,6 +284,7 @@ const worklistItem = (n: number, extra: Record<string, unknown> = {}) => ({
   claim: {
     id: U(100 + n),
     claimNumber: `CLM-${n} ${HOSTILE}`,
+    kind: 'FREIGHT',
     loadNumber: null,
     carrierName: HOSTILE,
     perspective: 'SHIPPER',
@@ -302,6 +303,7 @@ const worklistItem = (n: number, extra: Record<string, unknown> = {}) => ({
       { key: 'pending_review', inputCents: 5000, weightPercent: 25, contributionCents: 1250 },
     ],
   },
+  disputeWindow: null,
   why: ['Confirmed recoverable $1,234.56 (counted at 100%)', 'Waiting 1 day (not part of the score)'],
   nextAction: 'RESOLVE_FINDINGS',
   pendingFindingsCount: 1,
@@ -316,7 +318,7 @@ describe('Recovery intelligence', () => {
       u.startsWith('/api/v1/intelligence/worklist')
         ? json(200, {
             generatedAt: '2026-10-09T12:00:00.000Z',
-            formula: { version: 'priority-v1', pendingWeightPercent: 30 },
+            formula: { version: 'priority-v1', pendingWeightPercent: 30, deadlineFirst: { version: 'deadline-first-v1', kind: 'OCEAN_DD', urgentWithinDays: 14 } },
             label: 'x',
             notRanked: { awaitingAnalysis: 1 },
             items: [worklistItem(1)],

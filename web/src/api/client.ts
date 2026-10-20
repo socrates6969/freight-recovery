@@ -28,6 +28,7 @@ import {
   PlatformAuditVerify,
   Provenance,
   RefreshResponse,
+  RoutingShadow,
   SimilarResponse,
   Telemetry,
   Worklist,
@@ -305,8 +306,14 @@ export class ApiClient {
     return this.get(`/api/v1/insights/throughput?${insightsParams(q)}`, InsightsThroughput);
   }
 
+  /** REQ-20261020-claim-outcomes: the Recovery section (recorded outcomes, human-entered basis). */
   insightsRecovery(q: InsightsRequest) {
     return this.get(`/api/v1/insights/recovery?${insightsParams(q)}`, InsightsRecovery);
+  }
+
+  /** REQ-20261020-dd-deadline: the reviewer-routing shadow (404 while its flag is off). */
+  insightsRouting(q: Pick<InsightsRequest, 'from' | 'to'>) {
+    return this.get(`/api/v1/insights/routing?${insightsParams({ from: q.from, to: q.to })}`, RoutingShadow);
   }
 
   similar(claimId: string, limit = 5) {

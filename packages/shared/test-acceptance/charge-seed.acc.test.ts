@@ -211,6 +211,6 @@ describe('C8-C10 shared registries (additive)', () => {
     expect({ ...f }).toEqual({ key: 'intelligence.charge_suggestions', description: 'Charge-line suggestions and team labels', defaultEnabled: true, tenantVisible: true });
     // REQ-20261011-fuel-outlook F14 (additive): two step-7 flags, registry ordered by key.
     // REQ-20261011-ocean-dd C16 (additive): intelligence.ocean_dd, registry ordered by key.
-    expect(R.FEATURE_FLAGS.map((x: any) => x.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.similar_claims', 'intelligence.worklist']);
+    expect(R.FEATURE_FLAGS.map((x: any) => x.key)).toEqual(['intelligence.charge_suggestions', 'intelligence.cost_outlook', 'intelligence.fuel_check', 'intelligence.ocean_dd', 'intelligence.provenance', 'intelligence.routing_shadow', 'intelligence.similar_claims', 'intelligence.worklist'] /* REQ-20261020-dd-deadline: routing_shadow added (default OFF) */);
   });
 });

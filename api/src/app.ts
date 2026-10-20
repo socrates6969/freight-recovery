@@ -434,7 +434,7 @@ export async function buildApp(env?: Record<string, string>, opts: BuildAppOptio
     toHttpError,
   });
   // REQ-20261018-exec-dashboard: executive insights (read-only aggregates, tenant data only, no API keys).
-  registerInsightsRoutes(app, { now });
+  registerInsightsRoutes(app, { now, flags });
   // Step 6 (REQ-20261011-charge-intelligence): charge lines and tenant charge labels (flag-gated).
   registerChargeRoutes(app, { flags });
   // Step 7 (REQ-20261011-fuel-outlook): fuel tables, claim fuel inputs, fuel-check view and the cost outlook.

@@ -2,7 +2,7 @@
  * Recovery intelligence (Q12): the prioritised worklist computed by a fixed formula over this tenant's own
  * claims. Every number shown comes from the API; the explanatory notes are the shared fixed texts.
  */
-import { NO_ACCURACY_NOTE, worklistNote, type NextAction } from '@fr/shared';
+import { DD_DEADLINE_RULE_NOTE, DD_DISPUTE_WINDOW_NOTE, NO_ACCURACY_NOTE, ddDisputeWindowText, utcDay, worklistNote, type NextAction } from '@fr/shared';
 import { useQuery } from '@tanstack/react-query';
 import { useId } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
@@ -11,6 +11,7 @@ import { step4ErrorText } from '../../api/client';
 import { useApi } from '../../app-context';
 import { SafeText } from '../../components/ui/SafeText';
 import { formatUsdCents } from '../../lib/format';
+import { disputeWindowClass } from '../claims/DisputeWindow';
 
 export const NEXT_ACTION_TEXT: Record<NextAction, string> = {
   RESOLVE_FINDINGS: 'Resolve findings',
@@ -47,12 +48,17 @@ export function IntelligencePage() {
   };
   const lastPage = d ? Math.max(1, Math.ceil(d.total / d.pageSize)) : 1;
   const notRanked = d ? notRankedText(d.notRanked.awaitingAnalysis) : null;
+  // REQ-20261020-dd-deadline: days left were counted by the API from its UTC date at generatedAt; shown as such.
+  const generatedDay = d ? utcDay(new Date(d.generatedAt)) : '';
+  const hasWindows = d ? d.items.some((it) => it.disputeWindow !== null) : false;
 
   return (
     <section>
       <h1 className="mb-3 text-lg font-semibold">Recovery intelligence</h1>
       <section aria-label="How this works" className="card mb-4 p-4 text-sm">
         {d ? <p className="mb-1">{worklistNote(d.formula.pendingWeightPercent)}</p> : null}
+        <p className="mb-1">{DD_DEADLINE_RULE_NOTE}</p>
+        <p className="muted mb-1">{DD_DISPUTE_WINDOW_NOTE}</p>
         <p className="muted">{NO_ACCURACY_NOTE}</p>
       </section>
       <div className="mb-3 flex items-end gap-2">
@@ -85,6 +91,7 @@ export function IntelligencePage() {
                       {h}
                     </th>
                   ))}
+                  {hasWindows ? <th scope="col">Dispute window</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -111,6 +118,18 @@ export function IntelligencePage() {
                     </td>
                     <td>{NEXT_ACTION_TEXT[it.nextAction]}</td>
                     <td className="num">{it.waitingDays === 1 ? '1 day' : `${it.waitingDays} days`}</td>
+                    {hasWindows ? (
+                      <td className="whitespace-nowrap">
+                        {it.disputeWindow ? (
+                          <span className={disputeWindowClass(it.disputeWindow.daysLeft)} data-days-left={it.disputeWindow.daysLeft}>
+                            {ddDisputeWindowText(it.disputeWindow, generatedDay)}
+                            {it.disputeWindow.urgent ? <span className="badge badge-warn ml-2">Deadline first</span> : null}
+                          </span>
+                        ) : (
+                          <span className="muted">—</span>
+                        )}
+                      </td>
+                    ) : null}
                   </tr>
                 ))}
               </tbody>

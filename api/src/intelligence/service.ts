@@ -7,10 +7,17 @@
 import { performance } from 'node:perf_hooks';
 
 import {
+  DD_DEADLINE_URGENT_DAYS,
+  DD_DISPUTE_MIN_DAYS,
+  DEADLINE_FIRST_VERSION,
   PROVENANCE_NOTE,
   SIMILARITY_MIN_PERCENT,
   SIMILARITY_WEIGHTS,
   SIMILAR_NOTE,
+  computeDdDisputeWindow,
+  ddDisputeDaysLeft,
+  ddDisputeWindowText,
+  utcDay,
   worklistNote,
   type ProvenanceDto,
   type SimilarItemDto,
@@ -24,7 +31,7 @@ import { isUuid } from '../db/errors.js';
 import type { TenantDb } from '../db/tenant.js';
 import { errors } from '../http/errors.js';
 
-import { buildWhy, nextAction, scoreClaim, waitingDays } from './priority.js';
+import { buildWhy, isDeadlineUrgent, nextAction, scoreClaim, waitingDays } from './priority.js';
 import { rankSimilar, type Candidate } from './similarity.js';
 
 export interface IntelligencePolicy {
@@ -35,19 +42,35 @@ export interface IntelligencePolicy {
 export async function buildWorklist(db: TenantDb, q: WorklistQueryInput, policy: IntelligencePolicy, now: Date): Promise<WorklistDto> {
   const w = policy.pendingWeightPercent;
   const offset = (q.page - 1) * q.pageSize;
+  const today = utcDay(now);
   const page = await db.tx((tx) =>
-    worklistPage(tx, { statuses: q.status, perspective: q.perspective ?? null, weightPercent: w, limit: q.pageSize, offset }),
+    worklistPage(tx, {
+      statuses: q.status,
+      perspective: q.perspective ?? null,
+      weightPercent: w,
+      limit: q.pageSize,
+      offset,
+      now,
+      minDays: DD_DISPUTE_MIN_DAYS,
+      urgentDays: DD_DEADLINE_URGENT_DAYS,
+    }),
   );
   const items = page.rows.map((r, i) => {
     const score = scoreClaim({ recoverableCents: r.recoverableCents, pendingReviewCents: r.pendingReviewCents }, w);
     // The SQL computed the same integer formula; a disagreement is a defect, never shown to users.
     if (score.valueCents !== r.valueCents) throw new Error('priority score mismatch');
     const days = waitingDays(now, r.updatedAt);
+    // REQ-20261020-dd-deadline: the window from the shared pure rule; the SQL counted the same days (checked).
+    const window = r.kind === 'OCEAN_DD' ? computeDdDisputeWindow({ invoiceDate: r.invoiceDate, statedDays: r.disputeRequestDays }) : null;
+    const daysLeft = window === null ? null : ddDisputeDaysLeft(window.closesOn, today);
+    if (window !== null && r.deadlineDaysLeft !== null && daysLeft !== r.deadlineDaysLeft) throw new Error('deadline days mismatch');
+    const disputeWindow = window === null || daysLeft === null ? null : { ...window, daysLeft, urgent: isDeadlineUrgent({ kind: r.kind, deadlineDaysLeft: daysLeft }) };
     return {
       rank: offset + i + 1,
       claim: {
         id: r.id,
         claimNumber: r.claimNumber,
+        kind: r.kind,
         loadNumber: r.loadNumber,
         carrierName: r.carrierName,
         perspective: r.perspective,
@@ -59,6 +82,7 @@ export async function buildWorklist(db: TenantDb, q: WorklistQueryInput, policy:
         latestPacket: { revision: r.packetRevision, status: r.packetStatus as 'PENDING_REVIEW' },
       },
       score: { version: 'priority-v1' as const, valueCents: score.valueCents, parts: score.parts },
+      disputeWindow,
       why: buildWhy({
         recoverableCents: r.recoverableCents,
         pendingReviewCents: r.pendingReviewCents,
@@ -66,6 +90,7 @@ export async function buildWorklist(db: TenantDb, q: WorklistQueryInput, policy:
         status: r.status,
         pendingFindingsCount: r.pendingFindingsCount,
         waitingDays: days,
+        disputeWindowText: window === null ? null : ddDisputeWindowText(window, today),
       }),
       nextAction: nextAction(r.status, r.pendingFindingsCount),
       pendingFindingsCount: r.pendingFindingsCount,
@@ -75,7 +100,11 @@ export async function buildWorklist(db: TenantDb, q: WorklistQueryInput, policy:
   });
   return {
     generatedAt: now.toISOString(),
-    formula: { version: 'priority-v1', pendingWeightPercent: w },
+    formula: {
+      version: 'priority-v1',
+      pendingWeightPercent: w,
+      deadlineFirst: { version: DEADLINE_FIRST_VERSION, kind: 'OCEAN_DD', urgentWithinDays: DD_DEADLINE_URGENT_DAYS },
+    },
     label: worklistNote(w),
     notRanked: { awaitingAnalysis: page.awaitingAnalysis },
     items,

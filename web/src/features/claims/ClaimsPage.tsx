@@ -1,4 +1,4 @@
-import { ANALYSIS_TEXT, ClaimsPage as ClaimsPageSchema, DD_TEXT, type ClaimSortField } from '@fr/shared';
+import { ANALYSIS_TEXT, ClaimsPage as ClaimsPageSchema, DD_DISPUTE_WINDOW_NOTE, DD_TEXT, type ClaimSortField } from '@fr/shared';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -10,6 +10,7 @@ import { SafeText } from '../../components/ui/SafeText';
 import { formatDateTime, formatUsdCents, STATUS_LABEL } from '../../lib/format';
 
 import { BulkAnalyzeDialog } from './BulkAnalyzeDialog';
+import { DisputeWindowLine, todayUtc } from './DisputeWindow';
 
 const COLUMNS: { label: string; field: ClaimSortField }[] = [
   { label: 'Claim', field: 'claimNumber' },
@@ -94,6 +95,9 @@ export function ClaimsPage() {
   const total = claims.data?.total ?? 0;
   const lastPage = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const listSearch = params.toString();
+  // REQ-20261020-dd-deadline: the dispute-window column appears when the page holds a D&D claim with a window.
+  const [today] = useState(todayUtc);
+  const hasWindows = (claims.data?.items ?? []).some((c) => c.disputeWindow !== null);
 
   return (
     <div className="flex flex-col gap-4">
@@ -161,6 +165,11 @@ export function ClaimsPage() {
                     </th>
                   );
                 })}
+                {hasWindows ? (
+                  <th scope="col" title={DD_DISPUTE_WINDOW_NOTE}>
+                    Dispute window
+                  </th>
+                ) : null}
               </tr>
             </thead>
             <tbody>
@@ -193,11 +202,15 @@ export function ClaimsPage() {
                       </td>
                       <td className="num text-right">{formatUsdCents(c.recoverableCents)}</td>
                       <td className="num muted whitespace-nowrap">{formatDateTime(c.updatedAt)}</td>
+                      {hasWindows ? (
+                        <td className="whitespace-nowrap text-sm">{c.disputeWindow ? <DisputeWindowLine window={c.disputeWindow} today={today} /> : <span className="muted">—</span>}</td>
+                      ) : null}
                     </tr>
                   ))}
             </tbody>
           </table>
           {claims.data && claims.data.items.length === 0 ? <p className="muted p-6 text-center">No claims match these filters.</p> : null}
+          {hasWindows ? <p className="muted p-3 text-xs">{DD_DISPUTE_WINDOW_NOTE}</p> : null}
         </div>
       )}
 

@@ -322,13 +322,19 @@ describe.skipIf(!canRunDb)('Recovery Intelligence (PostgreSQL)', () => {
           'intelligence.fuel_check': true,
           'intelligence.ocean_dd': true,
           'intelligence.provenance': true,
+          // REQ-20261020-dd-deadline: the routing shadow is the only default-OFF flag (migration row enabled = false).
+          'intelligence.routing_shadow': false,
           'intelligence.similar_claims': true,
           'intelligence.worklist': true,
         },
       });
       const wl = await c.get('/api/v1/intelligence/worklist?pageSize=5', viewer);
       expect(wl.statusCode, wl.body).toBe(200);
-      expect(Worklist.parse(wl.json()).formula).toEqual({ version: 'priority-v1', pendingWeightPercent: 25 });
+      expect(Worklist.parse(wl.json()).formula).toEqual({
+        version: 'priority-v1',
+        pendingWeightPercent: 25,
+        deadlineFirst: { version: 'deadline-first-v1', kind: 'OCEAN_DD', urgentWithinDays: 14 },
+      });
       expect((await c.get(`/api/v1/claims/${acmeClaim}/similar`, viewer)).statusCode).toBe(200);
       expect((await c.get(`/api/v1/claims/${acmeClaim}/provenance`, viewer)).statusCode).toBe(200);
       for (const url of ['/api/v1/features', '/api/v1/intelligence/worklist', `/api/v1/claims/${acmeClaim}/similar`, `/api/v1/claims/${acmeClaim}/provenance`]) {
@@ -380,6 +386,7 @@ describe.skipIf(!canRunDb)('Recovery Intelligence (PostgreSQL)', () => {
             'intelligence.fuel_check': true,
             'intelligence.ocean_dd': true,
             'intelligence.provenance': false,
+            'intelligence.routing_shadow': false,
             'intelligence.similar_claims': false,
             'intelligence.worklist': false,
           },

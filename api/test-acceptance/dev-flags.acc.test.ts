@@ -36,7 +36,8 @@ describe('T-FLAG-01 registry', () => {
     for (const f of r.body.items) {
       expect(Object.keys(f).sort()).toEqual(['defaultEnabled', 'description', 'enabled', 'key', 'lastReason', 'tenantVisible', 'updatedAt', 'updatedBy', 'version']);
       expect(f.description).toBe(I.FLAG_DESCRIPTIONS[f.key]);
-      expect(f.defaultEnabled).toBe(true);
+      // REQ-20261020-dd-deadline: the routing shadow is the only default-OFF registry flag.
+    expect(f.defaultEnabled).toBe(f.key !== 'intelligence.routing_shadow');
       expect(f.tenantVisible).toBe(true);
       expect(f.enabled).toBe(true);
       expect(f.version).toBe(1);

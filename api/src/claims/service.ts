@@ -4,12 +4,13 @@
  */
 import { randomUUID } from 'node:crypto';
 
-import type { ApprovalItemDto, ClaimDetailDto, ClaimSummaryDto, ClaimsQueryInput, FourEyesClaimBasis, PacketDto, PacketStatus, Role } from '@fr/shared';
+import { computeDdDisputeWindow, type ApprovalItemDto, type ClaimDetailDto, type ClaimSummaryDto, type ClaimsQueryInput, type FourEyesClaimBasis, type PacketDto, type PacketStatus, type Role } from '@fr/shared';
 
 import { analysisFailureOf } from '../audit/analysis-failures.js';
 import { appendAudit } from '../audit/audit.js';
 import { ddInvoiceEditorsByClaim } from '../audit/dd-editors.js';
 import { labelAuthorsByClaim } from '../audit/label-authors.js';
+import { ddDisputeTermsByClaim, type DdDisputeTermsRow } from '../db/dd-dispute-terms.js';
 import { isUuid } from '../db/errors.js';
 import { lockClaimForUpdate, type TenantTx } from '../db/tenant.js';
 import { UNPROCESSABLE, errors } from '../http/errors.js';
@@ -51,7 +52,18 @@ interface SummaryRow {
   updatedAt: Date;
 }
 
-export function toClaimSummary(c: SummaryRow): ClaimSummaryDto {
+/**
+ * REQ-20261020-dd-deadline: the dispute terms of the page's OCEAN_DD claims (one query per page; FREIGHT claims
+ * and D&D claims without a linked invoice get null, so `disputeWindow` is null for them).
+ */
+export async function disputeTermsOf(tx: TenantTx, rows: readonly { id: string; kind: 'FREIGHT' | 'OCEAN_DD' }[]): Promise<Map<string, DdDisputeTermsRow>> {
+  return ddDisputeTermsByClaim(
+    tx,
+    rows.filter((r) => r.kind === 'OCEAN_DD').map((r) => r.id),
+  );
+}
+
+export function toClaimSummary(c: SummaryRow, terms: DdDisputeTermsRow | null = null): ClaimSummaryDto {
   const p = c.packets[0];
   return {
     id: c.id,
@@ -71,6 +83,7 @@ export function toClaimSummary(c: SummaryRow): ClaimSummaryDto {
     latestPacket: p ? { revision: p.revision, status: p.status as PacketStatus } : null,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
+    disputeWindow: c.kind === 'OCEAN_DD' && terms !== null ? computeDdDisputeWindow(terms) : null,
   };
 }
 
@@ -83,7 +96,8 @@ export async function listClaims(
   // Sequential: both run on the same transaction connection.
   const total = await tx.claim.count({ where });
   const rows = await tx.claim.findMany({ where, orderBy: buildClaimOrderBy(q.sort), ...pageArgs(q.page, q.pageSize), include: SUMMARY_INCLUDE });
-  return { items: (rows as SummaryRow[]).map(toClaimSummary), page: q.page, pageSize: q.pageSize, total };
+  const terms = await disputeTermsOf(tx, rows as SummaryRow[]);
+  return { items: (rows as SummaryRow[]).map((c) => toClaimSummary(c, terms.get(c.id) ?? null)), page: q.page, pageSize: q.pageSize, total };
 }
 
 async function findClaim(tx: TenantTx, id: string): Promise<SummaryRow> {
@@ -97,8 +111,9 @@ export async function getClaim(tx: TenantTx, id: string): Promise<ClaimDetailDto
   const c = await findClaim(tx, id);
   // Hardening (C4.3): only an AWAITING_ANALYSIS claim shows its failed analyses.
   const failure = c.status === 'AWAITING_ANALYSIS' ? await analysisFailureOf(tx, c.id) : null;
+  const terms = await disputeTermsOf(tx, [c]);
   return {
-    ...toClaimSummary(c),
+    ...toClaimSummary(c, terms.get(c.id) ?? null),
     invoiceDate: c.invoiceDate ? c.invoiceDate.toISOString() : null,
     analysisFailure:
       failure === null ? null : { lastFailedAt: failure.lastFailedAt.toISOString(), reasonCode: failure.reasonCode, failedAttempts: failure.failedAttempts },
@@ -150,6 +165,7 @@ export async function listApprovalQueue(
   const authoredSet = new Set(authored.map((a) => a.claimId));
   const ddEditors = await ddInvoiceEditorsByClaim(tx, pageIds);
   const labelAuthors = await labelAuthorsByClaim(tx, pageIds);
+  const terms = await disputeTermsOf(tx, rows as unknown as SummaryRow[]);
   const basisOf = (claimId: string): FourEyesClaimBasis | null => {
     if (authoredSet.has(claimId)) return 'revision_author';
     if (ddEditors.get(claimId)?.has(viewerId) === true) return 'dd_invoice_editor';
@@ -158,7 +174,7 @@ export async function listApprovalQueue(
   };
   const items = rows.map((r) => {
     const p = r.packets[0];
-    const summary = toClaimSummary(r as unknown as SummaryRow);
+    const summary = toClaimSummary(r as unknown as SummaryRow, terms.get(r.id) ?? null);
     const basis = basisOf(r.id);
     return {
       ...summary,
@@ -335,7 +351,9 @@ export async function assignClaim(tx: TenantTx, claimId: string, assigneeId: str
     ip: actor.ip,
     requestId: actor.requestId,
   });
-  return toClaimSummary(await findClaim(tx, claim.id));
+  const updated = await findClaim(tx, claim.id);
+  const terms = await disputeTermsOf(tx, [updated]);
+  return toClaimSummary(updated, terms.get(updated.id) ?? null);
 }
 
 async function currentTenant(tx: TenantTx, claimId: string): Promise<string> {

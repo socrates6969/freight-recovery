@@ -11,12 +11,14 @@ import { useId, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { useApi, useCan } from '../../app-context';
+import { useFeatures } from '../intelligence/use-features';
 
 import { AgeingSection, DisputeWindowSection, MoneySection, StagesSection } from './money-sections';
 import { IntakeSection, ThroughputSection } from './activity-sections';
 import { apiFilters, parseInsightsParams, periodValid } from './insights-params';
 import { CarrierLeakageSection, RuleLeakageSection } from './leakage-sections';
 import { RecoverySection } from './recovery-section';
+import { RoutingShadowSection } from './routing-section';
 import { Section } from './section';
 
 export function InsightsPage() {
@@ -57,7 +59,11 @@ function InsightsContent() {
     queryFn: () => api.insightsLeakage({ ...period, kind, perspective, by: 'rule', carrier: p.carrier }),
   });
   const throughput = useQuery({ ...common, queryKey: ['insights', 'throughput', p.from, p.to, kind ?? 'ALL', perspective ?? 'ALL'], queryFn: () => api.insightsThroughput({ ...period, kind, perspective }) });
+  // REQ-20261020-claim-outcomes: the Recovery section (outcomes typed in by the team).
   const recovery = useQuery({ ...common, queryKey: ['insights', 'recovery', p.from, p.to, kind ?? 'ALL', perspective ?? 'ALL'], queryFn: () => api.insightsRecovery({ ...period, kind, perspective }) });
+  // REQ-20261020-dd-deadline: the routing shadow is requested only while its flag is on (fail closed; a 404 hides it).
+  const features = useFeatures();
+  const routing = useQuery({ ...common, enabled: valid && features.routingShadow, queryKey: ['insights', 'routing', p.from, p.to], queryFn: () => api.insightsRouting(period) });
 
   const setParam = (k: string, v: string | null) => {
     const next = new URLSearchParams(params);
@@ -118,6 +124,7 @@ function InsightsContent() {
           <RuleLeakageSection q={rules} carrier={p.carrier} onClear={() => setParam('carrier', null)} />
           <ThroughputSection q={throughput} />
           <IntakeSection q={stages} />
+          {features.routingShadow ? <RoutingShadowSection q={routing} /> : null}
         </>
       )}
       <Section title={INSIGHTS_TEXT.notTrackedHeading}>

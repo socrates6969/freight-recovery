@@ -24,7 +24,9 @@ detention invoice audit against 46 CFR Part 541 and 545.5, its three tenant tabl
 the four-eyes rule for the invoice's editors) is covered in
 [section 12](#12-step-8-ocean-demurrage-and-detention-audit). Claim outcomes (the human-entered, append-only
 record of what happened after a demand was marked ready, and the Recovery section) are covered in
-[section 14](#14-claim-outcomes). The hardening run (database backstops for four-eyes,
+[section 14](#14-claim-outcomes). Ocean D&D dispute deadlines (deadline-first worklist ordering, the dispute
+window on claims) and the reviewer-routing shadow behind `intelligence.routing_shadow` are covered in
+[section 15](#15-ocean-dd-dispute-deadlines-and-the-reviewer-routing-shadow). The hardening run (database backstops for four-eyes,
 the label-author rule, failure transparency, the CloudFront client address and the authentication fixes of the
 platform audit) is covered in [section 13](#13-hardening-run). Every secret, its rotation and
 the buyer handover checklist are in [docs/secrets.md](../docs/secrets.md). The structure is in [ARCHITECTURE.md](../ARCHITECTURE.md#web-platform-typescript-steps-1-2). The
@@ -1377,3 +1379,60 @@ Local runs on Windows, Node 24, `CI=true`, **not GitHub CI**. Embedded PostgreSQ
 against the live database shows no drift for `claim_outcomes`. `outcomes.int` 9/9. Acceptance: the static pins, RBAC,
 the shared copy/contract files and the touched claims/approvals/audit files. Not run: the full integration and
 acceptance suites (parity needs Python), container images, Playwright, any deployment.
+
+## 15. Ocean D&D dispute deadlines and the reviewer-routing shadow
+
+Run `REQ-20261020-dd-deadline` (branch `feat/dd-deadline` from `0830f01`) adds (1) deadline-first ordering of the
+review worklist for ocean D&D claims, with the dispute window shown on the claim card, the claims list and the
+worklist and a count of windows closing within 7 days on the insights page, and (2) a read-only reviewer-routing
+**shadow** on the insights page. Nothing learns, nothing is stored and no assignment changes.
+
+**The dispute window.** 46 CFR 541.8(a) gives the billed party at least 30 calendar days from invoice issuance to
+request mitigation, refund or waiver. The window applied everywhere is `invoice date (UTC) + max(request window the
+D&D invoice states, 30)`; the 30 days are the floor and apply when the invoice states less or nothing. The pure rule
+lives in `packages/shared/src/dd-deadline.ts` (outside the byte-pinned `ocean-dd/` directory; it reuses its date
+arithmetic), the SQL in `api/src/db/intelligence.ts` (worklist order), `api/src/db/insights.ts` (D1 buckets) and
+`api/src/db/dd-dispute-terms.ts` (claim lists) applies the same formula, and the worklist service checks that the
+SQL days equal the TypeScript days (a mismatch is a 500, never a wrong rank). The copy says the window is computed
+from the invoice date and the stated terms, that the rule's days are the floor, and "confirm ... with counsel or
+your customs broker" (the site's wording). Days left are counted from the API's UTC date on the worklist and from
+the browser's UTC date on the claim card and list; the API states only clock-free facts there.
+
+**Ordering rule `deadline-first-v1`** (`api/src/intelligence/priority.ts`, mirrored in SQL): an OCEAN_DD claim
+with 0..14 days left ranks ahead of every other claim, soonest first; ties and everything else follow priority-v1.
+A claim whose floor date has passed is not moved up (whether a longer tariff window is still open is for
+counsel); it is marked as closed in red. The worklist body states the rule (`formula.deadlineFirst`).
+
+### 15.1 New assets, permission and trust boundaries
+
+| Item | Detail |
+| --- | --- |
+| Permissions | None new. The worklist and claim lists keep `claims:read`; the routing shadow uses the existing `insights:read` (OWNER, ADMIN, MANAGER, VIEWER). **No API-key scope** grants the new route, so API keys get 403. |
+| Routes | `GET /api/v1/insights/routing` (query `from`, `to`; strict). `insights:read`, per-user `intelligence` rate bucket, one read-only REPEATABLE READ tenant transaction (`insightsRead`), not audited (like the other insights reads), nothing written. The `intelligence.routing_shadow` flag is checked after auth, rate limit, permission and schema; OFF gives the standard 404. `GET /api/v1/intelligence/worklist` and the claim list/detail/assign/approval-queue responses gain additive fields (`disputeWindow`, `claim.kind`, `formula.deadlineFirst`). |
+| Reads | Worklist and insights D1 join `dd_invoices` on `(claim_id, tenant_id)` and read one JSON-path value (`data->>'disputeRequestDays'`, only when it is a JSON number); the invoice document is never loaded. The routing shadow reads `approvals`, `evidence_packets`, `packet_findings.rule_id`, `import_review_decisions`, `import_documents.created_at`, `claims.assignee_id` and `memberships` with the users' names, all in the tenant transaction with explicit `tenant_id` matches; capped at 5,000 first decisions and 500 open claims per request (the body says when a cap was hit). |
+| Writes | None at runtime. Migration `20261020000000_routing_shadow_flag` inserts the flag row only (OFF); no schema change. |
+| Person-level data | The routing shadow names the tenant's own reviewers and shows per-reviewer counts and medians. This is the one insights section that carries actors; it is behind a default-OFF flag and its copy says it is a shadow and not a measure of anyone's performance. No data of another tenant is reachable (RLS FORCE). |
+| Untrusted input | `from`/`to` (the insights instant parser, period at most 366 days); nothing else. Rule ids and names from the database are rendered as text (`SafeText`). |
+| Outbound network | None. |
+| Kill switch | `intelligence.routing_shadow`, the registry's only default-OFF flag (`packages/shared/src/feature-flags.ts`; the HD-S09 pin moves to the new content). Off: the route is 404 and the web hides the section. The deadline ordering has no flag: it is a stated rule of the worklist, which the `intelligence.worklist` flag already gates. |
+
+### 15.2 Threats and mitigations
+
+| # | Threat | Mitigation (where) | Verified by | Residual risk |
+| --- | --- | --- | --- | --- |
+| T90 | A wrong deadline misleads a reviewer (counting from the wrong date, applying a stated window shorter than the regulation, SQL and TypeScript disagreeing) | One formula in the shared pure module with the 30-day floor; SQL mirrors it; the worklist service throws on a days mismatch; the copy states the basis and that the days are the floor, not legal advice | `dd-deadline.test.ts` (no invoice date, shorter than 30, exactly 30, longer, past, range edge), `dd-deadline-order.test.ts` (rule, strict total order on random inputs, why line) | A tariff or contract window longer than the stated one is not known to the product (copy says so) |
+| T91 | The shadow changes an assignment or stores a judgement | The route is GET, runs in a READ ONLY transaction, writes nothing, carries `shadow: true` and the fixed label; the web section is labelled a shadow | `routing-shadow.test.ts` (shape, policies, four-eyes exclusion of the revision author, prequential replay, determinism), `architecture.test.ts` (insights code uses no raw SQL; the new SQL helpers are allow-listed under `src/db/`) | None known |
+| T92 | The shadow "recommends" the revision's author (four-eyes) or a user who may not approve | Both policies exclude the current revision's `created_by_id`; the least-loaded pool is members whose role holds `packets:approve` with an active account | `routing-shadow.test.ts` | D&D invoice editors and label authors are not excluded from a shadow pick (the real approval path still refuses them) |
+| T93 | Person-level figures read as a performance measure | Default-OFF flag; the label says it is not a performance measure; medians over few decisions are shown with their counts | code review; copy in `honest-copy.ts` | Deliberate: the owner switches the flag on knowing the section names reviewers |
+
+### 15.3 What was run
+
+Local runs on Windows, Node 24.21.0, **not GitHub CI**.
+
+| Step | Result |
+| --- | --- |
+| `npm run typecheck`, `npm run lint` | clean |
+| `npm test` (shared, api, web unit projects) | shared 300, api 489 (+ the new `dd-deadline-order.test.ts`, `routing-shadow.test.ts`), web 141 passed; `dd-deadline.test.ts` covers no date, shorter than 30, exactly 30, longer, past and the range edge |
+| integration against a private embedded PostgreSQL 18.4 (UTF8) on 127.0.0.1:5434, 12 migrations deployed, seeded | `dd-deadline.int` 5/5 (worklist order and windows, claims list, D1 buckets, routing helpers, route on/off); `insights.int`, `intelligence.int`, `intelligence-db.int`, `platform-dashboard.int`, `ocean-dd.int`, `hardening.int`, `charge-labels.int`, `fuel-outlook.int`, `apikeys.int`, `audit-failclosed.int`, `auth-hardening.int` green after the additive flag-list amendments; `analysis`, `four-eyes`, `review-commit`, `eval-record` skipped (need the built worker / Python) |
+
+Not run: GitHub CI, the acceptance suites (their flag and key-set pins were amended additively), the object-store suites (no MinIO/moto here), container images, Playwright, any AWS deployment.
