@@ -1,0 +1,12 @@
+Metric,Base,Bull,Bear,Basis / Grade
+Recoverable % of freight spend,1.0%,1.3%,0.75%,ASSUMPTION ONLY; 1-3% vendor claim not independently verified; do not use as observed leakage
+Contingency fee,20%,20%,20%,ASSUMPTION; 15-30% typical (grade C)
+Example shipper freight spend,$20M,$20M,$20M,ASSUMPTION; mid-market band
+Average Contract Value (ACV),$40K,$55K,$30K,Derived
+Gross margin (Y1 to Y5),60%-70%,62%-72%,55%-62%,ASSUMPTION; human-review is the swing factor
+Blended CAC,$25K,$22K,$30K,ASSUMPTION
+CAC payback (months),15-16,~12,24+,Derived; private-SaaS median ~18-20 (grade B/C)
+Logo churn (annual),20%,15%,35%,ASSUMPTION
+LTV,$130K,$180K,$74K,Derived
+LTV:CAC,5.2x,8.2x,2.5x,Derived; target >=3x (grade C)
+Fully-loaded headcount cost,$150K,$150K,$150K,ASSUMPTION

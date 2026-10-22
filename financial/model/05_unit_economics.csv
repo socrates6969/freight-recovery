@@ -1,0 +1,11 @@
+Metric,Value,Basis
+Example shipper freight spend,$20M,ASSUMPTION mid-market
+Recoverable (1.0% base),$200K,= 20M x 1.0%
+Contingency fee (20%),$40K,= recoverable x 20% = ACV
+Gross margin (blended Y1-2),60%,ASSUMPTION
+Gross profit per account,$26K,at ~65%
+Blended CAC,$25K,ASSUMPTION
+CAC payback,~15-16 months,incl. recovery-cycle lag
+Logo churn,20%/yr,ASSUMPTION
+LTV (GP/churn),$130K,= 26K / 0.20
+LTV:CAC,5.2x,Derived (optimistic; rests on 1% recovery)

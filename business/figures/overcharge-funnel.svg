@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="648pt" height="345.6pt" viewBox="0 0 648 345.6" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-10-22T19:32:52.499301</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 345.6 
+L 648 345.6 
+L 648 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 37.8432 95.494737 
+L 610.1568 95.494737 
+Q 613.2672 95.494737 613.2672 94.294232 
+L 613.2672 51.076042 
+Q 613.2672 49.875537 610.1568 49.875537 
+L 37.8432 49.875537 
+Q 34.7328 49.875537 34.7328 51.076042 
+L 34.7328 94.294232 
+Q 34.7328 95.494737 37.8432 95.494737 
+z
+" clip-path="url(#p6b42620827)" style="fill: #9fb7cc; stroke: #9fb7cc; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 80.76672 151.918484 
+L 567.23328 151.918484 
+Q 570.34368 151.918484 570.34368 150.717979 
+L 570.34368 107.499789 
+Q 570.34368 106.299284 567.23328 106.299284 
+L 80.76672 106.299284 
+Q 77.65632 106.299284 77.65632 107.499789 
+L 77.65632 150.717979 
+Q 77.65632 151.918484 80.76672 151.918484 
+z
+" clip-path="url(#p6b42620827)" style="fill: #9fb7cc; stroke: #9fb7cc; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 123.69024 208.342232 
+L 524.30976 208.342232 
+Q 527.42016 208.342232 527.42016 207.141726 
+L 527.42016 163.923537 
+Q 527.42016 162.723032 524.30976 162.723032 
+L 123.69024 162.723032 
+Q 120.57984 162.723032 120.57984 163.923537 
+L 120.57984 207.141726 
+Q 120.57984 208.342232 123.69024 208.342232 
+z
+" clip-path="url(#p6b42620827)" style="fill: #9fb7cc; stroke: #9fb7cc; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 166.61376 264.765979 
+L 481.38624 264.765979 
+Q 484.49664 264.765979 484.49664 263.565474 
+L 484.49664 220.347284 
+Q 484.49664 219.146779 481.38624 219.146779 
+L 166.61376 219.146779 
+Q 163.50336 219.146779 163.50336 220.347284 
+L 163.50336 263.565474 
+Q 163.50336 264.765979 166.61376 264.765979 
+z
+" clip-path="url(#p6b42620827)" style="fill: #1b6ca8; stroke: #1b6ca8; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_1">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #1f2933" x="324" y="66.682611" transform="rotate(-0 324 66.682611)">Invoices checked: 10,000</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 8.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #1f2933" x="324" y="84.690189" transform="rotate(-0 324 84.690189)">100% of invoices, not a sample</text>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #1f2933" x="324" y="123.106358" transform="rotate(-0 324 123.106358)">Flagged by audit checks: 900</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 8.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #1f2933" x="324" y="141.113937" transform="rotate(-0 324 141.113937)">9% flagged (assumption)</text>
+   </g>
+   <g id="text_5">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #1f2933" x="324" y="179.530105" transform="rotate(-0 324 179.530105)">Confirmed by reviewer: 450</text>
+   </g>
+   <g id="text_6">
+    <text style="font-size: 8.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #1f2933" x="324" y="197.537684" transform="rotate(-0 324 197.537684)">half of flags hold up (assumption)</text>
+   </g>
+   <g id="text_7">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #ffffff" x="324" y="235.953853" transform="rotate(-0 324 235.953853)">Claims paid: 270</text>
+   </g>
+   <g id="text_8">
+    <text style="font-size: 8.5px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #ffffff" x="324" y="253.961432" transform="rotate(-0 324 253.961432)">60% of filed claims paid (assumption)</text>
+   </g>
+   <g id="text_9">
+    <text style="font-size: 11.5px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #1f2933" x="12.96" y="35.472" transform="rotate(-0 12.96 35.472)">ILLUSTRATIVE overcharge funnel, one mid-size account, one year (not measured)</text>
+   </g>
+  </g>
+  <g id="text_10">
+   <text style="font-size: 8.8px; font-family: 'DejaVu Sans'; fill: #1f2933" transform="translate(6.48 306.122672)">The dollar end-point matches the model: $52K recovered for the customer in year 1; Scoup keeps 25% = $13.0K. The flag, confirm and</text>
+   <text style="font-size: 8.8px; font-family: 'DejaVu Sans'; fill: #1f2933" transform="translate(6.48 316.685078)">pay rates are placeholders that design-partner files must replace.</text>
+  </g>
+  <g id="text_11">
+   <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #6b7785" x="6.48" y="339.675066" transform="rotate(-0 6.48 339.675066)">Source: scoup-financial-model.xlsx, Assumptions rows 13-16 (year 1). Stage rates: company assumptions, not observations.</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p6b42620827">
+   <rect x="12.96" y="41.472" width="622.08" height="228.096"/>
+  </clipPath>
+ </defs>
+</svg>

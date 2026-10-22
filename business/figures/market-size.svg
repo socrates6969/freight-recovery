@@ -1,0 +1,261 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="684pt" height="360pt" viewBox="0 0 684 360" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-10-22T19:32:52.022306</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 360 
+L 684 360 
+L 684 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 205.2 270 
+L 663.48 270 
+L 663.48 36 
+L 205.2 36 
+z
+" style="fill: #ffffff"/>
+   </g>
+   <g id="patch_3">
+    <path d="M -86200.720265 259.363636 
+L 248.295396 259.363636 
+L 248.295396 230.021944 
+L -86200.720265 230.021944 
+z
+" clip-path="url(#p543af6225b)" style="fill: #1b6ca8"/>
+   </g>
+   <g id="patch_4">
+    <path d="M -86200.720265 222.68652 
+L 273.612207 222.68652 
+L 273.612207 193.344828 
+L -86200.720265 193.344828 
+z
+" clip-path="url(#p543af6225b)" style="fill: #1b6ca8"/>
+   </g>
+   <g id="patch_5">
+    <path d="M -86200.720265 186.009404 
+L 292.639214 186.009404 
+L 292.639214 156.667712 
+L -86200.720265 156.667712 
+z
+" clip-path="url(#p543af6225b)" style="fill: #9fb7cc"/>
+   </g>
+   <g id="patch_6">
+    <path d="M -86200.720265 149.332288 
+L 352.327337 149.332288 
+L 352.327337 119.990596 
+L -86200.720265 119.990596 
+z
+" clip-path="url(#p543af6225b)" style="fill: #9fb7cc"/>
+   </g>
+   <g id="patch_7">
+    <path d="M -86200.720265 112.655172 
+L 505.093571 112.655172 
+L 505.093571 83.31348 
+L -86200.720265 83.31348 
+z
+" clip-path="url(#p543af6225b)" style="fill: #9fb7cc"/>
+   </g>
+   <g id="patch_8">
+    <path d="M -86200.720265 75.978056 
+L 542.626515 75.978056 
+L 542.626515 46.636364 
+L -86200.720265 46.636364 
+z
+" clip-path="url(#p543af6225b)" style="fill: #9fb7cc"/>
+   </g>
+   <g id="matplotlib.axis_1">
+    <g id="xtick_1">
+     <g id="line2d_1">
+      <defs>
+       <path id="m65b700d8da" d="M 0 0 
+L 0 3.5 
+" style="stroke: #000000; stroke-width: 0.8"/>
+      </defs>
+      <g>
+       <use xlink:href="#m65b700d8da" x="250.403455" y="270" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_1">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="250.403455" y="284.598437" transform="rotate(-0 250.403455 284.598437)">$1B</text>
+     </g>
+    </g>
+    <g id="xtick_2">
+     <g id="line2d_2">
+      <g>
+       <use xlink:href="#m65b700d8da" x="336.854579" y="270" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_2">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="336.854579" y="284.598437" transform="rotate(-0 336.854579 284.598437)">$10B</text>
+     </g>
+    </g>
+    <g id="xtick_3">
+     <g id="line2d_3">
+      <g>
+       <use xlink:href="#m65b700d8da" x="423.305703" y="270" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_3">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="423.305703" y="284.598437" transform="rotate(-0 423.305703 284.598437)">$100B</text>
+     </g>
+    </g>
+    <g id="xtick_4">
+     <g id="line2d_4">
+      <g>
+       <use xlink:href="#m65b700d8da" x="509.756826" y="270" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_4">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="509.756826" y="284.598437" transform="rotate(-0 509.756826 284.598437)">$1,000B</text>
+     </g>
+    </g>
+    <g id="xtick_5">
+     <g id="line2d_5">
+      <g>
+       <use xlink:href="#m65b700d8da" x="596.20795" y="270" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_5">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="596.20795" y="284.598437" transform="rotate(-0 596.20795 284.598437)">$10,000B</text>
+     </g>
+    </g>
+    <g id="text_6">
+     <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: middle" x="434.34" y="298.599219" transform="rotate(-0 434.34 298.599219)">US$ billions per year (log scale)</text>
+    </g>
+   </g>
+   <g id="matplotlib.axis_2">
+    <g id="ytick_1">
+     <g id="line2d_6">
+      <defs>
+       <path id="m6f489ade43" d="M 0 0 
+L -3.5 0 
+" style="stroke: #000000; stroke-width: 0.8"/>
+      </defs>
+      <g>
+       <use xlink:href="#m6f489ade43" x="205.2" y="244.69279" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_7">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="198.2" y="248.492009" transform="rotate(-0 198.2 248.492009)">SAM: shippers + SME importers</text>
+     </g>
+    </g>
+    <g id="ytick_2">
+     <g id="line2d_7">
+      <g>
+       <use xlink:href="#m6f489ade43" x="205.2" y="208.015674" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_8">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="198.2" y="211.814893" transform="rotate(-0 198.2 211.814893)">TAM: Scoup fee pool, all segments</text>
+     </g>
+    </g>
+    <g id="ytick_3">
+     <g id="line2d_8">
+      <g>
+       <use xlink:href="#m6f489ade43" x="205.2" y="171.338558" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_9">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="198.2" y="175.137777" transform="rotate(-0 198.2 175.137777)">Ocean D&amp;D billed by 9 carriers</text>
+     </g>
+    </g>
+    <g id="ytick_4">
+     <g id="line2d_9">
+      <g>
+       <use xlink:href="#m6f489ade43" x="205.2" y="134.661442" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_10">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="198.2" y="138.460661" transform="rotate(-0 198.2 138.460661)">Truck detention cost, 2023</text>
+     </g>
+    </g>
+    <g id="ytick_5">
+     <g id="line2d_10">
+      <g>
+       <use xlink:href="#m6f489ade43" x="205.2" y="97.984326" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_11">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="198.2" y="101.783545" transform="rotate(-0 198.2 101.783545)">US truck transport spend, 2025</text>
+     </g>
+    </g>
+    <g id="ytick_6">
+     <g id="line2d_11">
+      <g>
+       <use xlink:href="#m6f489ade43" x="205.2" y="61.30721" style="stroke: #000000; stroke-width: 0.8"/>
+      </g>
+     </g>
+     <g id="text_12">
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="198.2" y="65.106429" transform="rotate(-0 198.2 65.106429)">US business logistics costs, 2025</text>
+     </g>
+    </g>
+   </g>
+   <g id="patch_9">
+    <path d="M 205.2 270 
+L 205.2 36 
+" style="fill: none; stroke: #d9dee4; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 205.2 270 
+L 663.48 270 
+" style="fill: none; stroke: #d9dee4; stroke-width: 0.8; stroke-linejoin: miter; stroke-linecap: square"/>
+   </g>
+   <g id="text_13">
+    <text style="font-size: 8px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #1f2933" x="251.87384" y="246.771227" transform="rotate(-0 251.87384 246.771227)">$0.95B  model</text>
+   </g>
+   <g id="text_14">
+    <text style="font-size: 8px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #1f2933" x="277.190651" y="210.094111" transform="rotate(-0 277.190651 210.094111)">$1.86B  model</text>
+   </g>
+   <g id="text_15">
+    <text style="font-size: 8px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #1f2933" x="296.217658" y="173.416995" transform="rotate(-0 296.217658 173.416995)">$3.08B  FMC; 5-year average, mostly owed</text>
+   </g>
+   <g id="text_16">
+    <text style="font-size: 8px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #1f2933" x="355.905781" y="136.73988" transform="rotate(-0 355.905781 136.73988)">$15B  ATRI; cost of waiting, not recoverable</text>
+   </g>
+   <g id="text_17">
+    <text style="font-size: 8px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #1f2933" x="508.672016" y="100.062764" transform="rotate(-0 508.672016 100.062764)">$883B  36.8% of the above</text>
+   </g>
+   <g id="text_18">
+    <text style="font-size: 8px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #1f2933" x="546.20496" y="63.385648" transform="rotate(-0 546.20496 63.385648)">$2,400B  CSCMP / Kearney</text>
+   </g>
+   <g id="text_19">
+    <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #1f2933" x="205.2" y="30" transform="rotate(-0 205.2 30)">Size of the problem vs. the fees Scoup could earn</text>
+   </g>
+  </g>
+  <g id="text_20">
+   <text style="font-size: 8.8px; font-family: 'DejaVu Sans'; fill: #1f2933" transform="translate(6.84 319.442672)">Grey bars describe spend and charges in the system; most of that money is correctly billed. Blue bars are the modelled fee pool</text>
+   <text style="font-size: 8.8px; font-family: 'DejaVu Sans'; fill: #1f2933" transform="translate(6.84 330.005078)">(accounts x revenue per account). Only the blue bars are a market for Scoup.</text>
+  </g>
+  <g id="text_21">
+   <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #6b7785" transform="translate(6.84 344.27952)">Source: CSCMP/Kearney State of Logistics 2026; FMC detention &amp; demurrage data (Apr 2020-Mar 2025); ATRI (Sep 2024); SAM/TAM: research/05-market-size.md + model.</text>
+   <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #6b7785" transform="translate(6.84 353.161543)">Full list: business/data-and-sources.md</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p543af6225b">
+   <rect x="205.2" y="36" width="458.28" height="234"/>
+  </clipPath>
+ </defs>
+</svg>
