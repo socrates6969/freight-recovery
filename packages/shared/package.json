@@ -44,6 +44,11 @@
       "source": "./src/fuel/index.ts",
       "default": "./dist/fuel/index.js"
     },
+    "./audit-agents": {
+      "types": "./dist/audit-agents/index.d.ts",
+      "source": "./src/audit-agents/index.ts",
+      "default": "./dist/audit-agents/index.js"
+    },
     "./outlook": {
       "types": "./dist/outlook/index.d.ts",
       "source": "./src/outlook/index.ts",
