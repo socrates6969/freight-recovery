@@ -3,7 +3,7 @@
 <div class="container narrow">
 <p class="eyebrow">The agent team</p>
 <h1>Six agents, one invoice, every line</h1>
-<p class="lead">The team checks carrier freight invoices against the shipper's contract and tariff and flags overcharges. Deterministic code does all money math; language-model agents only do judgment: reading free text, mapping an unfamiliar charge name, a stricter second opinion and the wording of the claim letter. The deterministic path runs complete without any model.</p>
+<p class="lead">The team checks carrier freight invoices against the shipper's contract and tariff and flags overcharges. Deterministic code does all money math. A language model is optional and narrow: it reads free text no parser accepts, hints at a code for an unfamiliar charge, can send a confirmed finding to human review, and picks a fixed letter template. No model answer can authorize a charge, reject or remove a finding, or add its own words to a claim. The deterministic path runs complete without any model.</p>
 <p class="draft">Status, plainly: the browser app runs the core checks, the evidence packet and the DRAFT letter today, on your device, from figures you enter. The six-agent team is built and unit-tested in the repository but not yet connected to the app or the team workspace. Its test figures below are on synthetic invoices, not real ones.</p>
 <p class="actions"><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/#calculator">Try the detention example</a></p>
 </div>
@@ -26,7 +26,7 @@
 <div class="io"><div><h3>Input</h3><p>The normalized invoice and the shipper's contracts, tariffs, fuel tables and diesel index.</p></div><div><h3>Output</h3><p>The applied terms: lane rate, fuel, accessorial schedule, detention, reweigh rule and claim deadline.</p></div></div>
 <ul><li>Contract by carrier and effective dates; lane by origin, destination and mode.</li>
 <li>Claim deadline: the invoice date plus the contract's claim window.</li>
-<li>A model may map a charge name that matches no schedule entry, but may answer only a code from the schedule, or nothing.</li>
+<li>For a charge name that matches no schedule entry, a model may suggest a code from the schedule, or nothing. The hint is advisory: the line is still reported as not in the contract schedule, goes to human review and never counts as authorized.</li>
 <li>Today in the browser app: the rate confirmation terms you enter, public carrier tariff presets for ocean D&amp;D, and Recall's 256 public tariff charge names for unfamiliar charges.</li></ul>
 </div></article>
 
@@ -65,7 +65,7 @@
 <ul><li>Billed minus expected equals the amount in dispute; the cited lines and clauses exist; the rule's preconditions still hold.</li>
 <li>No line is claimed twice, and a finding past its claim deadline is rejected.</li>
 <li>Review-only and low-confidence findings are never confirmed automatically.</li>
-<li>A model second opinion can only make a verdict stricter, never looser.</li>
+<li>A model second opinion looks at confirmed findings only, from neutral facts (rule, amounts, line numbers, schedule codes), never carrier text. It can at most move a finding to human review; it cannot reject or remove one.</li>
 <li>In the app today: confirmed findings are kept apart from items that need a person, and only confirmed ones are totalled.</li></ul>
 </div></article>
 
@@ -73,7 +73,7 @@
 <h2>Claim</h2><p class="tag live">Live in the browser app</p>
 <p>Drafts the dispute from confirmed findings only, listing billed, expected and basis for each, the total and the deadline.</p>
 <ul><li>Every draft carries the banner: DRAFT, for human review, not sent, not legal advice.</li>
-<li>A model may word the opening paragraph; it is thrown away if it contains any digit, so no model text can state an amount.</li>
+<li>The model only picks one of three fixed opening templates by id; it writes no letter text and sees no carrier text.</li>
 <li>In the app today: the DRAFT letter built from your confirmed findings, downloaded on your device.</li></ul>
 </div></article>
 </div>
@@ -116,8 +116,8 @@
 <ul class="why">
 <li><h3 data-k="RULE 1">Code does all money math</h3><p>No model output is used as money. Amounts come from versioned, readable rules with exact decimal arithmetic.</p></li>
 <li><h3 data-k="RULE 2">Confirmed or not claimed</h3><p>Only findings the reviewer confirms reach the claim; everything else waits for a person.</p></li>
-<li><h3 data-k="RULE 3">Stricter, never looser</h3><p>A model second opinion can reject or downgrade a finding, never raise one.</p></li>
-<li><h3 data-k="RULE 4">Untrusted documents</h3><p>Invoice and document text is fenced as untrusted data in every model prompt.</p></li>
+<li><h3 data-k="RULE 3">A model can only add caution</h3><p>A model hint never authorizes a charge, and a model second opinion can at most send a finding to a person; it cannot confirm, reject or remove one.</p></li>
+<li><h3 data-k="RULE 4">Untrusted documents</h3><p>Invoice and document text is fenced as untrusted data in every model prompt; the reviewer and claim models see no carrier text at all, and adversarial carrier text is part of the tests.</p></li>
 <li><h3 data-k="RULE 5">A person approves</h3><p>Nothing is sent, short-paid or disputed by the software, and no money moves through it.</p></li>
 <li><h3 data-k="RULE 6">Measured, and labelled</h3><p>Every published figure says what it was measured on; synthetic results are never presented as real-world results.</p></li>
 </ul>
