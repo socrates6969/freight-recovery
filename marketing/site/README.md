@@ -50,7 +50,12 @@ build), and a `git log` fallback is not used because the Pages workflow checks o
 ## What is on the site
 
 Launch positioning (owner decision of 2026-10-19): scoup.ai is the product, and the product is the browser app.
-Home leads with "Check freight invoices in your browser." and its primary call to action opens `/app/`; then
+Home leads with "Check freight invoices in your browser." and its primary call to action opens `/app/`, above an
+animated, CSS-only console in which the synthetic load LD-5001 moves through the five audit agents (intake, contract and
+tariff lookup, re-rating and checks, evidence and drafting, reviewer, each with a status label), hover cards for the
+agents, a no-script detention example (radio inputs and `:has()`), the business model and a numbered sources list. The
+Agents page (`/agents/`) covers each agent step by step. The site is dark-only, so the header and footer use the
+on-dark lockup. Then
 Product (every rule of the three tools, and the team workspace prototype), How it works (worked synthetic example
 LD-5001, the same one the app loads), Pricing (browser tools free; team workspace by early-access request),
 Security and privacy (what runs where, limits, prototype controls), About, Contact, and indexable Privacy, Terms and

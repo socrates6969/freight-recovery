@@ -1,109 +1,222 @@
-<!--meta {"title":"Check freight invoices in your browser","description":"Free browser-based checks of accessorial, detention and ocean D&D invoices against the rate confirmation, tariff and FMC billing rule. Nothing is uploaded.","path":"/","updated":"2026-10-20","faq":[["Is it free?","Yes. The browser tools are free to use, with no account and no sign-up. A hosted team workspace is a prototype and is not offered yet."],["Where does my data go?","Nowhere. The app runs in your browser, makes no network requests after it loads, sets no cookies and keeps nothing after you close the page. Downloads are created on your device."],["What does it check?","Accessorial and detention lines on carrier and broker invoices against the rate confirmation; ocean demurrage and detention invoices against 46 CFR Part 541 and public carrier tariffs; and charge names across carriers. Every finding shows its arithmetic."],["Does it tell me what I owe?","No. It applies fixed, published rules to the figures you enter and lists findings for a person to review. Whether a charge is owed depends on your contract and the facts; confirm with counsel or your customs broker."],["Can it read my PDFs?","Not in the browser tools: you type or paste the figures, or import a CSV for ocean D&D invoices. Document parsing is part of the team workspace prototype."],["Is there a team version?","A hosted workspace with saved claims, document import, four-eyes approval and accounting reference data exists as a prototype. It is not offered yet; contact us for early access."],["Is this legal advice?","No. The rules, sources and arithmetic are shown so you and your counsel can decide."],["Who is behind it?","See the About page."]]} -->
+<!--meta {"title":"Check freight invoices in your browser","description":"Five audit agents check accessorial, detention and ocean D&D invoices against the rate confirmation, tariff and FMC rule, in your browser. Nothing is uploaded.","path":"/","updated":"2026-10-22","faq":[["Is it free?","Yes. The browser tools are free to use, with no account and no sign-up. A hosted team workspace is a prototype and is not offered yet."],["Where does my data go?","Nowhere. The app runs in your browser, makes no network requests after it loads, sets no cookies and keeps nothing after you close the page. Downloads are created on your device."],["What are the agents?","Five stages with one job each: intake, contract and tariff lookup, re-rating and audit checks, evidence and claim drafting, and a reviewer. The checks, the arithmetic and the packet run today in the browser app as fixed rules; reading documents and the independent reviewer are in development."],["What does it check?","Accessorial and detention lines on carrier and broker invoices against the rate confirmation; ocean demurrage and detention invoices against 46 CFR Part 541 and public carrier tariffs; and charge names across carriers. Every finding shows its arithmetic."],["Does it tell me what I owe?","No. It applies fixed, published rules to the figures you enter and lists findings for a person to review. Whether a charge is owed depends on your contract and the facts; confirm with counsel or your customs broker."],["How does the money come back?","You send the dispute, not the app. The carrier then corrects the invoice, issues a credit or refunds, or you pay only the undisputed amount where your contract allows it. The app drafts the letter and the evidence; a person decides and sends."],["Is this legal advice?","No. The rules, sources and arithmetic are shown so you and your counsel can decide."],["Who is behind it?","See the About page."]]} -->
 
-<section class="band hero">
-<div class="container hero-inner">
+<section class="hero">
+<div class="container">
+<div class="hero-inner">
 <p class="pill">Free, no account, runs in your browser</p>
-<h1>Check freight invoices in your browser. <span class="hl">Nothing uploaded.</span></h1>
-<p class="lead">scoup.ai compares every accessorial and detention line with the rate confirmation that should have authorized it, audits ocean demurrage and detention invoices against 46 CFR Part 541 and the carrier's tariff, and shows each step of the arithmetic. It runs entirely in your browser: nothing you enter is uploaded, stored or sent to anyone.</p>
-<p class="actions"><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/how-it-works/">See how it works</a></p>
-<p class="draft">Free, no account. The checks are fixed rules on the figures you enter; the findings are drafts for a person to review, not a decision about what is owed and not legal advice.</p>
-<div class="preview" role="figure" aria-label="What a check looks like: the synthetic example load LD-5001">
-<div class="preview-head"><span class="preview-title">Freight invoice check</span><span class="preview-tag">Synthetic example, load LD-5001</span></div>
-<ul class="preview-lines">
-<li><span class="preview-name">Linehaul</span><span class="preview-amount">$1,500.00</span><span class="flag over">$100.00 over the agreed $1,400.00</span></li>
-<li><span class="preview-name">Fuel surcharge</span><span class="preview-amount">$168.00</span><span class="flag ok">matches the rate confirmation</span></li>
-<li><span class="preview-name">Detention</span><span class="preview-amount">$300.00</span><span class="flag over">$225.00 over 1 h 30 min at $50.00 per hour</span></li>
-<li><span class="preview-name">Lumper</span><span class="preview-amount">$150.00</span><span class="flag review">not authorized; needs human review</span></li>
-</ul>
-<div class="preview-foot"><span>Confirmed findings, pre-review estimate</span><strong class="preview-total">$325.00</strong></div>
+<h1>Check freight invoices in your browser. <span class="hl">Five agents, every line, nothing uploaded.</span></h1>
+<p class="lead">scoup.ai splits a freight audit into five agents with one job each: read the invoice, find the agreed terms, re-rate every line against the rate confirmation or the ocean tariff, build the evidence and check every flag. The checks run on your device: nothing you enter is uploaded, stored or sent to anyone.</p>
+<p class="actions"><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/agents/">Meet the agents</a></p>
+<p class="draft">The findings are drafts for a person to review, not a decision about what is owed and not legal advice. Status labels below say what runs in the browser app today and what is still being built.</p>
 </div>
-</div>
-</section>
 
-<section>
-<div class="container">
-<h2 class="center">Three tools, one evidence trail</h2>
-<div class="grid">
-<div class="card">
-<h3>Freight invoice check</h3>
-<p class="tag live">Live in the browser app</p>
-<p>Enter the invoice lines, the rate confirmation terms and the time records. The rules flag linehaul and fuel lines that differ from the agreed rate, accessorials the rate confirmation never authorized, duplicate lines, a total that does not add up, and detention billed above or below what the free time, hourly rate and cap allow.</p>
-<a class="more" href="/platform/#freight-check">The rules, one by one</a>
-</div>
-<div class="card">
-<h3>Ocean D&amp;D audit</h3>
-<p class="tag live">Live in the browser app</p>
-<p>Enter a demurrage or detention invoice, or import a CSV. Eight checks cover the content 46 CFR 541.6 requires, the 30-day issuance rule in 541.7, the invoice arithmetic, and a recomputation against a public carrier tariff you choose, with the clause quoted next to each finding.</p>
-<a class="more" href="/platform/#ocean-dd">The eight checks</a>
-</div>
-<div class="card">
-<h3>Charge names</h3>
-<p class="tag live">Live in the browser app</p>
-<p>Paste the charge names from your invoices and see how each is classed by the fixed rules and which public tariff charge name it most resembles, so a charge under an unfamiliar name is not skipped.</p>
-<a class="more" href="/platform/#charge-names">How names are matched</a>
-</div>
-</div>
-</div>
-</section>
-
-<section class="surface">
-<div class="container">
-<div class="two-col">
-<div>
-<h2>How it works</h2>
-<p class="lead">Three inputs, fixed rules, findings with their arithmetic, and two files you download. The whole path runs on your device.</p>
-<p><a class="more" href="/how-it-works/">The worked example, step by step</a></p>
-</div>
-<svg class="diagram" viewBox="0 0 360 384" role="img" aria-labelledby="df-title">
-<title id="df-title">Data flow: the invoice, the rate confirmation and the time records go into fixed rules on your device; the rules produce findings with their arithmetic; the findings become an evidence packet and a draft letter</title>
-<defs><marker id="df-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="dg-fill"/></marker></defs>
-<rect x="4" y="4" width="108" height="56" rx="10" class="dg-box"/><text x="58" y="37" text-anchor="middle" class="dg-text">Invoice</text>
-<rect x="126" y="4" width="108" height="56" rx="10" class="dg-box"/><text x="180" y="29" text-anchor="middle" class="dg-text">Rate</text><text x="180" y="47" text-anchor="middle" class="dg-text">confirmation</text>
-<rect x="248" y="4" width="108" height="56" rx="10" class="dg-box"/><text x="302" y="29" text-anchor="middle" class="dg-text">Time</text><text x="302" y="47" text-anchor="middle" class="dg-text">records</text>
-<path d="M58 62v22M180 62v22M302 62v22M58 84h244" class="dg-line dash"/>
-<path d="M180 84v26" class="dg-line dash" marker-end="url(#df-arrow)"/>
-<rect x="50" y="112" width="260" height="64" rx="10" class="dg-box accent"/>
-<text x="180" y="138" text-anchor="middle" class="dg-text">Fixed rules</text>
-<text x="180" y="158" text-anchor="middle" class="dg-small">exact decimal arithmetic, on your device</text>
-<path d="M180 178v28" class="dg-line dash" marker-end="url(#df-arrow)"/>
-<rect x="50" y="208" width="260" height="64" rx="10" class="dg-box"/>
-<text x="180" y="234" text-anchor="middle" class="dg-text">Findings, each with its calculation</text>
-<text x="180" y="254" text-anchor="middle" class="dg-small">confirmed, or needs human review</text>
-<path d="M180 274v18M90 292h180" class="dg-line dash"/>
-<path d="M90 292v24" class="dg-line dash" marker-end="url(#df-arrow)"/>
-<path d="M270 292v24" class="dg-line dash" marker-end="url(#df-arrow)"/>
-<rect x="20" y="318" width="140" height="56" rx="10" class="dg-box soft"/>
-<text x="90" y="342" text-anchor="middle" class="dg-text">Evidence packet</text>
-<text x="90" y="361" text-anchor="middle" class="dg-small">Markdown and JSON</text>
-<rect x="200" y="318" width="140" height="56" rx="10" class="dg-box soft"/>
-<text x="270" y="342" text-anchor="middle" class="dg-text">Draft letter</text>
-<text x="270" y="361" text-anchor="middle" class="dg-small">DRAFT, never sent</text>
+<div class="agents-wrap">
+<figure class="console" aria-labelledby="console-cap">
+<div class="console-bar"><span class="dots" aria-hidden="true"><i></i><i></i><i></i></span><span class="run">agent run</span><span>invoice LD-5001</span><span class="note">synthetic example</span></div>
+<div class="console-body">
+<svg class="pl pl-h" viewBox="0 0 1000 300" role="img" aria-labelledby="plh-t plh-d">
+<title id="plh-t">One invoice moving through the five scoup.ai agents</title>
+<desc id="plh-d">The synthetic invoice LD-5001 moves from left to right through intake, contract and tariff lookup, re-rating and audit checks, evidence and claim drafting, and the reviewer. At the checks two lines turn red as overcharges, the fuel line turns teal as a match and the lumper line turns amber for human review; a packet is added and the reviewer stamps the result.</desc>
+<path class="pl-rail" d="M40 200H960"/>
+<path class="pl-flow" d="M40 200H960"/>
+<g class="pl-node n1"><circle class="pl-halo" cx="100" cy="200" r="46"/><circle class="pl-ring" cx="100" cy="200" r="28"/><text class="pl-num" x="100" y="205" text-anchor="middle">01</text><text class="pl-name" x="100" y="258" text-anchor="middle">Intake</text><text class="pl-role" x="100" y="279" text-anchor="middle">reads the documents</text></g>
+<g class="pl-node n2"><circle class="pl-halo" cx="300" cy="200" r="46"/><circle class="pl-ring" cx="300" cy="200" r="28"/><text class="pl-num" x="300" y="205" text-anchor="middle">02</text><text class="pl-name" x="300" y="258" text-anchor="middle">Contract &amp; tariff</text><text class="pl-role" x="300" y="279" text-anchor="middle">finds the agreed terms</text></g>
+<g class="pl-node n3"><circle class="pl-halo" cx="500" cy="200" r="46"/><circle class="pl-ring" cx="500" cy="200" r="28"/><text class="pl-num" x="500" y="205" text-anchor="middle">03</text><text class="pl-name" x="500" y="258" text-anchor="middle">Re-rating &amp; checks</text><text class="pl-role" x="500" y="279" text-anchor="middle">recomputes every line</text></g>
+<g class="pl-node n4"><circle class="pl-halo" cx="700" cy="200" r="46"/><circle class="pl-ring" cx="700" cy="200" r="28"/><text class="pl-num" x="700" y="205" text-anchor="middle">04</text><text class="pl-name" x="700" y="258" text-anchor="middle">Evidence &amp; draft</text><text class="pl-role" x="700" y="279" text-anchor="middle">builds the packet</text></g>
+<g class="pl-node n5"><circle class="pl-halo" cx="900" cy="200" r="46"/><circle class="pl-ring" cx="900" cy="200" r="28"/><text class="pl-num" x="900" y="205" text-anchor="middle">05</text><text class="pl-name" x="900" y="258" text-anchor="middle">Reviewer</text><text class="pl-role" x="900" y="279" text-anchor="middle">verifies every flag</text></g>
+<g class="pl-token" transform="translate(854 18)">
+<rect class="tk-shadow" x="5" y="7" width="92" height="112" rx="8"/>
+<rect class="tk-doc" width="92" height="112" rx="8"/>
+<path class="tk-head" d="M8 0H84A8 8 0 0 1 92 8V22H0V8A8 8 0 0 1 8 0Z"/>
+<text class="tk-txt" x="8" y="15">INVOICE</text>
+<rect class="tk-l over" x="8" y="32" width="76" height="9" rx="2"/>
+<rect class="tk-l ok" x="8" y="49" width="60" height="9" rx="2"/>
+<rect class="tk-l over" x="8" y="66" width="70" height="9" rx="2"/>
+<rect class="tk-l rev" x="8" y="83" width="52" height="9" rx="2"/>
+<rect class="tk-pkt" x="8" y="99" width="30" height="8" rx="2"/>
+<g class="tk-stamp"><circle cx="84" cy="104" r="17"/><path class="tk-tick" d="M76 104l6 6 10-12"/></g>
+</g>
+</svg><svg class="pl pl-v" viewBox="0 0 262 660" role="img" aria-labelledby="plv-t">
+<title id="plv-t">One invoice moving through the five scoup.ai agents: intake, contract and tariff lookup, re-rating and audit checks, evidence and claim drafting, and the reviewer</title>
+<path class="pl-rail" d="M50 24V636"/>
+<path class="pl-flow" d="M50 24V636"/>
+<g class="pl-dot-g" transform="translate(0 590)"><circle class="pl-dot-glow" cx="50" cy="0" r="15"/><circle class="pl-dot" cx="50" cy="0" r="6"/></g>
+<g class="pl-node n1"><circle class="pl-halo" cx="50" cy="70" r="40"/><circle class="pl-ring" cx="50" cy="70" r="26"/><text class="pl-num" x="50" y="75" text-anchor="middle">01</text><text class="pl-name" x="96" y="66">Intake</text><text class="pl-role" x="96" y="86">reads the documents</text></g>
+<g class="pl-node n2"><circle class="pl-halo" cx="50" cy="200" r="40"/><circle class="pl-ring" cx="50" cy="200" r="26"/><text class="pl-num" x="50" y="205" text-anchor="middle">02</text><text class="pl-name" x="96" y="196">Contract &amp; tariff</text><text class="pl-role" x="96" y="216">finds the agreed terms</text></g>
+<g class="pl-node n3"><circle class="pl-halo" cx="50" cy="330" r="40"/><circle class="pl-ring" cx="50" cy="330" r="26"/><text class="pl-num" x="50" y="335" text-anchor="middle">03</text><text class="pl-name" x="96" y="326">Re-rating &amp; checks</text><text class="pl-role" x="96" y="346">recomputes every line</text></g>
+<g class="pl-node n4"><circle class="pl-halo" cx="50" cy="460" r="40"/><circle class="pl-ring" cx="50" cy="460" r="26"/><text class="pl-num" x="50" y="465" text-anchor="middle">04</text><text class="pl-name" x="96" y="456">Evidence &amp; draft</text><text class="pl-role" x="96" y="476">builds the packet</text></g>
+<g class="pl-node n5"><circle class="pl-halo" cx="50" cy="590" r="40"/><circle class="pl-ring" cx="50" cy="590" r="26"/><text class="pl-num" x="50" y="595" text-anchor="middle">05</text><text class="pl-name" x="96" y="586">Reviewer</text><text class="pl-role" x="96" y="606">verifies every flag</text></g>
 </svg>
+<ol class="log" aria-label="Run log">
+<li><b>01 Intake</b> read 4 invoice lines, the rate confirmation and the gate times</li>
+<li><b>02 Contract &amp; tariff</b> found the terms: linehaul $1,400.00, fuel $168.00, 2 free hours then $50.00 per hour, detention the only authorized accessorial</li>
+<li><b>03 Re-rating &amp; checks</b> <span class="c-over">linehaul $100.00 over</span>; <span class="c-ok">fuel matches</span>; <span class="c-over">detention $225.00 over</span>; <span class="c-rev">lumper not authorized</span></li>
+<li><b>04 Evidence &amp; draft</b> assembled the packet with every calculation and a DRAFT dispute letter</li>
+<li><b>05 Reviewer</b> traced each flag to an invoice line and a contract term, then handed it to a person</li>
+</ol>
+<div class="results">
+<p class="result r-over"><strong class="num">$325.00</strong><span>confirmed overcharges flagged, pre-review estimate</span></p>
+<p class="result r-rev"><strong class="num">1 line</strong><span>sent to human review: lumper $150.00, never totalled</span></p>
+<p class="result r-ok"><strong>DRAFT</strong><span>dispute letter waiting for your approval; nothing is sent</span></p>
+</div>
+</div>
+<figcaption class="console-foot" id="console-cap">Synthetic load LD-5001, the example the app loads. In today's browser app you enter the figures and fixed rules do steps 02 to 04 on your device; reading documents (01) and the independent reviewer (05) are in development.</figcaption>
+</figure>
+
+<div class="section-head agents-head" id="agents">
+<p class="eyebrow">The agent team</p>
+<h2>Five agents, one job each</h2>
+<p class="lead">Each agent has a narrow input, a narrow output and its own tests. Language models read and draft; fixed code decides every amount.</p>
+<p class="hover-hint">Hover or tab through a card for its full checklist; its node lights up in the run above.</p>
+</div>
+<ul class="agents">
+<li class="agent" data-n="1"><span class="agent-num">01</span><h3>Intake</h3><p class="tag plan">In development</p><p>Reads the carrier invoice, the rate confirmation and the bill of lading or gate record and turns them into structured lines.</p>
+<ul class="agent-more"><li>Today: you type or paste the figures, or import a CSV for ocean D&amp;D</li><li>Workspace prototype: PDF text and CSV parsed in an isolated worker, every field confirmed by a person</li><li>Planned: each value carries a pointer to its page and span</li></ul>
+<a class="more" href="/agents/#intake">Intake in detail</a></li>
+<li class="agent" data-n="2"><span class="agent-num">02</span><h3>Contract &amp; tariff</h3><p class="tag live">Live in the browser app</p><p>Finds the terms that should govern each charge: the rate confirmation for truckload, the carrier tariff and 46 CFR Part 541 for ocean D&amp;D.</p>
+<ul class="agent-more"><li>Linehaul, fuel, free time, hourly rate and cap, authorized accessorials</li><li>Public carrier tariff presets to recompute ocean charges</li><li>256 public tariff charge names to recognise unfamiliar charges</li></ul>
+<a class="more" href="/agents/#lookup">Lookup in detail</a></li>
+<li class="agent" data-n="3"><span class="agent-num">03</span><h3>Re-rating &amp; checks</h3><p class="tag live">Live in the browser app</p><p>Recomputes every line with exact decimal arithmetic and flags what differs from the agreed terms.</p>
+<ul class="agent-more"><li>Duplicate lines and invoice totals that do not add up</li><li>Linehaul and fuel surcharge against the rate confirmation</li><li>Accessorials the rate confirmation never authorized</li><li>Detention recomputed from the gate times; eight ocean D&amp;D checks</li><li>Weight and freight-class re-rating: planned, not built</li></ul>
+<a class="more" href="/agents/#checks">Every check</a></li>
+<li class="agent" data-n="4"><span class="agent-num">04</span><h3>Evidence &amp; draft</h3><p class="tag live">Live in the browser app</p><p>Puts each finding, its arithmetic and the governing term into an evidence packet and drafts the dispute letter.</p>
+<ul class="agent-more"><li>Evidence packet (Markdown) and findings file (JSON)</li><li>Letter marked DRAFT, never sent by the app</li><li>For ocean invoices, the clause quoted next to each finding</li></ul>
+<a class="more" href="/agents/#evidence">Evidence in detail</a></li>
+<li class="agent" data-n="5"><span class="agent-num">05</span><h3>Reviewer</h3><p class="tag plan">In development</p><p>Checks every flag before it is reported: no source, no claim. It is being built apart from the drafter so one mistake cannot pass both.</p>
+<ul class="agent-more"><li>Today: confirmed findings are kept apart from items that need a person</li><li>Workspace prototype: four-eyes approval before any letter leaves</li><li>Planned: every sentence traced to a source span or blocked</li></ul>
+<a class="more" href="/agents/#reviewer">Reviewer in detail</a></li>
+</ul>
+</div>
+</div>
+</section>
+
+<section class="surface" id="problem">
+<div class="container">
+<div class="section-head">
+<p class="eyebrow">The problem</p>
+<h2>Freight invoices drift from what was agreed</h2>
+<p class="lead">A rate is agreed on the rate confirmation; the invoice arrives later with a higher linehaul, an accessorial nobody authorized, or detention billed for more hours than the gate record shows. Checking every line by hand against the paperwork takes longer than most teams have, so many invoices are paid as billed.</p>
+</div>
+<ul class="stats">
+<li><span class="stat-num coral num">$15.1B</span><p>cost of truck driver detention to the US trucking industry in 2023: $3.6B in direct expenses and $11.5B in lost productivity (ATRI). This is the cost of waiting, mostly lost time, not money anyone can claim back.</p></li>
+<li><span class="stat-num amber num">39.3%</span><p>of stops in 2023 where drivers reported being detained (ATRI)</p></li>
+<li><span class="stat-num v2 num">&lt;50%</span><p>of detention invoices paid, although 94.5% of fleets charge detention fees (ATRI). Disputes on both sides need evidence.</p></li>
+</ul>
+<p class="muted">Audit vendors publish invoice error rates, but they sell audits and rarely show their method, so we do not quote them. scoup.ai publishes no figure for how much it finds, because none has been measured on real customer invoices.</p>
+<p class="source">Source: American Transportation Research Institute, "New Research Documents Substantial Financial and Safety Impacts from Truck Driver Detention", 2024-09-10, https://truckingresearch.org/2024/09/new-research-documents-substantial-financial-and-safety-impacts-from-truck-driver-detention/, accessed 2026-10-22.</p>
+</div>
+</section>
+<section id="recovery">
+<div class="container">
+<div class="section-head">
+<p class="eyebrow">Audit and recovery</p>
+<h2>How an overcharge turns back into money</h2>
+<p class="lead">The agents find and document; a person decides and sends. The money comes back through the ordinary billing process, not through us: we never touch payments.</p>
 </div>
 <ol class="steps">
-<li><strong>Enter the figures.</strong> Type or paste them from the invoice, the rate confirmation and the bill of lading or gate record. A synthetic example is one click away if you want to see the output first.</li>
-<li><strong>The rules run on your device.</strong> Exact decimal arithmetic, fixed rule settings and public regulation text; no model decides an amount.</li>
-<li><strong>Review the findings.</strong> Confirmed findings are separated from items that need a person's judgement; each shows its calculation and, for ocean invoices, the cited values and the clause.</li>
-<li><strong>Download the packet and the draft letter.</strong> Markdown and JSON files are created in your browser. The letter is marked DRAFT and is never sent by the app.</li>
+<li><strong>Check every line.</strong> The agents compare each invoice line with the rate confirmation, the tariff and the gate times, and split confirmed overcharges from items that need judgement.</li>
+<li><strong>Build the case.</strong> Each finding gets its arithmetic, the governing term and the invoice values it rests on, in a packet you can check by hand, plus a DRAFT dispute letter.</li>
+<li><strong>You approve and send.</strong> Nothing leaves without a person. You send the dispute to the carrier or broker, or pay only the undisputed amount where your contract allows it.</li>
+<li><strong>The invoice is corrected.</strong> The carrier issues a corrected invoice, a credit or a refund. For ocean D&amp;D the billed party has at least 30 days from issuance to request mitigation, refund or waiver; confirm with counsel or your customs broker.</li>
 </ol>
 </div>
 </section>
 
-<section>
+<section class="surface" id="calculator">
 <div class="container">
-<h2>Built for the people who pay the invoices</h2>
-<ul class="grid">
-<li><strong>Shippers and brokers:</strong> transportation, logistics and AP teams checking carrier and broker invoices against the rate confirmation before paying or short-paying.</li>
-<li><strong>Importers and exporters:</strong> logistics managers checking container demurrage and detention invoices against the FMC billing rule and the carrier tariff within the dispute window the invoice allows.</li>
-<li><strong>Carriers:</strong> the same freight check, run from the carrier's side, lists detention and accessorials that were under-billed.</li>
-</ul>
+<div class="section-head">
+<p class="eyebrow">Try it</p>
+<h2>An illustrative detention check</h2>
+<p class="lead">Example inputs only: pick when the truck left the dock and see how the re-rating agent recomputes the detention line. The real app takes your own figures.</p>
+</div>
+<div class="calc">
+<fieldset>
+<legend>Example inputs</legend>
+<p class="calc-fixed">Rate confirmation: <b>2 free hours</b>, then <b>$50.00 per hour</b>, billed in 15-minute steps rounded down, cap 8 hours. Appointment <b>08:00</b>, truck arrived <b>07:45</b>, so the clock starts at 08:00. The invoice bills detention of <b>$300.00</b>.</p>
+<p class="muted">When did the truck leave?</p>
+<div class="seg">
+<input class="calc-r" type="radio" name="dep" id="dep-1"><label for="dep-1"><b>10:30</b><span>2 h 30 min on site</span></label>
+<input class="calc-r" type="radio" name="dep" id="dep-2" checked><label for="dep-2"><b>11:30</b><span>3 h 30 min, as in LD-5001</span></label>
+<input class="calc-r" type="radio" name="dep" id="dep-3"><label for="dep-3"><b>13:10</b><span>5 h 10 min on site</span></label>
+<input class="calc-r" type="radio" name="dep" id="dep-4"><label for="dep-4"><b>17:00</b><span>9 h on site</span></label>
+</div>
+</fieldset>
+<div class="calc-out">
+<div class="res res-1">
+<p class="res-title">Recomputed detention</p>
+<ul class="math"><li><span>Time on site from 08:00</span><span>2 h 30 min</span></li><li><span>minus 2 free hours</span><span>0 h 30 min</span></li><li><span>rounded down to 15 minutes</span><span>0 h 30 min</span></li><li><span>times $50.00 per hour</span><span>$25.00</span></li><li><span>invoice bills</span><span>$300.00</span></li></ul>
+<div class="bars" aria-hidden="true"><div class="bar"><i class="free"></i><i class="ok w5"></i></div><div class="bar"><i class="free"></i><i class="billed"></i></div><div class="bar-key"><span class="k-free">free time</span><span class="k-ok">allowed 0.5 h</span><span class="k-billed">billed 6 h</span></div></div>
+<p class="verdict"><span>Over-billed by</span><strong class="num">$275.00</strong></p>
+<p class="muted">A confirmed finding: it goes into the packet with these steps, and into the DRAFT letter.</p>
+</div>
+<div class="res res-2">
+<p class="res-title">Recomputed detention</p>
+<ul class="math"><li><span>Time on site from 08:00</span><span>3 h 30 min</span></li><li><span>minus 2 free hours</span><span>1 h 30 min</span></li><li><span>rounded down to 15 minutes</span><span>1 h 30 min</span></li><li><span>times $50.00 per hour</span><span>$75.00</span></li><li><span>invoice bills</span><span>$300.00</span></li></ul>
+<div class="bars" aria-hidden="true"><div class="bar"><i class="free"></i><i class="ok w15"></i></div><div class="bar"><i class="free"></i><i class="billed"></i></div><div class="bar-key"><span class="k-free">free time</span><span class="k-ok">allowed 1.5 h</span><span class="k-billed">billed 6 h</span></div></div>
+<p class="verdict"><span>Over-billed by</span><strong class="num">$225.00</strong></p>
+<p class="muted">The detention finding in the synthetic example LD-5001. With the $100.00 linehaul overcharge it makes the $325.00 pre-review estimate.</p>
+</div>
+<div class="res res-3">
+<p class="res-title">Recomputed detention</p>
+<ul class="math"><li><span>Time on site from 08:00</span><span>5 h 10 min</span></li><li><span>minus 2 free hours</span><span>3 h 10 min</span></li><li><span>rounded down to 15 minutes</span><span>3 h 00 min</span></li><li><span>times $50.00 per hour</span><span>$150.00</span></li><li><span>invoice bills</span><span>$300.00</span></li></ul>
+<div class="bars" aria-hidden="true"><div class="bar"><i class="free"></i><i class="ok w30"></i></div><div class="bar"><i class="free"></i><i class="billed"></i></div><div class="bar-key"><span class="k-free">free time</span><span class="k-ok">allowed 3 h</span><span class="k-billed">billed 6 h</span></div></div>
+<p class="verdict"><span>Over-billed by</span><strong class="num">$150.00</strong></p>
+<p class="muted">The 10 minutes past 3 hours are not billable: the rate confirmation bills in whole 15-minute steps.</p>
+</div>
+<div class="res res-4">
+<p class="res-title">Recomputed detention</p>
+<ul class="math"><li><span>Time on site from 08:00</span><span>9 h 00 min</span></li><li><span>minus 2 free hours</span><span>7 h 00 min</span></li><li><span>within the 8-hour cap</span><span>7 h 00 min</span></li><li><span>times $50.00 per hour</span><span>$350.00</span></li><li><span>invoice bills</span><span>$300.00</span></li></ul>
+<div class="bars" aria-hidden="true"><div class="bar"><i class="free"></i><i class="ok w70"></i></div><div class="bar"><i class="free"></i><i class="billed"></i></div><div class="bar-key"><span class="k-free">free time</span><span class="k-ok">allowed 7 h</span><span class="k-billed">billed 6 h</span></div></div>
+<p class="verdict under"><span>Under-billed by</span><strong class="num">$50.00</strong></p>
+<p class="muted">Checked from the shipper's side this is shown but not counted. Run from the carrier's side, the same check lists it as detention the carrier could still bill.</p>
+</div>
+</div>
+</div>
+<p class="source">Illustrative only: the rate confirmation terms and the $300.00 invoice line are from the synthetic example LD-5001, with the departure time varied; the steps follow the detention rule on the <a href="/platform/#freight-check">Product</a> page.</p>
 </div>
 </section>
 
-<section class="surface">
+<section id="why">
 <div class="container">
-<h2>scoup Labs: measured learning, not promises</h2>
-<p class="lead narrow">Recall, the charge-name suggester, keeps labelled public tariff charge names in memory and suggests the class of the nearest one, for a person to review. We measured how it improves as that memory grows, on public tariff names held out by carrier, not on invoices, and we publish what failed too.</p>
+<div class="section-head">
+<p class="eyebrow">Why agents</p>
+<h2>Why split an audit into agents</h2>
+<p class="lead">A single model asked to "audit this invoice" mixes reading, arithmetic and judgement, and fails in ways that are hard to see. Separate agents with fixed hand-offs make each step small enough to test and every result traceable.</p>
+</div>
+<ul class="why">
+<li><h3 data-k="01 / SCOPE">One job, one test suite</h3><p>Each agent has a defined input and output, so it can be tested on its own and replaced without touching the others.</p></li>
+<li><h3 data-k="02 / MONEY">Code decides every amount</h3><p>Language models read documents and draft text. Amounts and entitlement come from fixed rules with exact decimal arithmetic that you can redo by hand.</p></li>
+<li><h3 data-k="03 / PROOF">No source, no claim</h3><p>The reviewer, in development, is built apart from the drafter. A flag that cannot be traced to an invoice line and a contract term is not reported.</p></li>
+<li><h3 data-k="04 / PEOPLE">A person approves</h3><p>Findings are drafts. Items that need judgement are kept apart and never totalled, and nothing is sent by the software.</p></li>
+<li><h3 data-k="05 / COVERAGE">Every line, not a sample</h3><p>Checks that run in seconds on your device can look at every line of every invoice instead of a sample picked by hand.</p></li>
+<li><h3 data-k="06 / PRIVACY">Runs where the data is</h3><p>In the browser app the agents that exist run on your device; once the page loads, its content security policy blocks every network connection.</p></li>
+</ul>
+</div>
+</section>
+<section class="surface" id="business">
+<div class="container">
+<div class="section-head">
+<p class="eyebrow">Business model and pricing</p>
+<h2>Free today; paid only when it pays</h2>
+<p class="lead">There is no paid plan today. This is how the business plans to earn money, in order; the later phases are plans with assumed figures, not offers.</p>
+</div>
+<ol class="phases">
+<li class="now"><p class="tag live">Live in the browser app</p><h3>Browser tools: free</h3><p>No account and no limit. They cost almost nothing to run because the rules execute on your device and the pages are static files.</p></li>
+<li><p class="tag proto">Prototype, early access</p><h3>Team workspace: not priced yet</h3><p>Saved claims, document import, four-eyes approval and accounting reference data. Built and tested as a prototype; not hosted for customers.</p></li>
+<li><p class="tag plan">Planned, not offered</p><h3>Contingency first</h3><p>A share only of money a customer actually gets back, nothing otherwise. The business plan models 20%; audit firms are said to charge 15 to 30%, a vendor-stated range we have not verified.</p></li>
+<li><p class="tag plan">Planned, not offered</p><h3>Then platform fee and SaaS</h3><p>A small monthly platform fee with a lower contingency (assumed $1,000 to $2,000 a month and about 10 to 12%), then self-serve pricing on loads processed.</p></li>
+</ol>
+<p class="actions"><a class="cta secondary" href="/pricing/">Pricing and early access</a></p>
+</div>
+</section>
+
+<section id="labs">
+<div class="container">
+<div class="section-head">
+<p class="eyebrow">scoup Labs</p>
+<h2>Measured learning, not promises</h2>
+<p class="lead">Recall, the charge-name suggester behind the lookup agent, keeps labelled public tariff charge names in memory and suggests the class of the nearest one, for a person to review. We measured how it improves as that memory grows, on public tariff names held out by carrier, not on invoices, and we publish what failed too.</p>
+</div>
 <ul class="stats">
 <li><span class="stat-num">89.1%</span><p>of held-out names recognised with 146 public tariff charge names in memory, up from 36.3% with 15 (seed-v1 run)</p></li>
 <li><span class="stat-num v2">93.1%</span><p>of the same held-out names with the shipped 256-name seed, 81 public names added: 7 names gained, 0 lost</p></li>
@@ -113,67 +226,65 @@
 </div>
 </section>
 
-<section class="band">
+<section class="surface">
 <div class="container two-col">
 <div>
-<h2>Privacy by design</h2><p>The app is a static bundle served from this site. Once loaded, its content security policy forbids every network connection, so it cannot send what you enter anywhere. It sets no cookies, uses no browser storage and includes no analytics. Downloads are built on your device from the values on screen. See <a href="/security/">security and privacy</a> for the details and the limits.</p>
-<svg class="diagram" viewBox="0 0 360 236" role="img" aria-labelledby="nl-title">
-<title id="nl-title">Runs in your browser, nothing leaves: the figures you enter, the rules and the findings all stay inside the browser window; the connection to any server, including ours, is blocked after the page loads</title>
-<defs><marker id="nl-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="dg-fill"/></marker></defs>
-<rect x="4" y="4" width="228" height="228" rx="12" class="dg-box soft"/>
-<path d="M4 34h228" class="dg-person"/>
-<circle cx="20" cy="19" r="4" class="dg-fill"/><circle cx="33" cy="19" r="4" class="dg-fill"/><circle cx="46" cy="19" r="4" class="dg-fill"/>
-<text x="60" y="24" class="dg-small">Your browser</text>
-<rect x="20" y="48" width="196" height="44" rx="8" class="dg-box"/><text x="118" y="76" text-anchor="middle" class="dg-text">Figures you enter</text>
-<path d="M118 94v16" class="dg-line" marker-end="url(#nl-arrow)"/>
-<rect x="20" y="112" width="196" height="44" rx="8" class="dg-box accent"/><text x="118" y="140" text-anchor="middle" class="dg-text">Rules run here</text>
-<path d="M118 158v16" class="dg-line" marker-end="url(#nl-arrow)"/>
-<rect x="20" y="176" width="196" height="44" rx="8" class="dg-box"/><text x="118" y="195" text-anchor="middle" class="dg-text">Findings and downloads</text><text x="118" y="212" text-anchor="middle" class="dg-small">built on this device</text>
-<rect x="276" y="104" width="80" height="60" rx="10" class="dg-box"/><text x="316" y="130" text-anchor="middle" class="dg-text">Any</text><text x="316" y="148" text-anchor="middle" class="dg-text">server</text>
-<path d="M234 134h40" class="dg-line no"/>
-<circle cx="254" cy="134" r="12" class="dg-stop"/><path d="M248.5 128.5l11 11M259.5 128.5l-11 11" class="dg-stop-x"/>
-<text x="296" y="186" text-anchor="middle" class="dg-small">no network after load</text>
-</svg>
+<h2>Privacy by design</h2>
+<p>The app is a static bundle served from this site. Once loaded, its content security policy forbids every network connection, so it cannot send what you enter anywhere. It sets no cookies, uses no browser storage and includes no analytics. Downloads are built on your device from the values on screen. See <a href="/security/">security and privacy</a> for the details and the limits.</p>
 </div>
 <div>
 <h2>What it does not do</h2>
 <ul>
 <li>It does not decide whether a charge is owed, and it does not give legal advice. Contracts and facts differ; confirm with counsel or your customs broker.</li>
 <li>It does not send, short-pay or dispute anything. Letters are drafts for a person to approve.</li>
-<li>It publishes no accuracy figures, because none have been measured on real customer documents. The rules are fixed and shown, so you can check every result by hand.</li>
-<li>It does not read PDFs or connect to a TMS, ERP or accounting system. Those belong to the team workspace, which is a prototype and not offered yet.</li>
+<li>It publishes no accuracy figures, because none have been measured on real customer documents.</li>
+<li>It does not read PDFs or connect to a TMS, ERP or accounting system in the browser. Those belong to the team workspace, which is a prototype and not offered yet.</li>
 </ul>
 <a class="more" href="/workspace/">What the team workspace does, feature by feature</a>
 </div>
 </div>
 </section>
 
-<section class="surface">
+<section>
 <div class="container prose">
 <h2>Ocean D&amp;D invoices and the FMC rule</h2>
 <p>46 CFR Part 541 sets the information a demurrage or detention invoice must contain, requires issuance within 30 calendar days of the charge last incurred, and gives the billed party at least 30 calendar days from issuance to request mitigation, refund or waiver (section 541.8). Section 541.4 is reserved following a court decision. The audit surfaces these fields and dates for review; deadlines and requirements depend on the billing party and the facts, so confirm current rules and any dispute with counsel or your customs broker.</p>
-<p class="source">Sources: Electronic Code of Federal Regulations, 46 CFR Part 541, current through 2026-10-15, https://www.ecfr.gov/current/title-46/chapter-IV/subchapter-B/part-541; Federal Maritime Commission, "U.S. Court of Appeals Issues Decision in Case on Demurrage and Detention Billing Practices", https://www.fmc.gov/articles/u-s-court-of-appeals-issues-decision-in-case-on-demurrage-and-detention-billing-practices/, accessed 2026-10-19; Federal Maritime Commission, Detention and Demurrage, https://www.fmc.gov/detention-and-demurrage/, accessed 2026-10-19.</p>
 </div>
 </section>
 
 <section class="band gradient">
 <div class="container narrow center">
-<h2>Pricing</h2>
-<p class="lead">The browser tools are free, without an account or a limit on how often you use them. A hosted team workspace, with saved claims, document import, four-eyes approval and QuickBooks reference data, exists as a prototype and is not offered yet. <a href="/pricing/">Pricing and early access</a>.</p>
-<p class="actions"><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/workspace/">See the workspace</a></p>
+<h2>Run the agents on your own invoice</h2>
+<p class="lead">Free, no account, nothing uploaded. Start with the synthetic example if you want to see the output first.</p>
+<p class="actions"><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/how-it-works/">See how it works</a></p>
 </div>
 </section>
 
-<section>
+<section class="surface">
 <div class="container prose">
 <h2>Questions</h2>
 <details><summary>Is it free?</summary><p>Yes. The browser tools are free to use, with no account and no sign-up. A hosted team workspace is a prototype and is not offered yet.</p></details>
 <details><summary>Where does my data go?</summary><p>Nowhere. The app runs in your browser, makes no network requests after it loads, sets no cookies and keeps nothing after you close the page. Downloads are created on your device.</p></details>
+<details><summary>What are the agents?</summary><p>Five stages with one job each: intake, contract and tariff lookup, re-rating and audit checks, evidence and claim drafting, and a reviewer. The checks, the arithmetic and the packet run today in the browser app as fixed rules; reading documents and the independent reviewer are in development. The <a href="/agents/">Agents</a> page goes through them step by step.</p></details>
 <details><summary>What does it check?</summary><p>Accessorial and detention lines on carrier and broker invoices against the rate confirmation; ocean demurrage and detention invoices against 46 CFR Part 541 and public carrier tariffs; and charge names across carriers. Every finding shows its arithmetic. The <a href="/platform/">Product</a> page lists each rule.</p></details>
 <details><summary>Does it tell me what I owe?</summary><p>No. It applies fixed, published rules to the figures you enter and lists findings for a person to review. Whether a charge is owed depends on your contract and the facts; confirm with counsel or your customs broker.</p></details>
-<details><summary>Can it read my PDFs?</summary><p>Not in the browser tools: you type or paste the figures, or import a CSV for ocean D&amp;D invoices. Document parsing is part of the team workspace prototype.</p></details>
-<details><summary>Is there a team version?</summary><p>A hosted workspace with saved claims, document import, four-eyes approval and accounting reference data exists as a prototype. It is not offered yet; the <a href="/workspace/">Workspace</a> page lists every feature, and you can <a href="/contact/">contact us</a> for early access.</p></details>
+<details><summary>How does the money come back?</summary><p>You send the dispute, not the app. The carrier then corrects the invoice, issues a credit or refunds, or you pay only the undisputed amount where your contract allows it. The app drafts the letter and the evidence; a person decides and sends.</p></details>
 <details><summary>Is this legal advice?</summary><p>No. The rules, sources and arithmetic are shown so you and your counsel can decide.</p></details>
 <details><summary>Who is behind it?</summary><p>See the <a href="/about/">About</a> page.</p></details>
+</div>
+</section>
+
+<section id="sources">
+<div class="container prose">
+<h2>Sources</h2>
+<p class="muted">Every figure on this page comes from one of these. They are plain text because this site links to nothing outside itself.</p>
+<ol class="sources">
+<li>American Transportation Research Institute, "New Research Documents Substantial Financial and Safety Impacts from Truck Driver Detention", 2024-09-10, https://truckingresearch.org/2024/09/new-research-documents-substantial-financial-and-safety-impacts-from-truck-driver-detention/, accessed 2026-10-22: $3.6B direct expenses and $11.5B lost productivity in 2023, 39.3% of stops, 94.5% of fleets, fewer than 50% of invoices paid.</li>
+<li>Electronic Code of Federal Regulations, 46 CFR Part 541, current through 2026-10-15, https://www.ecfr.gov/current/title-46/chapter-IV/subchapter-B/part-541; Federal Maritime Commission, "U.S. Court of Appeals Issues Decision in Case on Demurrage and Detention Billing Practices", https://www.fmc.gov/articles/u-s-court-of-appeals-issues-decision-in-case-on-demurrage-and-detention-billing-practices/, accessed 2026-10-19.</li>
+<li>Synthetic load LD-5001 (invoice, rate confirmation and gate times; findings of $100.00 and $225.00, the lumper line for review, the $325.00 estimate): the example the app loads, set out on the How it works page.</li>
+<li>Agent stages and design principles (models read and draft, code decides; a verifier separate from the drafter; human approval): scoup.ai technical overview, technical/overview.md in the freight-recovery repository.</li>
+<li>Business model phases, the modelled 20% contingency, the vendor-stated 15 to 30% range and the hybrid assumptions: scoup.ai business plan, business/business-plan.md, section 4, where each is marked as an assumption.</li>
+<li>Recall figures: the scoup Labs page, from the repository's eval:curve runs (seed-v1 and seed-v2).</li>
+</ol>
 </div>
 </section>

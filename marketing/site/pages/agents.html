@@ -1,0 +1,98 @@
+<!--meta {"title":"The audit agents, step by step","description":"How the five scoup.ai agents audit a freight invoice: intake, contract and tariff lookup, re-rating and checks, evidence and drafting, and the reviewer.","path":"/agents/","crumb":"Agents","updated":"2026-10-22"} -->
+<section class="page-head">
+<div class="container narrow">
+<p class="eyebrow">The agent team</p>
+<h1>Five agents, one invoice, every line</h1>
+<p class="lead">A freight audit is split into five agents. Each has one job, a defined input and output, and its own tests; the hand-off between them is fixed. Language models read documents and draft text, fixed code decides every amount, and a person approves before anything leaves.</p>
+<p class="draft">Status, plainly: the contract and tariff lookup, the checks and the evidence packet run today in the browser app as fixed rules on your device. Reading documents and the independent reviewer are in development and not live. No accuracy figure is published, because none has been measured on real customer documents.</p>
+<p class="actions"><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/#calculator">Try the detention example</a></p>
+</div>
+</section>
+
+<section>
+<div class="container prose">
+<article class="agent-detail" id="intake"><span class="agent-num">01</span><div>
+<h2>Intake</h2><p class="tag plan">In development</p>
+<p>Turns the paperwork for one load into structured facts: the invoice lines, the rate confirmation terms, and the appointment, arrival and departure times from the bill of lading or gate record.</p>
+<div class="io"><div><h3>Input</h3><p>Carrier or broker invoice, rate confirmation, bill of lading or gate record; for ocean D&amp;D, the demurrage or detention invoice.</p></div><div><h3>Output</h3><p>Invoice lines (description, amount), contract terms and timestamps, each with where it came from.</p></div></div>
+<ul><li><strong>Today, in the browser app:</strong> you type or paste the figures, or import a CSV for an ocean D&amp;D invoice. Nothing is read automatically.</li>
+<li><strong>Team workspace prototype:</strong> PDF text, CSV and text are parsed in an isolated worker and every field is confirmed by a person.</li>
+<li><strong>Planned:</strong> a language model reads messy documents, each value carries a pointer to its page and span, and low-confidence values are flagged for a person instead of guessed.</li></ul>
+</div></article>
+
+<article class="agent-detail" id="lookup"><span class="agent-num">02</span><div>
+<h2>Contract and tariff lookup</h2><p class="tag live">Live in the browser app</p>
+<p>Finds the terms that should govern each charge, so the next agent has something to compare against.</p>
+<div class="io"><div><h3>Input</h3><p>The invoice lines from intake and the agreement you hold: a rate confirmation for truckload, a carrier tariff for ocean.</p></div><div><h3>Output</h3><p>For each line, the agreed rate, allowance or clause, or a note that none exists.</p></div></div>
+<ul><li>Linehaul rate, fuel surcharge, detention free hours, hourly rate and cap, and the list of authorized accessorials.</li>
+<li>For ocean D&amp;D, the content and timing rules of 46 CFR Part 541 and, if you choose one, a public carrier tariff preset to recompute against.</li>
+<li>Charge names: each name is classed by fixed rules and matched to the nearest of 256 public tariff charge names (Recall), so a charge under an unfamiliar name is not skipped. Suggestions are for a person to review.</li></ul>
+</div></article>
+
+<article class="agent-detail" id="checks"><span class="agent-num">03</span><div>
+<h2>Re-rating and audit checks</h2><p class="tag live">Live in the browser app</p>
+<p>Recomputes every line from the agreed terms with exact decimal arithmetic and records each difference as a finding, with its steps.</p>
+<div class="io"><div><h3>Input</h3><p>Invoice lines and the governing terms.</p></div><div><h3>Output</h3><p>Findings, each confirmed (counted in the pre-review estimate) or needing human review (listed, never counted), with the calculation.</p></div></div>
+<div class="scroll"><table>
+<thead><tr><th>Check</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>Duplicate lines</td><td>Live</td></tr>
+<tr><td>Linehaul rate against the rate confirmation</td><td>Live</td></tr>
+<tr><td>Fuel surcharge against the rate confirmation</td><td>Live; against the weekly EIA diesel price in the workspace prototype</td></tr>
+<tr><td>Accessorials the rate confirmation never authorized</td><td>Live, listed for human review</td></tr>
+<tr><td>Invoice math: a total that is not the sum of its lines</td><td>Live</td></tr>
+<tr><td>Detention recomputed from the gate times: clock start, free time, 15-minute rounding, rate and cap</td><td>Live</td></tr>
+<tr><td>Ocean D&amp;D: eight checks on invoice content, the 30-day issuance rule, arithmetic and tariff recomputation</td><td>Live</td></tr>
+<tr><td>Weight and freight-class re-rating</td><td>Planned, not built</td></tr>
+</tbody>
+</table></div>
+<p>The full rule list is on the <a href="/platform/">Product</a> page.</p>
+</div></article>
+
+<article class="agent-detail" id="evidence"><span class="agent-num">04</span><div>
+<h2>Evidence and claim drafting</h2><p class="tag live">Live in the browser app</p>
+<p>Puts every finding, its arithmetic, the governing term and the invoice values it rests on into an evidence packet, and drafts the dispute letter.</p>
+<div class="io"><div><h3>Input</h3><p>The findings and their sources.</p></div><div><h3>Output</h3><p>Evidence packet (Markdown), findings file (JSON) and a letter marked DRAFT, for human review, not sent, not legal advice.</p></div></div>
+<ul><li>Built on your device from the values on screen; the app never sends anything.</li>
+<li>For ocean invoices, the regulation or tariff clause is quoted next to each finding, and the letter states the request date from the invoice date.</li></ul>
+</div></article>
+
+<article class="agent-detail" id="reviewer"><span class="agent-num">05</span><div>
+<h2>Reviewer</h2><p class="tag plan">In development</p>
+<p>Checks every flag before it is reported. The rule is simple: no source, no claim.</p>
+<div class="io"><div><h3>Input</h3><p>The draft packet and the source documents.</p></div><div><h3>Output</h3><p>Each statement passed with its source, or blocked; then a person approves.</p></div></div>
+<ul><li><strong>Today:</strong> confirmed findings are kept apart from items that need a person, and only confirmed ones are totalled.</li>
+<li><strong>Team workspace prototype:</strong> four-eyes approval before any letter leaves, and a hash-linked audit log.</li>
+<li><strong>Planned:</strong> an independent verifier, separate from the drafter (a different prompt and, where practical, a different model), that checks each sentence against the cited source span and rejects uncited or contradicted claims.</li></ul>
+</div></article>
+</div>
+</section>
+
+<section class="surface">
+<div class="container">
+<div class="section-head">
+<h2>Rules the agents keep</h2>
+</div>
+<ul class="why">
+<li><h3 data-k="RULE 1">Models read, code decides</h3><p>No language model computes an amount or decides entitlement. Those come from versioned, readable rules.</p></li>
+<li><h3 data-k="RULE 2">No citation, no claim</h3><p>A statement that cannot be traced to a source is not reported.</p></li>
+<li><h3 data-k="RULE 3">A person approves</h3><p>Nothing is sent, short-paid or disputed by the software.</p></li>
+<li><h3 data-k="RULE 4">No money movement</h3><p>scoup.ai never handles payments; corrections flow through the carrier's own billing.</p></li>
+<li><h3 data-k="RULE 5">Untrusted input</h3><p>Emails and PDFs are treated as untrusted input; the test plan includes documents with hidden instructions and tampered timestamps.</p></li>
+<li><h3 data-k="RULE 6">Measured before claimed</h3><p>Quality bars are set before measurement, on held-out data; no result is published until it is measured.</p></li>
+</ul>
+</div>
+</section>
+
+<section>
+<div class="container prose">
+<h2>Ocean D&amp;D and the FMC rule</h2>
+<p>The lookup and check agents apply the content and timing provisions of 46 CFR Part 541. Requirements and deadlines depend on the billing party and the facts; confirm current rules and any dispute with counsel or your customs broker.</p>
+<h2>Sources</h2>
+<ol class="sources">
+<li>Agent stages, the verifier and the design principles: scoup.ai technical overview, technical/overview.md in the freight-recovery repository (section 0 lists what the code does today; sections 1 and 2 the target design).</li>
+<li>Rules and their status: the Product and Workspace pages of this site, which describe the browser app and the workspace prototype.</li>
+<li>Electronic Code of Federal Regulations, 46 CFR Part 541, current through 2026-10-15, https://www.ecfr.gov/current/title-46/chapter-IV/subchapter-B/part-541.</li>
+</ol>
+</div>
+</section>

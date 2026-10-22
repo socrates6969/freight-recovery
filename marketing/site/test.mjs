@@ -143,7 +143,8 @@ for (const p of pages) {
   check(isHome ? title.startsWith("scoup.ai \u2013 ") : title.endsWith(" \u2013 scoup.ai"), `${rel}: title pattern (${title})`);
   check(h.includes('<meta property="og:site_name" content="scoup.ai">'), `${rel}: og:site_name scoup.ai`);
   check(h.includes(`<link rel="icon" href="${BASE}/favicon.svg" type="image/svg+xml">`), `${rel}: favicon link`);
-  const logos = [...h.matchAll(new RegExp(`<a class="brand[^"]*" href="${B}/" aria-label="scoup\\.ai home"><picture><source media="\\(prefers-color-scheme: dark\\)" srcset="${B}/brand/lockup-horizontal-on-dark\\.svg"><img src="${B}/brand/lockup-horizontal\\.svg" alt="scoup\\.ai" width="\\d+" height="(\\d+)"></picture></a>`, "g"))];
+  // The site is dark-only, so the header and footer always use the light-tile (on-dark) lockup.
+  const logos = [...h.matchAll(new RegExp(`<a class="brand[^"]*" href="${B}/" aria-label="scoup\\.ai home"><img src="${B}/brand/lockup-horizontal-on-dark\\.svg" alt="scoup\\.ai" width="\\d+" height="(\\d+)"></a>`, "g"))];
   check(logos.length === 2, `${rel}: header + footer logo links with accessible names`);
   check(logos.every((m) => Number(m[1]) >= 20), `${rel}: lockup at least 20px tall`);
   // base path: every root-absolute link stays inside the site's prefix
