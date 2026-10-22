@@ -246,7 +246,7 @@ footer.site { background: rgba(7, 11, 18, 0.92); border-top: 1px solid var(--lin
 /* Agent cards: number, name, role and status; the full checklist opens on hover or keyboard focus on pointer
    devices and is always open on touch screens. Hovering a card also lights its node in the console above. */
 .agents { list-style: none; padding: 0; margin: 0; display: grid; gap: 1rem; align-items: start; grid-template-columns: repeat(auto-fit, minmax(min(13.5rem, 100%), 1fr)); }
-@media (min-width: 72rem) { .agents { grid-template-columns: repeat(5, 1fr); } }
+@media (min-width: 60rem) { .agents { grid-template-columns: repeat(3, 1fr); } }
 .agent { position: relative; margin: 0; padding: 1.4rem 1.4rem 1.25rem; background: linear-gradient(180deg, var(--card), rgba(17, 27, 43, 0.6)); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
 .agent::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 3px; background: linear-gradient(90deg, var(--violet-2), var(--teal)); opacity: 0.35; }
 .agent-num { display: inline-flex; align-items: center; justify-content: center; width: 2.5rem; height: 2.5rem; border-radius: 999px; border: 2px solid var(--teal); color: var(--fg-strong); font: 700 0.9rem var(--font-mono); margin-bottom: 0.9rem; background: var(--ink-2); }
@@ -267,7 +267,7 @@ footer.site { background: rgba(7, 11, 18, 0.92); border-top: 1px solid var(--lin
 .agents-wrap:has(.agent[data-n="2"]:hover, .agent[data-n="2"]:focus-within) .n2 .pl-ring,
 .agents-wrap:has(.agent[data-n="3"]:hover, .agent[data-n="3"]:focus-within) .n3 .pl-ring,
 .agents-wrap:has(.agent[data-n="4"]:hover, .agent[data-n="4"]:focus-within) .n4 .pl-ring,
-.agents-wrap:has(.agent[data-n="5"]:hover, .agent[data-n="5"]:focus-within) .n5 .pl-ring { stroke: var(--violet); stroke-width: 4; animation: none; }
+.agents-wrap:has(.agent[data-n="5"]:hover, .agent[data-n="5"]:focus-within) .n5 .pl-ring, .agents-wrap:has(.agent[data-n="6"]:hover, .agent[data-n="6"]:focus-within) .n6 .pl-ring { stroke: var(--violet); stroke-width: 4; animation: none; }
 
 /* Agent detail page: one block per agent with input, output, checks and status. */
 .agent-detail { display: grid; gap: 1.5rem; grid-template-columns: 4rem 1fr; padding: 2rem 0; border-top: 1px solid var(--line); }
@@ -325,8 +325,8 @@ footer.site { background: rgba(7, 11, 18, 0.92); border-top: 1px solid var(--lin
 .sources { padding-left: 1.5rem; margin: 0; } .sources li { font-size: 0.85rem; color: var(--muted); overflow-wrap: anywhere; margin: 0.5rem 0; }
 .sources li::marker { color: var(--violet); font-family: var(--font-mono); }
 /* Motion, CSS only. Nothing in this block runs when the visitor prefers reduced motion; everything above is the
-   finished, static state. The console loop is 12 s: the invoice reaches agent k at (5 + 16(k-1))% of the cycle,
-   stays 10%, then moves on; the halo and log keyframes are one 10% window shifted by animation-delay. */
+   finished, static state. The console loop is 12 s: the invoice reaches agent k at (4 + 14(k-1))% of the cycle,
+   stays 9%, then moves on; the halo and log keyframes are one 9% window shifted by animation-delay. */
 @keyframes rise { from { opacity: 0; translate: 0 12px; } to { opacity: 1; translate: none; } }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes march-x { to { background-position: 16px 0; } }
@@ -339,29 +339,29 @@ footer.site { background: rgba(7, 11, 18, 0.92); border-top: 1px solid var(--lin
 @keyframes drift { to { background-position: 100% 100%, 0% 0%, 50% 100%; } }
 @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(45, 212, 191, 0.7); } 70%, 100% { box-shadow: 0 0 0 0.5rem rgba(45, 212, 191, 0); } }
 @keyframes tok-h {
-  0% { transform: translate(-90px, 18px); opacity: 0; } 3% { opacity: 1; }
-  5%, 15% { transform: translate(54px, 18px); } 21%, 31% { transform: translate(254px, 18px); }
-  37%, 47% { transform: translate(454px, 18px); } 53%, 63% { transform: translate(654px, 18px); }
-  69%, 86% { transform: translate(854px, 18px); opacity: 1; } 92%, 100% { transform: translate(854px, 18px); opacity: 0; }
+  0% { transform: translate(-90px, 18px); opacity: 0; } 2% { opacity: 1; }
+  4%, 13% { transform: translate(44px, 18px); } 18%, 27% { transform: translate(208px, 18px); } 32%, 41% { transform: translate(372px, 18px); } 46%, 55% { transform: translate(536px, 18px); } 60%, 69% { transform: translate(700px, 18px); }
+  74%, 88% { transform: translate(864px, 18px); opacity: 1; } 93%, 100% { transform: translate(864px, 18px); opacity: 0; }
 }
 @keyframes tok-v {
-  0% { transform: translate(0, 0); opacity: 0; } 3% { opacity: 1; }
-  5%, 15% { transform: translate(0, 70px); } 21%, 31% { transform: translate(0, 200px); }
-  37%, 47% { transform: translate(0, 330px); } 53%, 63% { transform: translate(0, 460px); }
-  69%, 86% { transform: translate(0, 590px); opacity: 1; } 92%, 100% { transform: translate(0, 590px); opacity: 0; }
+  0% { transform: translate(0, 0); opacity: 0; } 2% { opacity: 1; }
+  4%, 13% { transform: translate(0, 60px); } 18%, 27% { transform: translate(0, 170px); } 32%, 41% { transform: translate(0, 280px); } 46%, 55% { transform: translate(0, 390px); } 60%, 69% { transform: translate(0, 500px); }
+  74%, 88% { transform: translate(0, 610px); opacity: 1; } 93%, 100% { transform: translate(0, 610px); opacity: 0; }
 }
-@keyframes ring-1 { 0%, 4% { stroke: #2b3b56; } 5%, 15% { stroke: #a39bff; } 16%, 93% { stroke: #2dd4bf; } 97%, 100% { stroke: #2b3b56; } }
-@keyframes ring-2 { 0%, 20% { stroke: #2b3b56; } 21%, 31% { stroke: #a39bff; } 32%, 93% { stroke: #2dd4bf; } 97%, 100% { stroke: #2b3b56; } }
-@keyframes ring-3 { 0%, 36% { stroke: #2b3b56; } 37%, 47% { stroke: #a39bff; } 48%, 93% { stroke: #2dd4bf; } 97%, 100% { stroke: #2b3b56; } }
-@keyframes ring-4 { 0%, 52% { stroke: #2b3b56; } 53%, 63% { stroke: #a39bff; } 64%, 93% { stroke: #2dd4bf; } 97%, 100% { stroke: #2b3b56; } }
-@keyframes ring-5 { 0%, 68% { stroke: #2b3b56; } 69%, 79% { stroke: #a39bff; } 80%, 93% { stroke: #2dd4bf; } 97%, 100% { stroke: #2b3b56; } }
-@keyframes halo { 0% { opacity: 0; transform: scale(0.7); } 2%, 9% { opacity: 1; transform: scale(1.15); } 12%, 100% { opacity: 0; transform: scale(0.7); } }
-@keyframes log-on { 0% { color: #94a3b8; border-left-color: #2b3b56; background: transparent; } 1%, 10% { color: #f8fafc; border-left-color: #a39bff; background: rgba(124, 108, 255, 0.1); } 13%, 100% { color: #94a3b8; border-left-color: #2b3b56; background: transparent; } }
-@keyframes l-over { 0%, 39% { fill: #94a3b8; } 40%, 100% { fill: #fb7185; } }
-@keyframes l-ok { 0%, 40% { fill: #94a3b8; } 41%, 100% { fill: #2dd4bf; } }
-@keyframes l-rev { 0%, 41% { fill: #94a3b8; } 42%, 100% { fill: #fbbf24; } }
-@keyframes pop-pkt { 0%, 56% { opacity: 0; transform: scale(0.4); } 59%, 100% { opacity: 1; transform: scale(1); } }
-@keyframes pop-stamp { 0%, 72% { opacity: 0; transform: scale(1.8); } 75%, 100% { opacity: 1; transform: scale(1); } }
+@keyframes ring-1 { 0%, 3% { stroke: #2b3b56; } 4%, 13% { stroke: #a39bff; } 14%, 93% { stroke: #2dd4bf; } 97%, 100% { stroke: #2b3b56; } }
+@keyframes ring-2 { 0%, 17% { stroke: #2b3b56; } 18%, 27% { stroke: #a39bff; } 28%, 93% { stroke: #2dd4bf; } 97%, 100% { stroke: #2b3b56; } }
+@keyframes ring-3 { 0%, 31% { stroke: #2b3b56; } 32%, 41% { stroke: #a39bff; } 42%, 93% { stroke: #2dd4bf; } 97%, 100% { stroke: #2b3b56; } }
+@keyframes ring-4 { 0%, 45% { stroke: #2b3b56; } 46%, 55% { stroke: #a39bff; } 56%, 93% { stroke: #2dd4bf; } 97%, 100% { stroke: #2b3b56; } }
+@keyframes ring-5 { 0%, 59% { stroke: #2b3b56; } 60%, 69% { stroke: #a39bff; } 70%, 93% { stroke: #2dd4bf; } 97%, 100% { stroke: #2b3b56; } }
+@keyframes ring-6 { 0%, 73% { stroke: #2b3b56; } 74%, 83% { stroke: #a39bff; } 84%, 93% { stroke: #2dd4bf; } 97%, 100% { stroke: #2b3b56; } }
+@keyframes halo { 0% { opacity: 0; transform: scale(0.7); } 2%, 8% { opacity: 1; transform: scale(1.15); } 10%, 100% { opacity: 0; transform: scale(0.7); } }
+@keyframes log-on { 0% { color: #94a3b8; border-left-color: #2b3b56; background: transparent; } 1%, 9% { color: #f8fafc; border-left-color: #a39bff; background: rgba(124, 108, 255, 0.1); } 11%, 100% { color: #94a3b8; border-left-color: #2b3b56; background: transparent; } }
+@keyframes l-over { 0%, 33% { fill: #94a3b8; } 34%, 100% { fill: #fb7185; } }
+@keyframes l-ok { 0%, 34% { fill: #94a3b8; } 35%, 100% { fill: #2dd4bf; } }
+@keyframes l-rev { 0%, 35% { fill: #94a3b8; } 36%, 100% { fill: #fbbf24; } }
+@keyframes pop-pkt { 0%, 48% { opacity: 0; transform: scale(0.4); } 51%, 100% { opacity: 1; transform: scale(1); } }
+@keyframes pop-draft { 0%, 76% { opacity: 0; transform: scale(1.6) rotate(-8deg); } 79%, 100% { opacity: 1; transform: rotate(-8deg); } }
+@keyframes pop-stamp { 0%, 62% { opacity: 0; transform: scale(1.8); } 65%, 100% { opacity: 1; transform: scale(1); } }
 @keyframes res-glow { 0%, 80% { background-color: #0b1220; } 84% { background-color: #15223a; } 96%, 100% { background-color: #0b1220; } }
 @media (prefers-reduced-motion: no-preference) {
   html { scroll-behavior: smooth; }
@@ -380,16 +380,19 @@ footer.site { background: rgba(7, 11, 18, 0.92); border-top: 1px solid var(--lin
   .n3 .pl-ring { animation: ring-3 12s linear infinite; }
   .n4 .pl-ring { animation: ring-4 12s linear infinite; }
   .n5 .pl-ring { animation: ring-5 12s linear infinite; }
+  .n6 .pl-ring { animation: ring-6 12s linear infinite; }
   .pl-halo { animation: halo 12s ease-out infinite both; }
-  .n1 .pl-halo, .log li:nth-child(1) { animation-delay: 0.6s; }
-  .n2 .pl-halo, .log li:nth-child(2) { animation-delay: 2.52s; }
-  .n3 .pl-halo, .log li:nth-child(3) { animation-delay: 4.44s; }
-  .n4 .pl-halo, .log li:nth-child(4) { animation-delay: 6.36s; }
-  .n5 .pl-halo, .log li:nth-child(5) { animation-delay: 8.28s; }
+  .n1 .pl-halo, .log li:nth-child(1) { animation-delay: 0.48s; }
+  .n2 .pl-halo, .log li:nth-child(2) { animation-delay: 2.16s; }
+  .n3 .pl-halo, .log li:nth-child(3) { animation-delay: 3.84s; }
+  .n4 .pl-halo, .log li:nth-child(4) { animation-delay: 5.52s; }
+  .n5 .pl-halo, .log li:nth-child(5) { animation-delay: 7.2s; }
+  .n6 .pl-halo, .log li:nth-child(6) { animation-delay: 8.88s; }
   .log li { animation: log-on 12s linear infinite both; }
   .tk-l.over { animation: l-over 12s steps(1) infinite; }
   .tk-l.ok { animation: l-ok 12s steps(1) infinite; }
   .tk-l.rev { animation: l-rev 12s steps(1) infinite; }
+  .tk-draft { animation: pop-draft 12s cubic-bezier(0.2, 1.4, 0.4, 1) infinite; }
   .tk-pkt { animation: pop-pkt 12s ease-out infinite; }
   .tk-stamp { animation: pop-stamp 12s cubic-bezier(0.2, 1.4, 0.4, 1) infinite; }
   .result { animation: res-glow 12s ease-in-out infinite; }
@@ -466,3 +469,9 @@ footer.site { background: rgba(7, 11, 18, 0.92); border-top: 1px solid var(--lin
   .steps li::after { animation-name: march-x; }
 }.calc + .source { margin-top: 1rem; }
 @media (min-width: 60rem) { .why { grid-template-columns: repeat(3, 1fr); } }
+.tag.built { background: rgba(163, 155, 255, 0.12); color: var(--violet); border: 1px dashed rgba(163, 155, 255, 0.5); }
+.tk-draft rect { fill: var(--coral); } .tk-draft text { fill: #fff; font: 800 11px var(--font-mono); letter-spacing: 0.08em; }
+.tk-draft { transform-box: fill-box; transform-origin: center; transform: rotate(-8deg); }
+.synth { margin-top: 3.5rem; padding: 2rem; border: 1px dashed var(--line-strong); border-radius: var(--r-lg); background: rgba(11, 18, 32, 0.6); }
+.synth .section-head { margin-bottom: 1rem; } .synth h3 { font-size: 1.5rem; } .synth .draft { max-width: none; margin: 0; }
+@media (max-width: 40rem) { .synth { padding: 1.25rem; } }
