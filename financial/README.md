@@ -1,4 +1,4 @@
-# Scoup - financial
+# scoup.ai - financial
 
 - [`model.md`](model.md): the financial model explained (planning model:
   `../business/investor-pack/scoup-financial-model.xlsx`).

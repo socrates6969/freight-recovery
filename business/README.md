@@ -1,4 +1,4 @@
-# Scoup - business documents
+# scoup.ai - business documents
 
 Pre-revenue. Every company number is a plan input or model output; outside figures are
 footnoted. Start with the investor brief.

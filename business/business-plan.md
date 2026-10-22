@@ -1,4 +1,4 @@
-# Scoup business plan
+# scoup.ai business plan
 
 > **Status, 22 October 2026: pre-revenue.** No customers, no pilots, no measured recovery
 > rate. The product has run only on synthetic and public reference data. Company numbers are
@@ -7,13 +7,13 @@
 > [`data-and-sources.md`](data-and-sources.md). The detailed business model is in
 > [`business-model.md`](business-model.md).
 
-## 1. What Scoup is
+## 1. What scoup.ai is
 
-Scoup is a set of software agents that check every freight invoice a company receives and
-turn each real overcharge into a claim the company can send. A person approves every claim.
+scoup.ai is a team of software agents that check every freight invoice a company receives,
+flag overcharges with their evidence, and draft a claim the company can send. A person approves every claim.
 
 The first customers are mid-market US shippers ($5-50M a year of freight) and small and
-mid-size importers who pay ocean container charges. They pay Scoup out of the money it
+mid-size importers who pay ocean container charges. They pay scoup.ai out of the money it
 recovers, and later a platform fee.
 
 ## 2. The problem
@@ -28,41 +28,42 @@ The money involved is large. US logistics costs were $2.40 trillion in 2025, 36.
 trucking.[^cscmp] ATRI puts the 2023 cost of truck detention at $15.1 billion and found that
 fewer than half of detention invoices were paid.[^atri] Nine ocean carriers collected about
 $15.4 billion of D&D over five years to March 2025.[^fmc] These numbers show scale. They are
-not money Scoup can recover; most of it is correctly billed. How much is billed wrongly is
-the first thing Scoup must measure.
+not money scoup.ai can recover; most of it is correctly billed. How much is billed wrongly is
+the first thing scoup.ai must measure.
 
-## 3. The product: five agents and a person
+## 3. The product: six agents and a person
 
 ![Agent pipeline](figures/agent-pipeline.png)
 
-*Figure 1. How the agents find an overcharge and turn it into a claim. Source: Scoup product
+*Figure 1. How the agents find an overcharge and turn it into a claim. Source: scoup.ai product
 design; a description, not a performance claim.*
 
-1. **Intake agent** reads invoices, bills of lading, rate confirmations and emails, and
-   records the page and line behind every fact.
-2. **Contract and tariff agent** finds the terms that apply: rate, free time, fuel table,
-   accessorial rules, carrier tariff.
-3. **Audit checks** re-rate the invoice with plain, tested code: duplicates, fuel surcharge
-   against the EIA diesel week, detention clock, D&D invoice rules. No AI computes money.
-4. **Evidence and claim agent** builds a cited evidence packet and a draft dispute, with the
-   deadline.
-5. **Reviewer agent** re-checks every number and citation and rejects what it cannot trace.
+1. **Intake** reads a carrier invoice (EDI 210, CSV or extracted fields) into one format.
+2. **Contract & tariff** picks the contract, lane, fuel table, accessorial schedule,
+   detention terms and claim deadline.
+3. **Audit checks** re-rate the invoice with plain, tested code: duplicates, line math,
+   linehaul, fuel surcharge against the diesel week, reweigh, class, LTL rate, minimums,
+   accessorials, detention. No language model computes money.
+4. **Evidence** attaches the contract clause and documents to each finding.
+5. **Reviewer** recomputes every finding independently and checks the claim window.
+6. **Claim** drafts a dispute from confirmed findings only, marked DRAFT and not sent.
 
-Then a person reads the packet and decides whether to send it.
+Then a person reads the draft and decides whether to send it. The agents are unit-tested code,
+not yet wired into the API or web app. On a **synthetic** test set (135 invented invoices, 45 clean and 90 with one injected overcharge each, seed 20261022), the deterministic team claimed nothing on the 45 clean invoices, flagged all 90 injected overcharges, and put the amount in dispute equal to the injected dollars to the cent; 5 clean invoices went to human review, not to a claim. The same people wrote the test generator and the checks, so these numbers show the rules work as designed. They are **not** a measurement on real invoices; real precision and recall are unknown.[^agents]
 
-Why agents: they let Scoup check **every** invoice instead of a sample, flag a claim the day
+Why agents: they let scoup.ai check **every** invoice instead of a sample, flag a claim the day
 the bill arrives instead of near the deadline, cut the analyst time behind a small claim to
 minutes, and add an independent check before a person signs off. None of these effects has
 been measured on real invoices yet; section 7 sets the gates that will measure them.
 
-## 4. How Scoup makes money
+## 4. How scoup.ai makes money
 
 | Base case, per account | Year 1 | Year 3 | Year 5 | Year 7 |
 |---|---|---|---|---|
-| Money recovered for the customer | $52K | $85K | $105K | $115K |
-| Scoup's share | 25% | 14% | 12% | 12% |
+| Amount won in disputes (plan input) | $52K | $85K | $105K | $115K |
+| scoup.ai's share | 25% | 14% | 12% | 12% |
 | Platform fee | $0 | $10K | $15K | $17K |
-| **Scoup revenue per account** | **$13.0K** | **$21.9K** | **$27.6K** | **$30.8K** |
+| **scoup.ai revenue per account** | **$13.0K** | **$21.9K** | **$27.6K** | **$30.8K** |
 
 *Source: investor-pack/scoup-financial-model.xlsx, Assumptions rows 13-16. All inputs are
 assumptions.*
@@ -83,7 +84,7 @@ serviceable accounts. See [`market-analysis.md`](market-analysis.md).
 ## 6. Go-to-market
 
 1. **Design partners (months 0-6).** Three to five shippers or importers share closed
-   invoices under a written data agreement. Scoup reports what it would have recovered. No
+   invoices under a written data agreement. scoup.ai reports the overcharges it would have flagged and the amount in dispute. No
    fee.
 2. **Paid pilots (months 6-18).** Live invoices; 25% of recoveries; a person approves each
    claim.
@@ -125,6 +126,7 @@ yet run freight audit for a living; a freight-operations lead is the first hire 
 
 ---
 
+[^agents]: technical/agents.md (origin/master e3fef5f, 22 Oct 2026); reproduce with `npx tsx packages/shared/src/audit-agents/cli.ts --eval`. Synthetic data only.
 [^cfr]: eCFR, 46 CFR Part 541, https://www.ecfr.gov/current/title-46/chapter-IV/subchapter-B/part-541, current through 2026-10-15, checked 2026-10-19.
 [^13710]: 49 U.S.C. § 13710(a)(3)(B), https://www.law.cornell.edu/uscode/text/49/13710, accessed 2026-10-22.
 [^cscmp]: CSCMP / Kearney, State of Logistics 2026, via SCDigest, https://www.scdigest.com/firstthoughts/26-06-26.php?cid=23144, published 2026-06-26, accessed 2026-10-22.

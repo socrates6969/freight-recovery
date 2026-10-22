@@ -1,6 +1,6 @@
-# Scoup financial model
+# scoup.ai financial model
 
-> **Status, 22 October 2026: a plan, not a forecast.** Scoup has no revenue and no
+> **Status, 22 October 2026: a plan, not a forecast.** scoup.ai has no revenue and no
 > customers. The planning model is
 > [`../business/investor-pack/scoup-financial-model.xlsx`](../business/investor-pack/scoup-financial-model.xlsx).
 > Its inputs are assumptions unless the workbook's "Sources (verified)" sheet says otherwise.
@@ -19,13 +19,13 @@ The planning model was recalculated on 22 October 2026 without Excel, using
 
 ## 2. Revenue per account
 
-Revenue per account = platform fee + money recovered for the customer x Scoup's share.
+Revenue per account = platform fee + amount won in disputes for the customer (plan input) x scoup.ai's share.
 
 | $K per account | Y1 | Y2 | Y3 | Y4 | Y5 | Y6 | Y7 |
 |---|---|---|---|---|---|---|---|
 | Platform fee | 0 | 6 | 10 | 13 | 15 | 16 | 17 |
-| Recovered for the customer | 52 | 70 | 85 | 95 | 105 | 110 | 115 |
-| Scoup's share | 25% | 17% | 14% | 12% | 12% | 12% | 12% |
+| Amount won in disputes (plan input) | 52 | 70 | 85 | 95 | 105 | 110 | 115 |
+| scoup.ai's share | 25% | 17% | 14% | 12% | 12% | 12% | 12% |
 | **Revenue per account (base)** | **13.0** | **17.9** | **21.9** | **24.4** | **27.6** | **29.2** | **30.8** |
 
 Upside is 1.15x base and downside 0.8x. Year-1 recovery ($52K) is a mid-size importer-shipper:

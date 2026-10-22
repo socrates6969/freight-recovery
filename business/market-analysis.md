@@ -1,4 +1,4 @@
-# Scoup market analysis
+# scoup.ai market analysis
 
 > **Status, 22 October 2026: pre-revenue.** Market figures below are either footnoted public
 > data or our own model, and say which. Competitor detail comes from
@@ -10,18 +10,18 @@
 
 | Figure | Value | What it is | What it is not |
 |---|---|---|---|
-| US business logistics costs, 2025 | $2.40T, 7.8% of GDP[^cscmp] | All US spend on moving and storing goods | A fee pool |
+| US business logistics costs, 2025 | $2.40T, 7.8% of GDP[^cscmp] (2024 restated to $2.43T; the 2025 edition had $2.58T) | All US spend on moving and storing goods | A fee pool |
 | Trucking share | 36.8%, about $883B[^cscmp] | Truck freight spend | Overbilled money |
 | Truck detention cost, 2023 | $15.1B[^atri] | Cost of trucks waiting, mostly lost productivity | Recoverable dollars |
 | Ocean D&D, nine carriers | about $15.4B, Apr 2020 to Mar 2025[^fmc] | Charges collected | Overcharges or refunds |
 
-These describe the bills Scoup's customers receive. Most of that money is correctly billed.
+These describe the bills scoup.ai's customers receive. Most of that money is correctly billed.
 
 ## 2. Bottom-up size: accounts x revenue per account
 
 ![Market size](figures/market-size.png)
 
-*Figure 1. Spend in the system (grey) versus the fees Scoup could earn (blue). Sources as
+*Figure 1. Spend in the system (grey) versus the fees scoup.ai could earn (blue). Sources as
 footnoted; SAM and TAM from the model.*
 
 | Segment | US accounts | Revenue per account (Y7, model) | Annual fee pool | In plan |
@@ -48,16 +48,16 @@ How the counts were made:[^counts]
 Overlap between shippers and importers is unknown, so the SAM lies between **$0.55B and
 $0.95B**. The base case's 605 accounts in year 7 are about 1.8% of SAM accounts.
 
-**Freight audit market estimates are unusable.** SkyQuest says $284.5M (2024), Market Intelo
-$6.8B (2025), Technavio gives only growth (+$651.2M, 2025-2030).[^fap] A 24-fold spread with no
-method shown. We do not cite a total.
+**Freight audit market estimates are unusable.** SkyQuest says $284.5M (2024), Astute Analytica
+$727.1M (2023), Mordor Intelligence $0.97B (2025), Technavio gives only growth (+$651.2M,
+2025-2030), and Market Intelo $6.8B (2025).[^fap] No method is shown. We do not cite a total.
 
 **Error rates are vendor claims.** "1-9% of invoice value" and "3-25% of invoices" come from
 companies that sell audits. We found no independent study, and the model does not use one.
 
 ## 3. Competitors
 
-| Company | What it sells | Customers | Price (public?) | Gap Scoup aims at |
+| Company | What it sells | Customers | Price (public?) | Gap scoup.ai aims at |
 |---|---|---|---|---|
 | Loop | AI freight audit and payment; $95M Series C, Apr 2026[^loop] | Enterprise shippers, 3PLs | Not public | Per-charge disputes for smaller shippers |
 | Cass Information Systems | Freight audit and payment; FY2025 revenue $190.8M, $36.4B of freight processed[^cass] | Large shippers | Not public | Does not market disputes |
@@ -81,8 +81,10 @@ software. Agents change that in four ways, each still to be measured:
    30-day minimum D&D window.[^cfr]
 3. **Cost per claim.** An agent drafts the packet; a person reviews it in minutes. Small
    claims become worth filing.
-4. **Checked accuracy.** Money is computed by tested code and re-checked by a separate
-   reviewer agent and a person.
+4. **A second check.** Money is computed by tested code and recomputed by the separate Reviewer
+   agent; only confirmed findings reach the Claim draft and a person. Synthetic tests show the
+   rules work as designed (0 of 45 clean invoices claimed; 90 of 90 injected overcharges
+   flagged); real-world performance is unmeasured.
 
 This is not a moat on its own. Any well-funded competitor can build agents. What may compound
 is the record of which claims, with which evidence, got paid by which carriers; it exists only
@@ -108,7 +110,7 @@ forwarders. Adjacency logic only; no contact or intent.
 [^fmc]: Federal Maritime Commission, https://www.fmc.gov/detention-and-demurrage/, accessed 2026-10-19.
 [^counts]: research/05-market-size.md (docs/research branch, 2026-10-17), from U.S. Census SUSB 2022, https://www2.census.gov/programs-surveys/susb/tables/2022/us_naicssector_large_rcptsize_2022.xlsx; Census "A Profile of U.S. Importing and Exporting Companies, 2023-2024", https://www.census.gov/foreign-trade/Press-Release/edb/edbrel2024.pdf (2026-05-05); FMCSA Company Census File, https://data.transportation.gov/resource/az4n-8mr2.json; all accessed 2026-10-17.
 [^teu]: Descartes Global Shipping Report, January 2026 release, https://www.descartes.com/resources/knowledge-center/descartes-releases-january-global-shipping-report-december-us-0, accessed 2026-10-22 via trade-press coverage (secondary).
-[^fap]: GII/SkyQuest, https://www.giikorea.co.kr/report/sky1913174-freight-audit-payment-market-size-share-growth.html; Market Intelo, https://marketintelo.com/report/freight-audit-and-payment-market; Technavio, https://www.technavio.com/report/freight-audit-and-payment-market-industry-analysis; all accessed 2026-10-22; vendor claims.
+[^fap]: Mordor Intelligence, https://www.mordorintelligence.com/industry-reports/freight-audit-and-payment-market; Astute Analytica (2024-03-19); GII/SkyQuest, https://www.giikorea.co.kr/report/sky1913174-freight-audit-payment-market-size-share-growth.html; Market Intelo, https://marketintelo.com/report/freight-audit-and-payment-market; Technavio, https://www.technavio.com/report/freight-audit-and-payment-market-industry-analysis; all accessed 2026-10-22; vendor claims.
 [^loop]: Loop, https://www.loop.com/article/loop-raises-95m-series-c-to-scale-its-ai-platform-across-the-supply-chain, published 2026-04-17, accessed 2026-10-22.
 [^cass]: Cass 8-K exhibit 99.1, https://www.sec.gov/Archives/edgar/data/708781/000070878126000002/cass-20251231xexx991.htm, published 2026-01-22, accessed 2026-10-22.
 [^ia]: Intelligent Audit FAQ, https://www.intelligentaudit.com/faq, accessed 2026-10-22.

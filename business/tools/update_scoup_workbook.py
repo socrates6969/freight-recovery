@@ -70,7 +70,15 @@ setv("Competitors", "C9",
      "Series A $25M (Mar 2024); Series B $75M (29 Jul 2026, Battery Ventures and NewRoad); "
      "about $100M total", "verified via Crunchbase News coverage")
 setv("Competitors", "C12",
-     "Series B $44M (Sep 2025, led by Base10) at about $500M valuation", "verified via Reuters coverage")
+     "Series B $44M (3 Sep 2025, led by Base10); valuation not confirmed", "round verified via Reuters coverage; valuation has no primary source")
+setv("Competitors", "D12", "B (round); valuation unconfirmed", "valuation unconfirmed")
+setv("Assumptions", "K21", "SSB 2025: information and communication NOK 80,770/month (about NOK 969K/yr) x 1.22 loaded (A/C)", "SSB 2025 verified")
+setv("Assumptions", "K22", "SSB 2025 ICT pay, upper range, x 1.22 (A/C)", "SSB 2025 verified")
+setv("Assumptions", "K23", "SSB ICT pay x 1.22; BLS May 2025 information security analysts median $129,180 for US comparison (A)", "BLS May 2025 verified")
+setv("Assumptions", "K24", "BLS May 2025 technical and scientific sales reps median $104,920; on-target earnings ~2x base, loaded (A/C)", "BLS May 2025 verified")
+setv("Assumptions", "K25", "BLS May 2025 sales engineers median $124,900 x 1.43 (A)", "BLS May 2025 verified")
+setv("Sources", "A14", "Cass FY2025 results, 8-K exhibit 99.1 (22 Jan 2026)", "figures come from the 8-K, not the 10-K")
+setv("Sources", "B14", "https://www.sec.gov/Archives/edgar/data/708781/000070878126000002/cass-20251231xexx991.htm", "8-K URL")
 
 # Financing notes recomputed outside Excel.
 setv("Financing", "D13",
@@ -143,9 +151,9 @@ rows = [
     ("Competitors!C9", "Freehand Series B $75M; about $100M raised", "Crunchbase News",
      "https://news.crunchbase.com/transportation/freehand-pando-enterprise-supply-chain-spend-management-startup/",
      "2026-07-29", ACC, "VERIFIED secondary"),
-    ("Competitors!C12", "HappyRobot Series B $44M at about $500M", "Reuters via Inc.",
+    ("Competitors!C12", "HappyRobot Series B $44M (3 Sep 2025, Base10); valuation NOT confirmed", "Reuters via Inc.",
      "https://www.inc.com/reuters/happyrobot-raises-44-million-to-expand-ai-agents/91234965",
-     "2025-09", ACC, "VERIFIED secondary"),
+     "2025-09-03", ACC, "Round verified, secondary; valuation unconfirmed"),
     ("Competitors!C5", "Intelligent Audit: subscription pricing; Catalyst 90-day trial", "Intelligent Audit FAQ",
      "https://www.intelligentaudit.com/faq", "live page", ACC, "VERIFIED primary"),
     ("(docs only)", "US logistics costs 2025 $2.40T (7.8% of GDP); trucking 36.8% of logistics spend",
@@ -154,11 +162,13 @@ rows = [
      "VERIFIED secondary"),
     ("(docs only)", "Shipper must contest a bill within 180 days of receipt", "49 U.S.C. 13710(a)(3)(B)",
      "https://www.law.cornell.edu/uscode/text/49/13710", "current", ACC, "VERIFIED primary"),
-    ("(docs only)", "Carrier charges and overcharge actions: 18 months", "49 U.S.C. 14705(a)-(b)",
+    ("(docs only)", "18 months for charges/overcharges (a)-(b); +6 months after written disallowance (d)", "49 U.S.C. 14705(a), (b), (d)",
      "https://www.law.cornell.edu/uscode/text/49/14705", "current", ACC, "VERIFIED primary"),
-    ("Assumptions!K21:K28", "SSB and BLS wage bases", "SSB; BLS Occupational Outlook",
+    ("(docs only)", "Failure to include required D&D invoice information eliminates the obligation to pay", "46 U.S.C. 41104(d)(2), (f)",
+     "https://www.govinfo.gov/app/details/USCODE-2023-title46", "2022 (OSRA)", ACC, "VERIFIED primary"),
+    ("Assumptions!K21:K28", "SSB 2025 ICT NOK 80,770/month; BLS May 2025 medians; employer tax 14.1%", "SSB; BLS Occupational Outlook Handbook; Skatteetaten",
      "https://www.ssb.no/arbeid-og-lonn/lonn-og-arbeidskraftkostnader/statistikk/lonn", "various", ACC,
-     "NOT re-verified this pass; loaded costs remain assumptions (C)"),
+     "VERIFIED primary; multipliers 1.22 / 1.43 remain assumptions"),
     ("Assumptions!K33", "SOC 2 Type II $50-110K; pen test $15-35K", "vendor ranges", "-", "-", ACC,
      "NOT verified; assumption (C)"),
     ("Competitors!C6, C10, C11, C13, C14", "Trax, Terminal49, Vizion, Freightos, Transporeon",

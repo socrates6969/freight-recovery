@@ -6,7 +6,7 @@
   <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
    <cc:Work>
     <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
-    <dc:date>2026-10-22T19:32:52.022306</dc:date>
+    <dc:date>2026-10-22T19:56:47.389346</dc:date>
     <dc:format>image/svg+xml</dc:format>
     <dc:creator>
      <cc:Agent>
@@ -43,7 +43,7 @@ L 248.295396 259.363636
 L 248.295396 230.021944 
 L -86200.720265 230.021944 
 z
-" clip-path="url(#p543af6225b)" style="fill: #1b6ca8"/>
+" clip-path="url(#pf828887fbb)" style="fill: #1b6ca8"/>
    </g>
    <g id="patch_4">
     <path d="M -86200.720265 222.68652 
@@ -51,7 +51,7 @@ L 273.612207 222.68652
 L 273.612207 193.344828 
 L -86200.720265 193.344828 
 z
-" clip-path="url(#p543af6225b)" style="fill: #1b6ca8"/>
+" clip-path="url(#pf828887fbb)" style="fill: #1b6ca8"/>
    </g>
    <g id="patch_5">
     <path d="M -86200.720265 186.009404 
@@ -59,7 +59,7 @@ L 292.639214 186.009404
 L 292.639214 156.667712 
 L -86200.720265 156.667712 
 z
-" clip-path="url(#p543af6225b)" style="fill: #9fb7cc"/>
+" clip-path="url(#pf828887fbb)" style="fill: #9fb7cc"/>
    </g>
    <g id="patch_6">
     <path d="M -86200.720265 149.332288 
@@ -67,7 +67,7 @@ L 352.327337 149.332288
 L 352.327337 119.990596 
 L -86200.720265 119.990596 
 z
-" clip-path="url(#p543af6225b)" style="fill: #9fb7cc"/>
+" clip-path="url(#pf828887fbb)" style="fill: #9fb7cc"/>
    </g>
    <g id="patch_7">
     <path d="M -86200.720265 112.655172 
@@ -75,7 +75,7 @@ L 505.093571 112.655172
 L 505.093571 83.31348 
 L -86200.720265 83.31348 
 z
-" clip-path="url(#p543af6225b)" style="fill: #9fb7cc"/>
+" clip-path="url(#pf828887fbb)" style="fill: #9fb7cc"/>
    </g>
    <g id="patch_8">
     <path d="M -86200.720265 75.978056 
@@ -83,18 +83,18 @@ L 542.626515 75.978056
 L 542.626515 46.636364 
 L -86200.720265 46.636364 
 z
-" clip-path="url(#p543af6225b)" style="fill: #9fb7cc"/>
+" clip-path="url(#pf828887fbb)" style="fill: #9fb7cc"/>
    </g>
    <g id="matplotlib.axis_1">
     <g id="xtick_1">
      <g id="line2d_1">
       <defs>
-       <path id="m65b700d8da" d="M 0 0 
+       <path id="m1455ae411c" d="M 0 0 
 L 0 3.5 
 " style="stroke: #000000; stroke-width: 0.8"/>
       </defs>
       <g>
-       <use xlink:href="#m65b700d8da" x="250.403455" y="270" style="stroke: #000000; stroke-width: 0.8"/>
+       <use xlink:href="#m1455ae411c" x="250.403455" y="270" style="stroke: #000000; stroke-width: 0.8"/>
       </g>
      </g>
      <g id="text_1">
@@ -104,7 +104,7 @@ L 0 3.5
     <g id="xtick_2">
      <g id="line2d_2">
       <g>
-       <use xlink:href="#m65b700d8da" x="336.854579" y="270" style="stroke: #000000; stroke-width: 0.8"/>
+       <use xlink:href="#m1455ae411c" x="336.854579" y="270" style="stroke: #000000; stroke-width: 0.8"/>
       </g>
      </g>
      <g id="text_2">
@@ -114,7 +114,7 @@ L 0 3.5
     <g id="xtick_3">
      <g id="line2d_3">
       <g>
-       <use xlink:href="#m65b700d8da" x="423.305703" y="270" style="stroke: #000000; stroke-width: 0.8"/>
+       <use xlink:href="#m1455ae411c" x="423.305703" y="270" style="stroke: #000000; stroke-width: 0.8"/>
       </g>
      </g>
      <g id="text_3">
@@ -124,7 +124,7 @@ L 0 3.5
     <g id="xtick_4">
      <g id="line2d_4">
       <g>
-       <use xlink:href="#m65b700d8da" x="509.756826" y="270" style="stroke: #000000; stroke-width: 0.8"/>
+       <use xlink:href="#m1455ae411c" x="509.756826" y="270" style="stroke: #000000; stroke-width: 0.8"/>
       </g>
      </g>
      <g id="text_4">
@@ -134,7 +134,7 @@ L 0 3.5
     <g id="xtick_5">
      <g id="line2d_5">
       <g>
-       <use xlink:href="#m65b700d8da" x="596.20795" y="270" style="stroke: #000000; stroke-width: 0.8"/>
+       <use xlink:href="#m1455ae411c" x="596.20795" y="270" style="stroke: #000000; stroke-width: 0.8"/>
       </g>
      </g>
      <g id="text_5">
@@ -149,12 +149,12 @@ L 0 3.5
     <g id="ytick_1">
      <g id="line2d_6">
       <defs>
-       <path id="m6f489ade43" d="M 0 0 
+       <path id="m6429c1f62a" d="M 0 0 
 L -3.5 0 
 " style="stroke: #000000; stroke-width: 0.8"/>
       </defs>
       <g>
-       <use xlink:href="#m6f489ade43" x="205.2" y="244.69279" style="stroke: #000000; stroke-width: 0.8"/>
+       <use xlink:href="#m6429c1f62a" x="205.2" y="244.69279" style="stroke: #000000; stroke-width: 0.8"/>
       </g>
      </g>
      <g id="text_7">
@@ -164,17 +164,17 @@ L -3.5 0
     <g id="ytick_2">
      <g id="line2d_7">
       <g>
-       <use xlink:href="#m6f489ade43" x="205.2" y="208.015674" style="stroke: #000000; stroke-width: 0.8"/>
+       <use xlink:href="#m6429c1f62a" x="205.2" y="208.015674" style="stroke: #000000; stroke-width: 0.8"/>
       </g>
      </g>
      <g id="text_8">
-      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="198.2" y="211.814893" transform="rotate(-0 198.2 211.814893)">TAM: Scoup fee pool, all segments</text>
+      <text style="font-size: 10px; font-family: 'DejaVu Sans'; text-anchor: end" x="198.2" y="211.814893" transform="rotate(-0 198.2 211.814893)">TAM: scoup.ai fee pool, all segments</text>
      </g>
     </g>
     <g id="ytick_3">
      <g id="line2d_8">
       <g>
-       <use xlink:href="#m6f489ade43" x="205.2" y="171.338558" style="stroke: #000000; stroke-width: 0.8"/>
+       <use xlink:href="#m6429c1f62a" x="205.2" y="171.338558" style="stroke: #000000; stroke-width: 0.8"/>
       </g>
      </g>
      <g id="text_9">
@@ -184,7 +184,7 @@ L -3.5 0
     <g id="ytick_4">
      <g id="line2d_9">
       <g>
-       <use xlink:href="#m6f489ade43" x="205.2" y="134.661442" style="stroke: #000000; stroke-width: 0.8"/>
+       <use xlink:href="#m6429c1f62a" x="205.2" y="134.661442" style="stroke: #000000; stroke-width: 0.8"/>
       </g>
      </g>
      <g id="text_10">
@@ -194,7 +194,7 @@ L -3.5 0
     <g id="ytick_5">
      <g id="line2d_10">
       <g>
-       <use xlink:href="#m6f489ade43" x="205.2" y="97.984326" style="stroke: #000000; stroke-width: 0.8"/>
+       <use xlink:href="#m6429c1f62a" x="205.2" y="97.984326" style="stroke: #000000; stroke-width: 0.8"/>
       </g>
      </g>
      <g id="text_11">
@@ -204,7 +204,7 @@ L -3.5 0
     <g id="ytick_6">
      <g id="line2d_11">
       <g>
-       <use xlink:href="#m6f489ade43" x="205.2" y="61.30721" style="stroke: #000000; stroke-width: 0.8"/>
+       <use xlink:href="#m6429c1f62a" x="205.2" y="61.30721" style="stroke: #000000; stroke-width: 0.8"/>
       </g>
      </g>
      <g id="text_12">
@@ -241,12 +241,12 @@ L 663.48 270
     <text style="font-size: 8px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #1f2933" x="546.20496" y="63.385648" transform="rotate(-0 546.20496 63.385648)">$2,400B  CSCMP / Kearney</text>
    </g>
    <g id="text_19">
-    <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #1f2933" x="205.2" y="30" transform="rotate(-0 205.2 30)">Size of the problem vs. the fees Scoup could earn</text>
+    <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #1f2933" x="205.2" y="30" transform="rotate(-0 205.2 30)">Size of the problem vs. the fees scoup.ai could earn</text>
    </g>
   </g>
   <g id="text_20">
    <text style="font-size: 8.8px; font-family: 'DejaVu Sans'; fill: #1f2933" transform="translate(6.84 319.442672)">Grey bars describe spend and charges in the system; most of that money is correctly billed. Blue bars are the modelled fee pool</text>
-   <text style="font-size: 8.8px; font-family: 'DejaVu Sans'; fill: #1f2933" transform="translate(6.84 330.005078)">(accounts x revenue per account). Only the blue bars are a market for Scoup.</text>
+   <text style="font-size: 8.8px; font-family: 'DejaVu Sans'; fill: #1f2933" transform="translate(6.84 330.005078)">(accounts x revenue per account). Only the blue bars are a market for scoup.ai.</text>
   </g>
   <g id="text_21">
    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #6b7785" transform="translate(6.84 344.27952)">Source: CSCMP/Kearney State of Logistics 2026; FMC detention &amp; demurrage data (Apr 2020-Mar 2025); ATRI (Sep 2024); SAM/TAM: research/05-market-size.md + model.</text>
@@ -254,7 +254,7 @@ L 663.48 270
   </g>
  </g>
  <defs>
-  <clipPath id="p543af6225b">
+  <clipPath id="pf828887fbb">
    <rect x="205.2" y="36" width="458.28" height="234"/>
   </clipPath>
  </defs>

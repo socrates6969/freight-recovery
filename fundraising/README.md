@@ -1,4 +1,4 @@
-# Scoup - Fundraising
+# scoup.ai - Fundraising
 
 > **Status: pre-product. Do not raise yet.** The right time to approach investors is after Gate G3 in `business/business-plan.md` (paid pilots with a measured recovery rate). Until then, use this document to prepare, build relationships, and apply for non-dilutive support. Nothing here is investment advice.
 >
@@ -11,7 +11,7 @@
 | Likely question | Honest answer today (22 Oct 2026) |
 |---|---|
 | Traction? | None. Pre-revenue; agents tested on synthetic and public data only. Design-partner files are the first milestone. |
-| What do the agents do? | Five agents: intake, contract and tariff lookup, deterministic audit checks, evidence and claim, reviewer; then a person approves. See `business/business-model.md`, section 2. |
+| What do the agents do? | Six agents: Intake, Contract & tariff, Audit checks (code), Evidence, Reviewer, Claim (draft from confirmed findings only); then a person approves. Unit-tested code, not yet wired into the app. Synthetic test: 0 of 45 clean invoices claimed, 90 of 90 injected overcharges flagged to the cent; not real-world evidence. See `technical/agents.md`. |
 | Why agents? | Every invoice checked, not a sample; claims flagged inside the 180-day truck and 30-day D&D windows; minutes of review per claim; an independent reviewer check. None of this is measured yet. |
 | Is the market real? | US logistics costs $2.40T in 2025 (CSCMP/Kearney); truck detention cost $15.1B in 2023 (ATRI); about $15.4B of ocean D&D collected by nine carriers in five years (FMC). Context only; our modelled fee pool is $0.95B (SAM) to $1.86B (TAM). |
 | Business model? | Share of recoveries (25% in pilots) moving to a platform fee plus 12%; $21.9K revenue per account in year 3 of the base case. |
@@ -75,9 +75,9 @@ Rules: be specific, short, and honest; no invented traction. Fill brackets only 
 
 ### Template A: pitch-form / cold submission (use after G3; adjust to say "pre-seed" if earlier)
 
-> **Subject / form title:** Scoup - agents that audit every freight invoice and file cited claims ([n] paid pilots)
+> **Subject / form title:** scoup.ai - agents that audit every freight invoice and file cited claims ([n] paid pilots)
 >
-> Mid-market shippers and importers pay thousands of small freight charges they cannot check by hand: detention, accessorials, fuel surcharges, ocean D&D. Scoup's five agents check every invoice against the contract, tariff, EIA diesel index and the federal D&D invoice rules, compute the money with tested code, and draft a cited claim that a person approves. Customers pay a share of what is recovered.
+> Mid-market shippers and importers pay thousands of small freight charges they cannot check by hand: detention, accessorials, fuel surcharges, ocean D&D. scoup.ai's six agents check every invoice against the contract, tariff and EIA diesel index, compute the money with tested code, flag overcharges with evidence, and draft a claim from confirmed findings that a person approves. Customers pay a share of what they win back.
 >
 > Where we are: [precise, true status, e.g., "N design partners; measured recovery on closed files of $X on Y loads; pilots running with human approval"]. We are not claiming more than the data supports. Our eval approach is pass^k on a held-out gold set; results on request.
 >
@@ -85,11 +85,11 @@ Rules: be specific, short, and honest; no invented traction. Fill brackets only 
 
 ### Template B: warm-intro request to a mutual contact (forwardable blurb)
 
-> Hi [Name], thanks for offering to help. I am working on Scoup. In one line: software agents check every freight invoice a mid-market shipper receives and turn real overcharges into cited claims a person approves, paid out of what is recovered.
+> Hi [Name], thanks for offering to help. I am working on scoup.ai. In one line: software agents check every freight invoice a mid-market shipper receives and turn real overcharges into cited claims a person approves, paid out of what is recovered.
 >
 > Status in one line: [true status].
 >
-> Would you be comfortable introducing me to [Person/role at Firm]? Below is a short blurb you can forward as-is, and I understand if it is not a fit. Blurb: "[Founder] is building Scoup, [one sentence]. They have [one true proof point]. Worth 20 minutes if [specific reason related to the firm's thesis]."
+> Would you be comfortable introducing me to [Person/role at Firm]? Below is a short blurb you can forward as-is, and I understand if it is not a fit. Blurb: "[Founder] is building scoup.ai, [one sentence]. They have [one true proof point]. Worth 20 minutes if [specific reason related to the firm's thesis]."
 
 ## 5. Materials to prepare (grounded only in measured results)
 

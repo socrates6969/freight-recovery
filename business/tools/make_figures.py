@@ -59,7 +59,7 @@ ARR = {
 }
 PLATFORM_FEE = [0, 6, 10, 13, 15, 16, 17]          # $K per account per year
 RECOVERED = [52, 70, 85, 95, 105, 110, 115]        # $K recovered for the customer
-SHARE = [0.25, 0.17, 0.14, 0.12, 0.12, 0.12, 0.12]  # Scoup's share of recoveries
+SHARE = [0.25, 0.17, 0.14, 0.12, 0.12, 0.12, 0.12]  # scoup.ai's share of recoveries
 
 # SOURCE + MODEL values for the market chart ($B per year). Keep in step with data-and-sources.md.
 MARKET = [
@@ -67,7 +67,7 @@ MARKET = [
     ("US truck transport spend, 2025", 883.2, "36.8% of the above"),
     ("Truck detention cost, 2023", 15.1, "ATRI; cost of waiting, not recoverable"),
     ("Ocean D&D billed by 9 carriers", 3.08, "FMC; 5-year average, mostly owed"),
-    ("TAM: Scoup fee pool, all segments", 1.8555, "model"),
+    ("TAM: scoup.ai fee pool, all segments", 1.8555, "model"),
     ("SAM: shippers + SME importers", 0.9454, "model"),
 ]
 
@@ -102,11 +102,11 @@ def market_size():
         txt = f"${v:,.0f}B" if v >= 10 else f"${v:,.2f}B"
         ax.text(v * 1.1, b.get_y() + b.get_height() / 2, f"{txt}  {r[2]}", va="center",
                 fontsize=8, color=INK)
-    ax.set_title("Size of the problem vs. the fees Scoup could earn", loc="left", fontsize=12,
+    ax.set_title("Size of the problem vs. the fees scoup.ai could earn", loc="left", fontsize=12,
                  color=INK)
     footer(fig, "Grey bars describe spend and charges in the system; most of that money is "
                 "correctly billed. Blue bars are the modelled fee pool (accounts x revenue per "
-                "account). Only the blue bars are a market for Scoup.",
+                "account). Only the blue bars are a market for scoup.ai.",
            "CSCMP/Kearney State of Logistics 2026; FMC detention & demurrage data (Apr 2020-Mar "
            "2025); ATRI (Sep 2024); SAM/TAM: research/05-market-size.md + model. Full list: "
            "business/data-and-sources.md")
@@ -137,8 +137,8 @@ def funnel():
     ax.set_ylim(0.05, 1)
     ax.set_title("ILLUSTRATIVE overcharge funnel, one mid-size account, one year (not measured)",
                  loc="left", fontsize=11.5, color=INK)
-    footer(fig, "The dollar end-point matches the model: $52K recovered for the customer in year 1; "
-                "Scoup keeps 25% = $13.0K. The flag, confirm and pay rates are placeholders that "
+    footer(fig, "The dollar end-point matches the model: $52K won in disputes in year 1 (plan input); "
+                "scoup.ai keeps 25% = $13.0K. The flag, confirm and pay rates are placeholders that "
                 "design-partner files must replace.",
            "scoup-financial-model.xlsx, Assumptions rows 13-16 (year 1). Stage rates: company "
            "assumptions, not observations.")
@@ -147,26 +147,27 @@ def funnel():
 
 def pipeline():
     steps = [
-        ("1  Intake\nagent", "reads invoices, BOLs,\nrate cons, emails;\nkeeps the source page"),
-        ("2  Contract &\ntariff agent", "finds the rate, free\ntime, fuel table and\naccessorial terms"),
-        ("3  Audit checks\n(plain code)", "re-rates the invoice:\nduplicates, fuel,\ndetention, D&D rules"),
-        ("4  Evidence &\nclaim agent", "builds a cited packet\nand a draft dispute\nwith its deadline"),
-        ("5  Reviewer\nagent", "re-checks every\nnumber and citation;\nrejects if unsupported"),
-        ("Person\napproves", "a person sends;\nnothing leaves\nwithout sign-off"),
+        ("1  Intake", "reads the carrier\ninvoice (EDI 210,\nCSV, fields)"),
+        ("2  Contract\n& tariff", "picks contract,\nlane, fuel table,\nclaim deadline"),
+        ("3  Audit\nchecks (code)", "re-rates: fuel,\nclass, reweigh,\ndetention, dupes"),
+        ("4  Evidence", "attaches clause\nand documents\nto each finding"),
+        ("5  Reviewer", "recomputes every\nfinding; checks\nthe claim window"),
+        ("6  Claim\ndraft", "drafts a dispute\nfrom confirmed\nfindings only"),
+        ("Person\napproves", "nothing is sent\nwithout sign-off"),
     ]
     fig, ax = plt.subplots(figsize=(11.5, 4.2))
     fig.subplots_adjust(left=0.01, right=0.99, top=0.88, bottom=0.24)
     ax.axis("off")
     n = len(steps)
-    w = 0.13
+    w = 0.118
     gap = (1 - n * w) / (n + 1)
     for i, (title, body) in enumerate(steps):
         x = gap + i * (w + gap)
         col = ACCENT2 if i == n - 1 else (INK if i == 2 else ACCENT)
         ax.add_patch(FancyBboxPatch((x, 0.1), w, 0.8, boxstyle="round,pad=0.01", color=col))
-        ax.text(x + w / 2, 0.72, title, ha="center", va="center", color="white", fontsize=9.5,
+        ax.text(x + w / 2, 0.72, title, ha="center", va="center", color="white", fontsize=9,
                 weight="bold")
-        ax.text(x + w / 2, 0.33, body, ha="center", va="center", color="white", fontsize=8)
+        ax.text(x + w / 2, 0.33, body, ha="center", va="center", color="white", fontsize=7.4)
         if i < n - 1:
             ax.annotate("", xy=(x + w + gap * 0.95, 0.5), xytext=(x + w + gap * 0.05, 0.5),
                         arrowprops=dict(arrowstyle="->", color=INK, lw=1.5))
@@ -174,11 +175,13 @@ def pipeline():
     ax.set_ylim(0, 1)
     ax.set_title("How the agents find an overcharge and turn it into a claim", loc="left",
                  fontsize=12, color=INK)
-    footer(fig, "Language models read documents and draft text (blue). Money is computed by "
-                "deterministic, tested code (dark). A separate reviewer agent and then a person "
-                "check everything before a claim leaves (orange).",
-           "Scoup product design (technical/overview.md; agent build on branch feat/audit-agents). "
-           "A design description, not a performance claim.")
+    footer(fig, "Money is computed by deterministic, tested code (dark). An optional language model "
+                "only does judgment in Intake, Contract & tariff, Reviewer and Claim. The Reviewer recomputes every finding, the Claim "
+                "agent drafts only from confirmed findings, and a person approves (orange). Code: "
+                "unit-tested, not yet wired into the web app. Synthetic test only: 0 of 45 clean "
+                "invoices claimed; 90 of 90 injected overcharges flagged to the cent.",
+           "technical/agents.md (origin/master e3fef5f, 2026-10-22). Synthetic data; not a "
+           "real-world performance claim.")
     save(fig, "agent-pipeline")
 
 
