@@ -1,8 +1,8 @@
 /**
  * Evidence and claim agent. Before review it attaches the document trail to every finding; after review
  * it drafts one dispute per invoice from the CONFIRMED findings only, with the claim deadline from the
- * contract. The letter is a deterministic template; an optional LLM may write the opening paragraph, which
- * is discarded if it contains any digit (amounts and dates come only from the checks).
+ * contract. The letter is a deterministic template. An optional LLM may only pick the opening paragraph from a
+ * fixed set (`CLAIM_OPENINGS`) by id; it never writes letter text and never sees carrier-written text.
  */
 import { z } from 'zod';
 
@@ -22,14 +22,21 @@ export function attachEvidence(inv: NormalizedInvoice, ev: ShipmentEvidence, ter
 
 const ORDER = { confirmed: 2, needs_review: 1, rejected: 0 } as const;
 
+/** The only opening paragraphs a claim letter can carry. The model chooses an id; it writes no text. */
+export const CLAIM_OPENINGS = Object.freeze({
+  standard:
+    'We have audited the invoice below against our transportation agreement and the shipment documents, and we dispute the charges listed. Please issue a credit or a corrected invoice.',
+  brief: 'We dispute the charges listed below under our transportation agreement. Please issue a credit or a corrected invoice.',
+  relationship:
+    'We value our work together and have reviewed the invoice below against our transportation agreement. The charges listed do not match the agreed terms; please issue a credit or a corrected invoice.',
+} as const);
+export type ClaimOpeningId = keyof typeof CLAIM_OPENINGS;
+const OPENING_IDS = Object.keys(CLAIM_OPENINGS) as [ClaimOpeningId, ...ClaimOpeningId[]];
+
 const OPENING_SYSTEM = [
   'You are the evidence and claim agent of a freight-invoice audit team.',
-  'Write ONE short, courteous opening paragraph for a billing dispute to a carrier. Do not include any numbers,',
-  'amounts, dates or invoice references; those are added by the system. Answer with JSON only: {"opening": "..."}.',
+  `Choose the opening paragraph for a billing dispute. Answer with JSON only: {"template": one of ${OPENING_IDS.map((k) => `"${k}"`).join(', ')}}.`,
 ].join(' ');
-
-const DEFAULT_OPENING = 'We have audited the invoice below against our transportation agreement and the shipment documents, and we dispute the charges listed. Please issue a credit or a corrected invoice.';
-
 /** Draft the claim for one invoice from the reviewed findings. */
 export async function draftClaim(
   inv: NormalizedInvoice,
@@ -44,8 +51,13 @@ export async function draftClaim(
   const pending = findings.filter((f) => status.get(f.id) === 'needs_review');
   const sum = (fs: readonly AuditFinding[]): string => q2(fs.reduce((a, f) => add(a, Dec.parse(f.amount)), Dec.fromInt(0))).toString();
   const windowOpen = asOf <= terms.claimDeadline;
-  const llmOpening = await askJson(llm, { agent: 'claim', system: OPENING_SYSTEM, user: `Carrier: ${plain(inv.carrier)}. Number of disputed charges: several.` }, z.strictObject({ opening: z.string().max(600) }));
-  const opening = llmOpening !== null && !/[0-9]/u.test(llmOpening.opening) ? llmOpening.opening : DEFAULT_OPENING;
+  // No carrier-controlled text goes into the prompt: only counts and our own rule ids.
+  const choice = await askJson(
+    llm,
+    { agent: 'claim', system: OPENING_SYSTEM, user: `Confirmed findings: ${confirmed.length}. Rule ids: ${[...new Set(confirmed.map((f) => f.ruleId))].join( ) || 'none'}. Claim window open: ${windowOpen}.` },
+    z.strictObject({ template: z.enum(OPENING_IDS) }),
+  );
+  const opening = CLAIM_OPENINGS[choice?.template ?? 'standard'];
   const lines = [
     DRAFT_BANNER,
     '',

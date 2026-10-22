@@ -135,7 +135,8 @@ function stepFive(inv: NormalizedInvoice, ev: ShipmentEvidence, terms: AppliedTe
   const det = terms.detention;
   const authorized = [
     ...terms.accessorials.flatMap((a) => a.names),
-    ...terms.lineCodes.filter((c) => c.code !== null).map((c) => inv.lines[c.line]?.description ?? ''),
+    // Only contract-matched lines (printed code or schedule name) count as authorized; a model's mapping never does.
+    ...terms.lineCodes.filter((c) => c.code !== null && c.by !== 'llm').map((c) => inv.lines[c.line]?.description ?? ''),
   ].filter((n) => n !== '');
   const hasTimes = ev.arrivalTime !== null && ev.departureTime !== null;
   const bundle: ExtractedBundle = {
@@ -321,10 +322,13 @@ function accessorials(inv: NormalizedInvoice, ev: ShipmentEvidence, terms: Appli
     const amount = corrected[lc.line] ?? ZERO;
     if (line === undefined || !gt(amount, tol)) continue;
     const cite = `invoice ${inv.invoiceNumber} line ${lc.line + 1}`;
-    if (lc.code === null) {
+    // A model-suggested code (by: llm) is advisory only: the line is treated exactly like an unmatched charge,
+    // so the model can neither authorize it nor clear a finding.
+    if (lc.code === null || lc.by === 'llm') {
       // The step-5 rule INV-ACCESSORIAL-UNAUTH covers its known accessorial words; this covers the rest.
       if (normText(line.description) !== '' && !STEP5_WORDS.some((w) => normText(line.description).includes(w))) {
-        out.push(draft({ ruleId: 'AUD-ACC-NOT-IN-CONTRACT', title: 'Charge not in the contract accessorial schedule', amount: S(amount), expected: '0.00', billed: S(amount), lines: [lc.line], citations: [cite], calculation: [`'${line.description}' = $${S(amount)}; no schedule entry matches.`], explanation: `'${line.description}' is not on the contract's accessorial schedule. It may be valid with separate approval; verify before disputing.`, confidence: 0.6, needsHumanReview: true }));
+        const hint = lc.by === 'llm' && lc.code !== null ? ` A model suggested schedule code ${lc.code}; not trusted, verify against the contract.` : '';
+        out.push(draft({ ruleId: 'AUD-ACC-NOT-IN-CONTRACT', title: 'Charge not in the contract accessorial schedule', amount: S(amount), expected: '0.00', billed: S(amount), lines: [lc.line], citations: [cite], calculation: [`'${line.description}' = $${S(amount)}; no schedule code or name matches.${hint}`], explanation: `'${line.description}' is not on the contract's accessorial schedule. It may be valid with separate approval; verify before disputing.`, confidence: 0.6, needsHumanReview: true }));
       }
       continue;
     }

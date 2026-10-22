@@ -13,9 +13,8 @@ import {
   runAuditTeam,
   scriptedLlm,
   type AuditCase,
-  type NormalizedInvoice,
 } from './index.js';
-import { SYN_CONTRACTS, toCsv, toEdi210 } from './synthetic.js';
+import { toCsv, toEdi210 } from './synthetic.js';
 
 function cleanCase(id = 'SYN-001'): AuditCase {
   const { cases } = buildSyntheticSet();
@@ -69,20 +68,6 @@ describe('audit team', () => {
     expect(r.claim?.confirmedTotal).toBe(c.expectedRecovery);
   });
 
-  it('the LLM reviewer can reject but never upgrade', async () => {
-    const { cases } = buildSyntheticSet();
-    const c = cases.find((x) => x.injected === 'unauthorized_accessorial');
-    if (c === undefined) throw new Error('case');
-    const reject = await runAuditTeam(c.auditCase, { llm: scriptedLlm({ reviewer: ['{"status":"rejected","reason":"approval email attached"}'] }) });
-    expect(reject.verdicts.every((v) => v.status === 'rejected' && v.by === 'llm')).toBe(true);
-    expect(reject.claim?.confirmedTotal).toBe('0.00');
-
-    const twoStops = cases.find((x) => x.note.includes('two stop-offs'));
-    if (twoStops === undefined) throw new Error('case');
-    const up = await runAuditTeam(twoStops.auditCase, { llm: scriptedLlm({ reviewer: ['{"status":"confirmed","reason":"looks fine"}'] }) });
-    expect(up.verdicts.find((v) => v.findingId.includes('INV-DUPLICATE'))?.status).toBe('needs_review');
-  });
-
   it('a closed claim window rejects the finding', async () => {
     const { cases } = buildSyntheticSet();
     const c = cases.find((x) => x.injected === 'unauthorized_accessorial');
@@ -92,31 +77,6 @@ describe('audit team', () => {
     expect(r.claim?.windowOpen).toBe(false);
   });
 
-  it('a model-written opening with numbers is discarded', async () => {
-    const { cases } = buildSyntheticSet();
-    const c = cases.find((x) => x.injected === 'unauthorized_accessorial');
-    if (c === undefined) throw new Error('case');
-    const r = await runAuditTeam(c.auditCase, { llm: scriptedLlm({ claim: ['{"opening":"You owe us $999 by 2026-12-01."}'] }) });
-    expect(r.claim?.letter).not.toContain('999');
-  });
-
-  it('the contract agent asks the LLM only for unknown charge names, limited to schedule codes', async () => {
-    const { history } = buildSyntheticSet();
-    const prior = history.find((h) => h.carrier === 'Synthetic Carrier A');
-    if (prior === undefined) throw new Error('invoice');
-    const extra = { description: 'Unloading labor (3rd party)', amount: '160.00', code: null, quantity: null, rate: null };
-    const inv: NormalizedInvoice = { ...prior, invoiceNumber: 'INV-LLM-1', proNumber: 'PRO-LLM-1', lines: [...prior.lines, extra], total: null };
-    const base = cleanCase();
-    const ok = scriptedLlm({ contract: ['{"code":"LUMPER","reason":"third-party unloading is a lumper"}'] });
-    const r = await runAuditTeam({ ...base, contracts: SYN_CONTRACTS, invoice: { kind: 'fields', fields: inv } }, { llm: ok });
-    expect(r.terms?.lineCodes.find((l) => l.by === 'llm')?.code).toBe('LUMPER');
-    // No approval on file: the mapped lumper is an unauthorized accessorial.
-    expect(r.findings.some((f) => f.ruleId === 'AUD-ACC-UNAUTH' && f.amount === '160.00')).toBe(true);
-
-    const bad = scriptedLlm({ contract: ['{"code":"FREE_MONEY","reason":"x"}'] });
-    const r2 = await runAuditTeam({ ...base, contracts: SYN_CONTRACTS, invoice: { kind: 'fields', fields: inv } }, { llm: bad });
-    expect(r2.terms?.lineCodes.find((l) => l.line === inv.lines.length - 1)?.by).toBe('none');
-  });
   it('publishes JSON Schemas for every agent contract', () => {
     const s = agentJsonSchemas();
     expect(Object.keys(s)).toEqual(['NormalizedInvoice', 'ShipmentEvidence', 'Contract', 'AppliedTerms', 'AuditFinding', 'ReviewVerdict', 'ClaimDraft']);

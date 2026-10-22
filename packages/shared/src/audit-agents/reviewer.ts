@@ -2,16 +2,19 @@
  * Reviewer agent: verifies every flagged overcharge before it is reported, to keep false positives out of
  * claims. The deterministic pass re-derives each finding independently of the check that produced it
  * (arithmetic identity, cited lines and clauses exist, rule preconditions still hold, no line claimed
- * twice, claim window open). An optional LLM second opinion can only make a verdict stricter.
+ * twice, claim window open). An optional LLM second opinion may at most move a CONFIRMED finding to
+ * needs_review (a person then decides); it can never reject or remove a finding. The model sees only
+ * neutral facts (rule id, line indices, amounts, schedule codes, booleans), never carrier-written text.
  */
 import { z } from 'zod';
 
 import { Dec, add, compare, div, gt, mul, q2, sub } from '../analysis/py-decimal.js';
 import { normText } from '../analysis/py-text.js';
 
-import { stricter } from './evidence.js';
 import { askJson, fence, type LlmClient } from './llm.js';
-import { ReviewStatus, type AppliedTerms, type AuditFinding, type NormalizedInvoice, type ReviewVerdict, type ShipmentEvidence } from './types.js';
+import { plain } from '../text-sanitize.js';
+
+import { type AppliedTerms, type AuditFinding, type NormalizedInvoice, type ReviewVerdict, type ShipmentEvidence } from './types.js';
 
 export interface ReviewInput {
   invoice: NormalizedInvoice;
@@ -78,9 +81,39 @@ function preconditions(f: AuditFinding, r: ReviewInput): string[] {
 
 const LLM_SYSTEM = [
   'You are the reviewer agent of a freight-invoice audit team. A deterministic check flagged an overcharge.',
-  'Decide whether a careful auditor would send it to the carrier. You may only confirm, ask for human review, or reject.',
-  'Reject only for a concrete reason visible in the facts. Answer with JSON only: {"status": "confirmed"|"needs_review"|"rejected", "reason": "..."}.',
+  'Decide whether a person should look at it before it is sent to the carrier. The facts are numbers and identifiers only.',
+  'Answer with JSON only: {"status": "confirmed"|"needs_review", "reason": "..."}.',
 ].join(' ');
+
+/** A model may answer anything; whatever it says, it can only keep or soften a confirmation. */
+const SecondOpinion = z.strictObject({ status: z.enum(['confirmed', 'needs_review', 'rejected']), reason: z.string().max(400) });
+const REASON_MAX = 200;
+
+/**
+ * Facts for the model: identifiers and numbers the shipper's side produced. No line descriptions, no carrier
+ * names, no invoice/PRO numbers, no titles or explanations (they quote carrier text).
+ */
+export function neutralFacts(f: AuditFinding, r: ReviewInput): Record<string, unknown> {
+  const code = (i: number): string | null => {
+    const lc = r.terms.lineCodes.find((c) => c.line === i);
+    return lc === undefined || lc.by === 'llm' ? null : lc.code;
+  };
+  return {
+    ruleId: f.ruleId,
+    amount: f.amount,
+    billed: f.billed,
+    expected: f.expected,
+    confidence: f.confidence,
+    lines: f.lines.map((i) => ({ index: i, amount: r.invoice.lines[i]?.amount ?? null, quantity: r.invoice.lines[i]?.quantity ?? null, rate: r.invoice.lines[i]?.rate ?? null, scheduleCode: code(i) })),
+    evidence: {
+      bolWeightLbs: r.evidence.bolWeightLbs,
+      billedWeightLbs: r.invoice.billedWeightLbs,
+      reweighCertificateOnFile: r.evidence.reweighCertificate !== null,
+      gateTimesOnFile: r.evidence.arrivalTime !== null && r.evidence.departureTime !== null,
+      approvedScheduleCodes: r.evidence.authorizedAccessorials.filter((a) => r.terms.accessorials.some((t) => t.code === a)),
+    },
+  };
+}
 
 /** Run the reviewer agent on all findings of one invoice. */
 export async function runReviewerAgent(r: ReviewInput, llm: LlmClient | null = null): Promise<ReviewVerdict[]> {
@@ -120,13 +153,13 @@ export async function runReviewerAgent(r: ReviewInput, llm: LlmClient | null = n
       reasons.push(`confidence ${f.confidence} below ${CONFIRM_MIN_CONFIDENCE}`);
     }
     let by: ReviewVerdict['by'] = 'deterministic';
-    if (status !== 'rejected') {
-      const facts = JSON.stringify({ finding: f, invoiceLines: f.lines.map((i) => r.invoice.lines[i]), evidence: r.evidence, contract: r.terms.contractId });
-      const second = await askJson(llm, { agent: 'reviewer', system: LLM_SYSTEM, user: fence('FINDING', facts) }, z.strictObject({ status: ReviewStatus, reason: z.string().max(400) }));
-      if (second !== null && stricter(second.status, status) !== status) {
-        status = second.status;
+    // Only a confirmed finding is put to the model, and the most it can do is send it to a person.
+    if (status === 'confirmed') {
+      const second = await askJson(llm, { agent: 'reviewer', system: LLM_SYSTEM, user: fence('FINDING', JSON.stringify(neutralFacts(f, r))) }, SecondOpinion);
+      if (second !== null && second.status !== 'confirmed') {
+        status = 'needs_review';
         by = 'llm';
-        reasons.push(`LLM reviewer: ${second.reason}`);
+        reasons.push(`LLM reviewer asked for human review: ${plain(second.reason, REASON_MAX)}`);
       }
     }
     verdicts.push({ findingId: f.id, status, reasons, by });

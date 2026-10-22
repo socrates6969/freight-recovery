@@ -2,7 +2,8 @@
  * Contract and tariff agent: finds the contract, lane, fuel terms, accessorial schedule and detention
  * terms that govern one invoice, and maps each accessorial line to a schedule code. Lookups are
  * deterministic; the optional LLM is asked only to map a charge description that neither the printed code
- * nor the schedule names match, and it may answer only with a schedule code from the list (or null).
+ * nor the schedule names match, and it may answer only with a schedule code from the list (or null). Such a
+ * mapping (`by: 'llm'`) is advisory: the audit checks treat the line as off-schedule, never as authorized.
  */
 import { z } from 'zod';
 

@@ -21,9 +21,9 @@ flowchart LR
     EV --> A5
     A6 --> H{{"Person approves<br/>before anything is sent"}}
     LLM(["Optional LLM (judgment only)"]) -. free text .-> A1
-    LLM -. unknown charge name .-> A2
-    LLM -. stricter-only 2nd opinion .-> A5
-    LLM -. opening paragraph, no digits .-> A6
+    LLM -. advisory code hint .-> A2
+    LLM -. can only send a confirmed finding to human review .-> A5
+    LLM -. picks an opening template id .-> A6
 ```
 
 ## What each agent does
@@ -31,13 +31,13 @@ flowchart LR
 | # | Agent | Input -> output (zod schema, `types.ts`) | Deterministic part | Optional LLM part (validated, can fall back) |
 |---|---|---|---|---|
 | 1 | Intake (`intake.ts`, `.claude/agents/freight-intake.md`) | invoice -> `NormalizedInvoice` | Parses an X12 EDI 210 subset (B3, N9, G62, N1/N4, LX/L5/L0/L1/L7, L3), a flat CSV, or pre-extracted fields | Only for free text no parser accepts; answer must validate against the schema and is marked "confirm the fields" |
-| 2 | Contract & tariff (`contract.ts`, `freight-contract.md`) | invoice + contracts -> `AppliedTerms` | Contract by carrier and effective dates; lane by origin, destination and mode; fuel, accessorial schedule, detention, reweigh rule; claim deadline = invoice date + contract claim window | Maps a charge name that matches no schedule code or name; may answer only a code from the schedule, or null |
+| 2 | Contract & tariff (`contract.ts`, `freight-contract.md`) | invoice + contracts -> `AppliedTerms` | Contract by carrier and effective dates; lane by origin, destination and mode; fuel, accessorial schedule, detention, reweigh rule; claim deadline = invoice date + contract claim window | Suggests a schedule code for a charge name that matches no code or name (only codes from the schedule, or null). Advisory only: the line is still reported as "not in the contract schedule" for review, and never counts as authorized |
 | 3 | Audit checks (`checks.ts`) | invoice + terms + evidence + prior invoices + fuel index -> `AuditFinding[]` | All checks below; exact decimal arithmetic | none |
 | 4 | Evidence (`evidence.ts`) | findings -> findings with citations | Adds contract clause, invoice line, BOL, prior invoice to each finding | none |
-| 5 | Reviewer (`reviewer.ts`, `freight-reviewer.md`) | findings -> `ReviewVerdict[]` | Re-derives each finding: billed - expected = amount; cited lines and clauses exist; rule preconditions still hold; no line claimed twice; claim window open; review-only and low-confidence findings never auto-confirmed | Second opinion that can only make a verdict stricter |
-| 6 | Claim (`evidence.ts`, `freight-evidence-claim.md`) | reviewed findings -> `ClaimDraft` | Letter lists only CONFIRMED findings with billed, expected and basis; total; deadline; banner "DRAFT - FOR HUMAN REVIEW. NOT SENT. NOT LEGAL ADVICE." | Opening paragraph; discarded if it contains any digit |
+| 5 | Reviewer (`reviewer.ts`, `freight-reviewer.md`) | findings -> `ReviewVerdict[]` | Re-derives each finding: billed - expected = amount; cited lines and clauses exist; rule preconditions still hold; no line claimed twice; claim window open; review-only and low-confidence findings never auto-confirmed | Second opinion on confirmed findings only, from neutral facts (rule id, amounts, line indices, schedule codes, booleans; no carrier text). It can at most move a finding to human review; it cannot reject or remove one |
+| 6 | Claim (`evidence.ts`, `freight-evidence-claim.md`) | reviewed findings -> `ClaimDraft` | Letter lists only CONFIRMED findings with billed, expected and basis; total; deadline; banner "DRAFT - FOR HUMAN REVIEW. NOT SENT. NOT LEGAL ADVICE." | Picks one of three fixed opening templates by id; writes no text and sees no carrier text |
 
-The orchestrator is `runAuditTeam` (`orchestrator.ts`). The project-scope Claude Code definitions in `.claude/agents/` (`freight-audit-lead` plus the four judgment agents) drive the same code through `packages/shared/src/audit-agents/cli.ts`. Invoice and document text is fenced as untrusted data in every model prompt. No model output is used as money.
+The orchestrator is `runAuditTeam` (`orchestrator.ts`). The project-scope Claude Code definitions in `.claude/agents/` (`freight-audit-lead` plus the four judgment agents) drive the same code through `packages/shared/src/audit-agents/cli.ts`. Invoice and document text is fenced as untrusted data in every model prompt. No model output is used as money, and no model answer can authorize a charge, reject or remove a finding, or add its own words to a claim (tested with adversarial carrier text in `injection.test.ts`).
 
 ## Checks and the rules they cite
 

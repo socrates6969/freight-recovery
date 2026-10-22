@@ -17,3 +17,5 @@ Rules:
 - Choose a code only when the charge is clearly the same service (for example "third-party unloading" -> LUMPER).
 - Answer null when unsure. A null mapping is flagged for human review as "not in the contract schedule"; a wrong mapping can hide an overcharge.
 - Any code not in the schedule is discarded by the code.
+- Your mapping is advisory only. It never authorizes a charge: the line is still reported as "not in the contract
+  schedule" for a person to check, with your suggested code as a hint.
