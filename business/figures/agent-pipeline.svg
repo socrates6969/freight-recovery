@@ -1,0 +1,255 @@
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="828pt" height="302.4pt" viewBox="0 0 828 302.4" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-10-22T19:56:47.729590</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.11.2, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 302.4 
+L 828 302.4 
+L 828 0 
+L 0 0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 25.92882 212.40576 
+L 121.67874 212.40576 
+Q 129.79314 212.40576 129.79314 210.4704 
+L 129.79314 55.6416 
+Q 129.79314 53.70624 121.67874 53.70624 
+L 25.92882 53.70624 
+Q 17.81442 53.70624 17.81442 55.6416 
+L 17.81442 210.4704 
+Q 17.81442 212.40576 25.92882 212.40576 
+z
+" clip-path="url(#p0f90ff3356)" style="fill: #1b6ca8; stroke: #1b6ca8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 139.32756 212.40576 
+L 235.07748 212.40576 
+Q 243.19188 212.40576 243.19188 210.4704 
+L 243.19188 55.6416 
+Q 243.19188 53.70624 235.07748 53.70624 
+L 139.32756 53.70624 
+Q 131.21316 53.70624 131.21316 55.6416 
+L 131.21316 210.4704 
+Q 131.21316 212.40576 139.32756 212.40576 
+z
+" clip-path="url(#p0f90ff3356)" style="fill: #1b6ca8; stroke: #1b6ca8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 252.7263 212.40576 
+L 348.47622 212.40576 
+Q 356.59062 212.40576 356.59062 210.4704 
+L 356.59062 55.6416 
+Q 356.59062 53.70624 348.47622 53.70624 
+L 252.7263 53.70624 
+Q 244.6119 53.70624 244.6119 55.6416 
+L 244.6119 210.4704 
+Q 244.6119 212.40576 252.7263 212.40576 
+z
+" clip-path="url(#p0f90ff3356)" style="fill: #1f2933; stroke: #1f2933; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 366.12504 212.40576 
+L 461.87496 212.40576 
+Q 469.98936 212.40576 469.98936 210.4704 
+L 469.98936 55.6416 
+Q 469.98936 53.70624 461.87496 53.70624 
+L 366.12504 53.70624 
+Q 358.01064 53.70624 358.01064 55.6416 
+L 358.01064 210.4704 
+Q 358.01064 212.40576 366.12504 212.40576 
+z
+" clip-path="url(#p0f90ff3356)" style="fill: #1b6ca8; stroke: #1b6ca8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_6">
+    <path d="M 479.52378 212.40576 
+L 575.2737 212.40576 
+Q 583.3881 212.40576 583.3881 210.4704 
+L 583.3881 55.6416 
+Q 583.3881 53.70624 575.2737 53.70624 
+L 479.52378 53.70624 
+Q 471.40938 53.70624 471.40938 55.6416 
+L 471.40938 210.4704 
+Q 471.40938 212.40576 479.52378 212.40576 
+z
+" clip-path="url(#p0f90ff3356)" style="fill: #1b6ca8; stroke: #1b6ca8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 592.92252 212.40576 
+L 688.67244 212.40576 
+Q 696.78684 212.40576 696.78684 210.4704 
+L 696.78684 55.6416 
+Q 696.78684 53.70624 688.67244 53.70624 
+L 592.92252 53.70624 
+Q 584.80812 53.70624 584.80812 55.6416 
+L 584.80812 210.4704 
+Q 584.80812 212.40576 592.92252 212.40576 
+z
+" clip-path="url(#p0f90ff3356)" style="fill: #1b6ca8; stroke: #1b6ca8; stroke-linejoin: miter"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 706.32126 212.40576 
+L 802.07118 212.40576 
+Q 810.18558 212.40576 810.18558 210.4704 
+L 810.18558 55.6416 
+Q 810.18558 53.70624 802.07118 53.70624 
+L 706.32126 53.70624 
+Q 698.20686 53.70624 698.20686 55.6416 
+L 698.20686 210.4704 
+Q 698.20686 212.40576 706.32126 212.40576 
+z
+" clip-path="url(#p0f90ff3356)" style="fill: #e07a2e; stroke: #e07a2e; stroke-linejoin: miter"/>
+   </g>
+   <g id="text_1">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #ffffff" x="73.80378" y="92.816322" transform="rotate(-0 73.80378 92.816322)">1  Intake</text>
+   </g>
+   <g id="text_2">
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(43.015155 158.997651)">reads the carrier</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(42.32603 167.879675)">invoice (EDI 210,</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(52.633421 176.761698)">CSV, fields)</text>
+   </g>
+   <g id="patch_9">
+    <path d="M 124.558307 133.056 
+Q 130.503259 133.056 134.771161 133.056 
+" style="fill: none; stroke: #1f2933; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 130.771161 131.056 
+L 134.771161 133.056 
+L 130.771161 135.056 
+" style="fill: none; stroke: #1f2933; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(159.115489 87.41474)">2  Contract</text>
+    <text style="font-weight: 700; font-size: 9px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(169.117442 98.217201)">&amp; tariff</text>
+   </g>
+   <g id="text_4">
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(160.002317 158.997651)">picks contract,</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(158.258692 167.879675)">lane, fuel table,</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(160.145692 176.761698)">claim deadline</text>
+   </g>
+   <g id="patch_10">
+    <path d="M 237.957047 133.056 
+Q 243.901999 133.056 248.169901 133.056 
+" style="fill: none; stroke: #1f2933; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 244.169901 131.056 
+L 248.169901 133.056 
+L 244.169901 135.056 
+" style="fill: none; stroke: #1f2933; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="text_5">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(280.736572 87.415092)">3  Audit</text>
+    <text style="font-weight: 700; font-size: 9px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(265.627119 98.217553)">checks (code)</text>
+   </g>
+   <g id="text_6">
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(275.556885 158.997651)">re-rates: fuel,</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(273.148416 167.879675)">class, reweigh,</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(269.217744 176.761698)">detention, dupes</text>
+   </g>
+   <g id="patch_11">
+    <path d="M 351.355787 133.056 
+Q 357.300739 133.056 361.568641 133.056 
+" style="fill: none; stroke: #1f2933; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 357.568641 131.056 
+L 361.568641 133.056 
+L 357.568641 135.056 
+" style="fill: none; stroke: #1f2933; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="text_7">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #ffffff" x="414" y="92.816322" transform="rotate(-0 414 92.816322)">4  Evidence</text>
+   </g>
+   <g id="text_8">
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(384.926094 158.997651)">attaches clause</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(385.267187 167.879675)">and documents</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(386.264453 176.761698)">to each finding</text>
+   </g>
+   <g id="patch_12">
+    <path d="M 464.754527 133.056 
+Q 470.699479 133.056 474.967381 133.056 
+" style="fill: none; stroke: #1f2933; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 470.967381 131.056 
+L 474.967381 133.056 
+L 470.967381 135.056 
+" style="fill: none; stroke: #1f2933; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="text_9">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'DejaVu Sans'; text-anchor: middle; fill: #ffffff" x="527.39874" y="92.816322" transform="rotate(-0 527.39874 92.816322)">5  Reviewer</text>
+   </g>
+   <g id="text_10">
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(493.801584 158.997362)">recomputes every</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(499.470099 167.879386)">finding; checks</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(494.975756 176.761409)">the claim window</text>
+   </g>
+   <g id="patch_13">
+    <path d="M 578.153267 133.056 
+Q 584.098219 133.056 588.366121 133.056 
+" style="fill: none; stroke: #1f2933; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 584.366121 131.056 
+L 588.366121 133.056 
+L 584.366121 135.056 
+" style="fill: none; stroke: #1f2933; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="text_11">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(620.419511 87.415092)">6  Claim</text>
+    <text style="font-weight: 700; font-size: 9px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(628.212246 98.217553)">draft</text>
+   </g>
+   <g id="text_12">
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(611.699871 158.997651)">drafts a dispute</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(612.351996 167.879675)">from confirmed</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(617.121527 176.761698)">findings only</text>
+   </g>
+   <g id="patch_14">
+    <path d="M 691.552007 133.056 
+Q 697.496959 133.056 701.764861 133.056 
+" style="fill: none; stroke: #1f2933; stroke-width: 1.5; stroke-linecap: round"/>
+    <path d="M 697.764861 131.056 
+L 701.764861 133.056 
+L 697.764861 135.056 
+" style="fill: none; stroke: #1f2933; stroke-width: 1.5; stroke-linecap: round"/>
+   </g>
+   <g id="text_13">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(736.653251 87.415092)">Person</text>
+    <text style="font-weight: 700; font-size: 9px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(730.742782 98.21685)">approves</text>
+   </g>
+   <g id="text_14">
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(726.763611 163.438663)">nothing is sent</text>
+    <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; fill: #ffffff" transform="translate(725.246032 172.320686)">without sign-off</text>
+   </g>
+   <g id="text_15">
+    <text style="font-size: 12px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #1f2933" x="8.28" y="30.288" transform="rotate(-0 8.28 30.288)">How the agents find an overcharge and turn it into a claim</text>
+   </g>
+  </g>
+  <g id="text_16">
+   <text style="font-size: 8.8px; font-family: 'DejaVu Sans'; fill: #1f2933" transform="translate(8.28 245.037859)">Money is computed by deterministic, tested code (dark). An optional language model only does judgment in Intake, Contract &amp;</text>
+   <text style="font-size: 8.8px; font-family: 'DejaVu Sans'; fill: #1f2933" transform="translate(8.28 255.600266)">tariff, Reviewer and Claim. The Reviewer recomputes every finding, the Claim agent drafts only from confirmed findings, and a</text>
+   <text style="font-size: 8.8px; font-family: 'DejaVu Sans'; fill: #1f2933" transform="translate(8.28 266.162672)">person approves (orange). Code: unit-tested, not yet wired into the web app. Synthetic test only: 0 of 45 clean invoices claimed;</text>
+   <text style="font-size: 8.8px; font-family: 'DejaVu Sans'; fill: #1f2933" transform="translate(8.28 276.725078)">90 of 90 injected overcharges flagged to the cent.</text>
+  </g>
+  <g id="text_17">
+   <text style="font-size: 7.4px; font-family: 'DejaVu Sans'; text-anchor: start; fill: #6b7785" x="8.28" y="296.993466" transform="rotate(-0 8.28 296.993466)">Source: technical/agents.md (origin/master e3fef5f, 2026-10-22). Synthetic data; not a real-world performance claim.</text>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p0f90ff3356">
+   <rect x="8.28" y="36.288" width="811.44" height="193.536"/>
+  </clipPath>
+ </defs>
+</svg>

@@ -1,87 +1,136 @@
-# Freight Recovery - Business Plan
+# scoup.ai business plan
 
-> **Status: pre-product, pre-revenue, zero customers.** Nothing below is validated on real customer data. Every number is either (a) cited with a grade, or (b) labeled ASSUMPTION. "$1B" is a ceiling-case arithmetic exercise (see `financial/model.md`), not a promise or a forecast.
->
-> Source grades: **A** = primary/audited/regulatory; **B** = reputable secondary coverage of a primary source; **C** = vendor/aggregator/blog (directional only).
-> Research note: the live web-search budget was exhausted before this document was finalized. Cited figures come from earlier research in this venture (2026-10-05). The ATRI primary PDF has **not** been opened by us. Re-verify before putting any figure in front of an investor.
+> **Status, 22 October 2026: pre-revenue.** No customers, no pilots, no measured recovery
+> rate. The product has run only on synthetic and public reference data. Company numbers are
+> plan inputs or model outputs from `investor-pack/scoup-financial-model.xlsx` and are
+> labelled as such. Outside figures are footnoted; the full ledger is in
+> [`data-and-sources.md`](data-and-sources.md). The detailed business model is in
+> [`business-model.md`](business-model.md).
 
-## 1. Problem
+## 1. What scoup.ai is
 
-Freight moves on thin margins and loose paperwork. When a truck waits at a dock beyond the free time, the carrier is owed **detention**; when something extra happens (lumper, layover, redelivery, reweigh, TONU, liftgate), the carrier is owed an **accessorial**. These charges are frequently never billed, billed without proof, disputed by email, or paid late or partially. The evidence is scattered: rate confirmation, BOL, appointment time, gate/ELD/geofence timestamps, emails.
+scoup.ai is a team of software agents that check every freight invoice a company receives,
+flag overcharges with their evidence, and draft a claim the company can send. A person approves every claim.
 
-### The leakage numbers
+The first customers are mid-market US shippers ($5-50M a year of freight) and small and
+mid-size importers who pay ocean container charges. They pay scoup.ai out of the money it
+recovers, and later a platform fee.
 
-| Claim | Figure | Source | Grade | Caveat |
+## 2. The problem
+
+Freight bills are many, small and hard to check. A truckload invoice can carry detention,
+lumper, layover and fuel surcharge lines; an ocean carrier's demurrage and detention (D&D)
+invoice must meet federal content and timing rules.[^cfr] Each line is cheap to pay and
+expensive to dispute by hand, and the dispute windows are short: 180 days to contest a truck
+freight bill,[^13710] at least 30 days to ask an ocean carrier for a D&D refund.[^cfr]
+
+The money involved is large. US logistics costs were $2.40 trillion in 2025, 36.8% of it
+trucking.[^cscmp] ATRI puts the 2023 cost of truck detention at $15.1 billion and found that
+fewer than half of detention invoices were paid.[^atri] Nine ocean carriers collected about
+$15.4 billion of D&D over five years to March 2025.[^fmc] These numbers show scale. They are
+not money scoup.ai can recover; most of it is correctly billed. How much is billed wrongly is
+the first thing scoup.ai must measure.
+
+## 3. The product: six agents and a person
+
+![Agent pipeline](figures/agent-pipeline.png)
+
+*Figure 1. How the agents find an overcharge and turn it into a claim. Source: scoup.ai product
+design; a description, not a performance claim.*
+
+1. **Intake** reads a carrier invoice (EDI 210, CSV or extracted fields) into one format.
+2. **Contract & tariff** picks the contract, lane, fuel table, accessorial schedule,
+   detention terms and claim deadline.
+3. **Audit checks** re-rate the invoice with plain, tested code: duplicates, line math,
+   linehaul, fuel surcharge against the diesel week, reweigh, class, LTL rate, minimums,
+   accessorials, detention. No language model computes money.
+4. **Evidence** attaches the contract clause and documents to each finding.
+5. **Reviewer** recomputes every finding independently and checks the claim window.
+6. **Claim** drafts a dispute from confirmed findings only, marked DRAFT and not sent.
+
+Then a person reads the draft and decides whether to send it. The agents are unit-tested code,
+not yet wired into the API or web app. On a **synthetic** test set (135 invented invoices, 45 clean and 90 with one injected overcharge each, seed 20261022), the deterministic team claimed nothing on the 45 clean invoices, flagged all 90 injected overcharges, and put the amount in dispute equal to the injected dollars to the cent; 5 clean invoices went to human review, not to a claim. The same people wrote the test generator and the checks, so these numbers show the rules work as designed. They are **not** a measurement on real invoices; real precision and recall are unknown.[^agents]
+
+Why agents: they let scoup.ai check **every** invoice instead of a sample, flag a claim the day
+the bill arrives instead of near the deadline, cut the analyst time behind a small claim to
+minutes, and add an independent check before a person signs off. None of these effects has
+been measured on real invoices yet; section 7 sets the gates that will measure them.
+
+## 4. How scoup.ai makes money
+
+| Base case, per account | Year 1 | Year 3 | Year 5 | Year 7 |
 |---|---|---|---|---|
-| Annual cost of driver detention to US trucking | **$15.1B/yr** ($11.5B lost productivity + $3.6B added expense) | ATRI driver-detention study, Sept 2024, via truckinginfo.com and Land Line coverage | **B** (A if the ATRI primary confirms; we saw secondary coverage) | This is the *cost of waiting*, mostly lost productivity. It is **not** a pool of recoverable dollars. Only the billable, unpaid slice is addressable. |
-| Share of stops involving detention | 39.3% | same | B | |
-| Fleets that charge detention | 94.5% | same | B | |
-| Detention invoices actually paid | **fewer than half** | same | B | Exact paid % not verified from the primary. |
-| Freight invoice error rate | "1-9% of invoice value; 10-25% of bills" | audit-vendor blogs (Shipware, Nuvocargo, others) | **C** | Sold by the people who sell audits. Do not use in a deck as fact. |
-| Unclaimed parcel refunds ">$2B" | n/d | vendor blogs | **C** | Parcel, not our wedge. Ignore. |
+| Amount won in disputes (plan input) | $52K | $85K | $105K | $115K |
+| scoup.ai's share | 25% | 14% | 12% | 12% |
+| Platform fee | $0 | $10K | $15K | $17K |
+| **scoup.ai revenue per account** | **$13.0K** | **$21.9K** | **$27.6K** | **$30.8K** |
 
-**Honest read.** The one solid anchor is ATRI. The correct statement is: *detention is a very large, well-documented cost, and carriers collect on fewer than half of the detention they bill.* The correct next step is **not** to multiply $15.1B by a percentage and call it a market. It is to measure, on one partner's closed files, what fraction of billable detention and accessorials went unbilled, unpaid, or short-paid, and what fraction of that is winnable with evidence.
+*Source: investor-pack/scoup-financial-model.xlsx, Assumptions rows 13-16. All inputs are
+assumptions.*
 
-## 2. Who has the problem (target customer)
+Unit economics in year 3 (base): 64% gross margin, 20% annual churn, about $14.9K to win an
+account, lifetime gross profit 4.7 times acquisition cost, cost repaid in about 13 months.
+These rest on spending $0.68 of sales cost per $1 of new ARR. The 2024 software median was
+$2.00;[^bm] at that level the ratio falls to 1.6x. Sales efficiency is the plan's biggest
+risk. Details: [`business-model.md`](business-model.md), sections 4-5.
 
-The incumbents (Cass, Trax, CTSI-Global, Intelligent Audit, and similar freight-audit-and-payment firms) are built for enterprise shippers with large annual freight spend, EDI/TMS integrations, and procurement-led buying. The long tail is under-served:
+## 5. Market
 
-1. **Mid-market shippers** (ASSUMPTION: roughly $5M-$50M annual freight spend). Too small for a big FAP program, big enough that accessorial errors and unauthorized charges are real money. Pain: they pay carrier invoices with unauthorized or unsupported accessorials and cannot dispute at scale.
-2. **Small and mid-size carriers** (ASSUMPTION: 5-100 trucks; owner-operators excluded at first). Pain: they do detention/accessorial billing by hand, do not assemble proof, and write the money off.
+Sized bottom-up as accounts x revenue per account: about **$0.95 billion a year** for
+shippers and importers (32,765 accounts) and **$1.86 billion** including carriers and brokers
+(133,256 accounts). The base case reaches 605 accounts in year 7, about 1.8% of the
+serviceable accounts. See [`market-analysis.md`](market-analysis.md).
 
-Why both sides: detention is a two-sided dispute. A shipper-side tool defends against weak claims; a carrier-side tool builds strong ones. **Decision to validate in discovery:** start on one side. Working hypothesis is carrier-side claim assembly first (the money is plainly owed and the evidence packet is the product), shipper-side audit second. This is a hypothesis, not a finding.
+## 6. Go-to-market
 
-## 3. Product
+1. **Design partners (months 0-6).** Three to five shippers or importers share closed
+   invoices under a written data agreement. scoup.ai reports the overcharges it would have flagged and the amount in dispute. No
+   fee.
+2. **Paid pilots (months 6-18).** Live invoices; 25% of recoveries; a person approves each
+   claim.
+3. **Platform fee and first US sales hire (year 2).**
+4. **Partners (years 2-3).** Customs brokers and forwarders for importers; factoring and ELD
+   companies for small carriers.
 
-An agent-assisted pipeline that, for each load:
-- **Ingests** documents (rate confirmation, BOL/POD, accessorial invoice, emails) and, later, timestamps from telematics/visibility feeds.
-- **Extracts** structured fields (appointment time, arrival, departure, free time, rate, accessorial clauses).
-- **Applies rules** that interpret the contract/rate-con language to decide entitlement and amount.
-- **Assembles the evidence packet** (timeline, source citations, contract clause) and a ready-to-send demand/invoice.
-- **Tracks** deadlines, follow-ups, disputes, and outcomes, with a **human approval** step before anything leaves the building.
+## 7. Gates (evidence before money)
 
-See `technical/overview.md`. Explicit non-goals for v1: moving money (avoids money-transmission and bank-partner issues), brokering freight, hardware.
-
-## 4. Pricing: contingency, with a path to SaaS
-
-- **Phase 1 (design partners / pilots): pure contingency.** A percentage of dollars actually recovered, nothing if nothing is recovered. Removes buyer risk, which matters for an unproven vendor. ASSUMPTION: 15-30% is what audit firms commonly charge (vendor-stated, grade C); we model **20%**.
-- **Phase 2: hybrid.** Small platform fee plus a lower contingency (ASSUMPTION: $1-2K/month platform + ~10-12%). Gives the revenue predictability investors value.
-- **Phase 3: SaaS tier** for customers who want self-serve tooling for their own team, priced on loads processed.
-
-**Honest caveat.** Contingency revenue is variable and lagged (recovery cycles are weeks to months) and investors value it at a discount to contracted ARR. It is a customer-acquisition mechanism, not a destination. Gross margin depends on how much human review each claim needs; that is unmeasured today.
-
-## 5. Go-to-market
-
-1. **Design partners (months 0-4).** Recruit 3-5 carriers or mid-market shippers who will give us **closed historical files** (read-only, under NDA). Deliverable: a leakage audit on their own data: "here is what was left on the table and what we could have recovered". No software sale; this is the validation.
-2. **Contingency pilots (months 4-10).** Run live on new claims with human approval. Measured outputs: recovery rate, dollars recovered, time per claim, cost per claim. Convert the pilot data into the first case study.
-3. **Land and expand (months 10+).** Land on one lane/terminal/customer set, expand to all loads, add the second side (shipper-side audit for the same relationships), then add integrations (TMS/ELD) that reduce onboarding friction. Channels to test: freight-association communities, TMS/ELD marketplaces, carrier-factoring partners. All hypotheses.
-
-**Sales motion honesty:** carriers have low software budgets and little time; contingency is the right wedge for them. Shippers buy slower and want integrations. Founder-led selling is required through roughly the first 20 accounts.
-
-## 6. Milestones (gated on evidence, not calendar)
-
-| Gate | Evidence required | Kill/pivot trigger |
+| Gate | Evidence required | Stop or change course if |
 |---|---|---|
-| G0: Eval set | 100+ real or realistic detention/accessorial cases with ground-truth entitlement | Cannot assemble a gold set |
-| G1: Leakage proven | One design partner's closed files show material, evidence-backed unrecovered dollars | Recoverable slice is trivial (ASSUMPTION threshold: under ~0.25% of freight spend shipper-side, or very few winnable detention events per 100 loads carrier-side) |
-| G2: Pipeline quality | Measured pass^k on the eval set above a bar set in advance (see technical doc); zero hallucinated citations | Verifier cannot be made reliable |
-| G3: Paid pilots | 3+ customers on contingency, human-approved, recovery rate measured | Customers will not share data or will not pay the fee |
-| G4: Repeatability | 10+ accounts, measured CAC and payback, churn observed | CAC payback far above 24 months |
-| G5: Raise | Only now present traction; seed deck grounded in measured results only | - |
+| G0 Test set | 100+ realistic cases with known answers, labelled synthetic | No reliable answer key can be built |
+| G1 Leakage | One design partner's closed files show material, evidence-backed overcharges | Recoverable money is under about 0.25% of freight spend |
+| G2 Agent quality | Reviewer agent catches seeded errors; zero invented citations on held-out cases; review minutes per claim measured | The reviewer cannot be made reliable, or review takes too long to pay |
+| G3 Paid pilots | Three or more customers paying a share of recoveries | Customers will not share data or pay |
+| G4 Repeatability | Ten or more accounts; acquisition cost and churn measured | Cost repaid in more than 24 months |
+| G5 Series A | ARR of about $2.5M (Carta's 2025 median at Series A was $2.8M)[^carta] | - |
 
-## 6b. Forecasting (roadmap)
+## 8. Financing
 
-Future capability, not part of the current offer: demand / lane-volume forecasting to help prioritize recovery work (which lanes and carriers to audit first). A simple seasonal baseline is implemented; a neural option (neuralforecast) is opt-in and not yet validated. It requires real multi-series historical data from design partners and often only ties simple baselines, so we make no accuracy claim and do not sell it. Revisit after G2.
+The model plans a $7.5 million seed in two tranches and an $8.5 million Series A at
+$2.5 million ARR. Recalculated on 22 October 2026, the base case reaches that ARR in month 38;
+base-case EBITDA turns positive in year 7 ($1.3M). The downside case does not reach
+break-even within seven years. See [`../financial/model.md`](../financial/model.md).
 
-## 7. Key risks (see also README)
+![Revenue model](figures/revenue-model.png)
 
-- **Recoverable pool smaller than headline.** Mitigation: measure first.
-- **Incumbents move down-market** or add accessorial-dispute modules. Mitigation: speed, long-tail focus, dispute-outcome data.
-- **Data access** (TMS/ELD integration) is the real hard problem, not the AI.
-- **Customer relationship risk:** carriers dunning shippers they depend on may hesitate. Human approval and customer-controlled send settings are required.
-- **Payment/regulatory:** stay out of money movement and brokering until counsel confirms.
-- **Founder/market fit:** no one on the team has been identified with freight-audit domain experience; see `hiring/README.md`.
+*Figure 2. Seven-year plan in three cases. Source: scoup-financial-model.xlsx, recalculated
+22 Oct 2026. A plan, not a forecast.*
 
-## 8. Use of funds
+## 9. Main risks
 
-Seed proceeds are allocated to independent security audit, external legal counsel, design-partner data validation, and product hardening, in that priority order. See the "Use of Funds (seed raise)" section in `financial/model.md`.
+Too few real errors; sales cost near the industry median; slow review; customers unwilling to
+share data; Loop or Intelligent Audit moving down-market with a dispute product; a legal
+mistake in a sent claim. Each has a test and a response in
+[`business-model.md`](business-model.md), section 10. One further gap: no one on the team has
+yet run freight audit for a living; a freight-operations lead is the first hire (see
+`hiring/README.md`).
+
+---
+
+[^agents]: technical/agents.md (origin/master e3fef5f, 22 Oct 2026); reproduce with `npx tsx packages/shared/src/audit-agents/cli.ts --eval`. Synthetic data only.
+[^cfr]: eCFR, 46 CFR Part 541, https://www.ecfr.gov/current/title-46/chapter-IV/subchapter-B/part-541, current through 2026-10-15, checked 2026-10-19.
+[^13710]: 49 U.S.C. § 13710(a)(3)(B), https://www.law.cornell.edu/uscode/text/49/13710, accessed 2026-10-22.
+[^cscmp]: CSCMP / Kearney, State of Logistics 2026, via SCDigest, https://www.scdigest.com/firstthoughts/26-06-26.php?cid=23144, published 2026-06-26, accessed 2026-10-22.
+[^atri]: ATRI, https://truckingresearch.org/2024/09/new-research-documents-substantial-financial-and-safety-impacts-from-truck-driver-detention/, published 2024-09-10, accessed 2026-10-19.
+[^fmc]: Federal Maritime Commission, https://www.fmc.gov/detention-and-demurrage/, data 2020-04-01 to 2025-03-31, accessed 2026-10-19.
+[^bm]: Benchmarkit, 2025 SaaS Performance Metrics, https://www.benchmarkit.ai/2025benchmarks, accessed 2026-10-22.
+[^carta]: Carta, "ARR at Series A", https://carta.com/data/newsletter-arr-at-series-a/, 2026, accessed via search index 2026-10-22 (secondary).

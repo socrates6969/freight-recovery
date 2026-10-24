@@ -1,4 +1,4 @@
-# Freight Recovery - Fundraising
+# scoup.ai - Fundraising
 
 > **Status: pre-product. Do not raise yet.** The right time to approach investors is after Gate G3 in `business/business-plan.md` (paid pilots with a measured recovery rate). Until then, use this document to prepare, build relationships, and apply for non-dilutive support. Nothing here is investment advice.
 >
@@ -8,14 +8,18 @@
 
 ## 1. What investors will ask (and what we can honestly say today)
 
-| Likely question | Honest answer today |
+| Likely question | Honest answer today (22 Oct 2026) |
 |---|---|
-| Traction? | None. Pre-product. Design-partner discovery is the first milestone. |
-| Is the market real? | ATRI (Sept 2024, via trade press, grade B): detention costs trucking $15.1B/yr and fewer than half of detention invoices are paid. That is cost, not recoverable revenue; we will measure the recoverable slice. |
-| Why you? | Depends on the team that forms; see `hiring/README.md`. A freight-audit-experienced operator is the biggest gap. |
-| Why not the incumbents? | They serve large shippers on rate-matching; the long tail and dispute workflow are under-served (`business/market-analysis.md`). |
-| Size of outcome? | Base case is a strong niche business ($13M run-rate in Y5, assumptions only); $1B is not claimed (`financial/model.md`). |
+| Traction? | None. Pre-revenue; agents tested on synthetic and public data only. Design-partner files are the first milestone. |
+| What do the agents do? | Six agents: Intake, Contract & tariff, Audit checks (code), Evidence, Reviewer, Claim (draft from confirmed findings only); then a person approves. Unit-tested code, not yet wired into the app. Synthetic test: 0 of 45 clean invoices claimed, 90 of 90 injected overcharges flagged to the cent; not real-world evidence. See `technical/agents.md`. |
+| Why agents? | Every invoice checked, not a sample; claims flagged inside the 180-day truck and 30-day D&D windows; minutes of review per claim; an independent reviewer check. None of this is measured yet. |
+| Is the market real? | US logistics costs $2.40T in 2025 (CSCMP/Kearney); truck detention cost $15.1B in 2023 (ATRI); about $15.4B of ocean D&D collected by nine carriers in five years (FMC). Context only; our modelled fee pool is $0.95B (SAM) to $1.86B (TAM). |
+| Business model? | Share of recoveries (25% in pilots) moving to a platform fee plus 12%; $21.9K revenue per account in year 3 of the base case. |
+| Biggest risk? | Sales efficiency: the plan assumes $0.68 of sales cost per $1 of new ARR; the 2024 median was $2.00 (Benchmarkit). |
+| Size of the round? | Model: $7.5M seed in two tranches; $8.5M Series A at $2.5M ARR (month 38 in the base case). |
+| Why not the incumbents? | Loop, Cass, Trax and Intelligent Audit audit and pay at scale; none markets cited per-charge disputes for mid-market shippers across truck and ocean bills (`business/market-analysis.md`). |
 
+Every figure above is footnoted in `business/data-and-sources.md`.
 ## 2. Target list: right-fit firms (logistics, supply-chain, fintech-infrastructure, vertical AI SaaS)
 
 Stage focus: **pre-seed/seed** now; Series A later. Contact column is the **channel type only**; look up the current URL on the firm's own site.
@@ -71,9 +75,9 @@ Rules: be specific, short, and honest; no invented traction. Fill brackets only 
 
 ### Template A: pitch-form / cold submission (use after G3; adjust to say "pre-seed" if earlier)
 
-> **Subject / form title:** Freight Recovery - AI evidence packets for detention and accessorial claims ([n] paid pilots)
+> **Subject / form title:** scoup.ai - agents that audit every freight invoice and file cited claims ([n] paid pilots)
 >
-> Carriers collect on fewer than half of detention invoices (ATRI, Sept 2024; detention costs trucking $15.1B/yr), and the incumbent freight-audit firms focus on large shippers. We build an agent-assisted pipeline that assembles the evidence packet and demand for detention and accessorial claims for mid-market shippers and small carriers, on a contingency fee.
+> Mid-market shippers and importers pay thousands of small freight charges they cannot check by hand: detention, accessorials, fuel surcharges, ocean D&D. scoup.ai's six agents check every invoice against the contract, tariff and EIA diesel index, compute the money with tested code, flag overcharges with evidence, and draft a claim from confirmed findings that a person approves. Customers pay a share of what they win back.
 >
 > Where we are: [precise, true status, e.g., "N design partners; measured recovery on closed files of $X on Y loads; pilots running with human approval"]. We are not claiming more than the data supports. Our eval approach is pass^k on a held-out gold set; results on request.
 >
@@ -81,11 +85,11 @@ Rules: be specific, short, and honest; no invented traction. Fill brackets only 
 
 ### Template B: warm-intro request to a mutual contact (forwardable blurb)
 
-> Hi [Name], thanks for offering to help. I am working on Freight Recovery. In one line: we help carriers and mid-market shippers recover detention and accessorial charges that currently go unpaid, using AI to assemble the evidence and track the dispute, paid on contingency.
+> Hi [Name], thanks for offering to help. I am working on scoup.ai. In one line: software agents check every freight invoice a mid-market shipper receives and turn real overcharges into cited claims a person approves, paid out of what is recovered.
 >
 > Status in one line: [true status].
 >
-> Would you be comfortable introducing me to [Person/role at Firm]? Below is a short blurb you can forward as-is, and I understand if it is not a fit. Blurb: "[Founder] is building Freight Recovery, [one sentence]. They have [one true proof point]. Worth 20 minutes if [specific reason related to the firm's thesis]."
+> Would you be comfortable introducing me to [Person/role at Firm]? Below is a short blurb you can forward as-is, and I understand if it is not a fit. Blurb: "[Founder] is building scoup.ai, [one sentence]. They have [one true proof point]. Worth 20 minutes if [specific reason related to the firm's thesis]."
 
 ## 5. Materials to prepare (grounded only in measured results)
 
