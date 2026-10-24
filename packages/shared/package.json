@@ -61,6 +61,6 @@
     "test:acceptance": "vitest run --project acceptance --passWithNoTests"
   },
   "dependencies": {
-    "zod": "4.6.5"
+    "zod": "4.6.6"
   }
 }
