@@ -6,11 +6,11 @@
 #
 # Install (fails if any hash does not match):
 #   pip install --require-hashes --no-deps -r requirements.txt
-fastapi==0.142.2
+fastapi==0.156.4
 uvicorn==0.54.0
-pydantic==2.13.5
+pydantic==2.14.1
 python-multipart==0.0.32
 pdfplumber==0.11.10
-SQLAlchemy==2.0.54
+SQLAlchemy==2.1.5
 alembic==1.20.0
 psycopg[binary]==3.3.6
