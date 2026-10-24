@@ -75,18 +75,18 @@ function fullTitle(meta) {
 }
 
 /**
- * Logo lockup linked to the home page. The dark-tile file is the default (light theme); the site
- * follows prefers-color-scheme, so the same media query swaps in the light-tile (on-dark) file.
+ * Logo lockup linked to the home page. The site is dark-only, so the light-tile (on-dark) lockup is always
+ * used (brand/README.md: light tile on dark backgrounds; the dark tile disappears on dark slate).
  * Self-hosted SVG via <img>: allowed by img-src 'self', no inline style.
  */
 function lockup(heightPx, cls) {
   const w = Math.round(heightPx * LOCKUP_RATIO);
-  return `<a class="${cls}" href="/" aria-label="${SITE_NAME} home"><picture>` +
-    `<source media="(prefers-color-scheme: dark)" srcset="/brand/lockup-horizontal-on-dark.svg">` +
-    `<img src="/brand/lockup-horizontal.svg" alt="${SITE_NAME}" width="${w}" height="${heightPx}"></picture></a>`;
+  return `<a class="${cls}" href="/" aria-label="${SITE_NAME} home">` +
+    `<img src="/brand/lockup-horizontal-on-dark.svg" alt="${SITE_NAME}" width="${w}" height="${heightPx}"></a>`;
 }
 
 const NAV = [
+  ["/agents/", "Agents"],
   ["/platform/", "Product"],
   ["/workspace/", "Workspace"],
   ["/docs/", "Developers"],
@@ -136,6 +136,8 @@ function layout(meta, body) {
 <meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${esc(META_CSP)}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#070b12">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(meta.description)}">
 <meta name="robots" content="${robots}">
@@ -160,9 +162,10 @@ function layout(meta, body) {
 <script type="application/ld+json">${jsonLd(meta, url)}</script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <header class="site"><div class="container">${lockup(28, "brand")}
 <nav aria-label="Main">${NAV.map(([h, t]) => `<a href="${h}"${h === meta.path ? ' aria-current="page"' : ""}>${t}</a>`).join("")}</nav><a class="cta nav-cta" href="/app/">Open the app</a></div></header>
-<main>
+<main id="main">
 ${body}
 </main>
 <footer class="site"><div class="container">

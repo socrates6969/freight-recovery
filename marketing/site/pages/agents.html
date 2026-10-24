@@ -1,0 +1,145 @@
+<!--meta {"title":"The audit agents, step by step","description":"How the six scoup.ai agents audit a freight invoice: intake, contract and tariff, audit checks, evidence, reviewer and claim, with their status today.","path":"/agents/","crumb":"Agents","updated":"2026-10-22"} -->
+<section class="page-head">
+<div class="container narrow">
+<p class="eyebrow">The agent team</p>
+<h1>Six agents, one invoice, every line</h1>
+<p class="lead">The team checks carrier freight invoices against the shipper's contract and tariff and flags overcharges. Deterministic code does all money math. A language model is optional and narrow: it reads free text no parser accepts, hints at a code for an unfamiliar charge, can send a confirmed finding to human review, and picks a fixed letter template. No model answer can authorize a charge, reject or remove a finding, or add its own words to a claim. The deterministic path runs complete without any model.</p>
+<p class="draft">Status, plainly: the browser app runs the core checks, the evidence packet and the DRAFT letter today, on your device, from figures you enter. The six-agent team is built and unit-tested in the repository but not yet connected to the app or the team workspace. Its test figures below are on synthetic invoices, not real ones.</p>
+<p class="actions"><a class="cta" href="/app/">Open the app</a><a class="cta secondary" href="/#calculator">Try the detention example</a></p>
+</div>
+</section>
+
+<section>
+<div class="container prose">
+<article class="agent-detail" id="intake"><span class="agent-num">01</span><div>
+<h2>Intake</h2><p class="tag built">Built, not in the app yet</p>
+<p>Turns a carrier invoice into one normalized invoice, whatever form it arrives in.</p>
+<div class="io"><div><h3>Input</h3><p>An EDI 210 invoice (a subset of segments), a flat CSV, pre-extracted fields, or free text.</p></div><div><h3>Output</h3><p>A normalized invoice: carrier, PRO, bill of lading, dates, lines, weights and totals.</p></div></div>
+<ul><li>Parsers handle EDI 210, CSV and extracted fields with no model at all.</li>
+<li>A model is used only for free text no parser accepts; its answer must fit the schema and is marked "confirm the fields".</li>
+<li>Today in the browser app you type or paste the figures, or import a CSV for an ocean D&amp;D invoice.</li></ul>
+</div></article>
+
+<article class="agent-detail" id="lookup"><span class="agent-num">02</span><div>
+<h2>Contract and tariff</h2><p class="tag built">Built, not in the app yet</p>
+<p>Finds the contract and lane that govern the invoice and the terms that apply to each charge.</p>
+<div class="io"><div><h3>Input</h3><p>The normalized invoice and the shipper's contracts, tariffs, fuel tables and diesel index.</p></div><div><h3>Output</h3><p>The applied terms: lane rate, fuel, accessorial schedule, detention, reweigh rule and claim deadline.</p></div></div>
+<ul><li>Contract by carrier and effective dates; lane by origin, destination and mode.</li>
+<li>Claim deadline: the invoice date plus the contract's claim window.</li>
+<li>For a charge name that matches no schedule entry, a model may suggest a code from the schedule, or nothing. The hint is advisory: the line is still reported as not in the contract schedule, goes to human review and never counts as authorized.</li>
+<li>Today in the browser app: the rate confirmation terms you enter, public carrier tariff presets for ocean D&amp;D, and Recall's 256 public tariff charge names for unfamiliar charges.</li></ul>
+</div></article>
+
+<article class="agent-detail" id="checks"><span class="agent-num">03</span><div>
+<h2>Audit checks</h2><p class="tag live">Live in the browser app</p>
+<p>Pure code with exact decimal arithmetic. No model touches an amount. Double counting is prevented in code: line-arithmetic excess is removed before other rules run, and a full duplicate invoice suppresses every other finding on it.</p>
+<div class="scroll"><table>
+<thead><tr><th>Check</th><th>Status</th></tr></thead>
+<tbody>
+<tr><td>Linehaul rate against the agreed rate</td><td>Live in the app</td></tr>
+<tr><td>Duplicate line (review only)</td><td>Live in the app</td></tr>
+<tr><td>Accessorial not authorized by the contract (review only)</td><td>Live in the app</td></tr>
+<tr><td>Stated total against the sum of lines</td><td>Live in the app</td></tr>
+<tr><td>Detention against gate times, free time, rate and cap</td><td>Live in the app</td></tr>
+<tr><td>Ocean D&amp;D: eight checks on invoice content, issuance timing, arithmetic and tariff</td><td>Live in the app</td></tr>
+<tr><td>Duplicate invoice: same carrier and PRO, bill of lading or load billed before</td><td>Built, not in the app yet</td></tr>
+<tr><td>Line math: amount differs from quantity times rate</td><td>Built, not in the app yet</td></tr>
+<tr><td>Fuel surcharge on the wrong base, on an overbilled linehaul, or at the wrong diesel week</td><td>Built, not in the app yet</td></tr>
+<tr><td>Reweigh: billed weight above the bill of lading with no reweigh certificate</td><td>Built, not in the app yet</td></tr>
+<tr><td>LTL re-rate: wrong freight class, rate per hundredweight above tariff, minimum charge above contract</td><td>Built, not in the app yet</td></tr>
+<tr><td>Accessorial that needs per-load approval billed without it, or above the contract cap</td><td>Built, not in the app yet</td></tr>
+</tbody>
+</table></div>
+</div></article>
+
+<article class="agent-detail" id="evidence"><span class="agent-num">04</span><div>
+<h2>Evidence</h2><p class="tag live">Live in the browser app</p>
+<p>Attaches the proof to every finding: the contract clause, the invoice line, the bill of lading and any prior invoice.</p>
+<ul><li>In the app today: an evidence packet (Markdown) and a findings file (JSON) with every calculation, built on your device.</li>
+<li>In the agent team: a clause and document trail per finding, which the reviewer checks.</li></ul>
+</div></article>
+
+<article class="agent-detail" id="reviewer"><span class="agent-num">05</span><div>
+<h2>Reviewer</h2><p class="tag built">Built, not in the app yet</p>
+<p>Independently re-derives every finding and returns confirmed, needs review or rejected.</p>
+<ul><li>Billed minus expected equals the amount in dispute; the cited lines and clauses exist; the rule's preconditions still hold.</li>
+<li>No line is claimed twice, and a finding past its claim deadline is rejected.</li>
+<li>Review-only and low-confidence findings are never confirmed automatically.</li>
+<li>A model second opinion looks at confirmed findings only, from neutral facts (rule, amounts, line numbers, schedule codes), never carrier text. It can at most move a finding to human review; it cannot reject or remove one.</li>
+<li>In the app today: confirmed findings are kept apart from items that need a person, and only confirmed ones are totalled.</li></ul>
+</div></article>
+
+<article class="agent-detail" id="claim"><span class="agent-num">06</span><div>
+<h2>Claim</h2><p class="tag live">Live in the browser app</p>
+<p>Drafts the dispute from confirmed findings only, listing billed, expected and basis for each, the total and the deadline.</p>
+<ul><li>Every draft carries the banner: DRAFT, for human review, not sent, not legal advice.</li>
+<li>The model only picks one of three fixed opening templates by id; it writes no letter text and sees no carrier text.</li>
+<li>In the app today: the DRAFT letter built from your confirmed findings, downloaded on your device.</li></ul>
+</div></article>
+</div>
+</section>
+<section class="surface">
+<div class="container">
+<div class="section-head">
+<p class="eyebrow">From finding to money</p>
+<h2>How the amount in dispute is collected</h2>
+</div>
+<ol class="steps">
+<li><strong>Load the paperwork.</strong> Carrier invoices, the contracts and tariffs, and the shipment evidence: bills of lading, gate times, approvals and prior invoices.</li>
+<li><strong>Flag and confirm.</strong> The team flags overcharges. Only findings the reviewer confirms go into the claim; review items are listed separately and not claimed until a person accepts them.</li>
+<li><strong>A person files.</strong> Someone approves the draft and files it with the carrier before the contract claim deadline, which is computed per contract.</li>
+<li><strong>The carrier pays.</strong> By credit memo, refund or a short-pay deduction on the next payment. Each line carries billed, expected, the clause and the documents a carrier needs to accept it.</li>
+</ol>
+<p class="muted">Nothing in the agent code sends a claim, moves money or contacts a carrier.</p>
+</div>
+</section>
+
+<section id="synthetic">
+<div class="container">
+<div class="section-head">
+<p class="eyebrow">Synthetic test, not real invoices</p>
+<h2>What the team does on synthetic invoices</h2>
+<p class="lead">135 invoices from invented carriers, contracts, lanes and diesel prices, generated by the same code base (seed 20261022): 45 clean and 90 with one injected overcharge each. Nine kinds, ten of each: duplicate invoice, fuel on the wrong base, unauthorized detention, reweigh without evidence, rate above contract, arithmetic error, fuel at the wrong diesel week, unauthorized accessorial and wrong freight class. The clean set includes hard cases such as a reweigh with a certificate and detention billed correctly.</p>
+</div>
+<ul class="stats">
+<li><span class="stat-num v2 num">0 of 45</span><p>clean invoices with a claimed finding</p></li>
+<li><span class="stat-num num">90 / 90</span><p>injected overcharges found, every kind 10 of 10, each amount equal to the injected dollars to the cent</p></li>
+<li><span class="stat-num amber num">5 of 45</span><p>clean invoices sent to human review (two stop-offs on identical lines, $75 each), not claimed</p></li>
+</ul>
+<p class="draft">What these numbers do not show: the same team wrote the generator and the checks, so the injected errors match the rules' definitions and perfect scores are expected, not impressive. The set does not test PDF or OCR extraction, real contract wording and exceptions, carrier-specific charge codes, multi-stop shipments, corrected rebills or the model agents, which are tested only with scripted answers. Real-world results are unknown until the team runs on an early customer's closed audit files with known outcomes.</p>
+</div>
+</section>
+
+<section class="surface">
+<div class="container">
+<div class="section-head"><h2>Rules the agents keep</h2></div>
+<ul class="why">
+<li><h3 data-k="RULE 1">Code does all money math</h3><p>No model output is used as money. Amounts come from versioned, readable rules with exact decimal arithmetic.</p></li>
+<li><h3 data-k="RULE 2">Confirmed or not claimed</h3><p>Only findings the reviewer confirms reach the claim; everything else waits for a person.</p></li>
+<li><h3 data-k="RULE 3">A model can only add caution</h3><p>A model hint never authorizes a charge, and a model second opinion can at most send a finding to a person; it cannot confirm, reject or remove one.</p></li>
+<li><h3 data-k="RULE 4">Untrusted documents</h3><p>Invoice and document text is fenced as untrusted data in every model prompt; the reviewer and claim models see no carrier text at all, and adversarial carrier text is part of the tests.</p></li>
+<li><h3 data-k="RULE 5">A person approves</h3><p>Nothing is sent, short-paid or disputed by the software, and no money moves through it.</p></li>
+<li><h3 data-k="RULE 6">Measured, and labelled</h3><p>Every published figure says what it was measured on; synthetic results are never presented as real-world results.</p></li>
+</ul>
+</div>
+</section>
+
+<section>
+<div class="container prose">
+<h2>Open gaps</h2>
+<ul>
+<li>The agent team is not yet connected to the API or the app; contracts and lanes have no storage or editor yet.</li>
+<li>EDI 210 support is a subset; EDI 211 and 214 and carrier-specific charge codes are not mapped.</li>
+<li>Lane matching is exact on city and state; zip- and zone-based tariffs are not implemented.</li>
+<li>The model agents have no repeated-run evaluation and no live-model test yet.</li>
+</ul>
+<h2>Ocean D&amp;D and the FMC rule</h2>
+<p>The browser app's ocean audit applies the content and timing provisions of 46 CFR Part 541. Requirements and deadlines depend on the billing party and the facts; confirm current rules and any dispute with counsel or your customs broker.</p>
+<h2>Sources</h2>
+<ol class="sources">
+<li>The six agents, their checks, the collection steps, the synthetic test (seed 20261022) and the open gaps: scoup.ai audit agents, technical/agents.md in the freight-recovery repository (code in packages/shared/src/audit-agents), measured on synthetic data only.</li>
+<li>What runs in the browser app: the Product and How it works pages of this site.</li>
+<li>Electronic Code of Federal Regulations, 46 CFR Part 541, current through 2026-10-15, https://www.ecfr.gov/current/title-46/chapter-IV/subchapter-B/part-541.</li>
+</ol>
+</div>
+</section>
